@@ -13,10 +13,29 @@ python3 tools/demo_szkielet.py     # kokpit + runner + run, wszystko w jednym pr
 pytest                             # testy backendu
 ```
 
+## PostgreSQL i migracje
+
+Schemat buduje wyłącznie Alembic (`create_all` zostaje w testach i demo).
+
+```bash
+createuser cockpit --pwprompt                 # hasło np. cockpit
+createdb cockpit --owner cockpit
+createdb cockpit_test --owner cockpit         # baza dla testu migracji
+export COCKPIT_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit
+alembic upgrade head                          # przed pierwszym `cockpit`
+```
+
+Test migracji (bez zmiennej jest pomijany):
+
+```bash
+COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit_test \
+  pytest tests/test_migracje.py
+```
+
 Osobno:
 
 ```bash
-COCKPIT_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit cockpit
+cockpit
 COCKPIT_RUNNER_TOKEN=... COCKPIT_URL=http://127.0.0.1:8765 cockpit-runner
 cd web && npm install && npm run dev
 ```

@@ -11,7 +11,7 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def create_all() -> None:
-    """Tylko dla szkieletu i testow. Docelowo migracje Alembica."""
+    """Tylko testy i tools/demo_szkielet.py. Schemat produkcyjny buduje `alembic upgrade head` (HAR-1)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
