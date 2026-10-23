@@ -4,6 +4,7 @@
     "MONOLYNX_BRANCH_MODE": "ticket",
     "MONOLYNX_AUTOTEST": "true",
     "MONOLYNX_AUTOCOMMIT": "false",
-    "MONOLYNX_AUTOPUSH": "false"
+    "MONOLYNX_AUTOPUSH": "false",
+    "MONOLYNX_BASE_BRANCH": "main"
   }
 }
