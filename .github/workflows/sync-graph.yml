@@ -1,0 +1,40 @@
+name: sync-graph
+
+# Graf zaleznosci kodu dla Monolynx (modul Polaczenia). Nieblokujacy:
+# brak graphify, tokenu albo grafu konczy sie sukcesem, a build w ci.yml
+# idzie dalej. CI nie instaluje graphify - to jednorazowy setup runnera.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync-graph:
+    # Bez self-hosted runnera z graphify job wisialby w kolejce. Warunek
+    # trzyma go wylaczonym, dopoki wlasciciel nie ustawi zmiennej repo.
+    if: vars.MONOLYNX_PROJECT_SLUG != ''
+    runs-on: self-hosted
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Czy runner ma graphify
+        id: graphify
+        run: |
+          if command -v graphify >/dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "graphify nie zainstalowane na runnerze - setup: https://github.com/Graphify-Labs/graphify (Monolynx -> Polaczenia -> Jak zasilic graf)"
+          fi
+
+      - name: Ekstrakcja grafu
+        if: steps.graphify.outputs.present == 'true'
+        run: graphify update .
+
+      - name: Wysylka do Monolynx
+        if: steps.graphify.outputs.present == 'true'
+        run: python cicd/sync_graph.py
+        env:
+          MONOLYNX_URL: ${{ secrets.MONOLYNX_URL }}
+          MONOLYNX_GRAPH_TOKEN: ${{ secrets.MONOLYNX_GRAPH_TOKEN }}
+          MONOLYNX_PROJECT_SLUG: ${{ vars.MONOLYNX_PROJECT_SLUG }}

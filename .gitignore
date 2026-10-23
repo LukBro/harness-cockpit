@@ -12,3 +12,6 @@ run_store/
 
 # lokalne ustawienia Claude Code (per maszyna, nie per projekt)
 .claude/settings.local.json
+
+# katalog roboczy testow mutacyjnych (mutmut)
+mutants/

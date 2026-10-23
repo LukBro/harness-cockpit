@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=1.4", "aiosqlite>=0.20"]
+dev = ["pytest>=8", "pytest-asyncio>=1.4", "aiosqlite>=0.20", "mutmut>=3.8"]
 
 [project.scripts]
 cockpit = "cockpit.__main__:main"
@@ -36,3 +36,12 @@ packages = ["src/cockpit", "src/runner"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+# Testy mutacyjne: moduly rdzenia (strona wiki toolchain, sekcja Mutacje).
+[tool.mutmut]
+paths_to_mutate = [
+  "src/cockpit/services/",
+  "src/cockpit/kernel/",
+  "src/runner/",
+  "src/cockpit/api/",
+]
