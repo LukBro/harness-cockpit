@@ -34,6 +34,12 @@ jobs:
           mutmut run || true
           mutmut results --all true > mutants/mutmut-results.txt
           python3 cicd/mutation_report.py --report mutants/mutmut-results.txt --format mutmut > mutation-summary.json
+          # Zero killed out of many mutants means the tests never ran (e.g. import error
+          # inside mutants/), not a weak suite - such a run must not become the baseline.
+          if python3 -c "import json,sys; d=json.load(open('mutation-summary.json')); sys.exit(0 if d['total'] and not d['killed'] else 1)"; then
+            echo "::warning::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ (sprawdz log mutmut run). Baseline NIE zapisany."
+            exit 0
+          fi
           python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit ${{ github.sha }} || true
 
       - uses: actions/upload-artifact@v4

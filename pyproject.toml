@@ -39,9 +39,22 @@ testpaths = ["tests"]
 
 # Testy mutacyjne: moduly rdzenia (strona wiki toolchain, sekcja Mutacje).
 [tool.mutmut]
-paths_to_mutate = [
+source_paths = [
   "src/cockpit/services/",
   "src/cockpit/kernel/",
   "src/runner/",
   "src/cockpit/api/",
+]
+# mutmut kopiuje do mutants/ tylko source_paths. Reszta pakietu musi trafic
+# tam osobno, inaczej testy nie zaimportuja aplikacji i kazdy mutant "przezywa".
+# tools/ potrzebuje test granicy warstw. Jawna lista zamiast calego src/:
+# kopia src/ nadpisywalaby zmutowane pliki i kasowala przyrostowy cache mutmut.
+also_copy = [
+  "src/cockpit/__init__.py",
+  "src/cockpit/__main__.py",
+  "src/cockpit/settings.py",
+  "src/cockpit/db/",
+  "src/cockpit/collector/",
+  "src/cockpit/web/",
+  "tools/",
 ]
