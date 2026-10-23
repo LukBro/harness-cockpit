@@ -5,12 +5,15 @@ api/ nie wykonuje zapytan - sprawdza to `tools/check_layers.py` w CI.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from collections.abc import Collection, Mapping
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
+
+from cockpit.settings import settings
 
 from .errors import BrakDostepu, NaruszonyNiezmiennik, NieZnaleziono, StanNiemozliwy
 from .invariants import Niezmiennik
@@ -41,13 +44,58 @@ async def zamelduj_runnera(
     return runner
 
 
-async def utworz_run(s: AsyncSession, tenant_id: str, workflow: str) -> Run:
-    """Run powstaje tylko wtedy, gdy zespol ma runnera online."""
-    runner = (
-        await s.execute(select(Runner).where(Runner.tenant_id == tenant_id).limit(1))
-    ).scalar_one_or_none()
+def _utc(d: datetime) -> datetime:
+    # SQLite oddaje daty bez strefy; w bazie to UTC
+    return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+
+
+def runner_online(
+    runner: Runner,
+    polaczone: Collection[str],
+    teraz: datetime,
+    prog_s: int,
+    rozlaczone: Mapping[str, datetime] | None = None,
+) -> bool:
+    """Online: aktywny strumien albo swiezy last_seen_at (BRO-109).
+
+    Rozlaczenie wygrywa: jesli strumien zamknieto po ostatnim zameldowaniu,
+    swiezy last_seen_at nie czyni runnera online.
+    """
+    if runner.id in polaczone:
+        return True
+    widziany = _utc(runner.last_seen_at) if runner.last_seen_at is not None else None
+    if rozlaczone and runner.id in rozlaczone:
+        if widziany is None or _utc(rozlaczone[runner.id]) >= widziany:
+            return False
+    if widziany is None:
+        return False
+    return teraz - widziany < timedelta(seconds=prog_s)
+
+
+async def utworz_run(
+    s: AsyncSession,
+    tenant_id: str,
+    workflow: str,
+    polaczone: Collection[str] = frozenset(),
+    rozlaczone: Mapping[str, datetime] | None = None,
+) -> Run:
+    """Run powstaje tylko wtedy, gdy zespol ma runnera online (HAR-2)."""
+    runnery = (
+        await s.execute(
+            select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
+        )
+    ).scalars().all()
+    teraz = datetime.now(timezone.utc)
+    runner = next(
+        (r for r in runnery
+         if runner_online(r, polaczone, teraz, settings.runner_offline_after_s,
+                       rozlaczone)),
+        None,
+    )
     if runner is None:
-        raise StanNiemozliwy("runner offline - uruchom runnera na swojej maszynie")
+        raise StanNiemozliwy(
+            "runner offline - uruchom runnera na swojej maszynie (cockpit-runner)"
+        )
 
     run = Run(tenant_id=tenant_id, runner_id=runner.id, workflow=workflow,
               status=RunStatus.running)
