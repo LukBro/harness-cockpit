@@ -11,7 +11,6 @@ Dwie powierzchnie sieciowe (BRO-76):
 from __future__ import annotations
 
 import json
-from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
@@ -19,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db.models import RunStatus
-from cockpit.db.session import create_all, get_session
+from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
 from cockpit.services.errors import (
     BladDziedziny,
@@ -35,13 +34,8 @@ _KODY = {BrakDostepu: 401, NieZnaleziono: 404, StanNiemozliwy: 409,
          NaruszonyNiezmiennik: 422}
 
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    await create_all()
-    yield
-
-
-app = FastAPI(title="Harness Cockpit", version="0.1.0", lifespan=lifespan)
+# Brak lifespan z create_all: schemat buduje `alembic upgrade head` (HAR-1).
+app = FastAPI(title="Harness Cockpit", version="0.1.0")
 
 
 @app.exception_handler(BladDziedziny)
