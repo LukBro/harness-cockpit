@@ -10,8 +10,12 @@ on:
   pull_request:
 
 jobs:
+  # ubuntu-latest to alias, ktory GitHub przepina na nowsze Ubuntu.
+  # Przypiete swiadomie: to CI czyta agent, a czerwony przebieg musi
+  # znaczyc "twoja zmiana", nie "podmieniony obraz runnera" - inaczej
+  # agent zuzyje budzet petli debugowania na naprawianie cudzej awarii.
   python:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +41,7 @@ jobs:
         run: python tools/demo_szkielet.py
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
