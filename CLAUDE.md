@@ -17,7 +17,10 @@ Lista jest bytem w kodzie, nie zbiorem zdań. Walidator sprawdza każdy punkt.
 - `role_binding` — rola ustawia tier i prawo zapisu razem; nigdy osobno
 - `reviewer_readonly` — recenzent NIGDY nie dostaje prawa zapisu, w żadnym backendzie
 - `approval_required` — krok z `approval` nie przechodzi bez decyzji człowieka
-- `no_git_write` — silnik NIGDY nie commituje ani nie pushuje
+- `no_git_write` — **silnik** NIGDY nie commituje ani nie pushuje. Niezmiennik wiąże silnik,
+  nie człowieka: commit po `integrate` jest dozwolony wyłącznie jako osobna, jawna akcja
+  człowieka (własny przycisk, nie część `integrate`). Push NIGDY, w żadnym scenariuszu.
+  Decyzja BRO-128, szczegóły w BRO-108.
 - `run_dir_outside_repo` — artefakty runu nie lądują w repozytorium użytkownika
 - `measured_or_null` — brak pomiaru zapisujemy jako brak, NIGDY jako zero
 
