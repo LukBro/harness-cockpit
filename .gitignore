@@ -15,3 +15,6 @@ run_store/
 
 # katalog roboczy testow mutacyjnych (mutmut)
 mutants/
+
+# pliki robocze kroku mutacji w CI
+mutation-summary.json

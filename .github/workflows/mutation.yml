@@ -1,0 +1,46 @@
+name: mutation
+
+# Non-blocking mutation testing on every PR. Mutation score is a trend, not a gate:
+# this workflow never fails the build. The ratchet baseline lives in
+# cicd/mutation-baseline.json and is committed by a human from the artifact.
+# `mutmut run` mutates all core modules (mutmut 3 has no diff mode), hence
+# --scope full: the same scope as the sprint-close run sharing this baseline.
+
+on:
+  pull_request:
+
+jobs:
+  mutation:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Hosted runners have no mutmut; it comes with the project's dev extras,
+      # which the tests run by mutmut need anyway. 3.13 has prebuilt libcst wheels.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - name: przebieg mutacyjny i zapadka
+        run: |
+          command -v mutmut || { echo "narzedzie mutacyjne nie zainstalowane na runnerze - krok mutacji pominiety (instalacja to setup wlasciciela projektu, patrz strona wiki toolchain)"; exit 0; }
+          git fetch origin ${{ github.base_ref }}
+          mutmut run || true
+          mutmut results --all true > mutants/mutmut-results.txt
+          python3 cicd/mutation_report.py --report mutants/mutmut-results.txt --format mutmut > mutation-summary.json
+          python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit ${{ github.sha }} || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: |
+            mutants/mutmut-results.txt
+            mutation-summary.json
+            cicd/mutation-baseline.json
