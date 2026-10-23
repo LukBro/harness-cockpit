@@ -1,0 +1,9 @@
+{
+  "score": 46.62,
+  "survived": 166,
+  "total": 311,
+  "scope": "full",
+  "measured_at": "2026-10-23",
+  "commit": "8e2766d0f9ee2666cfbbfc2ed02e63e2efd60835",
+  "tool": null
+}
