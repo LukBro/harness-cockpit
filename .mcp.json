@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "monolynx": {
-      "type": "http",
-      "url": "https://monolynx.com/mcp"
-    }
-  }
-}
