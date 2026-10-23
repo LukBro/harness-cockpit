@@ -9,3 +9,6 @@ src/cockpit/static/
 run_store/
 # katalog runu w worktree: zmaterializowane skille i artefakty (BRO-91)
 .cockpit/_run/
+
+# lokalne ustawienia Claude Code (per maszyna, nie per projekt)
+.claude/settings.local.json
