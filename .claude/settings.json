@@ -1,0 +1,9 @@
+{
+  "env": {
+    "MONOLYNX_PROJECT_SLUG": "harness-cockpit",
+    "MONOLYNX_BRANCH_MODE": "ticket",
+    "MONOLYNX_AUTOTEST": "true",
+    "MONOLYNX_AUTOCOMMIT": "false",
+    "MONOLYNX_AUTOPUSH": "false"
+  }
+}
