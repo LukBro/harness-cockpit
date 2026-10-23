@@ -11,8 +11,10 @@ Dwie powierzchnie sieciowe (BRO-76):
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -95,12 +97,16 @@ async def runner_stream(
     """SSE w dol: polecenia dla runnera. Odpowiedzi wracaja POST-em."""
     r = await uslugi.runner_po_tokenie(s, authorization)
     q = bus.runner_queue(r.id)
+    bus.mark_runner_connected(r.id)
 
     async def gen():
-        while True:
-            if await request.is_disconnected():
-                break
-            yield {"event": "command", "data": json.dumps(await q.get())}
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                yield {"event": "command", "data": json.dumps(await q.get())}
+        finally:
+            bus.mark_runner_disconnected(r.id)
 
     return EventSourceResponse(gen())
 
@@ -110,7 +116,10 @@ async def create_run(
     body: RunCreate, s: AsyncSession = Depends(get_session)
 ) -> dict[str, str]:
     tenant = await uslugi.domyslny_tenant(s)
-    run = await uslugi.utworz_run(s, tenant.id, body.workflow)
+    run = await uslugi.utworz_run(
+        s, tenant.id, body.workflow, polaczone=bus.connected_runner_ids(),
+        rozlaczone=bus.disconnected_runners(),
+    )
     await bus.send_to_runner(
         run.runner_id,
         {"type": "run_step", "run_id": run.id, "step_id": "s0", "command": body.command},
@@ -166,3 +175,18 @@ async def run_stream(run_id: str, request: Request) -> EventSourceResponse:
             bus.unsubscribe_run(run_id, q)
 
     return EventSourceResponse(gen())
+
+
+STATIC = Path(__file__).resolve().parent.parent / "static"
+
+
+def zamontuj_front(aplikacja: FastAPI, katalog: Path) -> bool:
+    """Front z `npm run build` na tym samym porcie (HAR-2). Bez builda - nic."""
+    if not katalog.is_dir():
+        return False
+    aplikacja.mount("/", StaticFiles(directory=katalog, html=True), name="front")
+    return True
+
+
+# Na samym koncu: mount "/" po wszystkich trasach, wiec /api/* ma pierwszenstwo.
+zamontuj_front(app, STATIC)

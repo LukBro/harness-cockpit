@@ -40,6 +40,26 @@ COCKPIT_RUNNER_TOKEN=... COCKPIT_URL=http://127.0.0.1:8765 cockpit-runner
 cd web && npm install && npm run dev
 ```
 
+## Szkielet w przeglądarce
+
+Jeden port, bez CORS: kokpit serwuje zbudowany front i `/api/*` na tym samym adresie.
+
+```bash
+createdb cockpit --owner cockpit                 # Postgres (patrz wyżej)
+export COCKPIT_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit
+alembic upgrade head
+python tools/seed_dev.py                         # zespół, runner, token w pliku 0600
+(cd web && npm install && npm run build)         # buduje do src/cockpit/static
+cockpit                                          # terminal 1
+cockpit-runner                                   # terminal 2
+```
+
+Otwórz http://127.0.0.1:8765/. Token nie pojawia się na ekranie - `seed_dev`
+wypisuje tylko ścieżkę pliku. Zmienna `COCKPIT_CONFIG` pozwala trzymać plik
+z tokenem poza `~/.config` (np. w katalogu tymczasowym), a `COCKPIT_RUNNER_TOKEN`
+w środowisku ma pierwszeństwo przed plikiem. Uruchom `seed_dev` i `cockpit-runner`
+z tym samym `COCKPIT_CONFIG`. Ponowne `seed_dev` generuje nowy token.
+
 ## Zasady
 
 Przed pierwszą zmianą przeczytaj `CLAUDE.md` — niezmienniki i decyzje

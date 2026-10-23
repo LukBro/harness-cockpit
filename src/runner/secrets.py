@@ -24,11 +24,20 @@ def get_token(name: str) -> str | None:
 
 
 def set_token(name: str, value: str) -> None:
-    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    data = json.loads(CONFIG.read_text()) if CONFIG.is_file() else {}
+    """Zapis atomowy: plik tymczasowy 0600 od utworzenia, potem os.replace."""
+    cel = CONFIG
+    cel.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    data = json.loads(cel.read_text()) if cel.is_file() else {}
     data[name] = value
-    CONFIG.write_text(json.dumps(data, indent=2))
-    CONFIG.chmod(0o600)   # po zapisie, nie przed
+    tmp = cel.with_name(f".{cel.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, cel)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def mask(token: str) -> str:

@@ -11,10 +11,36 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 _runner_queues: dict[str, asyncio.Queue[dict[str, Any]]] = {}
 _run_subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
+# Ewidencja aktywnych strumieni runnera (HAR-2). Licznik, bo runner moze miec dwa.
+_polaczone: dict[str, int] = {}
+# Chwila, w ktorej ostatni strumien runnera sie zamknal (rozlaczenie wygrywa ze swiezym last_seen_at).
+_rozlaczone: dict[str, datetime] = {}
+
+
+def mark_runner_connected(runner_id: str) -> None:
+    _polaczone[runner_id] = _polaczone.get(runner_id, 0) + 1
+
+
+def mark_runner_disconnected(runner_id: str) -> None:
+    n = _polaczone.get(runner_id, 0) - 1
+    if n > 0:
+        _polaczone[runner_id] = n
+    else:
+        if _polaczone.pop(runner_id, None) is not None:
+            _rozlaczone[runner_id] = datetime.now(timezone.utc)
+
+
+def connected_runner_ids() -> frozenset[str]:
+    return frozenset(_polaczone)
+
+
+def disconnected_runners() -> dict[str, datetime]:
+    return dict(_rozlaczone)
 
 
 def runner_queue(runner_id: str) -> asyncio.Queue[dict[str, Any]]:
