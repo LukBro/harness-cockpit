@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart":  [{ "hooks": [{ "type": "http", "async": true, "url": "http://127.0.0.1:8765/hook" }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "http", "async": true, "url": "http://127.0.0.1:8765/hook" }] }],
+    "SubagentStop":  [{ "hooks": [{ "type": "http", "async": true, "url": "http://127.0.0.1:8765/hook" }] }],
+    "Stop":          [{ "hooks": [{ "type": "http", "async": true, "url": "http://127.0.0.1:8765/hook" }] }],
+    "SessionEnd":    [{ "hooks": [{ "type": "http", "async": true, "url": "http://127.0.0.1:8765/hook" }] }],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "http", "async": true, "if": "Bash(*phase_timer*)", "url": "http://127.0.0.1:8765/hook" }
+        ]
+      }
+    ]
+  }
+}

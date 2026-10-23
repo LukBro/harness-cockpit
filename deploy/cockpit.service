@@ -1,0 +1,13 @@
+[Unit]
+Description=Harness Cockpit collector
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/harness-cockpit
+Environment=COCKPIT_RUN_STORE=%h/.claude/skills/implementacja-lukaszka-workspace/run_store
+ExecStart=%h/.local/bin/uv run uvicorn cockpit.collector.app:app --host 127.0.0.1 --port 8765
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

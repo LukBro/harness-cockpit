@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Harness Cockpit</title>
+<style>
+  :root {
+    --ink:#16181d; --muted:#5f6874; --line:#d9dde2; --bg:#f4f5f7; --panel:#fff;
+    --run:#2f6feb; --ok:#1d7a4c; --fail:#b3261e;
+    --mono: ui-monospace,"SF Mono","JetBrains Mono",Consolas,monospace;
+    --sans: ui-sans-serif,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:#e7eaee; --muted:#98a2b0; --line:#2b3038; --bg:#121519; --panel:#191d23;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 var(--sans); }
+  header { display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+           padding:12px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  h1 { font-size:15px; font-weight:600; margin:0; letter-spacing:-.01em; }
+  select { font:13px var(--mono); padding:5px 8px; background:var(--panel);
+           color:var(--ink); border:1px solid var(--line); border-radius:3px; }
+  .state { font:12px var(--mono); color:var(--muted); margin-left:auto; }
+  main { max-width:860px; margin:0 auto; padding:18px; }
+  table { width:100%; border-collapse:collapse; background:var(--panel);
+          border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+  th { text-align:left; font-size:12px; font-weight:500; color:var(--muted);
+       padding:8px 14px; border-bottom:1px solid var(--line); }
+  td { padding:9px 14px; border-top:1px solid var(--line); vertical-align:top; }
+  tr:first-child td { border-top:none; }
+  .ph { font:13px var(--mono); width:7em; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+         background:var(--line); margin-right:9px; vertical-align:middle; }
+  .running .dot { background:var(--run); animation:p 1s infinite alternate; }
+  .done .dot { background:var(--ok); }
+  @keyframes p { to { opacity:.25 } }
+  @media (prefers-reduced-motion: reduce) { .running .dot { animation:none } }
+  .dur { font:12px var(--mono); color:var(--muted); text-align:right; width:6em; }
+  .agents { margin:6px 0 0; padding:0; list-style:none; }
+  .agents li { font:12px var(--mono); color:var(--muted); padding:2px 0 2px 17px; }
+  .agents li.live { color:var(--ink); }
+  .empty { color:var(--muted); padding:28px 0; text-align:center; }
+  tr.orphan { display:none; }
+  tr.orphan.used { display:table-row; }
+  tr.orphan .ph { color:var(--muted); font-style:italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Harness Cockpit</h1>
+  <select id="runs"></select>
+  <span class="state" id="state">—</span>
+</header>
+<main>
+  <table id="board"><tbody></tbody></table>
+  <p class="empty" id="empty">Brak zdarzeń. Uruchom pipeline albo wybierz inny run.</p>
+</main>
+<script>
+const PHASES = ["0","A","classify","B","B.2","B.3","C","D","E","E.2","F","G"];
+let es = null, rows = new Map(), agents = new Map(), current = null, orphan = null;
+
+function fmt(ms) {
+  if (ms == null) return "";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+}
+
+function build() {
+  const tb = document.querySelector("#board tbody");
+  tb.innerHTML = "";
+  rows.clear();
+  for (const p of PHASES) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="ph"><span class="dot"></span>${p}</td>
+                    <td><ul class="agents"></ul></td><td class="dur"></td>`;
+    tb.appendChild(tr);
+    rows.set(p, { tr, start: null, agents: tr.querySelector(".agents"), dur: tr.querySelector(".dur") });
+  }
+  // Wiersz zbiorczy: agenty, ktore pojawily sie poza jakakolwiek trwajaca faza.
+  // Bez niego run bez phase_timer.py gubi wszystkie subagenty.
+  const tr = document.createElement("tr");
+  tr.className = "orphan";
+  tr.innerHTML = `<td class="ph">bez fazy</td><td><ul class="agents"></ul></td><td class="dur"></td>`;
+  tb.appendChild(tr);
+  orphan = { tr, agents: tr.querySelector(".agents") };
+}
+
+function handle(e) {
+  document.getElementById("empty").style.display = "none";
+  if (e.event === "phase_start") {
+    const r = rows.get(e.phase); if (!r) return;
+    r.start = e.ts; r.tr.className = "running";
+  } else if (e.event === "phase_end") {
+    const r = rows.get(e.phase); if (!r) return;
+    r.tr.className = "done";
+    if (r.start) r.dur.textContent = fmt((e.ts - r.start) * 1000);
+  } else if (e.event === "SubagentStart") {
+    if (!e.agent_id) return;
+    if (agents.has(e.agent_id)) return;   // ponowne polaczenie SSE odtwarza strumien od poczatku
+    let r = [...rows.values()].find(x => x.tr.className === "running");
+    if (!r) { r = orphan; orphan.tr.classList.add("used"); }
+    const li = document.createElement("li");
+    li.className = "live";
+    li.dataset.id = e.agent_id;
+    li.textContent = `▸ ${e.agent_type || "agent"} ${e.agent_id.slice(0, 8)}`;
+    r.agents.appendChild(li);
+    agents.set(e.agent_id, { li, ts: e.ts });
+  } else if (e.event === "SubagentStop") {
+    const a = agents.get(e.agent_id); if (!a) return;
+    a.li.className = "";
+    a.li.textContent = `· ${e.agent_type || "agent"} ${e.agent_id.slice(0, 8)} — ${fmt((e.ts - a.ts) * 1000)}`;
+  }
+}
+
+function connect(sid) {
+  if (es) es.close();
+  current = sid; build(); agents.clear();
+  document.getElementById("empty").style.display = "";
+  es = new EventSource(`/api/events/${sid}`);
+  es.onopen = () => document.getElementById("state").textContent = "połączono";
+  es.onerror = () => document.getElementById("state").textContent = "rozłączono";
+  es.onmessage = ev => handle(JSON.parse(ev.data));
+}
+
+async function refresh() {
+  const list = await (await fetch("/api/runs")).json();
+  const sel = document.getElementById("runs");
+  const keep = sel.value;
+  sel.innerHTML = list.map(r =>
+    `<option value="${r.session_id}">${r.session_id.slice(0, 12)} — ${r.events} zdarzeń${r.finished ? " ✓" : ""}</option>`
+  ).join("");
+  if (!list.length) { document.getElementById("state").textContent = "brak runów"; return; }
+  sel.value = keep && list.some(r => r.session_id === keep) ? keep : list[0].session_id;
+  if (sel.value !== current) connect(sel.value);
+}
+
+document.getElementById("runs").onchange = e => connect(e.target.value);
+build(); refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

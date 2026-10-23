@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+node_modules/
+src/cockpit/static/
+.env
+run_store/
+# katalog runu w worktree: zmaterializowane skille i artefakty (BRO-91)
+.cockpit/_run/
