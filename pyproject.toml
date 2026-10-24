@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=1.4", "aiosqlite>=0.20", "mutmut>=3.8"]
+dev = ["pytest>=8", "pytest-asyncio>=1.4", "aiosqlite>=0.20", "mutmut>=3.8", "pytest-playwright>=0.7"]
 
 [project.scripts]
 cockpit = "cockpit.__main__:main"
@@ -36,6 +36,12 @@ packages = ["src/cockpit", "src/runner"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
 testpaths = ["tests"]
+# Domyslnie bez e2e: zwykly przebieg ma byc zielony bez PostgreSQL i przegladarki.
+# Wybranie e2e nadpisuje to (ostatnie -m wygrywa).
+addopts = "-m 'not e2e'"
+markers = [
+  "e2e: wymaga PostgreSQL i przegladarki (Playwright)",
+]
 
 # Testy mutacyjne: moduly rdzenia (strona wiki toolchain, sekcja Mutacje).
 [tool.mutmut]
