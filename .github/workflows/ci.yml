@@ -58,3 +58,47 @@ jobs:
       - name: Typecheck i build (tsc -b && vite build)
         run: npm run build
         working-directory: web
+
+  e2e:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Jednorazowy kontener testowy, nie sekret produkcyjny.
+          POSTGRES_USER: cockpit
+          POSTGRES_PASSWORD: cockpit
+          POSTGRES_DB: cockpit_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cockpit -d cockpit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      COCKPIT_TEST_DATABASE_URL: postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: pip install -e ".[dev]"
+
+      - name: Budowa frontu do src/cockpit/static
+        run: npm ci && npm run build
+        working-directory: web
+
+      - name: Przegladarka Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Test e2e - przelot w przegladarce na PostgreSQL
+        run: pytest -m e2e
