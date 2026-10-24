@@ -97,10 +97,11 @@ async def runner_stream(
     """SSE w dol: polecenia dla runnera. Odpowiedzi wracaja POST-em."""
     r = await uslugi.runner_po_tokenie(s, authorization)
     q = bus.runner_queue(r.id)
-    bus.mark_runner_connected(r.id)
 
     async def gen():
         try:
+            # Oznaczenie w try, by zdjecie w finally zawsze mialo pare.
+            bus.mark_runner_connected(r.id)
             while True:
                 if await request.is_disconnected():
                     break

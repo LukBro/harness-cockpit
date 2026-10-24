@@ -11,6 +11,7 @@ type Run = {
 
 const KOMUNIKAT_OFFLINE = "Runner jest offline. Uruchom runnera na swojej maszynie.";
 const KOMUNIKAT_SIEC = "Brak połączenia z kokpitem.";
+const KOMUNIKAT_STRUMIEN = "Brak połączenia ze strumieniem zdarzeń. Ponawiam; historia poniżej może być niepełna.";
 
 // Scalanie po seq: historia z GET i strumień zbiegają się bez duplikatów.
 function scal(stare: Zdarzenie[], nowe: Zdarzenie[]): Zdarzenie[] {
@@ -29,9 +30,18 @@ export function App() {
   const [zdarzenia, setZdarzenia] = useState<Zdarzenie[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [blad, setBlad] = useState<string | null>(null);
+  // Osobno od bledu historii: udany GET nie moze zgasic komunikatu o strumieniu.
+  const [bladStrumienia, setBladStrumienia] = useState<string | null>(null);
+  // Blad samego uruchomienia (np. runner offline); nie nalezy do zadnego runu.
+  const [bladUruchomienia, setBladUruchomienia] = useState<string | null>(null);
   const [uruchamiam, setUruchamiam] = useState(false);
 
   useEffect(() => {
+    // Nowy runId (lub brak): nic z poprzedniego runu nie moze zostac na ekranie.
+    setZdarzenia([]);
+    setStatus(null);
+    setBlad(null);
+    setBladStrumienia(null);
     if (!runId) return;
     let anulowano = false;
 
@@ -57,11 +67,20 @@ export function App() {
       }
     }
 
-    // Najpierw strumien (zdarzenia scalane od razu), po onopen historia z GET:
-    // strumien nie odtwarza historii, a samo "historia, potem strumien" zostawia luke.
+    // Strumien nie odtwarza historii, wiec GET idzie zawsze, takze gdy strumien
+    // sie nie otwiera; onopen dociaga po (ponownym) polaczeniu. Scalanie po seq.
     const es = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`);
-    es.onopen = () => void dociagnij();
+    void dociagnij();
+    es.onopen = () => {
+      if (anulowano) return;
+      setBladStrumienia(null);
+      void dociagnij();
+    };
+    es.onerror = () => {
+      if (!anulowano) setBladStrumienia(KOMUNIKAT_STRUMIEN);
+    };
     es.addEventListener("run", (e) => {
+      if (anulowano) return;
       const z: Zdarzenie = JSON.parse((e as MessageEvent).data);
       setZdarzenia((p) => scal(p, [z]));
       if (z.kind === "step_finished" || z.kind === "step_failed") void dociagnij();
@@ -74,9 +93,13 @@ export function App() {
 
   async function uruchom() {
     setUruchamiam(true);
-    setBlad(null);
-    setZdarzenia([]);
-    setStatus(null);
+    setBladUruchomienia(null);
+    // Kazda porazka ma ten sam skutek: zadnego "starego" runu na ekranie ani w adresie.
+    // runId=null domyka stary strumien w cleanupie efektu.
+    const porzucRun = () => {
+      window.history.replaceState(null, "", window.location.pathname);
+      setRunId(null);
+    };
     try {
       const r = await fetch("/api/runs", {
         method: "POST",
@@ -85,18 +108,21 @@ export function App() {
       });
       if (r.status === 409) {
         // Stan pusty zamiast bledu: mow, co zrobic (BRO-123).
-        setBlad(KOMUNIKAT_OFFLINE);
+        porzucRun();
+        setBladUruchomienia(KOMUNIKAT_OFFLINE);
         return;
       }
       if (!r.ok) {
-        setBlad(`Nie udało się uruchomić (błąd ${r.status}).`);
+        porzucRun();
+        setBladUruchomienia(`Nie udało się uruchomić (błąd ${r.status}).`);
         return;
       }
       const id: string = (await r.json()).run_id;
       window.history.pushState(null, "", `?run=${encodeURIComponent(id)}`);
       setRunId(id);
     } catch {
-      setBlad(KOMUNIKAT_SIEC);
+      porzucRun();
+      setBladUruchomienia(KOMUNIKAT_SIEC);
     } finally {
       setUruchamiam(false);
     }
@@ -108,7 +134,9 @@ export function App() {
       <button onClick={uruchom} disabled={uruchamiam}>
         {uruchamiam ? "Uruchamiam…" : "Uruchom"}
       </button>
+      {bladUruchomienia && <p style={{ color: "#A5201A" }}>{bladUruchomienia}</p>}
       {blad && <p style={{ color: "#A5201A" }}>{blad}</p>}
+      {bladStrumienia && <p style={{ color: "#A5201A" }}>{bladStrumienia}</p>}
       {runId && (
         <p style={{ color: "#58616D" }}>
           run {runId}

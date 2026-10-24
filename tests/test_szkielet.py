@@ -706,3 +706,29 @@ def test_katalog_utworzony_przy_zapisie_tokenu_jest_dostepny_tylko_dla_wlascicie
     monkeypatch.setattr(secrets, "CONFIG", tmp_path / "a" / "b" / "credentials.json")
     secrets.set_token("runner", "sekret-1")
     assert stat.S_IMODE(secrets.CONFIG.parent.stat().st_mode) == 0o700
+
+
+async def test_runner_ktorego_polaczenie_przyjeto_ale_strumien_nie_ruszyl_nie_jest_online(
+    klient_runner_offline, polaczenia_runnerow,
+):
+    """Runner zrywa polaczenie, zanim kokpit zaczal nadawac - nikt nie sprzatnie po nim w strumieniu."""
+    from types import SimpleNamespace
+
+    from cockpit.api.app import runner_stream
+    from cockpit.db.models import Run
+
+    runner_id = await _id_runnera()
+    polaczenia_runnerow.append(runner_id)
+
+    async with db_session.SessionLocal() as s:
+        odpowiedz = await runner_stream(
+            request=SimpleNamespace(), authorization="Bearer tajne", s=s)
+    # Porzucamy odpowiedz tak, jak zerwane polaczenie: cialo nigdy nie ruszylo.
+    await odpowiedz.body_iterator.aclose()
+
+    assert runner_id not in bus.connected_runner_ids()
+    r = await klient_runner_offline.post("/api/runs", json={})
+    assert r.status_code == 409
+    async with db_session.SessionLocal() as s:
+        liczba = (await s.execute(select(func.count()).select_from(Run))).scalar_one()
+    assert liczba == 0
