@@ -8,6 +8,7 @@ a ich tresci nie wpisujemy do komunikatow (moga zawierac sekret). Tylko ruamel.y
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,8 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import YAMLError
 
-from cockpit.services.workflow import Poziom, Problem
+from cockpit.services.skills import Rejestr
+from cockpit.services.workflow import Poziom, Problem, Workflow
 
 PLIK_PROJEKTU = Path(".cockpit") / "project.yaml"
 
@@ -112,3 +114,36 @@ def wczytaj_projekt(repo: Path) -> tuple[Projekt | None, list[Problem]]:
         return None, [Problem(None, ZDUPLIKOWANY_KLUCZ, f"zduplikowany klucz{_lokalizacja(exc)}")]
     except YAMLError as exc:
         return None, [Problem(None, NIEPOPRAWNY_YAML, f"niepoprawny YAML{_lokalizacja(exc)}")]
+
+
+@dataclass(frozen=True)
+class Pominiecie:
+    """Krok pominiety z braku capability projektu (to nie blad).
+
+    Nie mylic z `skills.Pominiety` (pominiety plik skilla przy rozstrzyganiu
+    rejestru) - to inny byt. `powod` to tekst dla czlowieka; kod stanu
+    `brak_capability` przypisze silnik (BRO-104).
+    """
+
+    krok: str
+    powod: str
+    brakujace: tuple[str, ...]
+
+
+def pominiete_kroki(workflow: Workflow, rejestr: Rejestr, projekt: Projekt) -> list[Pominiecie]:
+    """Kroki, ktorych skill wymaga capability nieobecnej w projekcie, w kolejnosci krokow.
+
+    Funkcja czysta: bez I/O i bez wyjatkow dla brakujacej capability. Kroki z nieznanym
+    skillem oraz kroki z `workflow.niepoprawne` pomija, bo zglasza je `waliduj_workflow`.
+    Nie przenosi pominiecia na kroki zalezne: o losie kroku, ktorego wejscie pochodzi
+    z kroku pominietego, decyduje silnik (BRO-104).
+    """
+    wynik: list[Pominiecie] = []
+    for krok in workflow.kroki:
+        skill = rejestr.skille.get(krok.skill)
+        if skill is None:
+            continue
+        brakujace = tuple(c for c in skill.needs if c not in projekt.capabilities)
+        if brakujace:
+            wynik.append(Pominiecie(krok.id, f"brak capability {', '.join(brakujace)}", brakujace))
+    return wynik
