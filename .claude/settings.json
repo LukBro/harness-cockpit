@@ -5,7 +5,8 @@
     "MONOLYNX_AUTOTEST": "true",
     "MONOLYNX_AUTOCOMMIT": "true",
     "MONOLYNX_AUTOPUSH": "true",
-    "MONOLYNX_BASE_BRANCH": "main"
+    "MONOLYNX_AUTOMR": "true",
+    "MONOLYNX_CONTRACT": "auto"
   },
   "permissions": {
     "allow": [
