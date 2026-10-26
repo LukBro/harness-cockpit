@@ -1,0 +1,3 @@
+# Pamięć agentów rośnie dopisywaniem w równoległych worktree (retro M1.0: HAR-6, HAR-8).
+# Union merge łączy dopiski z obu stron zamiast zgłaszać konflikt.
+.claude/agent-memory/**/MEMORY.md merge=union
