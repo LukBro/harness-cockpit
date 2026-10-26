@@ -14,4 +14,5 @@
 - HAR-6: Każdy element zbioru, który rozszerza wykrywanie naruszenia niezmiennika, ma przypadek testowy, w którym tylko ten element decyduje o wykryciu (np. separator doklejony bez spacji, `ls|git push`, albo opcja z osobnym argumentem), bo przypadek wykrywany także bez tego elementu nie chroni go przed usunięciem.
 - HAR-9: Każda reguła, która usuwa albo podmienia wartość z pliku zależnie od stanu rejestru, ma test na wejściu, w którym ta wartość z pliku istnieje i zmieniłaby wynik, gdyby reguły nie było.
 - HAR-10: Każde zawężenie wzorca albo klasy znaków ma test na wejściu, które tylko to zawężenie odrzuca, bo wejście parsowane tak samo przez wersję szerszą nie chroni zawężenia przed cofnięciem.
+- HAR-29: Każda gałąź, każdy element zbioru i każdy zakres reguły ma test na wejściu, w którym tylko ten element decyduje o wyniku; test, którego asercja dopuszcza kilka wyników, nie chroni żadnego z nich.
 - HAR-12: Każda gałąź i każde przekształcenie w kodzie chroniącym niezmiennik mają test, którego asercja oblewa się po usunięciu tej gałęzi; asercja „napis zawiera X” nie chroni formatowania, które zachowuje X.
