@@ -163,17 +163,19 @@ async def get_run(run_id: str, s: AsyncSession = Depends(get_session)) -> dict:
 
 @app.get("/api/runs/{run_id}/stream")
 async def run_stream(run_id: str, request: Request) -> EventSourceResponse:
-    q = bus.subscribe_run(run_id)
-
     async def gen():
+        q = None
         try:
+            # Subskrypcja w try, bo niewystartowany generator nie wykona finally.
+            q = bus.subscribe_run(run_id)
             while True:
                 if await request.is_disconnected():
                     break
                 ev = await q.get()
                 yield {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
         finally:
-            bus.unsubscribe_run(run_id, q)
+            if q is not None:
+                bus.unsubscribe_run(run_id, q)
 
     return EventSourceResponse(gen())
 

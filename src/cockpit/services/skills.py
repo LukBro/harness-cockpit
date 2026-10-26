@@ -104,7 +104,10 @@ def _podziel(tekst: str, plik: Path) -> tuple[str, str]:
 
 def _rozbierz(plik: Path) -> tuple[bytes, CommentedMap, str]:
     """Bajty, mapa frontmattera i brief; BlednySkill, gdy plik nie jest parsowalnym skillem."""
-    surowy = plik.read_bytes()
+    try:
+        surowy = plik.read_bytes()
+    except OSError as e:
+        raise BlednySkill(f"nie mozna odczytac SKILL.md: {plik}") from e
     try:
         tekst = surowy.decode("utf-8")
     except UnicodeDecodeError as e:

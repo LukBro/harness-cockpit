@@ -1,8 +1,10 @@
 """Nazwy testow w jezyku dziedziny, nie technologii (BRO-95)."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.util
+import json
 import stat
 import sys
 from contextlib import asynccontextmanager
@@ -12,7 +14,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.api import bus
@@ -732,3 +734,99 @@ async def test_runner_ktorego_polaczenie_przyjeto_ale_strumien_nie_ruszyl_nie_je
     async with db_session.SessionLocal() as s:
         liczba = (await s.execute(select(func.count()).select_from(Run))).scalar_one()
     assert liczba == 0
+
+
+# --- HAR-10: strumien runu nie zostawia subskrypcji, start nie buduje schematu ---
+
+
+@pytest.fixture
+def subskrypcje_runow():
+    """Subskrypcje strumieni to stan globalny szyny - po tescie sprzatamy to, co dopisal."""
+    zanotowane: list[str] = []
+    yield zanotowane
+    for run_id in zanotowane:
+        bus._run_subscribers.pop(run_id, None)
+
+
+def _subskrybenci(run_id: str) -> list:
+    # unsubscribe_run zostawia pusta liste pod kluczem, wiec liczy sie jej zawartosc
+    return bus._run_subscribers.get(run_id, [])
+
+
+async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(subskrypcje_runow):
+    """Klient odpada, zanim kokpit zaczal nadawac - nikt nie sprzatnie po nim w strumieniu."""
+    from types import SimpleNamespace
+
+    from cockpit.api.app import run_stream
+
+    subskrypcje_runow.append("r-porzucony")
+
+    odpowiedz = await run_stream("r-porzucony", SimpleNamespace())
+    # Porzucamy odpowiedz tak, jak zerwane polaczenie: cialo nigdy nie ruszylo.
+    await odpowiedz.body_iterator.aclose()
+
+    assert _subskrybenci("r-porzucony") == []
+
+
+async def test_strumien_runu_dostaje_zdarzenia_w_trakcie_a_po_zamknieciu_nie_ma_subskrypcji(
+    subskrypcje_runow,
+):
+    from types import SimpleNamespace
+
+    from cockpit.api.app import run_stream
+
+    subskrypcje_runow.append("r-czynny")
+
+    async def nie_rozlaczony() -> bool:
+        return False
+
+    odpowiedz = await run_stream("r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony))
+    strumien = odpowiedz.body_iterator
+    pierwsze = asyncio.ensure_future(strumien.__anext__())
+    try:
+        # Subskrypcja powstaje, gdy strumien rusza - czekamy na nia, nie zgadujemy.
+        for _ in range(200):
+            if _subskrybenci("r-czynny"):
+                break
+            await asyncio.sleep(0.01)
+        assert len(_subskrybenci("r-czynny")) == 1
+
+        zdarzenie = {"seq": 1, "kind": "log", "text": "start", "step_id": None}
+        await bus.publish_event("r-czynny", zdarzenie)
+        wysylka = await asyncio.wait_for(pierwsze, timeout=2)
+    finally:
+        pierwsze.cancel()
+        await strumien.aclose()
+
+    assert wysylka["event"] == "run"
+    assert wysylka["id"] == "1"
+    assert json.loads(wysylka["data"]) == zdarzenie
+    assert _subskrybenci("r-czynny") == []
+
+
+async def test_start_aplikacji_nie_buduje_schematu_bazy(tmp_path, monkeypatch):
+    """Schemat buduje `alembic upgrade head`; `create_all` jest tylko dla testow i dema (HAR-1).
+
+    ASGITransport nie uruchamia lifespan, wiec start przechodzimy recznie - tak jak serwer.
+    """
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'start.db'}")
+    monkeypatch.setattr(db_session, "engine", engine)
+    wywolania: list[str] = []
+    oryginal = Base.metadata.create_all
+
+    def zliczaj(*args, **kwargs):
+        wywolania.append("create_all")
+        return oryginal(*args, **kwargs)
+
+    monkeypatch.setattr(Base.metadata, "create_all", zliczaj)
+    try:
+        async with app.router.lifespan_context(app):
+            pass
+        async with engine.connect() as conn:
+            tabele = (await conn.execute(
+                text("select name from sqlite_master where type = 'table'"))).scalars().all()
+    finally:
+        await engine.dispose()
+
+    assert wywolania == []
+    assert tabele == []

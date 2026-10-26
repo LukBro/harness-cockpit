@@ -856,3 +856,109 @@ def test_odczyt_skilla_idzie_wylacznie_przez_parser_zachowujacy_komentarze():
 
     assert not [m for m in importowane if m == "yaml" or m.startswith("yaml.")]
     assert zakazane_uzycia == []
+
+
+# --- HAR-10: plik, którego nie da się odczytać, i pusty frontmatter --------
+
+
+def _odczyt_zawodzi_dla(monkeypatch, cel: Path, *, usun_plik: bool) -> None:
+    """Tylko `cel` zawodzi przy odczycie; inne pliki czytane normalnie.
+
+    Wyjątek bez nazwy pliku, żeby ścieżka w komunikacie musiała pochodzić z kodu rejestru.
+    """
+    oryginal = Path.read_bytes
+
+    def czytaj(self: Path) -> bytes:
+        if self != cel:
+            return oryginal(self)
+        if usun_plik:
+            # plik znika między sprawdzeniem istnienia a odczytem
+            self.unlink()
+            return oryginal(self)
+        raise PermissionError("brak praw do odczytu")
+
+    monkeypatch.setattr(Path, "read_bytes", czytaj)
+
+
+@pytest.mark.parametrize("zrodlo", [".claude", ".agents"])
+def test_skill_konwencyjny_bez_praw_do_odczytu_jest_pominiety_z_nazwa_pliku(
+    repo: Path, dom: Path, zrodlo: str, monkeypatch
+):
+    plik = napisz_skill_konwencyjny(repo / zrodlo / "skills", "zamkniety")
+    napisz_skill_kokpitu(repo / ".cockpit" / "skills", "nasz", role="executor")
+    _odczyt_zawodzi_dla(monkeypatch, plik, usun_plik=False)
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert set(rejestr.skille) == {"nasz"}
+    assert [p.plik for p in rejestr.pominiete] == [plik]
+    assert rejestr.pominiete[0].powod.strip() != ""
+
+
+def test_skill_kokpitu_bez_praw_do_odczytu_jest_bledem_ktory_nazywa_plik(
+    repo: Path, dom: Path, monkeypatch
+):
+    plik = napisz_skill_kokpitu(repo / ".cockpit" / "skills", "zamkniety")
+    _odczyt_zawodzi_dla(monkeypatch, plik, usun_plik=False)
+
+    with pytest.raises(BlednySkill) as wyjatek:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(plik) in str(wyjatek.value)
+
+
+@pytest.mark.parametrize("zrodlo", [".claude", ".agents"])
+def test_skill_konwencyjny_usuniety_w_trakcie_skanu_jest_pominiety_z_nazwa_pliku(
+    repo: Path, dom: Path, zrodlo: str, monkeypatch
+):
+    plik = napisz_skill_konwencyjny(repo / zrodlo / "skills", "znikajacy")
+    napisz_skill_kokpitu(repo / ".cockpit" / "skills", "nasz", role="executor")
+    _odczyt_zawodzi_dla(monkeypatch, plik, usun_plik=True)
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert set(rejestr.skille) == {"nasz"}
+    assert [p.plik for p in rejestr.pominiete] == [plik]
+
+
+def test_skill_kokpitu_usuniety_w_trakcie_skanu_jest_bledem_ktory_nazywa_plik(
+    repo: Path, dom: Path, monkeypatch
+):
+    plik = napisz_skill_kokpitu(repo / ".cockpit" / "skills", "znikajacy")
+    _odczyt_zawodzi_dla(monkeypatch, plik, usun_plik=True)
+
+    with pytest.raises(BlednySkill) as wyjatek:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(plik) in str(wyjatek.value)
+
+
+@pytest.mark.parametrize("zrodlo", [".claude", ".agents"])
+def test_skill_konwencyjny_z_pustym_frontmatterem_jest_pominiety_bo_nie_ma_roli(
+    repo: Path, dom: Path, zrodlo: str
+):
+    katalog = repo / zrodlo / "skills" / "pusty"
+    katalog.mkdir(parents=True)
+    plik = katalog / "SKILL.md"
+    plik.write_text("---\n---\nBrief\n", encoding="utf-8")
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert rejestr.skille == {}
+    assert [p.plik for p in rejestr.pominiete] == [plik]
+    assert "role" in rejestr.pominiete[0].powod
+
+
+def test_skill_kokpitu_z_pustym_frontmatterem_jest_bledem_z_nazwa_brakujacego_pola(
+    repo: Path, dom: Path
+):
+    katalog = repo / ".cockpit" / "skills" / "pusty"
+    katalog.mkdir(parents=True)
+    plik = katalog / "SKILL.md"
+    plik.write_text("---\n---\nBrief\n", encoding="utf-8")
+
+    with pytest.raises(BlednySkill) as wyjatek:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert "'id'" in str(wyjatek.value)
+    assert str(plik) in str(wyjatek.value)
