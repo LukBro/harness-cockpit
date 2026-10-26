@@ -19,4 +19,13 @@ class Niezmiennik(StrEnum):
     measured_or_null = "measured_or_null"         # brak pomiaru to brak, nigdy zero
 
 
+class Rola(StrEnum):
+    """Rola skilla. Tylko nazwy: tier i prawo zapisu to niezmiennik role_binding (HAR-6)."""
+
+    author = "author"
+    reviewer = "reviewer"
+    executor = "executor"
+    gatherer = "gatherer"
+
+
 WSZYSTKIE = frozenset(Niezmiennik)

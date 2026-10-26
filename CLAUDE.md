@@ -24,6 +24,12 @@ Lista jest bytem w kodzie, nie zbiorem zdań. Walidator sprawdza każdy punkt.
 - `run_dir_outside_repo` — artefakty runu nie lądują w repozytorium użytkownika
 - `measured_or_null` — brak pomiaru zapisujemy jako brak, NIGDY jako zero
 
+## Role
+
+Skill ma jedną z czterech ról (`Rola` w `src/cockpit/services/invariants.py`):
+`author`, `reviewer`, `executor`, `gatherer`. Powiązanie roli z tierem i prawem
+zapisu (`role_binding`) dochodzi osobno.
+
 ## Granice — MUST / NEVER
 
 - MUST: prompt agenta niesie **ścieżkę** do pliku skilla, nigdy jego treść.

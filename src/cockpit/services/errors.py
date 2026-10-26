@@ -21,5 +21,9 @@ class NaruszonyNiezmiennik(BladDziedziny):
         super().__init__(f"niezmiennik {nazwa}: {szczegol}" if szczegol else f"niezmiennik {nazwa}")
 
 
+class BlednySkill(BladDziedziny):
+    """SKILL.md nie da sie wczytac: nieznana rola, brak pola, id inne niz katalog (HAR-5)."""
+
+
 class StanNiemozliwy(BladDziedziny):
     """Np. runner offline przy probie uruchomienia."""
