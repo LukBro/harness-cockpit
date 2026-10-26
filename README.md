@@ -17,19 +17,27 @@ pytest                             # testy backendu
 
 Schemat buduje wyłącznie Alembic (`create_all` zostaje w testach i demo).
 
+Baza lokalnie jest taka sama jak w CI: `postgres:16`, użytkownik `cockpit/cockpit`,
+bazy `cockpit` i `cockpit_test` (`compose.yaml`, dane w wolumenie Dockera poza
+repozytorium). Wymaga Dockera z `docker compose` v2, npm i aktywnego venv
+z `pip install -e ".[dev]"`.
+
+Pełny zestaw testów (migracje i e2e) jednym poleceniem:
+
 ```bash
-createuser cockpit --pwprompt                 # hasło np. cockpit
-createdb cockpit --owner cockpit
-createdb cockpit_test --owner cockpit         # baza dla testu migracji
-export COCKPIT_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit
-alembic upgrade head                          # przed pierwszym `cockpit`
+tools/testy_pelne.sh                          # podnosi bazę, buduje front, pytest -q i pytest -m e2e
+COCKPIT_PG_PORT=5433 tools/testy_pelne.sh     # gdy port 5432 zajmuje inny Postgres
 ```
 
-Test migracji (bez zmiennej jest pomijany):
+Skrypt kończy się błędem, gdy czegoś brakuje albo gdy test migracji lub e2e
+został pominięty. Zmienna `PYTHON` wskazuje interpreter (domyślnie `python`).
+
+Baza aplikacji `cockpit` powstaje przy `tools/testy_pelne.sh` (przy innym
+`COCKPIT_PG_PORT` zmień port w URL):
 
 ```bash
-COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit_test \
-  pytest tests/test_migracje.py
+export COCKPIT_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit
+alembic upgrade head                          # przed pierwszym `cockpit`
 ```
 
 Osobno:
@@ -45,7 +53,7 @@ cd web && npm install && npm run dev
 Jeden port, bez CORS: kokpit serwuje zbudowany front i `/api/*` na tym samym adresie.
 
 ```bash
-createdb cockpit --owner cockpit                 # Postgres (patrz wyżej)
+tools/testy_pelne.sh                             # Postgres z compose.yaml (patrz wyżej; tworzy też bazę `cockpit`)
 export COCKPIT_DATABASE_URL=postgresql+asyncpg://cockpit:cockpit@localhost/cockpit
 alembic upgrade head
 python tools/seed_dev.py                         # zespół, runner, token w pliku 0600

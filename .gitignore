@@ -5,6 +5,8 @@ __pycache__/
 *.egg-info/
 node_modules/
 src/cockpit/static/
+# stan przyrostowy tsc -b z `npm run build` (tools/testy_pelne.sh buduje front przy kazdym przebiegu)
+*.tsbuildinfo
 .env
 run_store/
 # katalog runu w worktree: zmaterializowane skille i artefakty (BRO-91)
