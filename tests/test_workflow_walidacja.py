@@ -19,6 +19,7 @@ from cockpit.services.workflow_walidacja import (
     FOREACH_ZLY_FORMAT,
     NIEPRZENOSNY_SKILL,
     NIEZNANA_ZALEZNOSC,
+    NIEZNANY_KLUCZ,
     NIEZNANY_SKILL,
     RETRY_NIE_WSTECZ,
     waliduj_workflow,
@@ -665,3 +666,265 @@ steps:
     rejestr = rozstrzygnij_rejestr(repo, dom_rejestru)
     problemy = waliduj_workflow(wf, rejestr, dom_walidacji)
     assert problem(problemy, NIEPRZENOSNY_SKILL, "a").poziom == Poziom.ostrzezenie
+
+
+# --- niezmienniki kroku i nieznane klucze (HAR-9) -------------------------
+
+
+def test_dopisane_prawo_zapisu_w_kroku_recenzenta_nazywa_niezmiennik(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "recenzent", role="reviewer")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  review: {skill: recenzent, write: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, "reviewer_readonly", "review")
+    assert p.poziom == Poziom.blad
+    assert "reviewer_readonly" in p.komunikat
+    # klucz zapisu jest zabroniony w kazdym kroku, nie tylko u recenzenta
+    assert "role_binding" in kody(problemy, "review")
+    assert NIEZNANY_KLUCZ not in kody(problemy)
+    assert ma_bledy(problemy)
+
+
+def test_krok_z_nazwa_modelu_wskazuje_profil_backendu(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, model: opus}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, "role_binding", "a")
+    assert p.poziom == Poziom.blad
+    assert "profil" in p.komunikat and "backend" in p.komunikat
+    assert NIEZNANY_KLUCZ not in kody(problemy)
+
+
+def test_nieznany_klucz_kroku_jest_bledem(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  ok: {skill: s}
+  a: {skill: s, kolor: zielony}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "a").count(NIEZNANY_KLUCZ) == 1
+    p = problem(problemy, NIEZNANY_KLUCZ, "a")
+    assert p.poziom == Poziom.blad
+    assert "kolor" in p.komunikat
+    assert kody(problemy, "ok") == []
+
+
+def test_naruszenie_niezmiennika_i_blad_grafu_sa_pokazane_razem(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, model: opus}
+  b: {skill: s, needs: [nikt]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, "role_binding", "a")
+    problem(problemy, NIEZNANA_ZALEZNOSC, "b")
+
+
+def test_krok_z_nieznanym_skillem_i_prawem_zapisu_lamie_tylko_role_binding(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: widmo, write: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, NIEZNANY_SKILL, "a")
+    problem(problemy, "role_binding", "a")
+    # bez skilla nie ma roli, wiec nie ma tez fałszywego naruszenia recenzenta
+    assert "reviewer_readonly" not in kody(problemy, "a")
+
+
+def test_rola_recenzenta_wpisana_w_kroku_z_nieznanym_skillem_nie_daje_falszywego_naruszenia(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: widmo, role: reviewer, write: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, NIEZNANY_SKILL, "a")
+    problem(problemy, "role_binding", "a")
+    # rola z pliku bez skilla w rejestrze nie jest wiarygodna - nie wolno z niej wnioskowac
+    assert "reviewer_readonly" not in kody(problemy, "a")
+
+
+def test_nieznana_rola_wpisana_w_kroku_z_nieznanym_skillem_nie_jest_zglaszana_osobno(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: widmo, role: xyz}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "a") == [NIEZNANY_SKILL]
+    assert not any("nieznana rola" in p.komunikat for p in problemy)
+
+
+def test_rola_skilla_z_rejestru_wygrywa_z_rola_wpisana_w_kroku(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "recenzent", role="reviewer")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  review: {skill: recenzent, role: author, write: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, "reviewer_readonly", "review")
+    assert NIEZNANY_KLUCZ not in kody(problemy)
+
+
+def test_wylaczone_prawo_zapisu_u_recenzenta_lamie_role_binding_a_nie_recenzenta(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "recenzent", role="reviewer")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  review: {skill: recenzent, write: false}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, "role_binding", "review")
+    assert "reviewer_readonly" not in kody(problemy)
+
+
+def test_tier_wpisany_w_kroku_lamie_role_binding_a_nie_jest_nieznanym_kluczem(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, tier: retrieval}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, "role_binding", "a")
+    assert NIEZNANY_KLUCZ not in kody(problemy)
+
+
+def test_id_wpisane_wewnatrz_kroku_jest_nieznanym_kluczem(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, id: inny}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert "id" in problem(problemy, NIEZNANY_KLUCZ, "a").komunikat
+
+
+def test_klucz_kroku_niebedacy_napisem_jest_nieznanym_kluczem(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, 1: x}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "a").count(NIEZNANY_KLUCZ) == 1
+
+
+def test_dwa_nieznane_klucze_daja_po_jednym_problemie_na_klucz(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, kolor: zielony, waga: 3}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    komunikaty = [p.komunikat for p in problemy if p.kod == NIEZNANY_KLUCZ and p.krok == "a"]
+    assert len(komunikaty) == 2
+    assert any("kolor" in k for k in komunikaty) and any("waga" in k for k in komunikaty)
+
+
+def test_komunikat_naruszenia_niezmiennika_zaczyna_sie_od_jego_nazwy(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, model: opus}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, "role_binding", "a").komunikat.startswith("niezmiennik role_binding:")
+
+
+def test_krok_niepoprawny_przy_wczytaniu_nie_jest_sprawdzany_pod_katem_niezmiennikow(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    plik = tmp_path / "workflow.yaml"
+    plik.write_text(
+        """
+name: w
+steps:
+  zepsuty: {skill: s, fanout: "3", model: opus, kolor: zielony}
+""",
+        encoding="utf-8",
+    )
+    wf, _ = wczytaj_workflow(plik)
+    assert wf is not None and "zepsuty" in wf.niepoprawne
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "zepsuty") == []

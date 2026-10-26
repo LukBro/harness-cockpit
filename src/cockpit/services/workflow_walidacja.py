@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cockpit.services.skills import Rejestr
+from cockpit.services.skills import Rejestr, Skill
+from cockpit.services.walidacja import KLUCZ_ROLI, KLUCZE_DEFINICJI, waliduj_definicje
 from cockpit.services.workflow import Krok, Poziom, Problem, Workflow
 
 # Kody problemow. Kanwa i testy dopasowuja sie po nich, nie po tresci komunikatow.
@@ -22,6 +23,9 @@ FOREACH_BEZ_PRODUCENTA = "foreach_bez_producenta"
 FOREACH_ZLY_FORMAT = "foreach_zly_format"
 RETRY_NIE_WSTECZ = "retry_nie_wstecz"
 NIEPRZENOSNY_SKILL = "nieprzenosny_skill"
+NIEZNANY_KLUCZ = "nieznany_klucz"
+
+_POLA_KROKU = frozenset(Krok.model_fields) - {"id"}
 
 
 def _przodkowie(start: str, needs: dict[str, list[str]]) -> set[str]:
@@ -87,6 +91,28 @@ def _nieznany_skill(krok: Krok, rejestr: Rejestr) -> Problem:
     return Problem(krok.id, NIEZNANY_SKILL, f"nieznany skill: {krok.skill}")
 
 
+def _niezmienniki_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> list[Problem]:
+    """Naruszenia niezmiennikow (HAR-6) i nieznane klucze surowej mapy kroku.
+
+    Rola pochodzi z rejestru i nadpisuje `role` wpisane w kroku. Krok z nieznanym
+    skillem wolamy BEZ `role` (takze tej z pliku): bez roli `reviewer_readonly` i zgodnosc
+    tieru nie odpalaja, wiec nie ma falszywego naruszenia, a klucze zabronione dla kazdej
+    roli (`write`, `model`) nadal sa zglaszane. Do walidatora trafiaja tylko klucze-napisy.
+    """
+    surowy = workflow.surowy_krok(krok.id)
+    definicja = {k: v for k, v in surowy.items() if isinstance(k, str)}
+    definicja.pop(KLUCZ_ROLI, None)
+    if skill is not None:
+        definicja[KLUCZ_ROLI] = skill.role.value
+    problemy = [
+        Problem(krok.id, n.niezmiennik.value, str(n)) for n in waliduj_definicje(definicja)
+    ]
+    for klucz in surowy:
+        if klucz not in _POLA_KROKU and klucz not in KLUCZE_DEFINICJI:
+            problemy.append(Problem(krok.id, NIEZNANY_KLUCZ, f"nieznany klucz kroku: {klucz!r}"))
+    return problemy
+
+
 def _w_katalogu(sciezka: Path, katalog: Path) -> bool:
     try:
         sciezka.resolve().relative_to(katalog.resolve())
@@ -97,6 +123,9 @@ def _w_katalogu(sciezka: Path, katalog: Path) -> bool:
 
 def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Problem]:
     """Zwraca wszystkie problemy workflow; kolejnosc: kroki z pliku, potem kolejnosc sprawdzen.
+
+    Po sprawdzeniu skilla krok przechodzi przez niezmienniki i nieznane klucze
+    (`_niezmienniki_kroku`).
 
     Kroki z `workflow.niepoprawne` traktujemy jako istniejace (mozna na nie wskazac
     w `needs`), ale ich pol nie sprawdzamy i nic nie produkuja.
@@ -135,7 +164,8 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
         skill = rejestr.skille.get(krok.skill)
         if skill is None:
             problemy.append(_nieznany_skill(krok, rejestr))
-        else:
+        problemy.extend(_niezmienniki_kroku(krok, skill, workflow))
+        if skill is not None:
             dostepne = _produkowane(przodkowie, produkcja)
             for artefakt in skill.consumes:
                 if artefakt not in dostepne:
