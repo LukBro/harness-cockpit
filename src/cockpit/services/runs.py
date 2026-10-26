@@ -119,6 +119,21 @@ async def run_dla_najemcy(s: AsyncSession, run_id: str, tenant_id: str) -> Run:
     return run
 
 
+# Status runu wylicza kokpit ze zdarzenia; deklaracja runnera nie jest zrodlem prawdy.
+_STATUS_PO_ZDARZENIU = {"step_finished": RunStatus.to_accept, "step_failed": RunStatus.failed}
+_STATUSY_RUCHOME_ZDARZENIAMI = {RunStatus.running, RunStatus.to_accept}
+
+
+def nastepny_status(obecny: RunStatus, kind: str) -> RunStatus:
+    docelowy = _STATUS_PO_ZDARZENIU.get(kind)
+    if docelowy is None or obecny not in _STATUSY_RUCHOME_ZDARZENIAMI:
+        return obecny
+    # pozniejsza porazka przykrywa sukces, ale sukces nie cofa porazki
+    if obecny == RunStatus.to_accept and docelowy != RunStatus.failed:
+        return obecny
+    return docelowy
+
+
 async def zapisz_zdarzenie(
     s: AsyncSession,
     run: Run,
@@ -131,7 +146,6 @@ async def zapisz_zdarzenie(
     cost_source: str = "unavailable",
     tokens: int | None = None,
     duration_ms: int | None = None,
-    status: RunStatus | None = None,
 ) -> Event:
     naruszenie = sprawdz_pomiar(cost_usd, cost_source)
     if naruszenie is not None:
@@ -147,8 +161,7 @@ async def zapisz_zdarzenie(
                agent_id=agent_id, kind=kind, text=text, cost_usd=cost_usd,
                cost_source=cost_source, tokens=tokens, duration_ms=duration_ms)
     s.add(ev)
-    if status is not None:
-        run.status = status
+    run.status = nastepny_status(run.status, kind)
     await s.commit()
     return ev
 

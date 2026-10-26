@@ -152,8 +152,7 @@ async def test_run_zakonczony_sukcesem_ma_stan_do_odbioru_nie_gotowe(klient):
     """BRO-108: odbior jest czynnoscia czlowieka."""
     run_id = (await klient.post("/api/runs", json={})).json()["run_id"]
     await klient.post("/api/events",
-                      json={"run_id": run_id, "kind": "step_finished",
-                            "status": "to_accept"},
+                      json={"run_id": run_id, "kind": "step_finished"},
                       headers={"Authorization": "Bearer tajne"})
     assert (await klient.get(f"/api/runs/{run_id}")).json()["status"] == "to_accept"
 
