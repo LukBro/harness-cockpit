@@ -5,3 +5,5 @@
 - HAR-2: Test nazwany wynikiem reguły dziedzinowej uruchamia produkcyjny kod tej reguły (prawdziwą aplikację, prawdziwy punkt wejścia) i sprawdza jej skutek w danych (np. który runner dostał run), a nie tylko kod odpowiedzi.
 - HAR-2: Test reguły wyboru zasobu (runner, run, zdarzenie) zawsze ma w bazie co najmniej dwa zespoły i sprawdza, że rekord innego zespołu nie zostaje wybrany, bo filtr `tenant_id` jest niezmiennikiem, a nie szczegółem zapytania.
 - HAR-3: Asercja, która twierdzi, że coś nie powstało w danych, sprawdza dane; stan interfejsu wynikający wprost z kodu odpowiedzi nie dowodzi niczego o bazie.
+- HAR-7: Test złego typu używa wartości, którą odrzuca tylko implementowana reguła (napis zamiast liczby, `yes` zamiast bool), a nie wartości, którą odrzuca każda implementacja, bo tylko taki test chroni regułę przed usunięciem.
+- HAR-7: Każda reguła zapisu, która ma osobną ścieżkę dla kroków niepoprawnych, ma test zapisu z takim krokiem w pliku, bo bez niego usunięcie tej ścieżki oznacza ciche kasowanie danych użytkownika.
