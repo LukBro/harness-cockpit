@@ -83,7 +83,4 @@ def normalize(payload: dict[str, Any]) -> Event:
             ev.event = f"phase_{edge}"
             ev.tool = None
 
-    if name == "SubagentStop":
-        ev.status = "completed"
-
     return ev

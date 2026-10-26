@@ -20,14 +20,20 @@ def test_normalize_phase_event():
     assert (ev.event, ev.phase, ev.tool) == ("phase_end", "C", None)
 
 
-def test_normalize_subagent():
+def test_zakonczenie_subagenta_nie_ma_statusu_bez_zrodla():
+    # Payload SubagentStop niesie tylko agent_id i agent_type, nic o wyniku.
+    # Brak informacji zapisujemy jako brak (measured_or_null), nie jako powodzenie.
     ev = normalize({
         "hook_event_name": "SubagentStop",
         "session_id": "s1",
         "agent_id": "a7",
         "agent_type": "Explore",
     })
-    assert (ev.agent_id, ev.agent_type, ev.status) == ("a7", "Explore", "completed")
+    assert ev.agent_id == "a7"
+    assert ev.agent_type == "Explore"
+    assert ev.status is None
+    # Skutek w danych trafiajacych do NDJSON: pole statusu w ogole nie powstaje.
+    assert "status" not in ev.to_dict()
 
 
 def test_unknown_event_survives():
