@@ -35,3 +35,17 @@ i i tak wracały w następnym tickecie — to jest jedna zasada, nie jedenaście
 - Dla każdej nowej gałęzi, elementu zbioru, trybu i zakresu w diffie: wskaż test,
   który oblewa po jej usunięciu. Brak takiego testu = **-25**.
 - Przeżywający mutant w zmienionym pliku (mutation-check) = **-25**.
+
+## Regresja
+
+Źródło: retro sprintu M1.1. Reguła istnieje i nadal jest łamana — HAR-10
+(krytyk: „korekta WRACA — wzorzec HAR-6”), wcześniej HAR-2, 3, 5, 6, 7, 8, 9.
+
+Nowy kształt tego samego wzorca — **zawężenie wzorca albo klasy znaków**
+(`[A-Za-z0-9_]` zamiast `\w`, kotwica, węższa alternatywa): test ma wejście,
+które **tylko zawężenie** odrzuca. Wejście parsowane tak samo przez wersję
+szerszą nie chroni zawężenia przed cofnięciem (HAR-10: `xǁAǁBǁc__mutmut_1`
+zabija mutanta `\w`, bo `\w` dopasowuje `ǁ`).
+
+Tekst reguły nie wystarcza — kandydat na egzekucję automatyczną (hook /
+mutation-check na zmienionych plikach przed werdyktem krytyka).
