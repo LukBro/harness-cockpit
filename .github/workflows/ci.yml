@@ -100,5 +100,12 @@ jobs:
       - name: Przegladarka Chromium
         run: playwright install --with-deps chromium
 
+      - name: Test migracji - schemat i odwracalnosc na PostgreSQL
+        run: pytest -v -rs tests/test_migracje.py
+        env:
+          COCKPIT_WYMAGAJ_BAZY: "1"
+
       - name: Test e2e - przelot w przegladarce na PostgreSQL
         run: pytest -m e2e
+        env:
+          COCKPIT_WYMAGAJ_BAZY: "1"
