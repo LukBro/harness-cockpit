@@ -119,6 +119,22 @@ async def run_dla_najemcy(s: AsyncSession, run_id: str, tenant_id: str) -> Run:
     return run
 
 
+async def run_runnera(s: AsyncSession, run_id: str, runner: Runner) -> Run:
+    """Zdarzenia przyjmujemy tylko od runnera, ktoremu run zlecono (HAR-19).
+
+    Run cudzego runnera jest dla niego nieznany - ten sam komunikat co dla
+    nieistniejacego, zeby nie ujawniac istnienia runu.
+    """
+    run = await s.get(Run, run_id)
+    if (
+        run is None
+        or run.tenant_id != runner.tenant_id
+        or run.runner_id != runner.id
+    ):
+        raise NieZnaleziono("run nieznany")
+    return run
+
+
 # Status runu wylicza kokpit ze zdarzenia; deklaracja runnera nie jest zrodlem prawdy.
 _STATUS_PO_ZDARZENIU = {"step_finished": RunStatus.to_accept, "step_failed": RunStatus.failed}
 _STATUSY_RUCHOME_ZDARZENIAMI = {RunStatus.running, RunStatus.to_accept}

@@ -133,7 +133,7 @@ async def ingest_event(
     s: AsyncSession = Depends(get_session),
 ) -> dict[str, int]:
     r = await uslugi.runner_po_tokenie(s, authorization)
-    run = await uslugi.run_dla_najemcy(s, body.run_id, r.tenant_id)
+    run = await uslugi.run_runnera(s, body.run_id, r)
     ev = await uslugi.zapisz_zdarzenie(
         s, run, kind=body.kind, step_id=body.step_id, agent_id=body.agent_id,
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
