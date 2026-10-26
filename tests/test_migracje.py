@@ -14,7 +14,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import text
+from sqlalchemy import Column, MetaData, String, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from cockpit.db.models import Base, RunnerKind, RunStatus
@@ -54,9 +54,9 @@ def _z_polaczeniem(funkcja):
     return asyncio.run(_biegnij())
 
 
-def _roznice_schematu():
+def _roznice_schematu(metadata: MetaData = Base.metadata):
     return _z_polaczeniem(
-        lambda c: compare_metadata(MigrationContext.configure(c), Base.metadata)
+        lambda c: compare_metadata(MigrationContext.configure(c), metadata)
     )
 
 
@@ -121,3 +121,28 @@ def test_cofniecie_migracji_zostawia_pusta_baze_bez_typow(cfg):
     tabele, typy = _tabele_i_typy_w_public()
     assert not (TABELE_MODELU & tabele), f"zostaly tabele: {TABELE_MODELU & tabele}"
     assert not (TYPY_ENUM & typy), f"zostaly typy enum: {TYPY_ENUM & typy}"
+
+
+def test_zmiana_modelu_bez_migracji_daje_roznice_w_schemacie(cfg):
+    kolumny_przed = {t.name: set(t.columns.keys()) for t in Base.metadata.sorted_tables}
+    command.upgrade(cfg, "head")
+
+    # kopia modelu: nie dotykamy Base.metadata wspolnego dla calego przebiegu testow
+    kopia = MetaData()
+    for tabela in Base.metadata.sorted_tables:
+        tabela.to_metadata(kopia)
+    kopia.tables["tenant"].append_column(Column("kolumna_spoza_migracji", String(50)))
+
+    roznice = _roznice_schematu(kopia)
+
+    # dokladnie ta jedna zmiana, nie jakakolwiek przypadkowa roznica
+    assert len(roznice) == 1, f"oczekiwano jednej roznicy, jest: {roznice}"
+    rodzaj, _schemat, tabela, kolumna = roznice[0]
+    assert (rodzaj, tabela, kolumna.name) == (
+        "add_column",
+        "tenant",
+        "kolumna_spoza_migracji",
+    )
+
+    kolumny_po = {t.name: set(t.columns.keys()) for t in Base.metadata.sorted_tables}
+    assert kolumny_po == kolumny_przed, "test zostawil slad w Base.metadata"
