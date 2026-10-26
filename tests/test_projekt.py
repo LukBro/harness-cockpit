@@ -4,6 +4,7 @@ Testy przed implementacją (HAR-31). Bez bazy danych, wszystko na tmp_path.
 Kody problemów porównujemy ze stałymi modułu, nie z treścią komunikatów.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -17,10 +18,13 @@ from cockpit.services.projekt import (
     NIEPOPRAWNY_YAML,
     PLIK_PROJEKTU,
     ZDUPLIKOWANY_KLUCZ,
+    Pominiecie,
     Projekt,
+    pominiete_kroki,
     wczytaj_projekt,
 )
-from cockpit.services.workflow import Poziom, Problem, ma_bledy
+from cockpit.services.skills import rozstrzygnij_rejestr
+from cockpit.services.workflow import Poziom, Problem, Workflow, ma_bledy, wczytaj_workflow
 
 TRZY_CAPABILITIES = """\
 stack: [python, postgres]
@@ -375,3 +379,160 @@ def test_kilka_blednych_capabilities_daje_osobny_problem_dla_kazdej(tmp_path: Pa
     assert projekt is not None
     assert projekt.capabilities == {"test": "pytest -q"}
     assert ma_bledy(problemy)
+
+
+# --- pominiete kroki: brak capability to pominiecie z powodem, nie blad (HAR-32) ---
+
+
+def _skill(repo: Path, id: str, needs: list[str] | None = None) -> None:
+    katalog = repo / ".cockpit" / "skills" / id
+    katalog.mkdir(parents=True, exist_ok=True)
+    linie = [f"id: {id}", f"name: {id}", "role: author"]
+    if needs:
+        linie.append(f"needs: [{', '.join(needs)}]")
+    (katalog / "SKILL.md").write_text("---\n" + "\n".join(linie) + "\n---\nBrief.\n", encoding="utf-8")
+
+
+def _workflow(tmp_path: Path, kroki: str, *, bez_problemow: bool = True) -> Workflow:
+    plik = tmp_path / "workflow.yaml"
+    plik.write_text("name: w\nsteps:\n" + kroki, encoding="utf-8")
+    workflow, problemy = wczytaj_workflow(plik)
+    assert workflow is not None
+    if bez_problemow:
+        assert problemy == []
+    return workflow
+
+
+def _pominiete(tmp_path: Path, workflow: Workflow, capabilities: dict[str, str]) -> list[Pominiecie]:
+    repo = tmp_path / "repo"
+    dom = tmp_path / "dom"
+    dom.mkdir(exist_ok=True)
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+    if capabilities:
+        # json.dumps daje poprawny cytowany napis YAML (znaki specjalne w komendach)
+        wpisy = "".join(f"  {nazwa}: {json.dumps(komenda)}\n" for nazwa, komenda in capabilities.items())
+        _zapisz(repo, "capabilities:\n" + wpisy)
+    else:
+        _zapisz(repo, "capabilities: {}\n")
+    projekt, problemy = wczytaj_projekt(repo)
+    assert projekt is not None and problemy == []
+    return pominiete_kroki(workflow, rejestr, projekt)
+
+
+def test_krok_wymagajacy_e2e_w_projekcie_bez_e2e_jest_pominiety_z_powodem(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e"])
+    workflow = _workflow(tmp_path, "  sprawdz: {skill: tester}\n")
+
+    wynik = _pominiete(tmp_path, workflow, {"test": "pytest -q"})
+
+    assert wynik == [Pominiecie(krok="sprawdz", powod="brak capability e2e", brakujace=("e2e",))]
+
+
+def test_krok_z_kompletem_capabilities_nie_jest_pominiety(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e", "lint"])
+    workflow = _workflow(tmp_path, "  sprawdz: {skill: tester}\n")
+
+    assert _pominiete(tmp_path, workflow, {"e2e": "playwright test", "lint": "ruff check ."}) == []
+
+
+def test_skill_bez_wymaganych_capabilities_nigdy_nie_jest_pominiety(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "pisarz")
+    workflow = _workflow(tmp_path, "  pisz: {skill: pisarz}\n")
+
+    assert _pominiete(tmp_path, workflow, {}) == []
+
+
+def test_dwie_brakujace_capabilities_daja_jedno_pominiecie_z_obiema_nazwami(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e", "lint"])
+    workflow = _workflow(tmp_path, "  sprawdz: {skill: tester}\n")
+
+    wynik = _pominiete(tmp_path, workflow, {})
+
+    assert wynik == [
+        Pominiecie(krok="sprawdz", powod="brak capability e2e, lint", brakujace=("e2e", "lint"))
+    ]
+
+
+def test_kolejnosc_nazw_w_powodzie_wynika_z_needs_skilla_nie_z_alfabetu(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["lint", "e2e"])
+    workflow = _workflow(tmp_path, "  sprawdz: {skill: tester}\n")
+
+    wynik = _pominiete(tmp_path, workflow, {})
+
+    assert wynik == [
+        Pominiecie(krok="sprawdz", powod="brak capability lint, e2e", brakujace=("lint", "e2e"))
+    ]
+
+
+def test_czesciowo_spelnione_wymagania_wymieniaja_tylko_brakujaca_capability(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e", "lint"])
+    workflow = _workflow(tmp_path, "  sprawdz: {skill: tester}\n")
+
+    wynik = _pominiete(tmp_path, workflow, {"lint": "ruff check ."})
+
+    assert wynik == [Pominiecie(krok="sprawdz", powod="brak capability e2e", brakujace=("e2e",))]
+
+
+def test_pominiecia_sa_w_kolejnosci_krokow_workflow_nie_alfabetycznie(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "zeta", needs=["e2e"])
+    _skill(repo, "alfa", needs=["lint"])
+    workflow = _workflow(
+        tmp_path,
+        "  zzz_pierwszy: {skill: zeta}\n  aaa_drugi: {skill: alfa}\n",
+    )
+
+    wynik = _pominiete(tmp_path, workflow, {})
+
+    assert wynik == [
+        Pominiecie(krok="zzz_pierwszy", powod="brak capability e2e", brakujace=("e2e",)),
+        Pominiecie(krok="aaa_drugi", powod="brak capability lint", brakujace=("lint",)),
+    ]
+
+
+def test_krok_z_nieznanym_skillem_nie_jest_pomijany_z_powodu_capability(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e"])
+    workflow = _workflow(
+        tmp_path,
+        "  duch: {skill: nie-ma-takiego}\n  sprawdz: {skill: tester}\n",
+    )
+
+    wynik = _pominiete(tmp_path, workflow, {})
+
+    assert wynik == [Pominiecie(krok="sprawdz", powod="brak capability e2e", brakujace=("e2e",))]
+
+
+def test_krok_z_blednym_polem_nie_trafia_do_pominiec_mimo_braku_capability(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e"])
+    workflow = _workflow(
+        tmp_path,
+        '  zepsuty: {skill: tester, fanout: "3"}\n  sprawdz: {skill: tester}\n',
+        bez_problemow=False,
+    )
+    assert workflow.niepoprawne == ["zepsuty"]
+
+    wynik = _pominiete(tmp_path, workflow, {})
+
+    assert [p.krok for p in wynik] == ["sprawdz"]
+
+
+def test_krok_zalezny_od_pominietego_nie_jest_pomijany_przez_funkcje_planujaca(tmp_path: Path):
+    repo = tmp_path / "repo"
+    _skill(repo, "tester", needs=["e2e"])
+    _skill(repo, "pisarz")
+    workflow = _workflow(
+        tmp_path,
+        "  sprawdz: {skill: tester}\n  podsumuj: {skill: pisarz, needs: [sprawdz]}\n",
+    )
+
+    wynik = _pominiete(tmp_path, workflow, {})
+
+    assert wynik == [Pominiecie(krok="sprawdz", powod="brak capability e2e", brakujace=("e2e",))]
