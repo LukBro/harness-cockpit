@@ -23,12 +23,22 @@ Lista jest bytem w kodzie, nie zbiorem zdań. Walidator sprawdza każdy punkt.
   Decyzja BRO-128, szczegóły w BRO-108.
 - `run_dir_outside_repo` — artefakty runu nie lądują w repozytorium użytkownika
 - `measured_or_null` — brak pomiaru zapisujemy jako brak, NIGDY jako zero
+- `evidence_required` — brak dowodu (pusty wynik komendy, brak pliku werdyktu) to błąd kroku, NIGDY zielone przejście
 
 ## Role
 
 Skill ma jedną z czterech ról (`Rola` w `src/cockpit/services/invariants.py`):
-`author`, `reviewer`, `executor`, `gatherer`. Powiązanie roli z tierem i prawem
-zapisu (`role_binding`) dochodzi osobno.
+`author`, `reviewer`, `executor`, `gatherer`.
+
+| Rola | Tier | Zapis |
+| -- | -- | -- |
+| `author` | `judgment` | tak |
+| `reviewer` | `judgment` | nie |
+| `executor` | `execution` | tak |
+| `gatherer` | `retrieval` | nie |
+
+Jedynym źródłem tieru i prawa zapisu jest `profil_roli(rola)` w `invariants.py`.
+Model ustawia się w profilu backendu u runnera (BRO-98), nie w workflow.
 
 ## Granice — MUST / NEVER
 

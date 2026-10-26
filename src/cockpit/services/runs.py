@@ -16,7 +16,7 @@ from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
 from cockpit.settings import settings
 
 from .errors import BrakDostepu, NaruszonyNiezmiennik, NieZnaleziono, StanNiemozliwy
-from .invariants import Niezmiennik
+from .walidacja import sprawdz_pomiar
 
 
 def hash_token(token: str) -> str:
@@ -133,12 +133,9 @@ async def zapisz_zdarzenie(
     duration_ms: int | None = None,
     status: RunStatus | None = None,
 ) -> Event:
-    if cost_usd == 0.0 and cost_source == "unavailable":
-        # BRO-87: zero znaczy ZMIERZONE zero. Brak pomiaru to None.
-        raise NaruszonyNiezmiennik(
-            Niezmiennik.measured_or_null,
-            "koszt 0 przy zrodle 'unavailable' - brak pomiaru zapisz jako None",
-        )
+    naruszenie = sprawdz_pomiar(cost_usd, cost_source)
+    if naruszenie is not None:
+        raise NaruszonyNiezmiennik(naruszenie.niezmiennik, naruszenie.szczegol)
 
     seq = (
         await s.execute(
