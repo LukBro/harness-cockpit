@@ -62,7 +62,6 @@ class Runner:
             duration_ms=ms,
             cost_usd=None,                   # subskrypcja nie podaje ceny
             cost_source="unavailable",
-            status="to_accept" if ok else "failed",
         )
 
     async def listen(self) -> None:

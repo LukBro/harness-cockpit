@@ -19,7 +19,6 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from cockpit.db.models import RunStatus
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
 from cockpit.services.errors import (
@@ -69,7 +68,6 @@ class EventIn(BaseModel):
     cost_source: str = "unavailable"
     tokens: int | None = None
     duration_ms: int | None = None
-    status: RunStatus | None = None
 
 
 @app.get("/api/health")
@@ -139,7 +137,7 @@ async def ingest_event(
     ev = await uslugi.zapisz_zdarzenie(
         s, run, kind=body.kind, step_id=body.step_id, agent_id=body.agent_id,
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
-        tokens=body.tokens, duration_ms=body.duration_ms, status=body.status,
+        tokens=body.tokens, duration_ms=body.duration_ms,
     )
     await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
                                      "step_id": ev.step_id})
