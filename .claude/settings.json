@@ -5,6 +5,41 @@
     "MONOLYNX_AUTOTEST": "true",
     "MONOLYNX_AUTOCOMMIT": "true",
     "MONOLYNX_AUTOPUSH": "true",
-    "MONOLYNX_BASE_BRANCH": "main"
+    "MONOLYNX_AUTOMR": "true",
+    "MONOLYNX_CONTRACT": "auto"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(python tools/check_layers.py)",
+      "Bash(python3 tools/check_layers.py)",
+      "Bash(python3 */skills/*/scripts/monolynx_op.py *)",
+      "Bash(python3 */skills/*/scripts/monolynx_transport.py)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push -u origin worktree-*)",
+      "Bash(git push origin worktree-*)",
+      "mcp__monolynx"
+    ],
+    "ask": [
+      "Bash(git commit --amend:*)",
+      "Bash(pip install:*)",
+      "Bash(uv add:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push * main)",
+      "Bash(git push * main:*)"
+    ]
   }
 }
