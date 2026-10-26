@@ -1,0 +1,24 @@
+# Baza testowa lokalnie - to samo, co usluga postgres w job e2e z .github/workflows/ci.yml.
+name: harness-cockpit
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      # Jednorazowy kontener testowy, nie sekret produkcyjny - jak w ci.yml.
+      POSTGRES_USER: cockpit
+      POSTGRES_PASSWORD: cockpit
+      POSTGRES_DB: cockpit_test
+    ports:
+      - "${COCKPIT_PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cockpit", "-d", "cockpit_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+# Wolumen nazwany: dane zyja poza repozytorium.
+volumes:
+  pgdata:
