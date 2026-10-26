@@ -21,6 +21,7 @@ KLUCZ_TIERU = "tier"
 KLUCZ_MODELU = "model"
 KLUCZE_ZAPISU = ("write", "zapis", "can_write")
 KLUCZE_KOMENDY = ("command", "run")  # klucz komendy nie jest jeszcze ustalony
+KLUCZE_DEFINICJI = frozenset({KLUCZ_ROLI, KLUCZ_TIERU, KLUCZ_MODELU, *KLUCZE_ZAPISU, *KLUCZE_KOMENDY})
 
 _PRAWDA = frozenset({"true", "yes", "tak", "on", "1"})
 # opcje globalne gita, ktore biora argument w osobnym tokenie

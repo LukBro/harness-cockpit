@@ -12,3 +12,4 @@
 - HAR-6: Każda gałąź kodu chroniącego niezmiennik ma test na wejściu, które trafia dokładnie w tę gałąź, bo bez niego usunięcie gałęzi zostawia cichą lukę w ochronie.
 - HAR-6: Każdy element zbioru lub tabeli, który rozszerza wykrywanie naruszenia niezmiennika (np. znak separatora powłoki), ma własny przypadek testowy, bo usunięcie jednego elementu otwiera konkretne obejście, którego nie złapie żaden inny przypadek.
 - HAR-6: Każdy element zbioru, który rozszerza wykrywanie naruszenia niezmiennika, ma przypadek testowy, w którym tylko ten element decyduje o wykryciu (np. separator doklejony bez spacji, `ls|git push`, albo opcja z osobnym argumentem), bo przypadek wykrywany także bez tego elementu nie chroni go przed usunięciem.
+- HAR-9: Każda reguła, która usuwa albo podmienia wartość z pliku zależnie od stanu rejestru, ma test na wejściu, w którym ta wartość z pliku istnieje i zmieniłaby wynik, gdyby reguły nie było.
