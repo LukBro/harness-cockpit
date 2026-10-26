@@ -148,7 +148,7 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
     skille_repo = dom / ".cockpit" / "skills"
 
     for krok in workflow.kroki:
-        for cel in krok.needs:
+        for cel in dict.fromkeys(krok.needs):
             if cel not in istniejace:
                 problemy.append(
                     Problem(krok.id, NIEZNANA_ZALEZNOSC, f"krok zalezy od nieznanego kroku: {cel}")

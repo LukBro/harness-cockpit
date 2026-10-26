@@ -928,3 +928,80 @@ steps:
     assert wf is not None and "zepsuty" in wf.niepoprawne
     problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
     assert kody(problemy, "zepsuty") == []
+
+
+# --- HAR-10: powtórzona zależność i puste części foreach -----------------
+
+
+def test_ta_sama_nieznana_zaleznosc_wpisana_dwa_razy_daje_jeden_problem(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, needs: [duch, duch]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "a").count(NIEZNANA_ZALEZNOSC) == 1
+
+
+def test_nieznane_zaleznosci_sa_zgloszone_w_kolejnosci_pierwszego_wystapienia(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, needs: [duch, inny, duch]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    nieznane = [p for p in problemy if p.kod == NIEZNANA_ZALEZNOSC and p.krok == "a"]
+    assert len(nieznane) == 2
+    # kolejność z pliku, nie z set(): usuwamy powtórzenia, nie porządek
+    assert "duch" in nieznane[0].komunikat
+    assert "inny" in nieznane[1].komunikat
+
+
+def test_foreach_z_pustym_polem_ma_zly_format_choc_artefakt_ma_producenta(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", produces=["plan.json"])
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  pisz: {skill: pisarz}
+  rozdziel: {skill: s, needs: [pisz], foreach: "plan.json#"}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, FOREACH_ZLY_FORMAT, "rozdziel")
+    assert FOREACH_BEZ_PRODUCENTA not in kody(problemy, "rozdziel")
+
+
+def test_foreach_z_pustym_artefaktem_ma_zly_format_a_nie_brak_producenta(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", produces=["plan.json"])
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  pisz: {skill: pisarz}
+  rozdziel: {skill: s, needs: [pisz], foreach: "#zadania"}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, FOREACH_ZLY_FORMAT, "rozdziel")
+    assert FOREACH_BEZ_PRODUCENTA not in kody(problemy, "rozdziel")

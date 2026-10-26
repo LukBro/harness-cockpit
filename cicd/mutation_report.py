@@ -38,6 +38,10 @@ Survivor: dokladnie 7 kluczy - file, line (int|None), mutator, original
 tlumaczenia), description (str|None). Kolejnosc survivorow = kolejnosc w
 raporcie zrodlowym.
 
+W mutmut linia z id mutanta (zawiera "__mutmut_"), ktorego ksztalt nie pasuje
+do funkcji ani metody klasy, jest bledem wejscia; ostrzezenia narzedzia sa
+ignorowane.
+
 Kazdy zbior literalow statusow ponizej jest wyprowadzony z realnego
 fixture'u przechwyconego zgodnie z .claude/rules/external-tool-output.md
 (patrz komentarze WHY przy kazdej stalej) - nigdy z wyobrazenia autora.
@@ -288,7 +292,12 @@ def _parse_pit_xml(path: Path) -> dict[str, Any]:
 # skladniowo do "<token>: <reszta>" - dopiero struktura id w _MUTMUT_ID_RE
 # odsiewa prawdziwe wyniki (patrz tests/fixtures/mutmut/results.3.8.0.txt).
 _MUTMUT_LINE_RE = re.compile(r"^\s*(\S+): (.+?)\s*$")
-_MUTMUT_ID_RE = re.compile(r"^(.*)\.x_(\w+)__mutmut_(\d+)$")
+# Dwa ksztalty id mutmut 3: funkcja modulu "pakiet.modul.x_funkcja__mutmut_N" i
+# metoda klasy "pakiet.modul.xǁKlasaǁmetoda__mutmut_N" (takze dunder, np.
+# "__init__"). Nazwy to jawne [A-Za-z0-9_], bo \w dopasowuje tez separator ǁ
+# (U+01C1) i skleilby klase z metoda.
+_MUTMUT_FUNC_ID_RE = re.compile(r"^(.+)\.x_([A-Za-z0-9_]+)__mutmut_(\d+)$")
+_MUTMUT_METHOD_ID_RE = re.compile(r"^(.+)\.xǁ([A-Za-z0-9_]+)ǁ([A-Za-z0-9_]+)__mutmut_(\d+)$")
 
 # Zaobserwowane jako linie wyniku w tests/fixtures/mutmut/results-all.3.8.0.txt.
 _MUTMUT_SURVIVED = {"survived", "no tests"}
@@ -312,12 +321,21 @@ def _parse_mutmut(path: Path) -> dict[str, Any]:
         if line_match is None:
             continue
         candidate_id, status = line_match.group(1), line_match.group(2)
-        id_match = _MUTMUT_ID_RE.match(candidate_id)
-        if id_match is None:
+        method_match = _MUTMUT_METHOD_ID_RE.match(candidate_id)
+        func_match = _MUTMUT_FUNC_ID_RE.match(candidate_id)
+        if method_match is not None:
+            module_part, class_name, method_name, _mutant_number = method_match.groups()
+            description = f"{class_name}.{method_name}"
+        elif func_match is not None:
+            module_part, description, _mutant_number = func_match.groups()
+        elif "__mutmut_" in candidate_id:
+            # id mutanta w nieznanym ksztalcie to zmiana formatu narzedzia:
+            # pominiecie po cichu zanizyloby total i zawyzylo score
+            raise _InputError(f"mutmut: nierozpoznany identyfikator mutanta '{candidate_id}'")
+        else:
             continue
 
         recognized += 1
-        module_part, function_name, _mutant_number = id_match.groups()
         if status in _MUTMUT_KILLED:
             killed += 1
             continue
@@ -334,7 +352,7 @@ def _parse_mutmut(path: Path) -> dict[str, Any]:
                 original=None,
                 replacement=None,
                 status=status,
-                description=function_name,
+                description=description,
             )
         )
 

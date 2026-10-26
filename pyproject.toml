@@ -63,4 +63,5 @@ also_copy = [
   "src/cockpit/collector/",
   "src/cockpit/web/",
   "tools/",
+  "cicd/",
 ]
