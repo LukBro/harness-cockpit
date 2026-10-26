@@ -38,6 +38,19 @@ Lista jest bytem w kodzie, nie zbiorem zdań. Walidator sprawdza każdy punkt.
 - NEVER: sekret w `argv` (widoczny w `ps`) ani w logach bez maskowania.
 - NEVER: własna kryptografia na pliku z sekretami — prawa `0600` i `.gitignore`.
 
+## Commity — MUST / NEVER
+
+- MUST: autor commita to wyłącznie `LukBro <lukaszbrowar@gmail.com>`. Przed
+  commitem sprawdź `git config user.email`.
+  WHY: globalna tożsamość git na tej maszynie to adres służbowy, który nie może
+  trafić do tego prywatnego projektu.
+- NEVER: linia `Co-Authored-By: Claude` ani żaden inny współautor w commicie.
+  Ta reguła ma pierwszeństwo przed domyślną atrybucją narzędzia.
+  WHY: decyzja właściciela repozytorium; sesje w tle (worktree) nie widzą pamięci
+  sesji głównej, więc reguła musi żyć tutaj.
+- NEVER: `--amend` ani przepisywanie commita, który jest już wypchnięty, bez
+  pytania.
+
 ## Decyzje implementacyjne
 
 | Rzecz | Wybór | Dlaczego |
