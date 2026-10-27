@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,30 +21,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
-from cockpit.services.errors import (
-    BladDziedziny,
-    BrakDostepu,
-    NaruszonyNiezmiennik,
-    NieZnaleziono,
-    StanNiemozliwy,
-)
 
 from . import bus
-
-_KODY = {BrakDostepu: 401, NieZnaleziono: 404, StanNiemozliwy: 409,
-         NaruszonyNiezmiennik: 422}
+from .bledy import zarejestruj_obsluge_bledow
 
 
 # Brak lifespan z create_all: schemat buduje `alembic upgrade head` (HAR-1).
 app = FastAPI(title="Harness Cockpit", version="0.1.0")
-
-
-@app.exception_handler(BladDziedziny)
-async def _blad_dziedziny(_: Request, exc: BladDziedziny):
-    from fastapi.responses import JSONResponse
-
-    kod = next((v for k, v in _KODY.items() if isinstance(exc, k)), 400)
-    return JSONResponse(status_code=kod, content={"detail": str(exc)})
+zarejestruj_obsluge_bledow(app)
 
 
 class RunnerRegister(BaseModel):
