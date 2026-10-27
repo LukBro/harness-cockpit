@@ -68,6 +68,7 @@ class EventIn(BaseModel):
     cost_source: str = "unavailable"
     tokens: int | None = None
     duration_ms: int | None = None
+    wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
 
 
 @app.get("/api/health")
@@ -138,6 +139,7 @@ async def ingest_event(
         s, run, kind=body.kind, step_id=body.step_id, agent_id=body.agent_id,
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
         tokens=body.tokens, duration_ms=body.duration_ms,
+        wyslane_output=body.wyslane_output,
     )
     await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
                                      "step_id": ev.step_id})
@@ -154,6 +156,7 @@ async def get_run(run_id: str, s: AsyncSession = Depends(get_session)) -> dict:
         "workflow": run.workflow,
         "status": run.status.value,
         "runner_kind": run.runner_kind.value,
+        "reason": run.reason,
         "events": [{"seq": e.seq, "kind": e.kind, "text": e.text, "step_id": e.step_id}
                    for e in rows],
     }

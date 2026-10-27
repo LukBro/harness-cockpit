@@ -19,6 +19,15 @@ from .errors import BrakDostepu, NaruszonyNiezmiennik, NieZnaleziono, StanNiemoz
 from .walidacja import sprawdz_pomiar
 
 
+_KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
+
+
+def komunikat_niepelnego_strumienia(zapisano: int, wyslano: int) -> str | None:
+    if zapisano == wyslano:
+        return None
+    return f"niepelny strumien: zapisano {zapisano} z {wyslano} zdarzen output"
+
+
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -162,6 +171,7 @@ async def zapisz_zdarzenie(
     cost_source: str = "unavailable",
     tokens: int | None = None,
     duration_ms: int | None = None,
+    wyslane_output: int | None = None,
 ) -> Event:
     naruszenie = sprawdz_pomiar(cost_usd, cost_source)
     if naruszenie is not None:
@@ -172,6 +182,20 @@ async def zapisz_zdarzenie(
             select(func.coalesce(func.max(Event.seq), 0)).where(Event.run_id == run.id)
         )
     ).scalar_one() + 1
+
+    if kind in _KONCZACE_KROK and wyslane_output is not None:
+        zapisano = (
+            await s.execute(
+                select(func.count()).select_from(Event).where(
+                    Event.run_id == run.id,
+                    Event.step_id == step_id,
+                    Event.kind == "output",
+                )
+            )
+        ).scalar_one()
+        komunikat = komunikat_niepelnego_strumienia(zapisano, wyslane_output)
+        if komunikat is not None:
+            run.reason = komunikat
 
     ev = Event(tenant_id=run.tenant_id, run_id=run.id, seq=seq, step_id=step_id,
                agent_id=agent_id, kind=kind, text=text, cost_usd=cost_usd,
