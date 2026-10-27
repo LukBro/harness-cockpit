@@ -37,6 +37,9 @@ jobs:
       - name: Granica warstw - api nie dotyka bazy
         run: python tools/check_layers.py
 
+      - name: Lint - ruff (E4, E7, E9, F)
+        run: ruff check .
+
   web:
     runs-on: ubuntu-24.04
     steps:

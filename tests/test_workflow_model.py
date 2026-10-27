@@ -471,13 +471,13 @@ PLIK_Z_KROKIEM_NIEPOPRAWNYM = (
 
 def _klucze_krokow(tekst: str) -> list[str]:
     """Linie kluczy krokow (wciecie 2) w kolejnosci z pliku."""
-    return [l for l in tekst.splitlines() if l.startswith("  ") and not l.startswith("   ")]
+    return [wiersz for wiersz in tekst.splitlines() if wiersz.startswith("  ") and not wiersz.startswith("   ")]
 
 
 def _blok_kroku(tekst: str, id_kroku: str) -> list[str]:
     """Linie kroku od jego klucza do nastepnego klucza kroku."""
     linie = tekst.splitlines()
-    start = next(i for i, l in enumerate(linie) if l.startswith(f"  {id_kroku}:"))
+    start = next(i for i, wiersz in enumerate(linie) if wiersz.startswith(f"  {id_kroku}:"))
     koniec = next((i for i in range(start + 1, len(linie)) if not linie[i].startswith("   ")), len(linie))
     return linie[start:koniec]
 
@@ -515,7 +515,7 @@ def test_przestawienie_krokow_poprawnych_zostawia_krok_niepoprawny_na_srodku_pli
     zapisz_workflow(workflow, plik)
     tekst = plik.read_text(encoding="utf-8")
 
-    assert [l.split(":")[0].strip() for l in _klucze_krokow(tekst)] == ["drugi", "zly", "pierwszy"]
+    assert [wiersz.split(":")[0].strip() for wiersz in _klucze_krokow(tekst)] == ["drugi", "zly", "pierwszy"]
     assert _blok_kroku(tekst, "zly") == przed
     ponownie, problemy2 = wczytaj_workflow(plik)
     assert ponownie is not None
