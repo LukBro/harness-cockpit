@@ -26,3 +26,16 @@ strumień ruszy — runner zostaje „online” na zawsze, kolejka nigdy nie jes
 - Zajęcie zasobu poza blokiem z `finally`, który go zwalnia = **-25**.
 - Każda gałąź tłumaczenia wyjątku ma test, który w nią trafia
   (zob. [test-odroznia-regule](test-odroznia-regule.md)).
+
+## Wąski `except` (retro M1.2)
+
+Źródło: HAR-13 (`except SQLAlchemyError` na cały przelot), HAR-25 (`except IntegrityError`
+przy kolizji numeru zdarzenia).
+
+- `except` łapie tylko wyjątek, który kod faktycznie obsługuje, i tylko wokół instrukcji,
+  która go rzuca. Szeroka klasa (`SQLAlchemyError`, `IntegrityError`, `Exception`) wokół
+  wielu kroków przypisuje błędowi złą przyczynę — błąd logiki staje się „błędem połączenia”,
+  a naruszenie innego ograniczenia „kolizją numeru” i jest ponawiane.
+- Gdy biblioteka nie rozróżnia przyczyn typem, rozróżnij je po danych wyjątku (nazwa
+  ograniczenia, kod błędu) i resztę przepuść dalej.
+- W review: szeroki `except` obejmujący więcej niż obsługiwaną przyczynę = **-25**.
