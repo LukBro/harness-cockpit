@@ -37,9 +37,6 @@ jobs:
       - name: Granica warstw - api nie dotyka bazy
         run: python tools/check_layers.py
 
-      - name: Przelot na wylot - runner -> cockpit -> SSE
-        run: python tools/demo_szkielet.py
-
   web:
     runs-on: ubuntu-24.04
     steps:
@@ -109,3 +106,8 @@ jobs:
         run: pytest -m e2e
         env:
           COCKPIT_WYMAGAJ_BAZY: "1"
+
+      - name: Przelot na wylot - runner -> cockpit -> SSE na PostgreSQL z alembic
+        run: python tools/demo_szkielet.py
+        env:
+          COCKPIT_DATABASE_URL: postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test
