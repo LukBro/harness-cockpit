@@ -22,3 +22,4 @@
 - HAR-43: Każda pętla przeglądająca zakres reguły (domknięcie przechodnie `needs`) ma test na grafie z rombem, w którym przerwanie pętli przy pierwszym ponownie spotkanym kroku gubi przodka, a ten przodek decyduje o wyniku.
 - HAR-24: Każdy element filtra zapytania liczącego (run, krok, rodzaj) ma test, w którym w danych istnieje rekord odrzucany wyłącznie przez ten element, bo inaczej usunięcie tego elementu przeżywa.
 - HAR-41: Każdy element klasy znaków i każdy parametr formatu wyjścia ustalony w decyzji ma test, w którym tylko ten element decyduje o wyniku (przyjęcie wartości albo dokładne bajty pliku); test, który czyta wynik przez `json.loads` albo sprawdza „zawiera”, nie chroni formatowania.
+- HAR-25: Każda funkcja wyliczająca wartość w zakresie (numer w obrębie runu, licznik w obrębie kroku) ma test, w którym poza zakresem istnieje rekord, który zmieniłby wynik, gdyby zakres zniknął.

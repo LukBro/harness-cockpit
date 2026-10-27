@@ -9,6 +9,7 @@ from collections.abc import Collection, Mapping
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
@@ -20,6 +21,15 @@ from .walidacja import sprawdz_pomiar
 
 
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
+_PROBY_SEQ = 5  # ile razy powtarzamy wyliczenie seq po kolizji (HAR-25)
+
+
+async def _nastepny_seq(s: AsyncSession, run_id: str) -> int:
+    return (
+        await s.execute(
+            select(func.coalesce(func.max(Event.seq), 0)).where(Event.run_id == run_id)
+        )
+    ).scalar_one() + 1
 
 
 def komunikat_niepelnego_strumienia(zapisano: int, wyslano: int) -> str | None:
@@ -177,33 +187,44 @@ async def zapisz_zdarzenie(
     if naruszenie is not None:
         raise NaruszonyNiezmiennik(naruszenie.niezmiennik, naruszenie.szczegol)
 
-    seq = (
-        await s.execute(
-            select(func.coalesce(func.max(Event.seq), 0)).where(Event.run_id == run.id)
-        )
-    ).scalar_one() + 1
+    # po rollbacku obiekty sesji sa wygaszone - trzymamy same napisy
+    run_id, tenant_id = run.id, run.tenant_id
 
-    if kind in _KONCZACE_KROK and wyslane_output is not None:
-        zapisano = (
-            await s.execute(
-                select(func.count()).select_from(Event).where(
-                    Event.run_id == run.id,
-                    Event.step_id == step_id,
-                    Event.kind == "output",
+    for _ in range(_PROBY_SEQ):
+        seq = await _nastepny_seq(s, run_id)
+        if kind in _KONCZACE_KROK and wyslane_output is not None:
+            zapisano = (
+                await s.execute(
+                    select(func.count()).select_from(Event).where(
+                        Event.run_id == run_id,
+                        Event.step_id == step_id,
+                        Event.kind == "output",
+                    )
                 )
-            )
-        ).scalar_one()
-        komunikat = komunikat_niepelnego_strumienia(zapisano, wyslane_output)
-        if komunikat is not None:
-            run.reason = komunikat
+            ).scalar_one()
+            komunikat = komunikat_niepelnego_strumienia(zapisano, wyslane_output)
+            if komunikat is not None:
+                run.reason = komunikat
 
-    ev = Event(tenant_id=run.tenant_id, run_id=run.id, seq=seq, step_id=step_id,
-               agent_id=agent_id, kind=kind, text=text, cost_usd=cost_usd,
-               cost_source=cost_source, tokens=tokens, duration_ms=duration_ms)
-    s.add(ev)
-    run.status = nastepny_status(run.status, kind)
-    await s.commit()
-    return ev
+        ev = Event(tenant_id=tenant_id, run_id=run_id, seq=seq, step_id=step_id,
+                   agent_id=agent_id, kind=kind, text=text, cost_usd=cost_usd,
+                   cost_source=cost_source, tokens=tokens, duration_ms=duration_ms)
+        s.add(ev)
+        run.status = nastepny_status(run.status, kind)
+        try:
+            await s.commit()
+        except IntegrityError:
+            # numer zajety przez rownolegly zapis: cofamy cala transakcje (zdarzenie
+            # i zmiany runu), wczytujemy run od nowa i liczymy numer, status i reason
+            # jeszcze raz. Rollback zamiast SAVEPOINT - dziala tak samo na SQLite i PG.
+            await s.rollback()
+            await s.refresh(run)
+            continue
+        return ev
+
+    raise StanNiemozliwy(
+        f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
+    )
 
 
 async def zdarzenia_runu(s: AsyncSession, run: Run) -> list[Event]:

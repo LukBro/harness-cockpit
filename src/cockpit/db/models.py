@@ -5,7 +5,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -71,7 +71,7 @@ class Run(Base):
 
 class Event(Base):
     __tablename__ = "event"
-    __table_args__ = (Index("ix_event_run_seq", "run_id", "seq"),)
+    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_event_run_seq"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
