@@ -70,9 +70,15 @@ async def seed():
         await s.commit()
 
 
-async def main():
-    await seed()
+async def zasiej():
+    try:
+        await seed()
+    finally:
+        # polaczenia asyncpg sa zwiazane z petla: przelot w nowej petli dostaje swieze
+        await engine.dispose()
 
+
+async def main():
     config = uvicorn.Config("cockpit.api.app:app", host="127.0.0.1", port=8799,
                             log_level="error")
     server = uvicorn.Server(config)
@@ -123,12 +129,17 @@ def migracje() -> Config:
 
 cfg = migracje()
 przyczyna = None
+kod = None
 try:
-    command.downgrade(cfg, "base")
-    command.upgrade(cfg, "head")
-    kod = asyncio.run(przelot())
-except (OSError, SQLAlchemyError) as e:
-    przyczyna = e
+    try:
+        # lapiemy tylko instrukcje laczace sie z baza; przelot ma wlasne bledy
+        command.downgrade(cfg, "base")
+        command.upgrade(cfg, "head")
+        asyncio.run(zasiej())
+    except (OSError, SQLAlchemyError) as e:
+        przyczyna = e
+    else:
+        kod = asyncio.run(przelot())
 finally:
     # sprzatanie nie moze zasloniac pierwotnej przyczyny porazki
     try:

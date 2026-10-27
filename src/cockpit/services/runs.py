@@ -22,6 +22,24 @@ from .walidacja import sprawdz_pomiar
 
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
 _PROBY_SEQ = 5  # ile razy powtarzamy wyliczenie seq po kolizji (HAR-25)
+_OGRANICZENIE_SEQ = "uq_event_run_seq"  # nazwa z UniqueConstraint(run_id, seq) w modelu
+_KOLUMNY_SEQ_SQLITE = frozenset({"event.run_id", "event.seq"})
+
+
+def _kolizja_numeru(e: IntegrityError) -> bool:
+    """Czy to naruszenie unikalnosci (run_id, seq), a nie inny blad zapisu (HAR-138)."""
+    sqlstate = getattr(e.orig, "sqlstate", None)
+    if sqlstate is not None:
+        # PostgreSQL: rozpoznajemy po kodzie i nazwie ograniczenia, nie po tresci
+        nazwa = getattr(getattr(e.orig, "orig", None), "constraint_name", None)
+        return sqlstate == "23505" and nazwa == _OGRANICZENIE_SEQ
+    # SQLite nie niesie nazwy ograniczenia, tylko liste kolumn w komunikacie
+    prefiks = "UNIQUE constraint failed: "
+    komunikat = str(e.orig)
+    if not komunikat.startswith(prefiks):
+        return False
+    kolumny = {k.strip() for k in komunikat.removeprefix(prefiks).split(",")}
+    return kolumny == _KOLUMNY_SEQ_SQLITE
 
 
 async def _nastepny_seq(s: AsyncSession, run_id: str, tenant_id: str) -> int:
@@ -216,7 +234,11 @@ async def zapisz_zdarzenie(
         run.status = nastepny_status(run.status, kind)
         try:
             await s.commit()
-        except IntegrityError:
+        except IntegrityError as e:
+            if not _kolizja_numeru(e):
+                # inny blad zapisu (klucz obcy, NOT NULL): ponowienie tylko by go ukrylo
+                await s.rollback()
+                raise
             # numer zajety przez rownolegly zapis: cofamy cala transakcje (zdarzenie
             # i zmiany runu), wczytujemy run od nowa i liczymy numer, status i reason
             # jeszcze raz. Rollback zamiast SAVEPOINT - dziala tak samo na SQLite i PG.

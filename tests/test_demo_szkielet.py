@@ -111,6 +111,44 @@ def test_przelot_nie_buduje_schematu_przez_create_all():
     assert "create_all" not in uzycia
 
 
+def _lapie_blad_bazy(proba: ast.Try) -> bool:
+    nazwy = {"OSError", "SQLAlchemyError"}
+    for h in proba.handlers:
+        typy = h.type.elts if isinstance(h.type, ast.Tuple) else [h.type]
+        for t in typy:
+            if isinstance(t, ast.Name) and t.id in nazwy:
+                return True
+            if isinstance(t, ast.Attribute) and t.attr in nazwy:
+                return True
+    return False
+
+
+def _jest_wywolaniem_przelotu(wezel: ast.AST) -> bool:
+    if not isinstance(wezel, ast.Call):
+        return False
+    f = wezel.func
+    return (isinstance(f, ast.Name) and f.id == "przelot") or (
+        isinstance(f, ast.Attribute) and f.attr == "przelot")
+
+
+def test_blad_w_przelocie_nie_jest_tlumaczony_na_blad_polaczenia_z_baza():
+    """Wezszy except: `except (OSError, SQLAlchemyError)` wolno obejmowac tylko
+    migracje i zasiew, a nie caly przelot (serwer, runner, proces potomny), bo
+    inaczej OSError z przelotu wyglada jak awaria bazy."""
+    drzewo = ast.parse(SKRYPT.read_text(encoding="utf-8"))
+    przelot_pod_lapaniem = [
+        wezel.lineno
+        for proba in ast.walk(drzewo)
+        if isinstance(proba, ast.Try) and _lapie_blad_bazy(proba)
+        for instrukcja in proba.body  # tylko body: orelse i finalbody nie sa objete
+        for wezel in ast.walk(instrukcja)
+        if _jest_wywolaniem_przelotu(wezel)
+    ]
+    assert przelot_pod_lapaniem == [], (
+        f"przelot() wywolany w try lapiacym OSError/SQLAlchemyError (linie {przelot_pod_lapaniem})"
+    )
+
+
 # --- prawdziwa baza -------------------------------------------------------
 
 def _cfg() -> Config:
@@ -241,6 +279,8 @@ def test_nieudany_przelot_konczy_sie_bledem_i_mimo_to_sprzata_baze(czysta_baza):
 
     assert wynik.returncode != 0
     assert "szkielet dziala na wylot" not in wynik.stdout
+    # baza dziala, wiec porazka przelotu nie jest "blad polaczenia z baza" (HAR-138)
+    assert "Blad polaczenia z baza" not in wynik.stderr
     # porazka nie zostawia schematu ani wersji migracji w bazie
     _sprawdz_baze_po_przelocie_jest_wyczyszczona()
 
