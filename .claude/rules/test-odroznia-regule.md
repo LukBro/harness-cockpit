@@ -36,6 +36,36 @@ i i tak wracały w następnym tickecie — to jest jedna zasada, nie jedenaście
   który oblewa po jej usunięciu. Brak takiego testu = **-25**.
 - Przeżywający mutant w zmienionym pliku (mutation-check) = **-25**.
 
+## Egzekucja
+
+Źródło: HAR-133. Przed oddaniem pracy do review test-writer albo Team Manager
+uruchamia z korzenia repozytorium:
+
+```
+python tools/mutanty_zmian.py            # baza: origin/main
+python tools/mutanty_zmian.py --baza <ref>
+```
+
+Skrypt mutuje wyłącznie funkcje i metody zmienione względem bazy (także
+niescommitowane i nowe pliki w `source_paths` z `pyproject.toml`) i wypisuje
+przeżywające mutanty, po jednym w linii.
+
+- Kod wyjścia **0** — brak przeżywających mutantów albo brak zmienionych funkcji.
+- Kod wyjścia **1** — są przeżywające mutanty; dopisz test na wejściu, które je zabija.
+- Kod wyjścia **2** — błąd narzędzia (nieznana baza, zły `pyproject.toml`, błąd składni,
+  błąd mutmuta); to nie jest wynik „czysto”.
+- Przeżywający mutant w zmienionej funkcji bez uzasadnienia równoważności = **-25**
+  w review.
+- Skrypt nie czyści cache `mutants/`. Po zmianie samych testów (bez zmiany kodu
+  źródłowego) wynik może pochodzić ze starego przebiegu (strona wiki `constitution`,
+  HAR-6) — wtedy uruchom skrypt w świeżym klonie repozytorium w nowym katalogu
+  tymczasowym (`git clone <repo> <katalog-tymczasowy>/mutanty-<n>`, z dokopiowanymi
+  niescommitowanymi zmianami). Nie usuwaj `mutants/` w sesji agenta; usunięcie jest
+  dozwolone tylko jako ręczna akcja człowieka.
+- Pełny przebieg mutmuta wymaga, by `[tool.mutmut] also_copy` obejmowało wszystko,
+  czego potrzebują testy (np. `alembic/`, `alembic.ini`); inaczej skrypt kończy się
+  kodem 2 na fazie statystyk mutmuta.
+
 ## Regresja
 
 Źródło: retro sprintu M1.1. Reguła istnieje i nadal jest łamana — HAR-10
@@ -47,5 +77,5 @@ które **tylko zawężenie** odrzuca. Wejście parsowane tak samo przez wersję
 szerszą nie chroni zawężenia przed cofnięciem (HAR-10: `xǁAǁBǁc__mutmut_1`
 zabija mutanta `\w`, bo `\w` dopasowuje `ǁ`).
 
-Tekst reguły nie wystarcza — kandydat na egzekucję automatyczną (hook /
-mutation-check na zmienionych plikach przed werdyktem krytyka).
+Tekst reguły nie wystarcza — egzekwuje ją `tools/mutanty_zmian.py`
+(zob. [Egzekucja](#egzekucja)): mutanty zmienionych funkcji przed werdyktem krytyka.
