@@ -7,6 +7,7 @@ name: mutation
 # cicd/mutation-baseline.json and is committed by a human from the artifact.
 # `mutmut run` mutates all core modules (mutmut 3 has no diff mode), hence
 # --scope full: the same scope as the sprint-close run sharing this baseline.
+# Surviving mutants of functions changed in the PR are listed in the job summary.
 
 on:
   pull_request:
@@ -46,6 +47,39 @@ jobs:
             echo "::error::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ (sprawdz log mutmut run). Baseline NIE zapisany."
             exit 1
           fi
+          # Survivors among mutants of functions changed in this PR go to the job summary
+          # and the artifact. Exit 1 = survivors listed (a trend, the step stays green);
+          # exit 0 = clean; anything else = tool failure, which is missing evidence, not
+          # success. Hence `|| kod=$?` instead of swallowing the exit code: it must reach the case below.
+          kod=0
+          python3 tools/mutanty_zmian.py --baza origin/${{ github.base_ref }} > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
+          {
+            echo "## Mutanty zmienionych funkcji"
+            echo
+            case "$kod" in
+              0)
+                echo "czysto - brak przezywajacych mutantow albo brak zmienionych funkcji"
+                ;;
+              1)
+                echo "Przezywajace mutanty zmienionych funkcji (trend, nie bramka - nie oblewaja builda):"
+                echo
+                echo '```'
+                cat mutants/mutanty-zmian.txt
+                echo '```'
+                ;;
+              *)
+                echo "blad narzedzia (kod $kod)"
+                echo
+                echo '```'
+                cat mutants/mutanty-zmian.err
+                echo '```'
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$kod" -gt 1 ]; then
+            echo "::error::mutanty_zmian.py zakonczyl sie bledem (kod $kod): $(tr '\n' ' ' < mutants/mutanty-zmian.err) Baseline NIE zapisany."
+            exit 1
+          fi
           python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit ${{ github.sha }} || true
 
       - uses: actions/upload-artifact@v4
@@ -54,5 +88,6 @@ jobs:
           name: mutation-report
           path: |
             mutants/mutmut-results.txt
+            mutants/mutanty-zmian.txt
             mutation-summary.json
             cicd/mutation-baseline.json
