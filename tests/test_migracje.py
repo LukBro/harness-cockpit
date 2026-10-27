@@ -22,11 +22,14 @@ from cockpit.db.models import Base, RunnerKind, RunStatus
 KORZEN = Path(__file__).resolve().parent.parent
 URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
 
-pytestmark = pytest.mark.skipif(
-    not URL.startswith("postgresql"),
-    reason="test migracji wymaga PostgreSQL: ustaw "
-    "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../cockpit_test",
-)
+pytestmark = [
+    pytest.mark.baza,
+    pytest.mark.skipif(
+        not URL.startswith("postgresql"),
+        reason="test migracji wymaga PostgreSQL: ustaw "
+        "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../cockpit_test",
+    ),
+]
 
 TABELE_MODELU = {"tenant", "runner", "run", "event"}
 TYPY_ENUM = {"runstatus", "runnerkind"}

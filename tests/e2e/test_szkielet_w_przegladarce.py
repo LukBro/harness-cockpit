@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from playwright.sync_api import expect
 
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.e2e, pytest.mark.baza]
 
 KOMUNIKAT_OFFLINE = "Runner jest offline. Uruchom runnera na swojej maszynie."
 LIMIT_WYNIKU_MS = 3000

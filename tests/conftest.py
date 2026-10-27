@@ -1,9 +1,10 @@
 """Wspolny conftest testow (HAR-12): pominiety test bazy oblewa przebieg w CI.
 
 Niezmiennik `evidence_required`: brak dowodu to blad, nigdy zielone przejscie.
-Gdy CI ustawia COCKPIT_WYMAGAJ_BAZY=1, SKIPPED testow z tests/test_migracje.py
-i tests/e2e/ (czyli testow, ktore bez PostgreSQL niczego nie sprawdzaja)
-zamienia sie na porazke testu z powodem pominiecia. Pytest pokazuje ja jako
+Gdy CI ustawia COCKPIT_WYMAGAJ_BAZY=1, SKIPPED testow z markerem `baza`
+(czyli testow, ktore bez PostgreSQL niczego nie sprawdzaja, niezaleznie od
+pliku i od rootdir) zamienia sie na porazke testu z powodem pominiecia.
+Pytest pokazuje ja jako
 ERROR (faza setup, np. skipif albo skip w fixture) albo FAILED (faza call);
 w obu przypadkach przebieg konczy sie kodem niezerowym. Bez zmiennej nic sie
 nie zmienia.
@@ -11,25 +12,16 @@ nie zmienia.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
 pytest_plugins = ["pytester"]
 
 ZMIENNA = "COCKPIT_WYMAGAJ_BAZY"
-PLIK_MIGRACJI = ("tests", "test_migracje.py")
-KATALOG_E2E = ("tests", "e2e")
 
 
 def _wymaga_bazy(item: pytest.Item) -> bool:
-    try:
-        czesci = Path(item.path).relative_to(item.config.rootpath).parts
-    except ValueError:
-        return False
-    return czesci == PLIK_MIGRACJI or (
-        len(czesci) > len(KATALOG_E2E) and czesci[: len(KATALOG_E2E)] == KATALOG_E2E
-    )
+    return item.get_closest_marker("baza") is not None
 
 
 def _powod_pominiecia(longrepr) -> str:

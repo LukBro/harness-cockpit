@@ -362,6 +362,7 @@ def _wstaw_run_z_duplikatem_seq() -> None:
     _z_polaczeniem(wstaw, zatwierdz=True)
 
 
+@pytest.mark.baza
 @tylko_postgres
 def test_migracja_tworzy_unikalne_ograniczenie_numeru_zdarzenia_w_runie(cfg):
     command.upgrade(cfg, "head")
@@ -373,6 +374,7 @@ def test_migracja_tworzy_unikalne_ograniczenie_numeru_zdarzenia_w_runie(cfg):
     assert roznice == [], f"schemat po migracji rozni sie od modelu: {roznice}"
 
 
+@pytest.mark.baza
 @tylko_postgres
 def test_migracja_z_duplikatami_numerow_konczy_sie_bledem_i_nie_kasuje_danych(cfg):
     command.upgrade(cfg, "0001")
@@ -386,6 +388,7 @@ def test_migracja_z_duplikatami_numerow_konczy_sie_bledem_i_nie_kasuje_danych(cf
     assert _wersja_alembica() == "0001"
 
 
+@pytest.mark.baza
 @tylko_postgres
 def test_cofniecie_migracji_przywraca_zwykly_indeks_i_znow_pozwala_na_duplikat(cfg):
     command.upgrade(cfg, "head")

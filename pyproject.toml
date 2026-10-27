@@ -54,6 +54,7 @@ testpaths = ["tests"]
 addopts = "-m 'not e2e'"
 markers = [
   "e2e: wymaga PostgreSQL i przegladarki (Playwright)",
+  "baza: test wymaga PostgreSQL; pominiety przy COCKPIT_WYMAGAJ_BAZY=1 oblewa przebieg",
 ]
 
 # Testy mutacyjne: moduly rdzenia (strona wiki toolchain, sekcja Mutacje).

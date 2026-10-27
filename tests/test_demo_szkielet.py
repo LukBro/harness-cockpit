@@ -170,6 +170,7 @@ def czysta_baza():
     command.downgrade(_cfg(), "base")
 
 
+@pytest.mark.baza
 @wymaga_postgresa
 def test_przelot_na_postgresie_dziala_na_wylot_i_sprzata_baze_po_sobie(czysta_baza):
     wynik = _uruchom(KORZEN, **{ZMIENNA: TEST_URL})
@@ -209,6 +210,7 @@ def _zasiej_runner_z_tokenem_przelotu_w_innym_zespole() -> None:
     asyncio.run(biegnij())
 
 
+@pytest.mark.baza
 @wymaga_postgresa
 def test_przelot_startuje_od_czystej_bazy_mimo_pozostalosci_po_poprzednim_przebiegu(
     czysta_baza,
@@ -224,6 +226,7 @@ def test_przelot_startuje_od_czystej_bazy_mimo_pozostalosci_po_poprzednim_przebi
     _sprawdz_baze_po_przelocie_jest_wyczyszczona()
 
 
+@pytest.mark.baza
 @wymaga_postgresa
 def test_nieudany_przelot_konczy_sie_bledem_i_mimo_to_sprzata_baze(czysta_baza):
     # port przelotu zajety: serwer nie wstanie, przelot sie nie udaje
@@ -242,6 +245,7 @@ def test_nieudany_przelot_konczy_sie_bledem_i_mimo_to_sprzata_baze(czysta_baza):
     _sprawdz_baze_po_przelocie_jest_wyczyszczona()
 
 
+@pytest.mark.baza
 @wymaga_postgresa
 def test_przelot_ze_krokiem_ktory_nie_wystartowal_wraca_z_kodem_1_i_sprzata_baze(
     czysta_baza, tmp_path
