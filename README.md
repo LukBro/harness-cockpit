@@ -13,9 +13,13 @@ python3 tools/demo_szkielet.py     # kokpit + runner + run, wszystko w jednym pr
 pytest                             # testy backendu
 ```
 
+Przelot wymaga `COCKPIT_DATABASE_URL` wskazującego bazę testową PostgreSQL (np. po
+`tools/testy_pelne.sh`: `postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test`).
+UWAGA: skrypt robi `alembic downgrade base` przed i po przelocie — kasuje dane wskazanej bazy.
+
 ## PostgreSQL i migracje
 
-Schemat buduje wyłącznie Alembic (`create_all` zostaje w testach i demo).
+Schemat buduje wyłącznie Alembic (`create_all` zostaje tylko w testach).
 
 Baza lokalnie jest taka sama jak w CI: `postgres:16`, użytkownik `cockpit/cockpit`,
 bazy `cockpit` i `cockpit_test` (`compose.yaml`, dane w wolumenie Dockera poza

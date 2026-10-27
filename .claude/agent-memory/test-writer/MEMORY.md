@@ -17,6 +17,7 @@
 - HAR-31: Każdy element kodu, który chroni przed wyjątkiem biblioteki (rzutowanie, konwersja typu), ma test na wejściu, na którym tylko ten element decyduje, czy funkcja zwróci wynik, czy rzuci wyjątek.
 - HAR-29: Każda gałąź, każdy element zbioru i każdy zakres reguły ma test na wejściu, w którym tylko ten element decyduje o wyniku; test, którego asercja dopuszcza kilka wyników, nie chroni żadnego z nich.
 - HAR-12: Każda gałąź i każde przekształcenie w kodzie chroniącym niezmiennik mają test, którego asercja oblewa się po usunięciu tej gałęzi; asercja „napis zawiera X” nie chroni formatowania, które zachowuje X.
+- HAR-13: Każde przekształcenie wartości wejściowej (escapowanie, `strip`, zapis z powrotem do środowiska) ma test na wejściu, na którym tylko to przekształcenie decyduje o wyniku.
 - HAR-43: Każda pętla albo przekształcenie, które zmienia wynik reguły, ma test na wejściu, na którym tylko ten element decyduje o wyniku; wejście, które jedno przejście w kolejności workflow już rozstrzyga, nie chroni pętli punktu stałego.
 - HAR-43: Każda pętla przeglądająca zakres reguły (domknięcie przechodnie `needs`) ma test na grafie z rombem, w którym przerwanie pętli przy pierwszym ponownie spotkanym kroku gubi przodka, a ten przodek decyduje o wyniku.
 - HAR-24: Każdy element filtra zapytania liczącego (run, krok, rodzaj) ma test, w którym w danych istnieje rekord odrzucany wyłącznie przez ten element, bo inaczej usunięcie tego elementu przeżywa.
