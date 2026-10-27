@@ -5,6 +5,7 @@ type Run = {
   id: string;
   workflow: string;
   status: string;
+  reason: string | null;
   runner_kind: string;
   events: Zdarzenie[];
 };
@@ -29,6 +30,7 @@ export function App() {
   const [runId, setRunId] = useState<string | null>(runZAdresu);
   const [zdarzenia, setZdarzenia] = useState<Zdarzenie[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
   const [blad, setBlad] = useState<string | null>(null);
   // Osobno od bledu historii: udany GET nie moze zgasic komunikatu o strumieniu.
   const [bladStrumienia, setBladStrumienia] = useState<string | null>(null);
@@ -40,6 +42,7 @@ export function App() {
     // Nowy runId (lub brak): nic z poprzedniego runu nie moze zostac na ekranie.
     setZdarzenia([]);
     setStatus(null);
+    setReason(null);
     setBlad(null);
     setBladStrumienia(null);
     if (!runId) return;
@@ -61,6 +64,7 @@ export function App() {
         if (anulowano) return;
         setBlad(null);
         setStatus(run.status);
+        setReason(run.reason);
         setZdarzenia((p) => scal(p, run.events));
       } catch {
         if (!anulowano) setBlad(KOMUNIKAT_SIEC);
@@ -143,6 +147,7 @@ export function App() {
           {status && <> · status: {status}</>}
         </p>
       )}
+      {runId && reason && <p style={{ color: "#A5201A" }}>{reason}</p>}
       <ul>
         {zdarzenia.map((z) => (
           <li key={z.seq}>

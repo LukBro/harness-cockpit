@@ -13,32 +13,36 @@ ZAKAZANE_WYWOLANIA = {"select", "insert", "update", "delete", "execute", "add", 
 ZAKAZANE_IMPORTY = {"sqlalchemy", "cockpit.db.models"}
 
 
-def sprawdz() -> list[str]:
+def _zakazany(modul: str) -> bool:
+    """Modul zakazany albo jego podmodul (sqlalchemy.orm tak, sqlalchemy_utils nie)."""
+    return any(modul == z or modul.startswith(z + ".") for z in ZAKAZANE_IMPORTY)
+
+
+def sprawdz(katalog: Path = API) -> list[str]:
     problemy: list[str] = []
-    for plik in sorted(API.rglob("*.py")):
+    for plik in sorted(katalog.rglob("*.py")):
+        rel = plik.relative_to(katalog.parent)
         drzewo = ast.parse(plik.read_text(), filename=str(plik))
         for w in ast.walk(drzewo):
+            if isinstance(w, ast.Import):
+                for a in w.names:
+                    if _zakazany(a.name):
+                        problemy.append(f"{rel}:{w.lineno} import {a.name}")
             if isinstance(w, ast.ImportFrom) and w.module:
-                for zakazany in ZAKAZANE_IMPORTY:
-                    if w.module == zakazany or w.module.startswith(zakazany + "."):
-                        # Wyjatek: typ sesji i enumy wejscia sa kontraktem, nie zapytaniem.
-                        nazwy = {a.name for a in w.names}
-                        if nazwy <= {"AsyncSession", "RunStatus", "RunnerKind"}:
-                            continue
-                        problemy.append(
-                            f"{plik.relative_to(API.parent)}:{w.lineno} import z {w.module}"
-                        )
+                if _zakazany(w.module):
+                    # Wyjatek: typ sesji i enumy wejscia sa kontraktem, nie zapytaniem.
+                    nazwy = {a.name for a in w.names}
+                    if not nazwy <= {"AsyncSession", "RunStatus", "RunnerKind"}:
+                        problemy.append(f"{rel}:{w.lineno} import z {w.module}")
+                elif w.module == "cockpit.db" and any(a.name == "models" for a in w.names):
+                    problemy.append(f"{rel}:{w.lineno} import z cockpit.db: models")
             if isinstance(w, ast.Call):
                 f = w.func
                 nazwa = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
                 if nazwa in ZAKAZANE_WYWOLANIA and not isinstance(f, ast.Name):
-                    problemy.append(
-                        f"{plik.relative_to(API.parent)}:{w.lineno} wywolanie .{nazwa}()"
-                    )
+                    problemy.append(f"{rel}:{w.lineno} wywolanie .{nazwa}()")
                 elif nazwa in {"select", "insert", "update", "delete"} and isinstance(f, ast.Name):
-                    problemy.append(
-                        f"{plik.relative_to(API.parent)}:{w.lineno} wywolanie {nazwa}()"
-                    )
+                    problemy.append(f"{rel}:{w.lineno} wywolanie {nazwa}()")
     return problemy
 
 
