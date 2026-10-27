@@ -169,19 +169,21 @@ def test_zwykle_polecenie_basha_subagenta_nie_jest_znacznikiem_fazy():
     assert ev.agent_id == "agent-2"
 
 
-def test_zakonczenie_subagenta_ma_status_completed_i_zachowuje_tozsamosc():
-    # Chroni: `if name == "SubagentStop": ev.status = "completed"` oraz agent_id.
+def test_zakonczenie_subagenta_zachowuje_tozsamosc_i_nie_ma_zmyslonego_statusu():
+    # Prawdziwy SubagentStop nie niesie wyniku (tylko agent_id, agent_type,
+    # last_assistant_message), wiec brak statusu zapisujemy jako brak (measured_or_null).
+    # Chroni: agent_id oraz brak statusu "completed" brania z samej nazwy hooka.
     stopy = _zdarzenia("subagenty.ndjson", "SubagentStop")
     assert {ev.agent_id for _, ev in stopy} == {"agent-1", "agent-2"}
-    for _, ev in stopy:
+    for payload, ev in stopy:
+        assert "status" not in payload
         assert ev.event == "SubagentStop"
-        assert ev.status == "completed"
+        assert ev.status is None
+        assert "status" not in ev.to_dict()
 
 
-def test_tylko_zakonczenie_subagenta_dostaje_status_completed():
-    # Chroni: zawezenie statusu do SubagentStop (gdyby status dostawal tez start
-    # subagenta albo Stop sesji, ten test oblewa).
+def test_zadne_zdarzenie_z_prawdziwych_hookow_nie_ma_zmyslonego_statusu():
+    # Chroni: status zostaje None dla kazdego hooka, nie tylko dla SubagentStop.
     for nazwa in ("subagenty.ndjson", "fazy-atrapa.ndjson"):
         for payload, ev in _wczytaj(nazwa):
-            if payload["hook_event_name"] != "SubagentStop":
-                assert ev.status is None, (nazwa, payload["hook_event_name"])
+            assert ev.status is None, (nazwa, payload["hook_event_name"])
