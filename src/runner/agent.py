@@ -6,6 +6,7 @@ sciezki, nigdy tresc. Tier i prawo zapisu wynikaja wylacznie z profil_roli.
 from __future__ import annotations
 
 import os
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -16,6 +17,10 @@ from cockpit.services.invariants import Rola, Tier, profil_roli
 # Stala wlasna: services.skills ciagnie frontmatter/ruamel/pydantic, a runner ma byc lekki.
 # MUSI byc zgodna z KATALOG_RUNU w cockpit/services/skills.py - inaczej agent nie znajdzie skilla.
 SKILLE_RUNU = ".cockpit/_run/skills"
+
+# Zl/Zp (separatory linii i akapitu) tez lamia linie promptu, a str.isprintable()
+# odrzucilaby takze NBSP i znaki formatowania (Cf), ktore sa poprawne w nazwach.
+KATEGORIE_STERUJACE = frozenset({"Cc", "Zl", "Zp"})
 
 DOMYSLNE_MODELE: Mapping[Tier, str] = MappingProxyType({
     Tier.judgment: "opus",
@@ -83,7 +88,24 @@ def _sekcja(naglowek: str, linie: list[str]) -> list[str]:
     return [naglowek, *(linie or ["- brak"])]
 
 
+def _bez_znakow_sterujacych(pole: str, wartosc: str) -> None:
+    if any(unicodedata.category(znak) in KATEGORIE_STERUJACE for znak in wartosc):
+        raise ValueError(f"pole {pole} zawiera znak sterujący: {wartosc!r}")
+
+
+def _sprawdz_pola(spec: SpecKroku) -> None:
+    _bez_znakow_sterujacych("skill_id", spec.skill_id)
+    for i, sciezka in enumerate(spec.wejscia):
+        _bez_znakow_sterujacych(f"wejscia[{i}]", sciezka)
+    for i, sciezka in enumerate(spec.wyjscia):
+        _bez_znakow_sterujacych(f"wyjscia[{i}]", sciezka)
+    for nazwa, komenda in spec.komendy.items():
+        _bez_znakow_sterujacych("komendy", nazwa)
+        _bez_znakow_sterujacych(f"komendy[{nazwa}]", komenda)
+
+
 def zbuduj_prompt(spec: SpecKroku) -> str:
+    _sprawdz_pola(spec)
     linie = [f"przeczytaj {SKILLE_RUNU}/{spec.skill_id}/SKILL.md i wykonaj", ""]
     linie += _sekcja("wejście:", [f"- {p}" for p in spec.wejscia])
     linie.append("")
