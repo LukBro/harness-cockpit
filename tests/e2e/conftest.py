@@ -101,10 +101,6 @@ def _skalar_z_bazy(zapytanie: str):
         return pula.submit(lambda: asyncio.run(_pytaj())).result()
 
 
-def _runner_zameldowany() -> bool:
-    return _skalar_z_bazy("SELECT count(*) FROM runner WHERE last_seen_at IS NOT NULL") > 0
-
-
 def _liczba_runow() -> int:
     return _skalar_z_bazy("SELECT count(*) FROM run")
 
@@ -189,9 +185,12 @@ def runner_online(adres_kokpitu, token_runnera, tmp_path):
     )
     try:
         koniec = time.monotonic() + LIMIT_STARTU_S
-        while not _runner_zameldowany():   # klik przed zameldowaniem dalby 409
+        # Runner jest dostepny dopiero z otwartym strumieniem (HAR-26): sam last_seen_at
+        # po zameldowaniu nie wystarcza, klik przed otwarciem strumienia dalby 409.
+        # Sygnal gotowosci to wpis runnera w logu - sondowanie POST /api/runs tworzyloby runy.
+        while "strumien otwarty" not in log.read_text(errors="replace") if log.exists() else True:
             assert proc.poll() is None, f"runner zakonczyl prace: {_koniec_logu(log)}"
-            assert time.monotonic() < koniec, f"runner sie nie zameldowal: {_koniec_logu(log)}"
+            assert time.monotonic() < koniec, f"strumien runnera sie nie otworzyl: {_koniec_logu(log)}"
             time.sleep(0.1)
         yield proc
     finally:
@@ -210,7 +209,7 @@ def zatrzymaj_runnera(runner_online, adres_kokpitu):
     def _zatrzymaj() -> int:
         os.killpg(os.getpgid(runner_online.pid), signal.SIGTERM)
         runner_online.wait(timeout=10)
-        # Rozlaczenie widac tylko w pamieci kokpitu: pytamy o nowy run az odpowie 409.
+        # Rozlaczenie strumienia widac tylko w pamieci kokpitu: pytamy o nowy run az odpowie 409.
         koniec = time.monotonic() + 10
         while httpx.post(f"{adres_kokpitu}/api/runs", json={"workflow": "szkielet"}
                          ).status_code != 409:

@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
@@ -19,7 +20,7 @@ NAGLOWEK = {"Authorization": "Bearer tajne"}
 
 @pytest.fixture
 async def klient(tmp_path, monkeypatch):
-    """Zespol "Browarek" ze swiezo zameldowanym runnerem (token `tajne`)."""
+    """Zespol "Browarek" z runnerem (token `tajne`), ktory ma otwarty strumien (HAR-26)."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'t.db'}")
     maker = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(db_session, "engine", engine)
@@ -34,11 +35,18 @@ async def klient(tmp_path, monkeypatch):
                      token_hash=hashlib.sha256(b"tajne").hexdigest(),
                      last_seen_at=datetime.now(timezone.utc)))
         await s.commit()
+    async with maker() as s:
+        runner_id = (await s.execute(select(Runner.id))).scalars().one()
+    # Sam swiezy last_seen_at nie czyni runnera dostepnym - potrzebny otwarty strumien.
+    bus.mark_runner_connected(runner_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app),
                                base_url="http://test") as c:
             yield c
     finally:
+        while runner_id in bus.connected_runner_ids():
+            bus.mark_runner_disconnected(runner_id)
+        getattr(bus, "_rozlaczone", {}).pop(runner_id, None)
         await engine.dispose()
 
 

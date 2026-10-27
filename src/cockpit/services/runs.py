@@ -5,16 +5,14 @@ api/ nie wykonuje zapytan - sprawdza to `tools/check_layers.py` w CI.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection, Mapping
-from datetime import datetime, timedelta, timezone
+from collections.abc import Collection
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
-
-from cockpit.settings import settings
 
 from .errors import BrakDostepu, NaruszonyNiezmiennik, NieZnaleziono, StanNiemozliwy
 from .walidacja import sprawdz_pomiar
@@ -65,32 +63,15 @@ async def zamelduj_runnera(
     return runner
 
 
-def _utc(d: datetime) -> datetime:
-    # SQLite oddaje daty bez strefy; w bazie to UTC
-    return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+def runner_online(runner: Runner, polaczone: Collection[str]) -> bool:
+    """Online: tylko runner z aktywnym strumieniem.
 
-
-def runner_online(
-    runner: Runner,
-    polaczone: Collection[str],
-    teraz: datetime,
-    prog_s: int,
-    rozlaczone: Mapping[str, datetime] | None = None,
-) -> bool:
-    """Online: aktywny strumien albo swiezy last_seen_at (BRO-109).
-
-    Rozlaczenie wygrywa: jesli strumien zamknieto po ostatnim zameldowaniu,
-    swiezy last_seen_at nie czyni runnera online.
+    Zmiana reguly BRO-109 (HAR-26): swiezy last_seen_at (< 60 s) NIE czyni
+    runnera dostepnym. Runner zabity miedzy rejestracja a otwarciem strumienia
+    byl "online" przez minute: run powstawal, a polecenie czekalo w kolejce
+    bez odbiorcy. last_seen_at zostaje informacja, nie warunkiem.
     """
-    if runner.id in polaczone:
-        return True
-    widziany = _utc(runner.last_seen_at) if runner.last_seen_at is not None else None
-    if rozlaczone and runner.id in rozlaczone:
-        if widziany is None or _utc(rozlaczone[runner.id]) >= widziany:
-            return False
-    if widziany is None:
-        return False
-    return teraz - widziany < timedelta(seconds=prog_s)
+    return runner.id in polaczone
 
 
 async def utworz_run(
@@ -98,19 +79,17 @@ async def utworz_run(
     tenant_id: str,
     workflow: str,
     polaczone: Collection[str] = frozenset(),
-    rozlaczone: Mapping[str, datetime] | None = None,
 ) -> Run:
-    """Run powstaje tylko wtedy, gdy zespol ma runnera online (HAR-2)."""
+    """Run powstaje tylko wtedy, gdy zespol ma runnera z otwartym strumieniem
+    (`polaczone`; HAR-2, HAR-26)."""
     runnery = (
         await s.execute(
             select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
         )
     ).scalars().all()
-    teraz = datetime.now(timezone.utc)
     runner = next(
         (r for r in runnery
-         if runner_online(r, polaczone, teraz, settings.runner_offline_after_s,
-                       rozlaczone)),
+         if runner_online(r, polaczone)),
         None,
     )
     if runner is None:

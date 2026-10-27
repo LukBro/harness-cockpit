@@ -85,6 +85,9 @@ async def runner_stream(
         try:
             # Oznaczenie w try, by zdjecie w finally zawsze mialo pare.
             bus.mark_runner_connected(r.id)
+            # Sygnal gotowosci: gdy runner go odbierze, kokpit juz uznaje go
+            # za dostepnego (runner_online wymaga otwartego strumienia).
+            yield {"event": "command", "data": json.dumps({"type": "polaczono"})}
             while True:
                 if await request.is_disconnected():
                     break
@@ -102,7 +105,6 @@ async def create_run(
     tenant = await uslugi.domyslny_tenant(s)
     run = await uslugi.utworz_run(
         s, tenant.id, body.workflow, polaczone=bus.connected_runner_ids(),
-        rozlaczone=bus.disconnected_runners(),
     )
     await bus.send_to_runner(
         run.runner_id,

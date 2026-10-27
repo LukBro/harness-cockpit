@@ -51,11 +51,20 @@ async def _kokpit_z_runnerem(tmp_path, monkeypatch, last_seen_at):
 
 
 @pytest.fixture
-async def klient(tmp_path, monkeypatch):
-    """Runner swiezo zameldowany, czyli online."""
+async def klient_bez_strumienia(tmp_path, monkeypatch):
+    """Runner swiezo zameldowany (last_seen_at = teraz), ale bez otwartego strumienia."""
     async with _kokpit_z_runnerem(tmp_path, monkeypatch,
                                   datetime.now(timezone.utc)) as c:
         yield c
+
+
+@pytest.fixture
+async def klient(klient_bez_strumienia, polaczenia_runnerow):
+    """Runner online, czyli z otwartym strumieniem (HAR-26)."""
+    runner_id = await _id_runnera()
+    polaczenia_runnerow.append(runner_id)
+    bus.mark_runner_connected(runner_id)
+    yield klient_bez_strumienia
 
 
 @pytest.fixture
@@ -182,14 +191,40 @@ async def test_uruchomienie_przy_runnerze_offline_konczy_sie_odmowa_z_podpowiedz
     assert "uruchom runnera" in detail
 
 
-async def test_uruchomienie_przy_runnerze_online_tworzy_run(klient):
+async def test_uruchomienie_przy_runnerze_z_otwartym_strumieniem_tworzy_run_przypisany_do_niego(
+    klient,
+):
     r = await klient.post("/api/runs", json={"workflow": "szkielet"})
     assert r.status_code == 200
-    assert r.json()["run_id"]
+    run = (await _runy())[0]
+    assert run.id == r.json()["run_id"]
+    assert run.runner_id == await _id_runnera()
 
 
-async def _zespol_z_runnerami(runnery: list[tuple[str, bool]]) -> None:
-    """Podmienia runnery zespolu na podane (id, online); wstawia w podanej kolejnosci."""
+async def test_runner_swiezo_zameldowany_bez_otwartego_strumienia_jest_offline(
+    klient_bez_strumienia,
+):
+    """HAR-26: runner zabity miedzy zameldowaniem a otwarciem strumienia nie moze dostac runu."""
+    r = await klient_bez_strumienia.post("/api/runs", json={"workflow": "szkielet"})
+    assert r.status_code == 409
+    assert r.json()["detail"].startswith("runner offline")
+    assert await _runy() == []
+
+
+async def test_polecenie_nie_trafia_do_kolejki_runnera_swiezo_zameldowanego_bez_strumienia(
+    klient_bez_strumienia, kolejki_runnerow,
+):
+    await klient_bez_strumienia.post("/api/runs", json={"workflow": "szkielet"})
+    runner_id = await _id_runnera()
+    assert runner_id not in kolejki_runnerow or kolejki_runnerow[runner_id].qsize() == 0
+
+
+async def _zespol_z_runnerami(runnery: list[tuple[str, bool]], polaczenia: list[str]) -> None:
+    """Podmienia runnery zespolu na podane (id, online); wstawia w podanej kolejnosci.
+
+    Kazdy runner jest swiezo zameldowany (last_seen_at = teraz); "online" znaczy tylko
+    tyle, ze ma otwarty strumien (HAR-26) - wiec tylko on moze rozstrzygac o wyborze.
+    """
     from cockpit.db.models import Runner as R
     async with db_session.SessionLocal() as s:
         tenant_id = (await s.execute(select(Tenant.id))).scalars().one()
@@ -197,7 +232,10 @@ async def _zespol_z_runnerami(runnery: list[tuple[str, bool]]) -> None:
         for rid, online in runnery:
             s.add(R(id=rid, tenant_id=tenant_id, name=rid,
                     token_hash=hashlib.sha256(rid.encode()).hexdigest(),
-                    last_seen_at=datetime.now(timezone.utc) if online else None))
+                    last_seen_at=datetime.now(timezone.utc)))
+            if online:
+                polaczenia.append(rid)
+                bus.mark_runner_connected(rid)
         await s.commit()
 
 
@@ -207,10 +245,10 @@ async def _runy():
         return (await s.execute(select(Run))).scalars().all()
 
 
-async def test_run_trafia_do_runnera_online_gdy_wczesniejszy_runner_zespolu_jest_offline(
-    klient_runner_offline,
+async def test_run_trafia_do_runnera_z_otwartym_strumieniem_gdy_wczesniejszy_runner_zespolu_jest_swiezo_zameldowany_bez_strumienia(
+    klient_runner_offline, polaczenia_runnerow,
 ):
-    await _zespol_z_runnerami([("a-offline", False), ("b-online", True)])
+    await _zespol_z_runnerami([("a-offline", False), ("b-online", True)], polaczenia_runnerow)
     r = await klient_runner_offline.post("/api/runs", json={"workflow": "przeglad-kodu"})
     assert r.status_code == 200
     run = (await _runy())[0]
@@ -219,11 +257,12 @@ async def test_run_trafia_do_runnera_online_gdy_wczesniejszy_runner_zespolu_jest
     assert run.workflow == "przeglad-kodu"
 
 
-async def test_run_trafia_do_runnera_o_najmniejszym_identyfikatorze_gdy_online_jest_kilku(
-    klient_runner_offline,
+async def test_run_trafia_do_runnera_o_najmniejszym_identyfikatorze_gdy_strumien_ma_otwarty_kilku(
+    klient_runner_offline, polaczenia_runnerow,
 ):
     # wstawieni w odwrotnej kolejnosci niz id - kolejnosc wstawienia nie moze decydowac
-    await _zespol_z_runnerami([("c-online", True), ("b-online", True), ("a-online", True)])
+    await _zespol_z_runnerami(
+        [("c-online", True), ("b-online", True), ("a-online", True)], polaczenia_runnerow)
     r = await klient_runner_offline.post("/api/runs", json={})
     assert r.status_code == 200
     assert (await _runy())[0].runner_id == "a-online"
@@ -238,25 +277,31 @@ def kolejki_runnerow():
         bus._runner_queues.pop(runner_id, None)
 
 
-async def _obcy_zespol_z_runnerem(runner_id: str, online: bool) -> str:
-    """Doklada DRUGI zespol (po domyslnym "Browarek") z jednym runnerem; zwraca jego id."""
+async def _obcy_zespol_z_runnerem(runner_id: str, online: bool, polaczenia: list[str]) -> str:
+    """Doklada DRUGI zespol (po domyslnym "Browarek") z jednym swiezo zameldowanym runnerem.
+
+    `online` znaczy otwarty strumien (HAR-26); zwraca id zespolu.
+    """
     async with db_session.SessionLocal() as s:
         obcy = Tenant(name="Obcy")
         s.add(obcy)
         await s.flush()
         s.add(Runner(id=runner_id, tenant_id=obcy.id, name=runner_id,
                      token_hash=hashlib.sha256(runner_id.encode()).hexdigest(),
-                     last_seen_at=datetime.now(timezone.utc) if online else None))
+                     last_seen_at=datetime.now(timezone.utc)))
         await s.commit()
+        if online:
+            polaczenia.append(runner_id)
+            bus.mark_runner_connected(runner_id)
         return obcy.id
 
 
 async def test_zespol_bez_wlasnego_runnera_online_dostaje_odmowe_mimo_runnera_online_innego_zespolu(
-    klient_runner_offline, kolejki_runnerow,
+    klient_runner_offline, kolejki_runnerow, polaczenia_runnerow,
 ):
     # Browarek (domyslny, wstawiony pierwszy) ma tylko runnera offline;
-    # obcy zespol ma runnera online o mniejszym id
-    await _obcy_zespol_z_runnerem("0-obcy-online", online=True)
+    # obcy zespol ma runnera z otwartym strumieniem o mniejszym id
+    await _obcy_zespol_z_runnerem("0-obcy-online", True, polaczenia_runnerow)
     r = await klient_runner_offline.post("/api/runs", json={"workflow": "szkielet"})
     assert r.status_code == 409
     assert r.json()["detail"].startswith("runner offline")
@@ -265,10 +310,10 @@ async def test_zespol_bez_wlasnego_runnera_online_dostaje_odmowe_mimo_runnera_on
 
 
 async def test_run_zespolu_trafia_do_jego_runnera_a_nie_do_runnera_obcego_zespolu_o_mniejszym_id(
-    klient, kolejki_runnerow,
+    klient, kolejki_runnerow, polaczenia_runnerow,
 ):
     wlasny = await _id_runnera()
-    await _obcy_zespol_z_runnerem("0-obcy-online", online=True)
+    await _obcy_zespol_z_runnerem("0-obcy-online", True, polaczenia_runnerow)
     assert "0-obcy-online" < wlasny
     r = await klient.post("/api/runs", json={"workflow": "szkielet"})
     assert r.status_code == 200
@@ -279,17 +324,19 @@ async def test_run_zespolu_trafia_do_jego_runnera_a_nie_do_runnera_obcego_zespol
 
 
 async def test_run_dla_jawnie_wskazanego_zespolu_wybiera_tylko_runnery_tego_zespolu(
-    klient_runner_offline,
+    klient_runner_offline, polaczenia_runnerow,
 ):
     from cockpit.services.errors import StanNiemozliwy
     from cockpit.services.runs import utworz_run
     async with db_session.SessionLocal() as s:
         browarek = (await s.execute(select(Tenant.id))).scalars().one()
-    obcy = await _obcy_zespol_z_runnerem("0-obcy-online", online=True)
+    obcy = await _obcy_zespol_z_runnerem("0-obcy-online", True, polaczenia_runnerow)
+    polaczone = frozenset({"0-obcy-online"})
     async with db_session.SessionLocal() as s:
+        # strumien ma tylko runner obcego zespolu - Browarek nie moze z niego skorzystac
         with pytest.raises(StanNiemozliwy, match="runner offline"):
-            await utworz_run(s, browarek, "szkielet")
-        run = await utworz_run(s, obcy, "szkielet")
+            await utworz_run(s, browarek, "szkielet", polaczone=polaczone)
+        run = await utworz_run(s, obcy, "szkielet", polaczone=polaczone)
     assert run.runner_id == "0-obcy-online"
     assert run.tenant_id == obcy
     assert len(await _runy()) == 1
@@ -313,13 +360,33 @@ async def test_runner_widziany_dawniej_niz_prog_jest_offline(
     assert r.json()["detail"].startswith("runner offline")
 
 
-async def test_runner_po_zameldowaniu_jest_online(klient_runner_offline):
+async def test_runner_dawno_niewidziany_ale_z_otwartym_strumieniem_jest_online(
+    klient_runner_dawno_nie_widziany, polaczenia_runnerow,
+):
+    """O dostepnosci decyduje strumien, a nie wiek last_seen_at."""
+    runner_id = await _id_runnera()
+    polaczenia_runnerow.append(runner_id)
+    bus.mark_runner_connected(runner_id)
+    r = await klient_runner_dawno_nie_widziany.post("/api/runs", json={})
+    assert r.status_code == 200
+    assert (await _runy())[0].runner_id == runner_id
+
+
+async def test_samo_zameldowanie_nie_czyni_runnera_dostepnym_dopiero_otwarcie_strumienia(
+    klient_runner_offline, polaczenia_runnerow,
+):
     assert (await klient_runner_offline.post("/api/runs", json={})).status_code == 409
     zameldowanie = await klient_runner_offline.post(
         "/api/runners/register", json={"name": "macbook"},
         headers={"Authorization": "Bearer tajne"})
     assert zameldowanie.status_code == 200
+    assert (await klient_runner_offline.post("/api/runs", json={})).status_code == 409
+    assert await _runy() == []
+    runner_id = zameldowanie.json()["runner_id"]
+    polaczenia_runnerow.append(runner_id)
+    bus.mark_runner_connected(runner_id)
     assert (await klient_runner_offline.post("/api/runs", json={})).status_code == 200
+    assert len(await _runy()) == 1
 
 
 async def test_runner_z_otwartym_strumieniem_jest_online_mimo_braku_zameldowania(
@@ -354,9 +421,10 @@ async def test_runner_z_dwoma_strumieniami_zostaje_online_po_zamknieciu_jednego(
 
 
 async def test_runner_swiezo_zameldowany_ktory_zamknal_strumien_jest_od_razu_offline(
-    klient, polaczenia_runnerow,
+    klient_runner_offline, polaczenia_runnerow,
 ):
-    """Rozlaczenie wygrywa ze swiezym zameldowaniem - bez czekania na prog."""
+    """Zamkniecie strumienia odbiera dostepnosc od razu, mimo swiezego zameldowania."""
+    klient = klient_runner_offline
     zameldowanie = await klient.post(
         "/api/runners/register", json={"name": "macbook"},
         headers={"Authorization": "Bearer tajne"})
@@ -372,8 +440,9 @@ async def test_runner_swiezo_zameldowany_ktory_zamknal_strumien_jest_od_razu_off
 
 
 async def test_odmowa_po_zamknieciu_strumienia_nie_zostawia_nowego_runu(
-    klient, polaczenia_runnerow,
+    klient_bez_strumienia, polaczenia_runnerow,
 ):
+    klient = klient_bez_strumienia
     from cockpit.db.models import Run
     runner_id = await _id_runnera()
     polaczenia_runnerow.append(runner_id)
@@ -385,10 +454,10 @@ async def test_odmowa_po_zamknieciu_strumienia_nie_zostawia_nowego_runu(
     assert liczba == 0
 
 
-async def test_runner_ktory_po_rozlaczeniu_zameldowal_sie_ponownie_znowu_jest_online(
-    klient, polaczenia_runnerow,
+async def test_runner_po_rozlaczeniu_nie_wraca_do_dostepnosci_przez_ponowne_zameldowanie_tylko_przez_nowy_strumien(
+    klient_bez_strumienia, polaczenia_runnerow,
 ):
-    import asyncio
+    klient = klient_bez_strumienia
     runner_id = await _id_runnera()
     polaczenia_runnerow.append(runner_id)
     bus.mark_runner_connected(runner_id)
@@ -399,12 +468,16 @@ async def test_runner_ktory_po_rozlaczeniu_zameldowal_sie_ponownie_znowu_jest_on
         "/api/runners/register", json={"name": "macbook"},
         headers={"Authorization": "Bearer tajne"})
     assert zameldowanie.status_code == 200
+    assert (await klient.post("/api/runs", json={})).status_code == 409
+    assert await _runy() == []
+    bus.mark_runner_connected(runner_id)
     assert (await klient.post("/api/runs", json={})).status_code == 200
 
 
 async def test_runner_z_dwoma_strumieniami_zamknietymi_oba_jest_offline(
-    klient, polaczenia_runnerow,
+    klient_bez_strumienia, polaczenia_runnerow,
 ):
+    klient = klient_bez_strumienia
     runner_id = await _id_runnera()
     polaczenia_runnerow.append(runner_id)
     bus.mark_runner_connected(runner_id)
@@ -429,77 +502,46 @@ def test_ewidencja_zapamietuje_chwile_rozlaczenia_dopiero_po_zamknieciu_ostatnie
     assert przed <= chwila <= datetime.now(timezone.utc)
 
 
-def test_rozlaczenie_pozniejsze_niz_zameldowanie_oznacza_offline():
+def test_runner_ze_swiezym_zameldowaniem_bez_strumienia_jest_offline_a_z_strumieniem_online():
     from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    runner = Runner(id="r1", last_seen_at=teraz - timedelta(seconds=5))
-    rozlaczone = {"r1": teraz - timedelta(seconds=2)}
-    assert runner_online(runner, frozenset(), teraz, 60, rozlaczone) is False
+    swiezy = Runner(id="r1", last_seen_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    assert runner_online(swiezy, frozenset()) is False
+    assert runner_online(swiezy, frozenset({"r1"})) is True
 
 
-def test_zameldowanie_pozniejsze_niz_rozlaczenie_oznacza_online():
+def test_runner_dawno_niewidziany_z_otwartym_strumieniem_jest_online():
     from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    runner = Runner(id="r1", last_seen_at=teraz - timedelta(seconds=2))
-    rozlaczone = {"r1": teraz - timedelta(seconds=5)}
-    assert runner_online(runner, frozenset(), teraz, 60, rozlaczone) is True
+    stary = Runner(id="r1", last_seen_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    assert runner_online(stary, {"r1"}) is True
+    assert runner_online(stary, frozenset()) is False
 
 
-def test_rozlaczony_runner_nigdy_niezameldowany_jest_offline():
+def test_strumien_innego_runnera_nie_czyni_tego_runnera_online():
     from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    runner = Runner(id="r1", last_seen_at=None)
-    assert runner_online(runner, frozenset(), teraz, 60, {"r1": teraz}) is False
+    runner = Runner(id="r1", last_seen_at=datetime.now(timezone.utc))
+    assert runner_online(runner, {"r2"}) is False
 
 
-def test_otwarty_strumien_wygrywa_z_wczesniejszym_rozlaczeniem():
+def test_zameldowanie_bez_strefy_czasowej_nie_czyni_runnera_online_bez_strumienia():
+    """SQLite oddaje daty bez strefy; swiezosc i tak nie rozstrzyga o dostepnosci."""
     from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    runner = Runner(id="r1", last_seen_at=teraz - timedelta(seconds=5))
-    rozlaczone = {"r1": teraz - timedelta(seconds=1)}
-    assert runner_online(runner, {"r1"}, teraz, 60, rozlaczone) is True
-
-
-def test_rozlaczenie_innego_runnera_nie_zmienia_stanu_tego_runnera():
-    from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    runner = Runner(id="r1", last_seen_at=teraz - timedelta(seconds=5))
-    assert runner_online(runner, frozenset(), teraz, 60, {"r2": teraz}) is True
-
-
-def test_czas_rozlaczenia_bez_strefy_nie_wywraca_reguly_online():
-    from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    runner = Runner(id="r1", last_seen_at=(teraz - timedelta(seconds=5)).replace(tzinfo=None))
-    pozniej = {"r1": (teraz - timedelta(seconds=2)).replace(tzinfo=None)}
-    wczesniej = {"r1": (teraz - timedelta(seconds=9)).replace(tzinfo=None)}
-    assert runner_online(runner, frozenset(), teraz, 60, pozniej) is False
-    assert runner_online(runner, frozenset(), teraz, 60, wczesniej) is True
-
-
-def test_rozlaczenie_nie_psuje_starej_reguly_gdy_nie_podano_ewidencji():
-    from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    swiezy = Runner(id="r1", last_seen_at=teraz - timedelta(seconds=1))
-    assert runner_online(swiezy, frozenset(), teraz, 60) is True
-    assert runner_online(swiezy, frozenset(), teraz, 60, None) is True
-
-
-def test_czas_zameldowania_bez_strefy_nie_wywraca_reguly_online():
-    """SQLite oddaje daty bez strefy - traktujemy je jako UTC."""
-    from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    swiezy = Runner(id="r1", last_seen_at=(teraz - timedelta(seconds=1)).replace(tzinfo=None))
-    stary = Runner(id="r2", last_seen_at=(teraz - timedelta(hours=1)).replace(tzinfo=None))
-    assert runner_online(swiezy, frozenset(), teraz, 60) is True
-    assert runner_online(stary, frozenset(), teraz, 60) is False
+    swiezy = Runner(id="r1", last_seen_at=datetime.now(timezone.utc).replace(tzinfo=None))
+    assert runner_online(swiezy, frozenset()) is False
+    assert runner_online(swiezy, {"r1"}) is True
 
 
 def test_runner_nigdy_niewidziany_jest_offline_chyba_ze_ma_strumien():
     from cockpit.services.runs import runner_online
-    teraz = datetime.now(timezone.utc)
-    assert runner_online(Runner(id="r1", last_seen_at=None), frozenset(), teraz, 60) is False
-    assert runner_online(Runner(id="r1", last_seen_at=None), {"r1"}, teraz, 60) is True
+    assert runner_online(Runner(id="r1", last_seen_at=None), frozenset()) is False
+    assert runner_online(Runner(id="r1", last_seen_at=None), {"r1"}) is True
+
+
+def test_ocena_dostepnosci_runnera_nie_zalezy_od_czasu_ani_progu():
+    """HAR-26: sygnatura to (runner, polaczone) - brak progu 60 s i ewidencji rozlaczen."""
+    import inspect
+
+    from cockpit.services.runs import runner_online
+    assert list(inspect.signature(runner_online).parameters) == ["runner", "polaczone"]
 
 
 # --- HAR-2: sekrety runnera ---
@@ -733,6 +775,57 @@ async def test_runner_ktorego_polaczenie_przyjeto_ale_strumien_nie_ruszyl_nie_je
     async with db_session.SessionLocal() as s:
         liczba = (await s.execute(select(func.count()).select_from(Run))).scalar_one()
     assert liczba == 0
+
+
+async def _otworz_strumien_runnera():
+    """Wola prawdziwy punkt wejscia strumienia runnera; zwraca cialo odpowiedzi (generator)."""
+    from types import SimpleNamespace
+
+    from cockpit.api.app import runner_stream
+
+    async def nie_rozlaczony() -> bool:
+        return False
+
+    async with db_session.SessionLocal() as s:
+        odpowiedz = await runner_stream(
+            request=SimpleNamespace(is_disconnected=nie_rozlaczony),
+            authorization="Bearer tajne", s=s)
+    return odpowiedz.body_iterator
+
+
+async def test_pierwsze_polecenie_strumienia_to_polaczono_a_runner_jest_wtedy_juz_dostepny(
+    klient_runner_offline, polaczenia_runnerow,
+):
+    runner_id = await _id_runnera()
+    polaczenia_runnerow.append(runner_id)
+    strumien = await _otworz_strumien_runnera()
+    try:
+        pierwsze = await asyncio.wait_for(strumien.__anext__(), timeout=2)
+        assert pierwsze["event"] == "command"
+        assert json.loads(pierwsze["data"]) == {"type": "polaczono"}
+        # sygnal gotowosci nie moze wyprzedzic ewidencji: runner ma juz otwarty strumien
+        assert runner_id in bus.connected_runner_ids()
+        assert (await klient_runner_offline.post("/api/runs", json={})).status_code == 200
+        run = (await _runy())[0]
+        assert run.runner_id == runner_id
+        drugie = await asyncio.wait_for(strumien.__anext__(), timeout=2)
+        assert json.loads(drugie["data"])["type"] == "run_step"
+        assert json.loads(drugie["data"])["run_id"] == run.id
+    finally:
+        await strumien.aclose()
+    assert runner_id not in bus.connected_runner_ids()
+
+
+async def test_runner_po_zamknieciu_strumienia_przez_kokpit_jest_offline_a_run_nie_powstaje(
+    klient_runner_offline, polaczenia_runnerow,
+):
+    runner_id = await _id_runnera()
+    polaczenia_runnerow.append(runner_id)
+    strumien = await _otworz_strumien_runnera()
+    await asyncio.wait_for(strumien.__anext__(), timeout=2)
+    await strumien.aclose()
+    assert (await klient_runner_offline.post("/api/runs", json={})).status_code == 409
+    assert await _runy() == []
 
 
 # --- HAR-10: strumien runu nie zostawia subskrypcji, start nie buduje schematu ---
