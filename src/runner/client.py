@@ -15,11 +15,27 @@ import time
 import httpx
 
 
+class StrumienZamkniety(Exception):
+    """Kokpit zamknal strumien polecen. Runner nie moze wtedy wrocic cicho
+    (kod 0 sugerowalby udana prace); ponowne laczenie to BRO-75."""
+
+
+class TokenOdrzucony(Exception):
+    """Kokpit odpowiedzial 401. Ponawianie nic nie da - trzeba nowego tokenu."""
+
+
 class Runner:
-    def __init__(self, base_url: str, token: str, name: str = "lokalny") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        name: str = "lokalny",
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.name = name
+        self._transport = transport
         self.runner_id: str | None = None
         self._headers = {"Authorization": f"Bearer {token}"}
 
@@ -29,6 +45,8 @@ class Runner:
             json={"name": self.name, "version": "0.1.0", "backends": ["claude"]},
             headers=self._headers,
         )
+        if r.status_code == 401:
+            raise TokenOdrzucony()
         r.raise_for_status()
         self.runner_id = r.json()["runner_id"]
 
@@ -78,16 +96,22 @@ class Runner:
         )
 
     async def listen(self) -> None:
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(timeout=None, transport=self._transport) as client:
             await self.register(client)
             async with client.stream(
                 "GET", f"{self.base_url}/api/runners/stream", headers=self._headers
             ) as resp:
+                if resp.status_code == 401:
+                    raise TokenOdrzucony()
+                resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
                     cmd = json.loads(line.removeprefix("data:").strip())
-                    if cmd.get("type") == "run_step":
+                    if cmd.get("type") == "polaczono":
+                        print("strumien otwarty", file=sys.stderr)
+                    elif cmd.get("type") == "run_step":
                         await self.run_command(
                             client, cmd["run_id"], cmd["step_id"], cmd["command"]
                         )
+        raise StrumienZamkniety("kokpit zamknal strumien polecen")
