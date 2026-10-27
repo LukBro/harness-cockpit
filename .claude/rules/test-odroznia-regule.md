@@ -79,3 +79,20 @@ zabija mutanta `\w`, bo `\w` dopasowuje `ǁ`).
 
 Tekst reguły nie wystarcza — egzekwuje ją `tools/mutanty_zmian.py`
 (zob. [Egzekucja](#egzekucja)): mutanty zmienionych funkcji przed werdyktem krytyka.
+
+## Regresja (retro M1.2.1)
+
+Źródło: HAR-133 (dwa razy -25 w kolejnych rundach), HAR-138 (uwaga krytyka bez
+odjęcia). Reguła i jej egzekucja istnieją, a wzorzec wraca w nowych kształtach:
+
+- **Zaślepka zawsze zwraca sukces** — testy podmieniają funkcję uruchamiającą
+  podproces albo czytającą wejście, więc gałęzie błędu (kod wyjścia, `OSError`,
+  kanał stderr) nie mają testu na **prawdziwym** kodzie tej funkcji. Każda gałąź
+  tłumacząca błąd ma test, który wywołuje prawdziwą funkcję na wejściu wyzwalającym
+  tę gałąź.
+- **Asercja przechodzi także na starym kodzie** — np. „komunikatu X nie ma w stderr”,
+  gdy stary kod też go nie wypisywał z innego powodu. Przed oddaniem sprawdź, że
+  asercja oblewa po cofnięciu zmiany.
+
+Egzekucja dodatkowa: krok CI z `tools/mutanty_zmian.py` na każdym PR (ticket z retro
+M1.2.1) — przeżywające mutanty zmienionych funkcji widać w raporcie PR.
