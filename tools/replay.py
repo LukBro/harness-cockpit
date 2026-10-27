@@ -3,7 +3,11 @@
 
     python3 tools/replay.py [--url http://127.0.0.1:8765/hook] [--speed 1.0]
 """
-import argparse, json, time, urllib.request, uuid
+import argparse
+import json
+import time
+import urllib.request
+import uuid
 
 PHASES = [("0", 2, 0), ("A", 6, 5), ("B", 4, 1), ("B.2", 5, 3), ("C", 8, 2), ("G", 2, 0)]
 

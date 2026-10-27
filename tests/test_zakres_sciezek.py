@@ -460,7 +460,7 @@ def test_uszkodzona_konfiguracja_daje_pusty_zakres_i_jedna_linie_ostrzezenia(swi
     capsys.readouterr()
     zakres = Zakres.z_konfiguracji(plik)
     err = capsys.readouterr().err
-    assert len([l for l in err.splitlines() if l.strip()]) == 1
+    assert len([wiersz for wiersz in err.splitlines() if wiersz.strip()]) == 1
     assert zakres.korzenie == ()
     assert _powod(zakres, swiat.projekt / "a") == "poza_zakresem"
     podkatalog = _podkatalogi_rejestru_domowego()[0]
@@ -667,4 +667,4 @@ def test_kazda_odmowa_zostawia_osobny_wpis_w_logu(swiat, capsys):
     _powod(swiat.zakres, "/etc/passwd")
     _powod(swiat.zakres, swiat.projekt / ".env")
     linie = capsys.readouterr().err.splitlines()
-    assert [LINIA_ODMOWY.match(l).group(2) for l in linie] == ["poza_zakresem", "sekret"]
+    assert [LINIA_ODMOWY.match(wiersz).group(2) for wiersz in linie] == ["poza_zakresem", "sekret"]

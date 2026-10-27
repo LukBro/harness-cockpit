@@ -73,7 +73,7 @@ def z_wklejenia(
     tekst: str, url: str | None = None, *, teraz: datetime | None = None
 ) -> TicketJson:
     """Sklada ticket `manual` z wklejonego tekstu; opis i `raw` to tekst bez zmian."""
-    tytul = next((l.strip() for l in tekst.splitlines() if l.strip()), None)
+    tytul = next((wiersz.strip() for wiersz in tekst.splitlines() if wiersz.strip()), None)
     if tytul is None:
         raise PusteWklejenie()
     skrot = hashlib.sha256(tekst.encode("utf-8")).hexdigest()[:8]
