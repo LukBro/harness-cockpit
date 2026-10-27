@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,30 +21,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
-from cockpit.services.errors import (
-    BladDziedziny,
-    BrakDostepu,
-    NaruszonyNiezmiennik,
-    NieZnaleziono,
-    StanNiemozliwy,
-)
 
 from . import bus
-
-_KODY = {BrakDostepu: 401, NieZnaleziono: 404, StanNiemozliwy: 409,
-         NaruszonyNiezmiennik: 422}
+from .bledy import zarejestruj_obsluge_bledow
 
 
 # Brak lifespan z create_all: schemat buduje `alembic upgrade head` (HAR-1).
 app = FastAPI(title="Harness Cockpit", version="0.1.0")
-
-
-@app.exception_handler(BladDziedziny)
-async def _blad_dziedziny(_: Request, exc: BladDziedziny):
-    from fastapi.responses import JSONResponse
-
-    kod = next((v for k, v in _KODY.items() if isinstance(exc, k)), 400)
-    return JSONResponse(status_code=kod, content={"detail": str(exc)})
+zarejestruj_obsluge_bledow(app)
 
 
 class RunnerRegister(BaseModel):
@@ -68,6 +52,7 @@ class EventIn(BaseModel):
     cost_source: str = "unavailable"
     tokens: int | None = None
     duration_ms: int | None = None
+    wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
 
 
 @app.get("/api/health")
@@ -138,6 +123,7 @@ async def ingest_event(
         s, run, kind=body.kind, step_id=body.step_id, agent_id=body.agent_id,
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
         tokens=body.tokens, duration_ms=body.duration_ms,
+        wyslane_output=body.wyslane_output,
     )
     await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
                                      "step_id": ev.step_id})
@@ -154,6 +140,7 @@ async def get_run(run_id: str, s: AsyncSession = Depends(get_session)) -> dict:
         "workflow": run.workflow,
         "status": run.status.value,
         "runner_kind": run.runner_kind.value,
+        "reason": run.reason,
         "events": [{"seq": e.seq, "kind": e.kind, "text": e.text, "step_id": e.step_id}
                    for e in rows],
     }

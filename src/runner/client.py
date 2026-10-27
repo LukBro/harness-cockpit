@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 import time
 
 import httpx
@@ -31,8 +32,17 @@ class Runner:
         r.raise_for_status()
         self.runner_id = r.json()["runner_id"]
 
-    async def send_event(self, client: httpx.AsyncClient, **kw) -> None:
-        await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
+    async def send_event(self, client: httpx.AsyncClient, **kw) -> bool:
+        """True tylko dla 2xx. Odrzucenie trafia na stderr: rodzaj, run_id, kod.
+        Nigdy token, naglowki ani tresc odpowiedzi."""
+        r = await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
+        if not r.is_success:
+            print(
+                f"zdarzenie odrzucone: kind={kw.get('kind')} "
+                f"run_id={kw.get('run_id')} http={r.status_code}",
+                file=sys.stderr,
+            )
+        return r.is_success
 
     async def run_command(
         self, client: httpx.AsyncClient, run_id: str, step_id: str, command: list[str]
@@ -51,7 +61,9 @@ class Runner:
             raise
 
         ms = int((time.monotonic() - started) * 1000)
+        wyslane_output = 0
         for line in out.decode(errors="replace").splitlines():
+            wyslane_output += 1              # proba, takze nieudana
             await self.send_event(client, run_id=run_id, step_id=step_id,
                                   kind="output", text=line)
         ok = proc.returncode == 0
@@ -62,6 +74,7 @@ class Runner:
             duration_ms=ms,
             cost_usd=None,                   # subskrypcja nie podaje ceny
             cost_source="unavailable",
+            wyslane_output=wyslane_output,
         )
 
     async def listen(self) -> None:
