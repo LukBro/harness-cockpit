@@ -68,6 +68,11 @@ source_paths = [
 # tam osobno, inaczej testy nie zaimportuja aplikacji i kazdy mutant "przezywa".
 # tools/ potrzebuje test granicy warstw. Jawna lista zamiast calego src/:
 # kopia src/ nadpisywalaby zmutowane pliki i kasowala przyrostowy cache mutmut.
+# alembic/ i alembic.ini: demo szkieletu (tools/demo_szkielet.py) buduje schemat
+# migracjami; bez nich test pada na niezmutowanym kodzie i mutmut przerywa przebieg.
+# .github/workflows/: test kroku mutacji uruchamia skrypt z workflow mutation.yml.
+# mutmut kopiuje plik z also_copy bez tworzenia katalogow nadrzednych (FileNotFoundError),
+# wiec wpis jest katalogiem; katalog kopiuje copytree, ktore je tworzy.
 also_copy = [
   "src/cockpit/__init__.py",
   "src/cockpit/__main__.py",
@@ -77,4 +82,7 @@ also_copy = [
   "src/cockpit/web/",
   "tools/",
   "cicd/",
+  "alembic/",
+  "alembic.ini",
+  ".github/workflows/",
 ]
