@@ -47,6 +47,8 @@ class Swiat:
     run_id: str          # run zespolu Browarek, zlecony runnerowi `wlasciciel`
     drugi_run_id: str    # inny run tego samego zespolu
     run_obcego_id: str   # run zespolu Piekarnia
+    browarek_id: str     # tenant_id zespolu Browarek
+    piekarnia_id: str    # tenant_id zespolu Piekarnia
 
 
 @pytest.fixture
@@ -79,7 +81,7 @@ async def swiat(tmp_path, monkeypatch):
         run_obcego = Run(tenant_id=piekarnia.id, runner_id=obcy.id, status=RunStatus.running)
         s.add_all([run, drugi, run_obcego])
         await s.commit()
-        ids = (run.id, drugi.id, run_obcego.id)
+        ids = (run.id, drugi.id, run_obcego.id, browarek.id, piekarnia.id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app),
                                base_url="http://test") as c:
@@ -88,8 +90,9 @@ async def swiat(tmp_path, monkeypatch):
         await engine.dispose()
 
 
-def _zdarzenie_bazy(run_id: str, seq: int, kind: str = "output", step_id: str = "") -> Event:
-    return Event(tenant_id="t", run_id=run_id, seq=seq, kind=kind, step_id=step_id)
+def _zdarzenie_bazy(run_id: str, seq: int, tenant_id: str, kind: str = "output",
+                    step_id: str = "") -> Event:
+    return Event(tenant_id=tenant_id, run_id=run_id, seq=seq, kind=kind, step_id=step_id)
 
 
 async def _zapisz_wprost(*zdarzenia: Event) -> None:
@@ -123,11 +126,11 @@ def kolizja(monkeypatch):
     def ustaw(zajety: int, ile_zajetych: int | None = None) -> dict:
         oryginal = uslugi_runow._nastepny_seq
 
-        async def podmieniony(s, run_id):
+        async def podmieniony(s, run_id, tenant_id):
             stan["wywolania"] += 1
             if ile_zajetych is None or stan["wywolania"] <= ile_zajetych:
                 return zajety
-            return await oryginal(s, run_id)
+            return await oryginal(s, run_id, tenant_id)
 
         monkeypatch.setattr(uslugi_runow, "_nastepny_seq", podmieniony)
         return stan
@@ -138,10 +141,10 @@ def kolizja(monkeypatch):
 # --- ograniczenie w bazie ---
 
 async def test_dwa_zdarzenia_runu_o_tym_samym_numerze_odrzuca_baza(swiat):
-    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1))
+    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1, swiat.browarek_id))
 
     with pytest.raises(IntegrityError):
-        await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1, kind="step_failed"))
+        await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1, swiat.browarek_id, kind="step_failed"))
 
     assert await _numery_w_bazie(swiat.run_id) == [1]
 
@@ -149,9 +152,9 @@ async def test_dwa_zdarzenia_runu_o_tym_samym_numerze_odrzuca_baza(swiat):
 async def test_ten_sam_numer_w_roznych_runach_jest_dozwolony(swiat):
     """Zakres unikalnosci to run, nie caly log."""
     await _zapisz_wprost(
-        _zdarzenie_bazy(swiat.run_id, 1),
-        _zdarzenie_bazy(swiat.drugi_run_id, 1),
-        _zdarzenie_bazy(swiat.run_obcego_id, 1),
+        _zdarzenie_bazy(swiat.run_id, 1, swiat.browarek_id),
+        _zdarzenie_bazy(swiat.drugi_run_id, 1, swiat.browarek_id),
+        _zdarzenie_bazy(swiat.run_obcego_id, 1, swiat.piekarnia_id),
     )
 
     for run_id in (swiat.run_id, swiat.drugi_run_id, swiat.run_obcego_id):
@@ -224,7 +227,7 @@ async def test_status_runu_po_ponowionej_probie_odpowiada_zdarzeniu_ktore_sie_za
 
 
 async def test_komunikat_niepelnego_strumienia_przezywa_ponowienie_po_kolizji(swiat, kolizja):
-    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1, kind="output", step_id="k1"))
+    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1, swiat.browarek_id, kind="output", step_id="k1"))
     kolizja(zajety=1, ile_zajetych=1)
 
     r = await _post(swiat.klient, swiat.run_id, kind="step_finished",
@@ -237,8 +240,8 @@ async def test_komunikat_niepelnego_strumienia_przezywa_ponowienie_po_kolizji(sw
 
 
 async def test_numer_zdarzenia_liczy_sie_w_obrebie_runu_a_nie_calego_logu(swiat):
-    await _zapisz_wprost(_zdarzenie_bazy(swiat.drugi_run_id, 7),
-                         _zdarzenie_bazy(swiat.run_obcego_id, 9))
+    await _zapisz_wprost(_zdarzenie_bazy(swiat.drugi_run_id, 7, swiat.browarek_id),
+                         _zdarzenie_bazy(swiat.run_obcego_id, 9, swiat.piekarnia_id))
 
     r = await _post(swiat.klient, swiat.run_id)
 
@@ -247,9 +250,26 @@ async def test_numer_zdarzenia_liczy_sie_w_obrebie_runu_a_nie_calego_logu(swiat)
     assert await _numery_w_bazie(swiat.drugi_run_id) == [7]  # cudze runy nietkniete
 
 
+async def test_zdarzenie_innego_zespolu_w_tym_samym_runie_nie_zmienia_numeru(swiat):
+    """Obce zdarzenie (seq=5, tenant Piekarni) z run_id runu Browarka: bez filtra
+    tenant_id w _nastepny_seq numer wyszedlby 6, z filtrem jest 1."""
+    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 5, swiat.piekarnia_id))
+
+    r = await _post(swiat.klient, swiat.run_id)
+
+    assert r.status_code == 200
+    assert r.json() == {"seq": 1}
+    async with db_session.SessionLocal() as s:  # skutek w bazie: zdarzenie Browarka
+        wlasne = (await s.execute(select(Event.seq).where(
+            Event.run_id == swiat.run_id,
+            Event.tenant_id == swiat.browarek_id))).scalars().all()
+    assert wlasne == [1]
+    assert await _numery_w_bazie(swiat.run_id) == [1, 5]  # obce nietkniete
+
+
 async def test_ponowienie_po_kolizji_tez_liczy_numer_w_obrebie_runu(swiat, kolizja):
-    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1),
-                         _zdarzenie_bazy(swiat.drugi_run_id, 7))
+    await _zapisz_wprost(_zdarzenie_bazy(swiat.run_id, 1, swiat.browarek_id),
+                         _zdarzenie_bazy(swiat.drugi_run_id, 7, swiat.browarek_id))
     kolizja(zajety=1, ile_zajetych=1)
 
     r = await _post(swiat.klient, swiat.run_id)
@@ -261,11 +281,12 @@ async def test_ponowienie_po_kolizji_tez_liczy_numer_w_obrebie_runu(swiat, koliz
 async def test_licznik_output_kroku_pomija_inne_runy_inne_kroki_i_inne_rodzaje(swiat):
     """Kazdy z trzech wabikow zmienilby licznik z 1 na 2 (== wyslane), gdyby
     odpowiadajacy mu filtr zniknal; wtedy komunikat by nie powstal."""
+    b = swiat.browarek_id
     await _zapisz_wprost(
-        _zdarzenie_bazy(swiat.run_id, 1, kind="output", step_id="k1"),        # liczone
-        _zdarzenie_bazy(swiat.run_id, 2, kind="output", step_id="k2"),        # inny krok
-        _zdarzenie_bazy(swiat.run_id, 3, kind="step_started", step_id="k1"),  # inny rodzaj
-        _zdarzenie_bazy(swiat.drugi_run_id, 1, kind="output", step_id="k1"),  # inny run
+        _zdarzenie_bazy(swiat.run_id, 1, b, kind="output", step_id="k1"),        # liczone
+        _zdarzenie_bazy(swiat.run_id, 2, b, kind="output", step_id="k2"),        # inny krok
+        _zdarzenie_bazy(swiat.run_id, 3, b, kind="step_started", step_id="k1"),  # inny rodzaj
+        _zdarzenie_bazy(swiat.drugi_run_id, 1, b, kind="output", step_id="k1"),  # inny run
     )
 
     r = await _post(swiat.klient, swiat.run_id, kind="step_finished",

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.api.app import app
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Run, Runner, RunStatus, Tenant
+from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
 
 TOKEN = "token-runnera"
 
@@ -24,6 +24,7 @@ class Swiat:
     klient: AsyncClient
     run_id: str
     inny_run_id: str  # drugi run tego samego runnera
+    piekarnia_id: str  # tenant_id drugiego zespolu (bez runow)
 
 
 @pytest.fixture
@@ -37,6 +38,8 @@ async def swiat(tmp_path, monkeypatch):
     async with maker() as s:
         browarek = Tenant(name="Browarek")
         s.add(browarek)
+        piekarnia = Tenant(name="Piekarnia")
+        s.add(piekarnia)
         await s.flush()
         runner = Runner(tenant_id=browarek.id, name="r",
                         token_hash=hashlib.sha256(TOKEN.encode()).hexdigest(),
@@ -47,7 +50,7 @@ async def swiat(tmp_path, monkeypatch):
         inny = Run(tenant_id=browarek.id, runner_id=runner.id, status=RunStatus.running)
         s.add_all([run, inny])
         await s.commit()
-        ids = (run.id, inny.id)
+        ids = (run.id, inny.id, piekarnia.id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app),
                                base_url="http://test") as c:
@@ -216,3 +219,18 @@ async def test_deklaracja_zero_wyslanych_output_przy_zapisanym_output_oznacza_ru
 
     assert await _reason_w_bazie(swiat.run_id) == \
         "niepelny strumien: zapisano 1 z 0 zdarzen output"
+
+
+async def test_output_innego_zespolu_w_tym_samym_kroku_nie_udaje_kompletnego_strumienia(swiat):
+    # Obcy output (tenant Piekarni, ten sam run_id i step_id, seq=5 bez kolizji):
+    # bez filtra tenant_id w liczniku zapisano by 2 == wyslane i oznaczenia by nie bylo.
+    await _outputy(swiat, 1)
+    async with db_session.SessionLocal() as s:
+        s.add(Event(tenant_id=swiat.piekarnia_id, run_id=swiat.run_id, seq=5,
+                    step_id="krok-1", kind="output"))
+        await s.commit()
+
+    await _wyslij(swiat, "step_finished", wyslane_output=2)
+
+    assert await _reason_w_bazie(swiat.run_id) == \
+        "niepelny strumien: zapisano 1 z 2 zdarzen output"
