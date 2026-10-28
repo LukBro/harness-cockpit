@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import os
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -117,7 +118,9 @@ async def _run_w_bazie(run_id: str) -> Run:
 
 
 def _post(klient: AsyncClient, run_id: str, kind: str = "output", **extra):
-    return klient.post("/api/events", json={"run_id": run_id, "kind": kind, **extra},
+    tresc = {"run_id": run_id, "kind": kind, "step_id": "s0",
+             "event_id": str(uuid.uuid4()), **extra}
+    return klient.post("/api/events", json=tresc,
                        headers={"Authorization": f"Bearer {TOKEN}"})
 
 
@@ -201,7 +204,8 @@ async def test_po_wyczerpaniu_prob_kolizji_zdarzenie_nie_powstaje_i_jest_blad_st
         run = await uslugi_runow.run_dla_najemcy(
             s, swiat.run_id, (await uslugi_runow.domyslny_tenant(s)).id)
         with pytest.raises(StanNiemozliwy):
-            await uslugi_runow.zapisz_zdarzenie(s, run, kind="output")
+            await uslugi_runow.zapisz_zdarzenie(
+            s, run, event_id=str(uuid.uuid4()), kind="output")
 
     assert stan["wywolania"] == uslugi_runow._PROBY_SEQ  # dokladnie tyle, nie wiecej, nie mniej
     assert await _numery_w_bazie(swiat.run_id) == [1]
@@ -215,7 +219,8 @@ async def test_po_wyczerpaniu_prob_kolizji_blad_stanu_mowi_uzytkownikowi_co_zrob
         run = await uslugi_runow.run_dla_najemcy(
             s, swiat.run_id, (await uslugi_runow.domyslny_tenant(s)).id)
         with pytest.raises(StanNiemozliwy) as wyjatek:
-            await uslugi_runow.zapisz_zdarzenie(s, run, kind="output")
+            await uslugi_runow.zapisz_zdarzenie(
+            s, run, event_id=str(uuid.uuid4()), kind="output")
 
     assert str(wyjatek.value) == (
         f"nie udalo sie nadac numeru zdarzenia po {uslugi_runow._PROBY_SEQ} probach - ponow zapis")
@@ -351,7 +356,8 @@ async def test_naruszenie_klucza_obcego_przy_zapisie_zdarzenia_wychodzi_od_razu_
 
     async with sesje_z_kluczami_obcymi() as s:
         with pytest.raises(IntegrityError, match="FOREIGN KEY"):
-            await uslugi_runow.zapisz_zdarzenie(s, widmo, kind="output")
+            await uslugi_runow.zapisz_zdarzenie(
+                s, widmo, event_id=str(uuid.uuid4()), kind="output")
 
     assert liczba_prob["n"] == 1  # zadnego ponawiania: to nie jest kolizja numeru
     assert await _numery_w_bazie("runa-ktorego-nie-ma") == []
@@ -453,7 +459,8 @@ async def test_dwa_rownolegle_zdarzenia_jednego_runu_dostaja_rozne_numery(swiat)
     async def zapis(kind: str, tekst: str):
         async with db_session.SessionLocal() as s:  # kazdy zapis we wlasnej sesji
             run = await s.get(Run, swiat.run_id)
-            return await uslugi_runow.zapisz_zdarzenie(s, run, kind=kind, text=tekst)
+            return await uslugi_runow.zapisz_zdarzenie(
+                s, run, event_id=str(uuid.uuid4()), kind=kind, text=tekst)
 
     await asyncio.gather(zapis("output", "a"), zapis("output", "b"))
 
@@ -485,7 +492,8 @@ async def _zdarzenie_z_bazy(run_id: str) -> Event:
 async def test_zapis_zdarzenia_bez_opcjonalnych_pol_zostawia_w_bazie_puste_teksty_i_brak_pomiaru(swiat):
     async with db_session.SessionLocal() as s:
         run = await s.get(Run, swiat.run_id)
-        await uslugi_runow.zapisz_zdarzenie(s, run, kind="output")
+        await uslugi_runow.zapisz_zdarzenie(
+            s, run, event_id=str(uuid.uuid4()), kind="output")
 
     ev = await _zdarzenie_z_bazy(swiat.run_id)
     assert ev.step_id == ""
@@ -501,8 +509,8 @@ async def test_zapis_zdarzenia_z_pomiarem_i_agentem_zachowuje_w_bazie_kazde_pole
     async with db_session.SessionLocal() as s:
         run = await s.get(Run, swiat.run_id)
         await uslugi_runow.zapisz_zdarzenie(
-            s, run, kind="output", step_id="k1", agent_id="agent-1", text="tresc",
-            cost_usd=0.25, cost_source="measured", tokens=123, duration_ms=456)
+            s, run, event_id=str(uuid.uuid4()), kind="output", step_id="k1",
+            agent_id="agent-1", text="tresc", cost_usd=0.25, cost_source="measured", tokens=123, duration_ms=456)
 
     ev = await _zdarzenie_z_bazy(swiat.run_id)
     assert ev.tenant_id == swiat.browarek_id

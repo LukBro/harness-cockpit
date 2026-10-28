@@ -4,6 +4,7 @@ i z GET /api/runs/{id}, przez prawdziwa aplikacje."""
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -64,7 +65,7 @@ async def _wyslij(swiat: Swiat, kind: str, run_id: str | None = None,
     r = await swiat.klient.post(
         "/api/events",
         json={"run_id": run_id or swiat.run_id, "step_id": step_id,
-              "kind": kind, **extra},
+              "kind": kind, "event_id": str(uuid.uuid4()), **extra},
         headers={"Authorization": f"Bearer {TOKEN}"},
     )
     assert r.status_code == 200, r.text

@@ -3,6 +3,7 @@ Skutek czytamy z bazy (liczba zdarzen, status runu), nie z kodu odpowiedzi."""
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -77,7 +78,8 @@ async def _zdarzenie(klient: AsyncClient, run_id: str, token: str,
                      kind: str = "step_failed"):
     # `step_failed` zmienilby status runu na `failed`, gdyby zdarzenie przeszlo.
     return await klient.post("/api/events",
-                             json={"run_id": run_id, "kind": kind},
+                             json={"run_id": run_id, "kind": kind, "step_id": "s0",
+                                   "event_id": str(uuid.uuid4())},
                              headers=_naglowek(token))
 
 

@@ -15,6 +15,7 @@ import json
 import logging
 import sqlite3
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -395,7 +396,8 @@ async def test_zdarzenie_konca_kroku_po_przerwaniu_trafia_do_logu_a_run_zostaje_
     await _sprawdz()
     przed = len(await _zdarzenia(run_id))
 
-    r = await swiat.klient.post("/api/events", json={"run_id": run_id, "kind": "step_finished"},
+    r = await swiat.klient.post("/api/events", json={"run_id": run_id, "kind": "step_finished",
+                                      "step_id": "s0", "event_id": str(uuid.uuid4())},
                                 headers=NAGLOWEK)
 
     assert r.status_code == 200
@@ -409,7 +411,8 @@ async def test_zdarzenie_porazki_kroku_po_przerwaniu_nie_zmienia_przerwanego_run
     run_id = await _run(swiat.browarek, R_STARY)
     await _sprawdz()
 
-    r = await swiat.klient.post("/api/events", json={"run_id": run_id, "kind": "step_failed"},
+    r = await swiat.klient.post("/api/events", json={"run_id": run_id, "kind": "step_failed",
+                                      "step_id": "s0", "event_id": str(uuid.uuid4())},
                                 headers=NAGLOWEK)
 
     assert r.status_code == 200

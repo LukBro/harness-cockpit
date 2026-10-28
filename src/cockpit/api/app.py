@@ -22,7 +22,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, Request
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -95,8 +95,10 @@ class RunCreate(BaseModel):
 
 class EventIn(BaseModel):
     run_id: str
-    step_id: str = ""
+    event_id: str = Field(min_length=1)    # nadaje runner; idempotencja (HAR-39)
+    step_id: str = Field(min_length=1)
     agent_id: str = ""
+    agent_type: str = ""
     kind: str
     text: str = ""
     cost_usd: float | None = None          # None = brak pomiaru, nigdy 0 (BRO-87)
@@ -197,14 +199,16 @@ async def ingest_event(
 ) -> dict[str, int]:
     r = await uslugi.runner_po_tokenie(s, authorization)
     run = await uslugi.run_runnera(s, body.run_id, r)
-    ev = await uslugi.zapisz_zdarzenie(
-        s, run, kind=body.kind, step_id=body.step_id, agent_id=body.agent_id,
+    ev, nowe = await uslugi.zapisz_zdarzenie(
+        s, run, event_id=body.event_id, kind=body.kind, step_id=body.step_id,
+        agent_id=body.agent_id, agent_type=body.agent_type,
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
         tokens=body.tokens, duration_ms=body.duration_ms,
         wyslane_output=body.wyslane_output,
     )
-    await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
-                                     "step_id": ev.step_id})
+    if nowe:
+        await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
+                                         "step_id": ev.step_id})
     return {"seq": ev.seq}
 
 
@@ -219,8 +223,8 @@ async def get_run(run_id: str, s: AsyncSession = Depends(get_session)) -> dict:
         "status": run.status.value,
         "runner_kind": run.runner_kind.value,
         "reason": run.reason,
-        "events": [{"seq": e.seq, "kind": e.kind, "text": e.text, "step_id": e.step_id}
-                   for e in rows],
+        "events": [{"seq": e.seq, "kind": e.kind, "text": e.text, "step_id": e.step_id,
+                    "agent_type": e.agent_type} for e in rows],
     }
 
 

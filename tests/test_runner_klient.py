@@ -78,6 +78,7 @@ async def test_zdarzenia_runnera_trafiaja_do_kokpitu_z_tokenem_runnera():
         assert zadanie.method == "POST"
         assert zadanie.url.path == "/api/events"
         assert zadanie.headers["Authorization"] == "Bearer tajny-token"
+        assert json.loads(zadanie.content)["event_id"]
 
 
 async def _wyslij_zdarzenie(status: int) -> bool:
@@ -420,6 +421,7 @@ async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_
     assert [z["kind"] for z in zdarzenia] == ["output", "step_finished"]
     assert zdarzenia[0]["text"] == "hej"
     assert all(z["run_id"] == "run-1" and z["step_id"] == "s0" for z in zdarzenia)
+    assert len({z["event_id"] for z in zdarzenia}) == 2
 
 
 async def test_strumien_polecen_nie_ma_limitu_czasu_bo_trwa_godzinami(monkeypatch):

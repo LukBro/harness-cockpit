@@ -13,6 +13,7 @@ import shutil
 import signal
 import sys
 import time
+import uuid
 
 import httpx
 
@@ -95,6 +96,8 @@ class Runner:
     async def send_event(self, client: httpx.AsyncClient, **kw) -> bool:
         """True tylko dla 2xx. Odrzucenie trafia na stderr: rodzaj, run_id, kod.
         Nigdy token, naglowki ani tresc odpowiedzi."""
+        # event_id nadaje runner; ponowienie z tym samym nie tworzy duplikatu (HAR-39)
+        kw.setdefault("event_id", str(uuid.uuid4()))
         r = await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
         if not r.is_success:
             print(

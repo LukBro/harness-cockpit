@@ -85,14 +85,20 @@ class Run(Base):
 
 class Event(Base):
     __tablename__ = "event"
-    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_event_run_seq"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "seq", name="uq_event_run_seq"),
+        UniqueConstraint("run_id", "event_id", name="uq_event_run_event"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # identyfikator nadany przez runnera; ponowienie z tym samym nie tworzy duplikatu (HAR-39)
+    event_id: Mapped[str] = mapped_column(String(36), default=_uuid)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("run.id"), index=True)
     seq: Mapped[int] = mapped_column(Integer)      # numeracja pod Last-Event-ID (BRO-76)
     step_id: Mapped[str] = mapped_column(String(100), default="")
     agent_id: Mapped[str] = mapped_column(String(100), default="")
+    agent_type: Mapped[str] = mapped_column(String(100), default="")
     kind: Mapped[str] = mapped_column(String(50))
     text: Mapped[str] = mapped_column(Text, default="")
     # brak pomiaru to None, nigdy 0 (BRO-87)
