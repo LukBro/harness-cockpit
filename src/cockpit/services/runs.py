@@ -6,13 +6,15 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Collection, Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
+
+from cockpit.settings import settings
 
 from .errors import BrakDostepu, NaruszonyNiezmiennik, NieZnaleziono, StanNiemozliwy
 from .walidacja import sprawdz_pomiar
@@ -83,15 +85,28 @@ async def zamelduj_runnera(
     return runner
 
 
-def runner_online(runner: Runner, polaczone: Collection[str]) -> bool:
-    """Online: tylko runner z aktywnym strumieniem.
+async def odnotuj_heartbeat(s: AsyncSession, runner: Runner) -> Runner:
+    runner.last_seen_at = datetime.now(timezone.utc)
+    await s.commit()
+    return runner
 
-    Zmiana reguly BRO-109 (HAR-26): swiezy last_seen_at (< 60 s) NIE czyni
-    runnera dostepnym. Runner zabity miedzy rejestracja a otwarciem strumienia
-    byl "online" przez minute: run powstawal, a polecenie czekalo w kolejce
-    bez odbiorcy. last_seen_at zostaje informacja, nie warunkiem.
+
+def runner_online(
+    runner: Runner, polaczone: Collection[str], teraz: datetime | None = None,
+) -> bool:
+    """Online: otwarty strumien ORAZ heartbeat mlodszy niz `runner_offline_after_s`.
+
+    Zmiana reguly HAR-26 (HAR-35, D12): sam strumien nie wystarcza. Strumien
+    polotwarty (runner zabity `kill -9`, zerwana siec) bywa po stronie serwera
+    "otwarty" dlugo, wiec dowodem zycia jest heartbeat. Wiek rowny progowi to offline.
     """
-    return runner.id in polaczone
+    if runner.id not in polaczone or runner.last_seen_at is None:
+        return False
+    widziany = runner.last_seen_at
+    if widziany.tzinfo is None:       # SQLite oddaje daty bez strefy; zapisujemy UTC
+        widziany = widziany.replace(tzinfo=timezone.utc)
+    teraz = teraz or datetime.now(timezone.utc)
+    return teraz - widziany < timedelta(seconds=settings.runner_offline_after_s)
 
 
 async def utworz_run(
