@@ -25,3 +25,4 @@
 - HAR-25: Każda funkcja wyliczająca wartość w zakresie (numer w obrębie runu, licznik w obrębie kroku) ma test, w którym poza zakresem istnieje rekord, który zmieniłby wynik, gdyby zakres zniknął.
 - HAR-133: Każda gałąź sprawdzająca kod wyjścia podprocesu, każdy kanał wyjścia (stdout/stderr) i każdy warunek typu w konfiguracji ma test na wejściu, na którym tylko ten element decyduje o wyniku; zaślepka, która zawsze zwraca sukces, nie chroni gałęzi błędu.
 - HAR-133: Każda gałąź tłumacząca wyjątek procesu albo wejścia (także w jedynej funkcji, którą testy podmieniają) ma test na prawdziwym kodzie tej funkcji, a każdy warunek pomijający dane ma test, w którym tylko ten warunek decyduje o wyniku.
+- HAR-22: Każdy człon warunku, który zawęża przeniesienie pola z payloadu do określonego zdarzenia, ma test, w którym to pole jest obecne w zdarzeniu innego rodzaju, bo inaczej usunięcie członu przeżywa.

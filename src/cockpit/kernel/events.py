@@ -27,6 +27,16 @@ _PHASE_MARK = re.compile(
     r"phase_timer\.py\s+\S+\s+mark\s+(?P<phase>[\w.]+)\s+(?P<edge>start|end)"
 )
 
+# (hook, krawedz znacznika) -> zdarzenie fazy. Fixture'y HAR-40 (fazy-atrapa.ndjson):
+# `mark X end` konczy sie PostToolUse, a `mark X end && false` - PostToolUseFailure
+# z `error` i bez `tool_response`; PreToolUse + end to jeszcze przed wykonaniem
+# komendy, wiec jest zdarzeniem surowym. Brak w tabeli = zdarzenie surowe.
+_PHASE_EVENT: dict[tuple[str, str], str] = {
+    ("PreToolUse", "start"): "phase_start",
+    ("PostToolUse", "end"): "phase_end",
+    ("PostToolUseFailure", "end"): "phase_failed",
+}
+
 
 @dataclass(slots=True)
 class Event:
@@ -78,9 +88,13 @@ def normalize(payload: dict[str, Any]) -> Event:
 
     if name in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
         phase, edge = parse_phase_mark(tool_input.get("command"))
-        if phase:
+        phase_event = _PHASE_EVENT.get((name, edge)) if phase else None
+        if phase_event:
             ev.phase = phase
-            ev.event = f"phase_{edge}"
+            ev.event = phase_event
             ev.tool = None
+            # Powod tylko z payloadu (brak pola = brak klucza); status zostaje None.
+            if phase_event == "phase_failed" and "error" in payload:
+                ev.extra["error"] = payload["error"]
 
     return ev
