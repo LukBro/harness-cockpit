@@ -1,5 +1,5 @@
 """Konfiguracja: zmienna srodowiskowa ma pierwszenstwo nad plikiem (BRO-98)."""
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     # W produkcji PostgreSQL. SQLite tylko w testach szkieletu.
     database_url: str = "postgresql+asyncpg://cockpit:cockpit@localhost/cockpit"
     runner_offline_after_s: int = 60   # prog z BRO-109, w konfiguracji a nie w kodzie
+    # Co ile sekund kokpit szuka runow runnerow offline (HAR-37; env COCKPIT_RUNNER_SWEEP_S).
+    # ge=1: 0 oznaczaloby petle bez przerwy.
+    runner_sweep_s: int = Field(default=10, ge=1)
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)
