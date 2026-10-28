@@ -3,6 +3,7 @@ a pole `status` w zadaniu runnera nie ma na niego wplywu."""
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -58,7 +59,8 @@ async def _nowy_run(klient) -> str:
 
 async def _zdarzenie(klient, run_id: str, kind: str, **reszta):
     return await klient.post("/api/events",
-                             json={"run_id": run_id, "kind": kind, **reszta},
+                             json={"run_id": run_id, "kind": kind, "step_id": "s0",
+                                   "event_id": str(uuid.uuid4()), **reszta},
                              headers=NAGLOWEK)
 
 

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import stat
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -138,8 +139,10 @@ async def test_zdarzenia_dostaja_kolejne_numery(klient):
     run_id = (await klient.post("/api/runs", json={})).json()["run_id"]
     h = {"Authorization": "Bearer tajne"}
     a = await klient.post("/api/events", json={"run_id": run_id, "kind": "output",
+                                               "step_id": "s0", "event_id": str(uuid.uuid4()),
                                                "text": "pierwsze"}, headers=h)
     b = await klient.post("/api/events", json={"run_id": run_id, "kind": "output",
+                                               "step_id": "s0", "event_id": str(uuid.uuid4()),
                                                "text": "drugie"}, headers=h)
     assert (a.json()["seq"], b.json()["seq"]) == (1, 2)
 
@@ -148,7 +151,8 @@ async def test_brak_pomiaru_kosztu_zapisuje_sie_jako_brak_nie_jako_zero(klient):
     """BRO-87: zero znaczy zmierzone zero. Brak pomiaru to None."""
     run_id = (await klient.post("/api/runs", json={})).json()["run_id"]
     await klient.post("/api/events",
-                      json={"run_id": run_id, "kind": "step_finished"},
+                      json={"run_id": run_id, "kind": "step_finished", "step_id": "s0",
+                            "event_id": str(uuid.uuid4())},
                       headers={"Authorization": "Bearer tajne"})
     async with db_session.SessionLocal() as s:
         from cockpit.db.models import Event
@@ -161,7 +165,8 @@ async def test_run_zakonczony_sukcesem_ma_stan_do_odbioru_nie_gotowe(klient):
     """BRO-108: odbior jest czynnoscia czlowieka."""
     run_id = (await klient.post("/api/runs", json={})).json()["run_id"]
     await klient.post("/api/events",
-                      json={"run_id": run_id, "kind": "step_finished"},
+                      json={"run_id": run_id, "kind": "step_finished", "step_id": "s0",
+                            "event_id": str(uuid.uuid4())},
                       headers={"Authorization": "Bearer tajne"})
     assert (await klient.get(f"/api/runs/{run_id}")).json()["status"] == "to_accept"
 
@@ -172,7 +177,7 @@ async def test_zapis_zera_przy_braku_pomiaru_jest_odrzucany(klient):
     r = await klient.post(
         "/api/events",
         json={"run_id": run_id, "kind": "step_finished", "cost_usd": 0.0,
-              "cost_source": "unavailable"},
+              "cost_source": "unavailable", "step_id": "s0", "event_id": str(uuid.uuid4())},
         headers={"Authorization": "Bearer tajne"},
     )
     assert r.status_code == 422

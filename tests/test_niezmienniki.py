@@ -436,7 +436,8 @@ def test_koszt_zero_przy_zrodle_unavailable_to_zmyslony_pomiar():
 async def test_zero_kosztu_bez_pomiaru_odrzuca_zdarzenie_z_tym_samym_komunikatem():
     """Warunek sprawdzany przed dostepem do sesji i runu - atrapy wystarcza."""
     with pytest.raises(NaruszonyNiezmiennik) as blad:
-        await zapisz_zdarzenie(None, object(), kind="cost", cost_usd=0.0)  # type: ignore[arg-type]
+        await zapisz_zdarzenie(  # type: ignore[arg-type]
+            None, object(), event_id="e-1", kind="cost", cost_usd=0.0)
     assert str(blad.value) == (
         "niezmiennik measured_or_null: koszt 0 przy zrodle 'unavailable' - "
         "brak pomiaru zapisz jako None"

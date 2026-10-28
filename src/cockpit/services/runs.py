@@ -26,22 +26,49 @@ _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
 _PROBY_SEQ = 5  # ile razy powtarzamy wyliczenie seq po kolizji (HAR-25)
 _OGRANICZENIE_SEQ = "uq_event_run_seq"  # nazwa z UniqueConstraint(run_id, seq) w modelu
 _KOLUMNY_SEQ_SQLITE = frozenset({"event.run_id", "event.seq"})
+_OGRANICZENIE_ZDARZENIA = "uq_event_run_event"  # UniqueConstraint(run_id, event_id) w modelu
+_KOLUMNY_ZDARZENIA_SQLITE = frozenset({"event.run_id", "event.event_id"})
 
 
-def _kolizja_numeru(e: IntegrityError) -> bool:
-    """Czy to naruszenie unikalnosci (run_id, seq), a nie inny blad zapisu (HAR-138)."""
+def _kolizja_unikalnosci(
+    e: IntegrityError, nazwa_pg: str, kolumny_sqlite: frozenset[str],
+) -> bool:
+    """Czy to naruszenie wlasnie tego ograniczenia unikalnosci, a nie inny blad zapisu."""
     sqlstate = getattr(e.orig, "sqlstate", None)
     if sqlstate is not None:
         # PostgreSQL: rozpoznajemy po kodzie i nazwie ograniczenia, nie po tresci
         nazwa = getattr(getattr(e.orig, "orig", None), "constraint_name", None)
-        return sqlstate == "23505" and nazwa == _OGRANICZENIE_SEQ
+        return sqlstate == "23505" and nazwa == nazwa_pg
     # SQLite nie niesie nazwy ograniczenia, tylko liste kolumn w komunikacie
     prefiks = "UNIQUE constraint failed: "
     komunikat = str(e.orig)
     if not komunikat.startswith(prefiks):
         return False
     kolumny = {k.strip() for k in komunikat.removeprefix(prefiks).split(",")}
-    return kolumny == _KOLUMNY_SEQ_SQLITE
+    return kolumny == kolumny_sqlite
+
+
+def _kolizja_numeru(e: IntegrityError) -> bool:
+    """Czy to naruszenie unikalnosci (run_id, seq), a nie inny blad zapisu (HAR-138)."""
+    return _kolizja_unikalnosci(e, _OGRANICZENIE_SEQ, _KOLUMNY_SEQ_SQLITE)
+
+
+def _kolizja_zdarzenia(e: IntegrityError) -> bool:
+    """Czy to naruszenie unikalnosci (run_id, event_id): to samo zdarzenie dwa razy (HAR-39)."""
+    return _kolizja_unikalnosci(e, _OGRANICZENIE_ZDARZENIA, _KOLUMNY_ZDARZENIA_SQLITE)
+
+
+async def _zdarzenie_o_id(
+    s: AsyncSession, run_id: str, tenant_id: str, event_id: str,
+) -> Event | None:
+    return (
+        await s.execute(
+            select(Event).where(
+                Event.run_id == run_id, Event.tenant_id == tenant_id,
+                Event.event_id == event_id,
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def _nastepny_seq(s: AsyncSession, run_id: str, tenant_id: str) -> int:
@@ -192,22 +219,33 @@ async def zapisz_zdarzenie(
     s: AsyncSession,
     run: Run,
     *,
+    event_id: str,
     kind: str,
     step_id: str = "",
     agent_id: str = "",
+    agent_type: str = "",
     text: str = "",
     cost_usd: float | None = None,
     cost_source: str = "unavailable",
     tokens: int | None = None,
     duration_ms: int | None = None,
     wyslane_output: int | None = None,
-) -> Event:
+) -> tuple[Event, bool]:
+    """Zapisuje zdarzenie od runnera; zwraca `(zdarzenie, nowe)`.
+
+    Ponowienie z tym samym `event_id` w tym runie zwraca zapisane zdarzenie
+    i `False`: bez zapisu, bez zmiany statusu i powodu runu (HAR-39).
+    """
     naruszenie = sprawdz_pomiar(cost_usd, cost_source)
     if naruszenie is not None:
         raise NaruszonyNiezmiennik(naruszenie.niezmiennik, naruszenie.szczegol)
 
     # po rollbacku obiekty sesji sa wygaszone - trzymamy same napisy
     run_id, tenant_id = run.id, run.tenant_id
+
+    istniejace = await _zdarzenie_o_id(s, run_id, tenant_id, event_id)
+    if istniejace is not None:
+        return istniejace, False
 
     for _ in range(_PROBY_SEQ):
         seq = await _nastepny_seq(s, run_id, tenant_id)
@@ -227,13 +265,20 @@ async def zapisz_zdarzenie(
                 run.reason = komunikat
 
         ev = Event(tenant_id=tenant_id, run_id=run_id, seq=seq, step_id=step_id,
-                   agent_id=agent_id, kind=kind, text=text, cost_usd=cost_usd,
+                   event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=text, cost_usd=cost_usd,
                    cost_source=cost_source, tokens=tokens, duration_ms=duration_ms)
         s.add(ev)
         run.status = nastepny_status(run.status, kind)
         try:
             await s.commit()
         except IntegrityError as e:
+            if _kolizja_zdarzenia(e):
+                # ten sam event_id zapisany rownolegle: oddajemy zapisane, bez zmian runu
+                await s.rollback()
+                istniejace = await _zdarzenie_o_id(s, run_id, tenant_id, event_id)
+                if istniejace is None:
+                    raise   # kolizja z cudzym zespolem: nie jest to nasz duplikat
+                return istniejace, False
             if not _kolizja_numeru(e):
                 # inny blad zapisu (klucz obcy, NOT NULL): ponowienie tylko by go ukrylo
                 await s.rollback()
@@ -244,7 +289,7 @@ async def zapisz_zdarzenie(
             await s.rollback()
             await s.refresh(run)
             continue
-        return ev
+        return ev, True
 
     raise StanNiemozliwy(
         f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
