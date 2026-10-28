@@ -130,31 +130,94 @@ def test_znacznik_poczatku_fazy_b2_z_prawdziwego_pretooluse_daje_phase_start():
     assert ev.tool is None
 
 
-def test_znacznik_konca_fazy_b2_z_prawdziwego_pretooluse_daje_phase_end():
-    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
-    # Chroni: rozroznienie krawedzi start/end w _PHASE_MARK i w nazwie zdarzenia.
+KOMENDA_B2_END_PORAZKA = KOMENDA_B2_END + " && false"
+KOMENDA_C1_END_PORAZKA = "python3 /tmp/har40/phase_timer.py /tmp/har40/run mark C.1 end; false"
+
+
+def _po_komendzie(hook: str, komenda: str) -> Event:
     pary = [
-        (p, ev) for p, ev in _zdarzenia("fazy-atrapa.ndjson", "PreToolUse")
-        if p["tool_input"]["command"] == KOMENDA_B2_END
+        ev for p, ev in _zdarzenia("fazy-atrapa.ndjson", hook)
+        if p["tool_input"]["command"] == komenda
     ]
-    assert len(pary) == 1
-    _, ev = pary[0]
+    assert len(pary) == 1, (hook, komenda)
+    return pary[0]
+
+
+def test_komenda_konca_fazy_przed_wykonaniem_nie_konczy_fazy():
+    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
+    # Chroni: koniec fazy pochodzi ze zdarzenia PO komendzie; PreToolUse + end
+    # zostaje zdarzeniem surowym narzedzia Bash.
+    ev = _po_komendzie("PreToolUse", KOMENDA_B2_END)
+
+    assert ev.event == "PreToolUse"
+    assert ev.phase is None
+    assert ev.tool == "Bash"
+
+
+def test_komenda_konca_fazy_zakonczona_sukcesem_daje_phase_end_po_posttooluse():
+    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
+    # Chroni: obecnosc "PostToolUse" w hookach konczacych faze.
+    ev = _po_komendzie("PostToolUse", KOMENDA_B2_END)
 
     assert ev.event == "phase_end"
     assert ev.phase == "B.2"
     assert ev.tool is None
+    assert ev.status is None
 
 
-def test_znacznik_fazy_zakonczony_sukcesem_daje_to_samo_po_posttooluse():
+def test_porazka_komendy_ze_znacznikiem_konca_daje_phase_failed_z_trescia_bledu():
     """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
-    # Chroni: obecnosc "PostToolUse" w krotce hookow, ktore niosa znacznik fazy.
+    # Chroni: PostToolUseFailure + end -> phase_failed oraz extra["error"] z pola `error`.
     pary = [
-        (p, ev) for p, ev in _zdarzenia("fazy-atrapa.ndjson", "PostToolUse")
-        if p["tool_input"]["command"] == KOMENDA_B2_START
+        (p, e) for p, e in _zdarzenia("fazy-atrapa.ndjson", "PostToolUseFailure")
+        if p["tool_input"]["command"] == KOMENDA_B2_END_PORAZKA
     ]
     assert len(pary) == 1
-    _, ev = pary[0]
-    assert (ev.event, ev.phase) == ("phase_start", "B.2")
+    payload, ev = pary[0]
+
+    assert payload["error"] == "Exit code 1"
+    assert ev.event == "phase_failed"
+    assert ev.phase == "B.2"
+    assert ev.tool is None
+    assert ev.extra["error"] == "Exit code 1"
+    assert ev.to_dict()["extra"] == {"error": "Exit code 1"}
+
+
+def test_porazka_komendy_z_srednikiem_po_znaczniku_konca_tez_daje_phase_failed():
+    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
+    # Chroni: ten sam wynik dla `end; false` (kropka w nazwie fazy C.1).
+    ev = _po_komendzie("PostToolUseFailure", KOMENDA_C1_END_PORAZKA)
+
+    assert (ev.event, ev.phase) == ("phase_failed", "C.1")
+    assert ev.extra["error"] == "Exit code 1"
+
+
+def test_porazka_komendy_nie_konczy_fazy_jako_phase_end():
+    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
+    # Chroni: zadne zdarzenie z fixture'a PostToolUseFailure nie jest phase_end.
+    zdarzenia = [ev for _, ev in _zdarzenia("fazy-atrapa.ndjson", "PostToolUseFailure")]
+    assert len(zdarzenia) == 2
+    assert all(ev.event != "phase_end" for ev in zdarzenia)
+
+
+def test_komenda_konca_fazy_z_porazka_przed_wykonaniem_nie_jest_ani_koncem_ani_porazka():
+    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
+    # Chroni: PreToolUse nie ocenia wyniku komendy, ktorej jeszcze nie wykonano.
+    for komenda in (KOMENDA_B2_END_PORAZKA, KOMENDA_C1_END_PORAZKA):
+        ev = _po_komendzie("PreToolUse", komenda)
+        assert ev.event == "PreToolUse", komenda
+        assert ev.phase is None, komenda
+        assert ev.tool == "Bash", komenda
+
+
+def test_znacznik_poczatku_fazy_po_wykonaniu_komendy_nie_zaczyna_fazy_drugi_raz():
+    """Komenda pochodzi od ATRAPY phase_timer.py (format niepotwierdzony w palserwis)."""
+    # Chroni: phase_start wylacznie z PreToolUse; PostToolUse + start to zdarzenie surowe.
+    ev = _po_komendzie("PostToolUse", KOMENDA_B2_START)
+
+    assert ev.event == "PostToolUse"
+    assert ev.phase is None
+    assert ev.tool == "Bash"
 
 
 def test_zwykle_polecenie_basha_subagenta_nie_jest_znacznikiem_fazy():
