@@ -10,16 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import signal
 import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -79,6 +82,29 @@ def test_czestotliwosc_heartbeatu_mozna_ustawic_zmienna_srodowiskowa(
 ):
     monkeypatch.setenv("COCKPIT_HEARTBEAT_CO_S", "9")
     assert Settings(_env_file=None, runner_offline_after_s=60).heartbeat_co_s == 9
+
+
+def test_heartbeat_rowny_progowi_offline_jest_odrzucony_bo_runner_bylby_offline_miedzy_meldunkami(
+    czyste_srodowisko,
+):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, runner_offline_after_s=60, heartbeat_co_s=60)
+
+
+def test_heartbeat_rzadszy_niz_prog_offline_jest_odrzucony(czyste_srodowisko):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, runner_offline_after_s=60, heartbeat_co_s=61)
+
+
+def test_heartbeat_czestszy_niz_prog_offline_jest_przyjety(czyste_srodowisko):
+    assert Settings(_env_file=None, runner_offline_after_s=60, heartbeat_co_s=59).heartbeat_co_s == 59
+
+
+def test_domyslny_heartbeat_rowny_progowi_offline_jest_odrzucony(czyste_srodowisko):
+    """Prog 1 s daje domyslna czestotliwosc 1 s (dolna granica) - sama wyliczona wartosc
+    tez musi byc scisle mniejsza od progu, nie tylko ta podana jawnie."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, runner_offline_after_s=1)
 
 
 # --- kokpit: endpoint heartbeatu i regula "online" -----------------------------
@@ -368,6 +394,23 @@ async def test_awaria_sieci_przy_heartbeacie_trafia_na_stderr_bez_tokenu_a_petla
     assert TOKEN_RUNNERA not in wyjscie.out
 
 
+@pytest.mark.parametrize("wyjatek", [RuntimeError, ValueError])
+async def test_nieoczekiwany_wyjatek_przy_heartbeacie_trafia_na_stderr_jako_sama_nazwa_klasy_a_petla_trwa(
+    wyjatek, capsys,
+):
+    atrapa = _AtrapaSieci(blad=wyjatek(f"cos poszlo nie tak, token {TOKEN_RUNNERA}"))
+    async with _heartbeat(atrapa, 0.05) as hb:
+        hb.start()
+        await _poczekaj(lambda: len(atrapa.zadania) >= 3)
+
+    wyjscie = capsys.readouterr()
+    linie = wyjscie.err.splitlines()
+    assert len(linie) >= 2
+    assert set(linie) == {f"heartbeat nieudany: {wyjatek.__name__}"}
+    assert TOKEN_RUNNERA not in wyjscie.err
+    assert TOKEN_RUNNERA not in wyjscie.out
+
+
 async def test_zadanie_heartbeatu_na_ktore_kokpit_nie_odpowiada_konczy_sie_po_limicie_czasu(
     capsys,
 ):
@@ -542,7 +585,10 @@ async def test_stop_runnera_konczy_proces_trwajacego_kroku_i_mozna_go_wywolac_dw
         pid = proc.pid
         assert _zyje(pid)
 
+        start_pierwszego = time.monotonic()
         await asyncio.wait_for(runner.stop(), 10)
+        # krok konczy sie na SIGTERM, wiec zatrzymanie nie moze czekac dluzej niz potrzeba
+        assert time.monotonic() - start_pierwszego < 0.5
         start = time.monotonic()
         await asyncio.wait_for(runner.stop(), 10)      # drugi raz: bez wyjatku i bez czekania
         assert time.monotonic() - start < 0.5
@@ -550,6 +596,7 @@ async def test_stop_runnera_konczy_proces_trwajacego_kroku_i_mozna_go_wywolac_dw
         assert not _zyje(pid)                           # takze zombie: proces odebrany
         await asyncio.wait_for(zadanie, 10)
     assert runner._procesy == set()
+    assert runner._sprzatanie == {}                     # sprzatanie zakonczonego kroku nie zostaje w pamieci
 
 
 async def test_stop_runnera_konczy_cala_grupe_procesow_kroku_takze_potomka(tmp_path):
@@ -634,7 +681,7 @@ async def test_anulowanie_zadania_kroku_przez_kogos_innego_niz_stop_zabija_grupe
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(zadanie, 5)
 
-        # ta galaz nie czeka na proces, wiec ginie "po chwili"
+        # potomek nie jest dzieckiem runnera, wiec jego smierc obserwujemy sondowaniem
         await _poczekaj(lambda: not _zyje(pid) and not _zyje(potomek), limit=3)
     assert runner._procesy == set()
 
@@ -647,11 +694,42 @@ class _StrumienBezKonca(httpx.AsyncByteStream):
         await asyncio.Event().wait()
 
 
+class _StrumienKonczacySiePoZdarzeniu(httpx.AsyncByteStream):
+    """Po `polaczono` wola `po_polaczono` w zadaniu nasluchu, a potem konczy strumien."""
+
+    def __init__(self, po_polaczono):
+        self._po_polaczono = po_polaczono
+
+    async def __aiter__(self):
+        yield POLACZONO
+        await self._po_polaczono()
+
+
+class _StrumienZPoleceniami(httpx.AsyncByteStream):
+    """Po `polaczono` wysyla polecenia (np. `run_step`), a potem wisi jak otwarty strumien."""
+
+    def __init__(self, polecenia: list[dict], czekaj_na: asyncio.Event | None = None):
+        self._polecenia = polecenia
+        self._czekaj_na = czekaj_na
+
+    async def __aiter__(self):
+        yield POLACZONO
+        if self._czekaj_na is not None:
+            await self._czekaj_na.wait()
+        for polecenie in self._polecenia:
+            yield b"data: " + json.dumps(polecenie).encode() + b"\n\n"
+        await asyncio.Event().wait()
+
+
 class _AtrapaKokpitu(httpx.AsyncBaseTransport):
-    """Kokpit: rejestracja (z `heartbeat_co_s`), strumien i heartbeat."""
+    """Kokpit: rejestracja (z `heartbeat_co_s`), strumien, heartbeat i przyjmowanie zdarzen."""
 
     def __init__(self, heartbeat_co_s: int | None = 15, strumien_konczy: bool = False,
-                 strumien_status: int = 200, heartbeat_wisi: bool = False):
+                 strumien_status: int = 200, heartbeat_wisi: bool = False, po_polaczono=None,
+                 polecenia: list[dict] | None = None, polecenia_po: asyncio.Event | None = None):
+        self.po_polaczono = po_polaczono
+        self.polecenia_po = polecenia_po
+        self.polecenia = polecenia
         self.heartbeat_co_s = heartbeat_co_s
         self.strumien_konczy, self.strumien_status = strumien_konczy, strumien_status
         self.heartbeat_wisi = heartbeat_wisi
@@ -672,6 +750,14 @@ class _AtrapaKokpitu(httpx.AsyncBaseTransport):
             return httpx.Response(200, json=tresc)
         if sciezka.endswith("/api/runners/stream"):
             naglowki = {"content-type": "text/event-stream"}
+            if self.po_polaczono is not None:
+                return httpx.Response(
+                    self.strumien_status,
+                    stream=_StrumienKonczacySiePoZdarzeniu(self.po_polaczono), headers=naglowki)
+            if self.polecenia is not None:
+                return httpx.Response(
+                    self.strumien_status,
+                    stream=_StrumienZPoleceniami(self.polecenia, self.polecenia_po), headers=naglowki)
             if self.strumien_konczy:
                 return httpx.Response(self.strumien_status, content=POLACZONO, headers=naglowki)
             return httpx.Response(self.strumien_status, stream=_StrumienBezKonca(), headers=naglowki)
@@ -679,6 +765,8 @@ class _AtrapaKokpitu(httpx.AsyncBaseTransport):
             self.heartbeat_odebrany.set()
             if self.heartbeat_wisi:
                 await asyncio.Event().wait()
+            return httpx.Response(200, json={"status": "ok"})
+        if sciezka.endswith("/api/events"):
             return httpx.Response(200, json={"status": "ok"})
         return httpx.Response(404)
 
@@ -768,6 +856,46 @@ async def test_stop_w_trakcie_nasluchu_konczy_nasluch_normalnie_bez_bledu_zamkni
     assert asyncio.all_tasks() - przed == set()
 
 
+async def test_zamkniecie_strumienia_w_trakcie_zatrzymywania_runnera_konczy_nasluch_normalnie_a_nie_bledem(
+    monkeypatch,
+):
+    """Strumien konczy sie sam (nie przez anulowanie), gdy `stop()` juz trwa: to zwykle
+    wyjscie z `_nasluchuj` przy ustawionym `_zatrzymany`, bez zadnego CancelledError."""
+    zapis = _podglad_heartbeatu(monkeypatch)
+    atrapa = _AtrapaKokpitu(po_polaczono=lambda: runner.stop())
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
+    przed = asyncio.all_tasks()
+    nasluch = asyncio.create_task(runner.listen())
+
+    wynik = await _koniec_nasluchu(nasluch, limit=5)
+
+    assert wynik is None
+    assert runner._zatrzymany
+    assert zapis["stop"] >= 1
+    assert asyncio.all_tasks() - przed == set()
+
+
+async def test_anulowanie_nasluchu_przez_kogos_innego_niz_stop_dochodzi_do_wolajacego_i_zatrzymuje_heartbeat(
+    monkeypatch,
+):
+    zapis = _podglad_heartbeatu(monkeypatch)
+    atrapa = _AtrapaKokpitu()
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
+    przed = asyncio.all_tasks()
+    nasluch = asyncio.create_task(runner.listen())
+    await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
+
+    nasluch.cancel()
+    # wait, nie wait_for: wait_for sam anulowalby zadanie i maskowal polkniete anulowanie
+    zakonczone, _ = await asyncio.wait({nasluch}, timeout=5)
+
+    assert nasluch in zakonczone
+    assert nasluch.cancelled()
+    assert not runner._zatrzymany
+    assert zapis["stop"] >= 1
+    assert asyncio.all_tasks() - przed == set()
+
+
 async def test_zawieszony_heartbeat_nie_blokuje_zatrzymania_runnera_dluzej_niz_timeout(
     monkeypatch,
 ):
@@ -820,3 +948,312 @@ async def test_odpowiedz_rejestracji_bez_czestotliwosci_heartbeatu_konczy_nasluc
 
     assert zapis["utworzone"] == []
     assert not any(z.url.path.endswith("/api/runners/stream") for z in atrapa.zadania)
+
+
+# --- runner: krok przyjety w trakcie stop() nie zostaje sierota ----------------
+
+def _program_ignorujacy_sigterm(plik_pid, plik_potomka=None) -> list[str]:
+    """Krok w Pythonie (`trap` w sh jest niestabilny): SIGTERM ignorowany, a pid
+    trafia do pliku dopiero PO ustawieniu obslugi, wiec SIGTERM nigdy go nie zabije."""
+    linie = ["import os, signal, subprocess, time", "signal.signal(signal.SIGTERM, signal.SIG_IGN)"]
+    if plik_potomka is not None:
+        linie += ["p = subprocess.Popen(['sleep', '60'])",
+                  f"open({str(plik_potomka)!r}, 'w').write(str(p.pid))"]
+    linie += [f"open({str(plik_pid)!r}, 'w').write(str(os.getpid()))", "time.sleep(60)"]
+    return [sys.executable, "-c", "\n".join(linie)]
+
+
+class _BramkaRejestracji:
+    """Proces kroku powstaje naprawde, ale `create_subprocess_exec` oddaje go
+    `run_command` dopiero po `otworz()` - czyli krok jest przyjety wtedy, kiedy chcemy."""
+
+    def __init__(self, monkeypatch, znacznik):
+        self.proc = None
+        self.powstal = asyncio.Event()
+        self._otwarta = asyncio.Event()
+        prawdziwa = asyncio.create_subprocess_exec
+
+        async def exec_z_bramka(*args, **kwargs):
+            proc = await prawdziwa(*args, **kwargs)
+            if any(str(znacznik) in str(a) for a in args):
+                self.proc = proc
+                self.powstal.set()
+                await self._otwarta.wait()
+            return proc
+
+        monkeypatch.setattr(runner_client.asyncio, "create_subprocess_exec", exec_z_bramka)
+
+    def otworz(self) -> None:
+        self._otwarta.set()
+
+
+def _zabij_proces_kroku_jesli_zyje(proc) -> None:
+    if proc is not None and proc.returncode is None:
+        _zabij_proces_kroku(proc.pid)
+
+
+async def _koniec_zadania(zadanie: asyncio.Task, limit: float = 5.0) -> bool:
+    zakonczone, _ = await asyncio.wait({zadanie}, timeout=limit)
+    return zadanie in zakonczone
+
+
+async def test_krok_przyjety_juz_po_zakonczeniu_stop_ginie_po_czasie_na_zakonczenie_i_nie_zostaje_sierota(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 0.2)
+    plik_pid, plik_potomka = tmp_path / "pid-kroku", tmp_path / "pid-potomka"
+    bramka = _BramkaRejestracji(monkeypatch, plik_pid)
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200))
+    ) as klient:
+        zadanie = asyncio.create_task(runner.run_command(
+            klient, "run-1", "s0", _program_ignorujacy_sigterm(plik_pid, plik_potomka)))
+        try:
+            await asyncio.wait_for(bramka.powstal.wait(), 10)
+            pid = await _pid_z_pliku(plik_pid)
+            potomek = await _pid_z_pliku(plik_potomka)
+            await asyncio.wait_for(runner.stop(), 10)       # stop() konczy sie przed rejestracja kroku
+            assert runner._procesy == set()
+
+            bramka.otworz()
+
+            assert await _koniec_zadania(zadanie), "krok przyjety po stop() nie zostal zakonczony"
+            assert bramka.proc.returncode == -signal.SIGKILL    # SIGTERM zignorowany, wiec SIGKILL
+            assert not _zyje(pid)
+            await _poczekaj(lambda: not _zyje(potomek), limit=3)
+            assert runner._procesy == set()
+        finally:
+            bramka.otworz()
+            _zabij_proces_kroku_jesli_zyje(bramka.proc)
+            if not zadanie.done():
+                zadanie.cancel()
+            await asyncio.wait({zadanie}, timeout=5)
+
+
+async def test_krok_przyjety_w_trakcie_sprzatania_innego_kroku_przez_stop_jest_zakonczony_zanim_stop_wroci(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 0.8)
+    plik_a, plik_b = tmp_path / "pid-a", tmp_path / "pid-b"
+    bramka = _BramkaRejestracji(monkeypatch, plik_b)
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
+    zadanie_b = stop = None
+    async with _krok(runner, _program_ignorujacy_sigterm(plik_a)):
+        pid_a = await _pid_z_pliku(plik_a)
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200))
+            ) as klient:
+                zadanie_b = asyncio.create_task(runner.run_command(
+                    klient, "run-1", "s1", _program_ignorujacy_sigterm(plik_b)))
+                await asyncio.wait_for(bramka.powstal.wait(), 10)
+                pid_b = await _pid_z_pliku(plik_b)
+
+                stop = asyncio.create_task(runner.stop())
+                await _poczekaj(lambda: runner._zatrzymany)
+                await asyncio.sleep(0.2)                    # stop() czeka na krok A (do 0.8 s)
+                assert not stop.done()
+                bramka.otworz()                             # krok B zostaje przyjety w trakcie stop()
+
+                assert await _koniec_zadania(stop, 10), "stop() nie wrocil"
+                assert not _zyje(pid_b), "krok przyjety w trakcie stop() przezyl stop()"
+                assert bramka.proc.returncode is not None   # odebrany: bez zombie
+                assert not _zyje(pid_a)
+                assert await _koniec_zadania(zadanie_b)
+                assert runner._procesy == set()
+        finally:
+            bramka.otworz()
+            _zabij_proces_kroku_jesli_zyje(bramka.proc)
+            for zadanie in (zadanie_b, stop):
+                if zadanie is not None and not zadanie.done():
+                    zadanie.cancel()
+                    await asyncio.wait({zadanie}, timeout=5)
+
+
+# --- runner: krok z nasluchu ginie przy stop() z osobnego zadania ---------------
+
+async def test_krok_ignorujacy_sygnal_zakonczenia_uruchomiony_z_nasluchu_jest_zabity_i_odebrany_zanim_stop_wroci(
+    tmp_path, monkeypatch,
+):
+    """Produkcyjna sciezka: krok biegnie w zadaniu nasluchu, a `stop()` (jak handler sygnalu
+    w `__main__`) w osobnym zadaniu anuluje nasluch. Krok konczy sie wtedy galezia
+    `CancelledError` w `run_command`, nie galezia `_zatrzymany`; petla w `stop()` go juz nie
+    widzi, bo `run_command` zdejmuje proces z `_procesy` w `finally`."""
+    monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 0.3)
+    plik_pid = tmp_path / "pid-kroku"
+    atrapa = _AtrapaKokpitu(polecenia=[{
+        "type": "run_step", "run_id": "run-1", "step_id": "s0",
+        "command": _program_ignorujacy_sigterm(plik_pid),
+    }])
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
+    nasluch = asyncio.create_task(runner.listen())
+    stop = None
+    proc = None
+    try:
+        pid = await _pid_z_pliku(plik_pid)
+        await _poczekaj(lambda: runner._procesy)
+        proc = next(iter(runner._procesy))
+        assert proc.pid == pid and _zyje(pid)
+
+        stop = asyncio.create_task(runner.stop())
+        assert await _koniec_zadania(stop, 10), "stop() nie wrocil"
+
+        # w chwili powrotu stop() krok jest juz martwy i odebrany
+        assert proc.returncode == -signal.SIGKILL
+        assert not _zyje(pid)
+        assert await _koniec_nasluchu(nasluch, limit=5) is None
+        assert runner._procesy == set()
+    finally:
+        _zabij_proces_kroku_jesli_zyje(proc)
+        for zadanie in (stop, nasluch):
+            if zadanie is not None and not zadanie.done():
+                zadanie.cancel()
+                await asyncio.wait({zadanie}, timeout=5)
+
+
+async def test_anulowanie_kroku_ignorujacego_sygnal_zakonczenia_przez_kogos_innego_niz_stop_konczy_sie_sigkill_i_odebraniem_procesu(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 0.3)
+    plik_pid = tmp_path / "pid-kroku"
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
+    async with _krok(runner, _program_ignorujacy_sigterm(plik_pid)) as (zadanie, proc):
+        pid = await _pid_z_pliku(plik_pid)
+        assert _zyje(pid)
+
+        zadanie.cancel()
+        # wait, nie wait_for: wait_for sam anulowalby zadanie i maskowal brak anulowania
+        assert await _koniec_zadania(zadanie, 5)
+
+        assert zadanie.cancelled()                  # CancelledError dochodzi do wolajacego
+        assert proc.returncode == -signal.SIGKILL   # zabity i odebrany przed koncem zadania
+        assert not _zyje(pid)
+        assert runner._procesy == set()
+        assert runner._sprzatanie == {}             # anulowany krok nie zostawia zadania sprzatania
+
+
+async def test_drugie_anulowanie_kroku_w_trakcie_sprzatania_nie_przerywa_zabicia_procesu(
+    tmp_path, monkeypatch,
+):
+    """Chroni `asyncio.shield`: bez niego drugie anulowanie przerywa czekanie na SIGTERM,
+    SIGKILL nigdy nie pada i krok ignorujacy sygnal zostaje sierota."""
+    monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 0.4)
+    plik_pid = tmp_path / "pid-kroku"
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
+    async with _krok(runner, _program_ignorujacy_sigterm(plik_pid)) as (zadanie, proc):
+        pid = await _pid_z_pliku(plik_pid)
+
+        zadanie.cancel()
+        await asyncio.sleep(0.1)                    # sprzatanie trwa: krok ignoruje SIGTERM
+        assert not zadanie.done()
+        zadanie.cancel()
+        assert await _koniec_zadania(zadanie, 5)
+
+        assert zadanie.cancelled()
+        # sprzatanie dokancza osobne zadanie spod shield, wiec smierc kroku obserwujemy z boku
+        await _poczekaj(lambda: proc.returncode is not None, limit=5)
+        assert proc.returncode == -signal.SIGKILL
+        assert not _zyje(pid)
+
+
+# --- runner: odebrany proces i kolejnosc stop() ---------------------------------
+
+def _podmien_killpg(monkeypatch) -> list[tuple[int, signal.Signals]]:
+    """Podmienia `os` tylko w module runnera (globalny `os` zostaje); zadne sygnaly nie leca."""
+    wywolania: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(
+        runner_client, "os", SimpleNamespace(killpg=lambda pid, sygnal: wywolania.append((pid, sygnal))),
+    )
+    return wywolania
+
+
+async def test_odebrany_proces_kroku_nie_dostaje_sygnalu_bo_jego_pid_moze_nalezec_do_obcej_grupy(
+    monkeypatch,
+):
+    proc = await asyncio.create_subprocess_exec("true", start_new_session=True)
+    _zapamietaj_proces(proc.pid)
+    await asyncio.wait_for(proc.wait(), 5)
+    assert proc.returncode == 0
+    wywolania = _podmien_killpg(monkeypatch)
+
+    RunnerKlient._zabij_grupe(proc, signal.SIGKILL)
+
+    assert wywolania == []
+
+
+async def test_zywy_proces_kroku_dostaje_sygnal_w_swojej_grupie_procesow(monkeypatch):
+    proc = await asyncio.create_subprocess_exec("sleep", "60", start_new_session=True)
+    _zapamietaj_proces(proc.pid)
+    try:
+        wywolania = _podmien_killpg(monkeypatch)
+
+        RunnerKlient._zabij_grupe(proc, signal.SIGTERM)
+
+        assert wywolania == [(proc.pid, signal.SIGTERM)]
+    finally:
+        _zabij_proces_kroku(proc.pid)
+        await asyncio.wait({asyncio.ensure_future(proc.wait())}, timeout=5)
+
+
+async def test_polecenie_kroku_ktore_przyszlo_w_trakcie_zatrzymywania_runnera_nie_uruchamia_procesu(
+    monkeypatch,
+):
+    """Zatrzymanie trwa (heartbeat konczy sie powoli), a kokpit dosyla krok. Nasluch musi
+    byc odciety, zanim stop() zacznie czekac na heartbeat; galaz `_zatrzymany` w
+    `run_command` zabilaby spozniony krok, ale dopiero po tym, jak proces powstal."""
+    from runner.heartbeat import Heartbeat
+
+    znacznik = "krok-spozniony"
+    w_stopie_heartbeatu, puszczony = asyncio.Event(), asyncio.Event()
+
+    class WolnyHeartbeat(Heartbeat):
+        def __init__(self, client, url, naglowki, co_s):
+            super().__init__(client, url, naglowki, 0.05)
+
+        async def stop(self):
+            w_stopie_heartbeatu.set()
+            await puszczony.wait()
+            await super().stop()
+
+    monkeypatch.setattr(runner_client, "Heartbeat", WolnyHeartbeat)
+    uruchomione: list[int] = []
+    prawdziwa = asyncio.create_subprocess_exec
+
+    async def exec_z_rejestrem(*args, **kwargs):
+        proc = await prawdziwa(*args, **kwargs)
+        if any(znacznik in str(a) for a in args):
+            uruchomione.append(proc.pid)
+            _zapamietaj_proces(proc.pid)
+        return proc
+
+    monkeypatch.setattr(runner_client.asyncio, "create_subprocess_exec", exec_z_rejestrem)
+    dosylka = asyncio.Event()
+    atrapa = _AtrapaKokpitu(polecenia_po=dosylka, polecenia=[{
+        "type": "run_step", "run_id": "run-1", "step_id": "s0",
+        "command": [sys.executable, "-c", f"import time; time.sleep(60)  # {znacznik}"],
+    }])
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
+    nasluch = asyncio.create_task(runner.listen())
+    stop = None
+    try:
+        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)     # nasluch jest w strumieniu
+        stop = asyncio.create_task(runner.stop())
+        await asyncio.wait_for(w_stopie_heartbeatu.wait(), 5)           # stop() czeka na heartbeat
+
+        dosylka.set()
+        await asyncio.sleep(0.3)                                        # czas na przyjecie kroku
+
+        assert uruchomione == []
+        puszczony.set()
+        assert await _koniec_zadania(stop, 10), "stop() nie wrocil"
+        assert await _koniec_nasluchu(nasluch, limit=5) is None
+        assert uruchomione == []
+    finally:
+        puszczony.set()
+        for pid in uruchomione:
+            _zabij_proces_kroku(pid)
+        for zadanie in (stop, nasluch):
+            if zadanie is not None and not zadanie.done():
+                zadanie.cancel()
+                await asyncio.wait({zadanie}, timeout=5)

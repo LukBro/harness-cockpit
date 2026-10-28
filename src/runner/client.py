@@ -68,6 +68,7 @@ class Runner:
         self._headers = {"Authorization": f"Bearer {token}"}
         self.heartbeat_co_s: int | None = None
         self._procesy: set[asyncio.subprocess.Process] = set()
+        self._sprzatanie: dict[asyncio.subprocess.Process, asyncio.Task] = {}
         self._heartbeat: Heartbeat | None = None
         self._zatrzymany = False
         self._zadanie: asyncio.Task | None = None
@@ -119,12 +120,16 @@ class Runner:
         )
         self._procesy.add(proc)
         try:
+            if self._zatrzymany:
+                # stop() mogl juz skonczyc sprzatanie: bez tego krok ignorujacy SIGTERM zostalby sierota
+                await self._zakoncz_krok(proc)
             out, _ = await proc.communicate()
         except asyncio.CancelledError:
-            self._zabij_grupe(proc, signal.SIGTERM)
+            await self._zakoncz_krok(proc)
             raise
         finally:
             self._procesy.discard(proc)
+            self._sprzatanie.pop(proc, None)
 
         ms = int((time.monotonic() - started) * 1000)
         wyslane_output = 0
@@ -145,12 +150,23 @@ class Runner:
 
     @staticmethod
     def _zabij_grupe(proc: asyncio.subprocess.Process, sygnal: signal.Signals) -> None:
+        if proc.returncode is not None:
+            return                          # odebrany: pid moze nalezec juz do obcej grupy
         try:
             os.killpg(proc.pid, sygnal)     # start_new_session: pgid == pid
         except ProcessLookupError:
             pass                            # proces juz nie zyje
 
     async def _zakoncz_krok(self, proc: asyncio.subprocess.Process) -> None:
+        # jeden proces = jedno sprzatanie: rownolegle SIGKILL i wait() tego samego procesu
+        # konkuruja o pid. Shield: anulowanie czekajacego nie przerywa zabicia i odebrania.
+        zadanie = self._sprzatanie.get(proc)
+        if zadanie is None:
+            zadanie = asyncio.ensure_future(self._sprzataj(proc))
+            self._sprzatanie[proc] = zadanie
+        await asyncio.shield(zadanie)
+
+    async def _sprzataj(self, proc: asyncio.subprocess.Process) -> None:
         self._zabij_grupe(proc, signal.SIGTERM)
         try:
             await asyncio.wait_for(proc.wait(), CZAS_NA_ZAKONCZENIE_S)
@@ -163,12 +179,18 @@ class Runner:
         if self._zatrzymany:
             return
         self._zatrzymany = True
-        if self._heartbeat is not None:
-            await self._heartbeat.stop()
-        await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
+        # nasluch odcinamy pierwszy, zeby w trakcie stop() nie przyjmowac nowych krokow;
+        # kroki, ktore mimo to wystartuja, sprzatajaja petla ponizej i galaz _zatrzymany
         zadanie = self._zadanie
         if zadanie is not None and zadanie is not asyncio.current_task() and not zadanie.done():
             zadanie.cancel()
+        if self._heartbeat is not None:
+            await self._heartbeat.stop()
+        # petla, bo krok moze zostac przyjety w trakcie sprzatania innego; _procesy oprozniaja
+        # run_command w finally, wiec krotka przerwa oddaje im sterowanie zamiast kreci petle
+        while self._procesy:
+            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
+            await asyncio.sleep(0.01)
 
     async def listen(self) -> None:
         self._zadanie = asyncio.current_task()
@@ -179,6 +201,8 @@ class Runner:
                 raise                       # cudze anulowanie nie jest nasze do polkniecia
             asyncio.current_task().uncancel()
             return None
+        if self._zatrzymany:
+            return None                     # strumien zamkniety przez stop(): zatrzymanie na zyczenie
         raise StrumienZamkniety("kokpit zamknal strumien polecen")
 
     async def _nasluchuj(self) -> None:
