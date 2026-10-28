@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     # Co ile sekund kokpit szuka runow runnerow offline (HAR-37; env COCKPIT_RUNNER_SWEEP_S).
     # ge=1: 0 oznaczaloby petle bez przerwy.
     runner_sweep_s: int = Field(default=10, ge=1)
+    # Ile dni jest wazna sesja (HAR-44; env COCKPIT_SESJA_WAZNA_DNI). ge=1: 0 wygasalaby od razu.
+    sesja_wazna_dni: int = Field(default=30, ge=1)
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)
