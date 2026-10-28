@@ -17,7 +17,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import Column, MetaData, String, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from cockpit.db.models import Base, RunnerKind, RunStatus
+from cockpit.db.models import Base, RolaWZespole, RunnerKind, RunStatus
 
 KORZEN = Path(__file__).resolve().parent.parent
 URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
@@ -31,8 +31,8 @@ pytestmark = [
     ),
 ]
 
-TABELE_MODELU = {"tenant", "runner", "run", "event"}
-TYPY_ENUM = {"runstatus", "runnerkind"}
+TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja"}
+TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole"}
 
 
 @pytest.fixture
@@ -111,6 +111,7 @@ def test_migracja_tworzy_ten_sam_schemat_co_model(cfg):
     # compare_metadata nie porownuje wartosci enumow - sprawdzamy je osobno
     assert _wartosci_enuma("runstatus") == {m.name for m in RunStatus}
     assert _wartosci_enuma("runnerkind") == {m.name for m in RunnerKind}
+    assert _wartosci_enuma("rolawzespole") == {m.name for m in RolaWZespole}
 
 
 def test_cofniecie_migracji_zostawia_pusta_baze_bez_typow(cfg):
