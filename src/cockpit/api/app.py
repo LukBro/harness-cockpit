@@ -10,7 +10,13 @@ Dwie powierzchnie sieciowe (BRO-76):
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
 from cockpit.settings import settings
@@ -27,9 +34,46 @@ from cockpit.settings import settings
 from . import bus
 from .bledy import zarejestruj_obsluge_bledow
 
+logger = logging.getLogger(__name__)
 
-# Brak lifespan z create_all: schemat buduje `alembic upgrade head` (HAR-1).
-app = FastAPI(title="Harness Cockpit", version="0.1.0")
+
+async def sprawdz_runnery_offline(teraz: datetime | None = None) -> list[str]:
+    """Jeden przebieg: przerwij runy runnerow offline i powiadom przegladarki (HAR-37)."""
+    async with db_session.SessionLocal() as s:
+        ids = await uslugi.przerwij_runy_offline(
+            s, teraz or datetime.now(timezone.utc), bus.connected_runner_ids()
+        )
+        for run_id, zdarzenie in await uslugi.zdarzenia_przerwania(s, ids):
+            await bus.publish_event(run_id, zdarzenie)
+        return ids
+
+
+async def _petla_runnerow_offline() -> None:
+    while True:
+        await asyncio.sleep(settings.runner_sweep_s)
+        try:
+            await sprawdz_runnery_offline()
+        except Exception:
+            # Szeroki except celowo: petla w tle musi przezyc kazdy blad jednego
+            # przebiegu (np. baza chwilowo niedostepna). Blad trafia do logu.
+            # CancelledError nie dziedziczy z Exception, wiec zamkniecie dziala.
+            logger.exception("sprawdzanie runnerow offline nie powiodlo sie")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    zadanie = asyncio.create_task(_petla_runnerow_offline())
+    try:
+        yield
+    finally:
+        zadanie.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await zadanie
+
+
+# Lifespan jest (petla runnerow offline, HAR-37), ale bez create_all:
+# schemat buduje `alembic upgrade head` (HAR-1).
+app = FastAPI(title="Harness Cockpit", version="0.1.0", lifespan=lifespan)
 zarejestruj_obsluge_bledow(app)
 
 
@@ -103,6 +147,7 @@ async def runner_stream(
     """SSE w dol: polecenia dla runnera. Odpowiedzi wracaja POST-em."""
     r = await uslugi.runner_po_tokenie(s, authorization)
     q = bus.runner_queue(r.id)
+    runner_id, tenant_id = r.id, r.tenant_id
 
     async def gen():
         try:
@@ -114,7 +159,15 @@ async def runner_stream(
             while True:
                 if await request.is_disconnected():
                     break
-                yield {"event": "command", "data": json.dumps(await q.get())}
+                polecenie = await q.get()
+                # polecenie przerwanego runu nie idzie do runnera po powrocie (HAR-37)
+                async with db_session.SessionLocal() as s2:
+                    aktualne = await uslugi.polecenie_aktualne(
+                        s2, polecenie, runner_id, tenant_id
+                    )
+                if not aktualne:
+                    continue
+                yield {"event": "command", "data": json.dumps(polecenie)}
         finally:
             bus.mark_runner_disconnected(r.id)
 
