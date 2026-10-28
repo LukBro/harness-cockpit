@@ -27,3 +27,7 @@ class BlednySkill(BladDziedziny):
 
 class StanNiemozliwy(BladDziedziny):
     """Np. runner offline przy probie uruchomienia."""
+
+
+class Zabronione(BladDziedziny):
+    """Czlonek zespolu bez uprawnienia do operacji (HAR-38)."""
