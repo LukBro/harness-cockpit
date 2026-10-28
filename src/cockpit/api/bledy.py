@@ -19,6 +19,7 @@ from cockpit.services.errors import (
     NaruszonyNiezmiennik,
     NieZnaleziono,
     StanNiemozliwy,
+    Zabronione,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ KOMUNIKAT_WEWNETRZNY = "błąd wewnętrzny kokpitu"
 # Zwykly dict (nie kopia przy rejestracji): handler czyta go przy kazdym zadaniu.
 KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     BrakDostepu: 401,
+    Zabronione: 403,
     NieZnaleziono: 404,
     StanNiemozliwy: 409,
     NaruszonyNiezmiennik: 422,
