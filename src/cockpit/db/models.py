@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 
 
 def _uuid() -> str:
@@ -37,6 +37,14 @@ class RunnerKind(str, enum.Enum):
     local = "local"
     remote = "remote"
     platform = "platform"      # tryb platformowy, odlozony (BRO-88)
+
+
+class RolaWZespole(str, enum.Enum):
+    """Rola uzytkownika w zespole (BRO-118). Nie mylic z `Rola` skilla w services/invariants.py."""
+    owner = "owner"
+    admin = "admin"
+    member = "member"
+    viewer = "viewer"
 
 
 class Tenant(Base):
@@ -95,3 +103,54 @@ class Event(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="events")
+
+
+class User(Base):
+    __tablename__ = "user"
+    __table_args__ = (UniqueConstraint("email", name="uq_user_email"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(320))
+    haslo_skrot: Mapped[str] = mapped_column(String(255))   # skrot argon2id, nigdy haslo
+    email_zweryfikowany_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    haslo_zmienione_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    @validates("email")
+    def _normalizuj_email(self, _klucz: str, wartosc: str) -> str:
+        """Adres zapisujemy bez bialych znakow i malymi literami.
+
+        Walidator dziala tylko przez ORM (zapis SQL-em wprost go omija).
+        """
+        return wartosc.strip().lower()
+
+
+class Membership(Base):
+    __tablename__ = "membership"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", name="uq_membership_tenant_user"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("user.id"), index=True)
+    rola: Mapped[RolaWZespole] = mapped_column(Enum(RolaWZespole))   # rola zyje na czlonkostwie (BRO-118)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Sesja(Base):
+    """Sesja: w bazie tylko skroty (BRO-115); jawny identyfikator zyje w ciasteczku httpOnly."""
+    __tablename__ = "sesja"
+    __table_args__ = (UniqueConstraint("skrot", name="uq_sesja_skrot"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    skrot: Mapped[str] = mapped_column(String(64))         # sha256 identyfikatora z ciasteczka
+    user_id: Mapped[str] = mapped_column(ForeignKey("user.id"), index=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"))   # aktywny zespol sesji
+    csrf_skrot: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    wygasa_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ostatnio_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    uniewazniona_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
