@@ -5,7 +5,7 @@ api/ nie wykonuje zapytan - sprawdza to `tools/check_layers.py` w CI.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -73,9 +73,11 @@ async def runner_po_tokenie(s: AsyncSession, authorization: str | None) -> Runne
 
 
 async def zamelduj_runnera(
-    s: AsyncSession, runner: Runner, nazwa: str, wersja: str
+    s: AsyncSession, runner: Runner, nazwa: str, wersja: str,
+    backendy: Sequence[dict],
 ) -> Runner:
     runner.name, runner.version = nazwa, wersja
+    runner.backends = list(backendy)    # zastepuje deklaracje, nie mutuje w miejscu
     runner.last_seen_at = datetime.now(timezone.utc)
     await s.commit()
     return runner

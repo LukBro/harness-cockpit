@@ -6,8 +6,10 @@ Procesy w osobnej grupie, zeby zabicie nie zostawialo sierot (BRO-104).
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import json
 import os
+import shutil
 import signal
 import sys
 import time
@@ -22,6 +24,22 @@ class StrumienZamkniety(Exception):
 
 class TokenOdrzucony(Exception):
     """Kokpit odpowiedzial 401. Ponawianie nic nie da - trzeba nowego tokenu."""
+
+
+def wykryj_backendy() -> list[dict]:
+    """Backendy dostepne na tej maszynie. Wartosc klucza nie opuszcza funkcji:
+    uzywamy jej tylko jako bool."""
+    if not shutil.which("claude"):
+        return []
+    auth = "api_key" if os.environ.get("ANTHROPIC_API_KEY") else "subscription"
+    return [{"nazwa": "claude", "auth": auth}]
+
+
+def wersja_runnera() -> str:
+    try:
+        return importlib.metadata.version("harness-cockpit")
+    except importlib.metadata.PackageNotFoundError:
+        return "0+nieznana"     # pakiet niezainstalowany - nie udajemy realnej wersji
 
 
 class Runner:
@@ -42,7 +60,11 @@ class Runner:
     async def register(self, client: httpx.AsyncClient) -> None:
         r = await client.post(
             f"{self.base_url}/api/runners/register",
-            json={"name": self.name, "version": "0.1.0", "backends": ["claude"]},
+            json={
+                "name": self.name,
+                "version": wersja_runnera(),
+                "backends": wykryj_backendy(),
+            },
             headers=self._headers,
         )
         if r.status_code == 401:

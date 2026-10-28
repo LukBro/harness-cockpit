@@ -5,7 +5,9 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -51,6 +53,10 @@ class Runner(Base):
     name: Mapped[str] = mapped_column(String(200))
     version: Mapped[str] = mapped_column(String(50), default="")
     token_hash: Mapped[str] = mapped_column(String(128))   # nigdy sekret jawnie (BRO-98)
+    # [{"nazwa": str, "auth": "subscription" | "api_key"}] - deklaracja runnera (HAR-34)
+    backends: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default=text("'[]'")
+    )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 

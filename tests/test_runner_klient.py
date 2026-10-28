@@ -341,7 +341,12 @@ def test_swiezy_runner_nie_ma_jeszcze_identyfikatora_od_kokpitu():
     assert Runner("http://kokpit.test", TOKEN).runner_id is None
 
 
-async def test_rejestracja_zglasza_kokpitowi_nazwe_wersje_i_backendy_z_tokenem_runnera():
+async def test_rejestracja_zglasza_kokpitowi_nazwe_wersje_i_backendy_z_tokenem_runnera(
+    monkeypatch,
+):
+    monkeypatch.setattr("runner.client.shutil.which", lambda nazwa, *a, **k: "/usr/bin/claude")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("importlib.metadata.version", lambda nazwa: "1.2.3-test")
     transport, zadania = _nagrywajacy_kokpit()
     await _nasluchuj(Runner("http://kokpit.test", TOKEN, name="moj-runner", transport=transport))
 
@@ -350,7 +355,8 @@ async def test_rejestracja_zglasza_kokpitowi_nazwe_wersje_i_backendy_z_tokenem_r
     assert zadanie.url.path == "/api/runners/register"
     assert zadanie.headers["Authorization"] == f"Bearer {TOKEN}"
     assert json.loads(zadanie.content) == {
-        "name": "moj-runner", "version": "0.1.0", "backends": ["claude"]}
+        "name": "moj-runner", "version": "1.2.3-test",
+        "backends": [{"nazwa": "claude", "auth": "subscription"}]}
 
 
 async def test_runner_bez_podanej_nazwy_melduje_sie_jako_lokalny():
@@ -530,4 +536,5 @@ def test_komunikat_o_odrzuconym_tokenie_odsyla_do_wygenerowania_nowego_w_ustawie
 
     assert wyjscie.code == 2
     assert capsys.readouterr().err.splitlines() == [
-        "token odrzucony przez kokpit - wygeneruj nowy token w Ustawieniach"]
+        "token odrzucony przez kokpit - wygeneruj nowy w Ustawieniach "
+        "i zapisz go w COCKPIT_RUNNER_TOKEN albo w ~/.config/cockpit/credentials.json"]

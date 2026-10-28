@@ -28,7 +28,8 @@ def main() -> None:
         raise SystemExit(EX_TEMPFAIL)
     except TokenOdrzucony:
         print(
-            "token odrzucony przez kokpit - wygeneruj nowy token w Ustawieniach",
+            "token odrzucony przez kokpit - wygeneruj nowy w Ustawieniach "
+            "i zapisz go w COCKPIT_RUNNER_TOKEN albo w ~/.config/cockpit/credentials.json",
             file=sys.stderr,
         )
         raise SystemExit(2)

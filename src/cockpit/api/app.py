@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, Request
 from fastapi.staticfiles import StaticFiles
@@ -31,10 +32,15 @@ app = FastAPI(title="Harness Cockpit", version="0.1.0")
 zarejestruj_obsluge_bledow(app)
 
 
+class BackendIn(BaseModel):
+    nazwa: str
+    auth: Literal["subscription", "api_key"]
+
+
 class RunnerRegister(BaseModel):
     name: str
     version: str = ""
-    backends: list[str] = []
+    backends: list[BackendIn] = []
 
 
 class RunCreate(BaseModel):
@@ -67,7 +73,9 @@ async def register_runner(
     s: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
     r = await uslugi.runner_po_tokenie(s, authorization)
-    r = await uslugi.zamelduj_runnera(s, r, body.name, body.version)
+    r = await uslugi.zamelduj_runnera(
+        s, r, body.name, body.version, [b.model_dump() for b in body.backends]
+    )
     return {"runner_id": r.id, "tenant_id": r.tenant_id}
 
 
