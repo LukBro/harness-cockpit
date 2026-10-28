@@ -22,6 +22,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
+from cockpit.settings import settings
 
 from . import bus
 from .bledy import zarejestruj_obsluge_bledow
@@ -71,12 +72,26 @@ async def register_runner(
     body: RunnerRegister,
     authorization: str | None = Header(default=None),
     s: AsyncSession = Depends(get_session),
-) -> dict[str, str]:
+) -> dict[str, str | int]:
     r = await uslugi.runner_po_tokenie(s, authorization)
     r = await uslugi.zamelduj_runnera(
         s, r, body.name, body.version, [b.model_dump() for b in body.backends]
     )
-    return {"runner_id": r.id, "tenant_id": r.tenant_id}
+    return {
+        "runner_id": r.id,
+        "tenant_id": r.tenant_id,
+        "heartbeat_co_s": settings.heartbeat_co_s,
+    }
+
+
+@app.post("/api/runners/heartbeat")
+async def runner_heartbeat(
+    authorization: str | None = Header(default=None),
+    s: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    r = await uslugi.runner_po_tokenie(s, authorization)
+    await uslugi.odnotuj_heartbeat(s, r)
+    return {"status": "ok"}
 
 
 @app.get("/api/runners/stream")

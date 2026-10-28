@@ -2,7 +2,8 @@
 
 Transport HTTP jest przechwycony (`httpx.MockTransport`), a komendy to prawdziwe
 procesy — sprawdzamy produkcyjny kod `Runner.run_command`, nie jego kopię.
-Asercje dotyczą rodzaju zdarzenia (`kind`), nie pola `status` ani `duration_ms`.
+Asercje dotyczą rodzaju zdarzenia (`kind`); pola pomiarowe (`duration_ms`, `cost_usd`,
+`cost_source`) sprawdzają osobne testy z sekcji HAR-35.
 """
 from __future__ import annotations
 
@@ -164,7 +165,8 @@ def _kokpit(stream_status: int = 200, stream_body: bytes = b"", register_status:
         if request.url.path == "/api/runners/register":
             if register_status != 200:
                 return httpx.Response(register_status)
-            return httpx.Response(200, json={"runner_id": "r1", "tenant_id": "t1"})
+            return httpx.Response(
+                200, json={"runner_id": "r1", "tenant_id": "t1", "heartbeat_co_s": 15})
         if request.url.path == "/api/runners/stream":
             return httpx.Response(
                 stream_status, content=stream_body,
@@ -316,7 +318,8 @@ def _nagrywajacy_kokpit(stream_body: bytes = POLACZONO, runner_id: str = "r-42")
     def handler(request: httpx.Request) -> httpx.Response:
         zadania.append(request)
         if request.url.path.endswith("/api/runners/register"):
-            return httpx.Response(200, json={"runner_id": runner_id, "tenant_id": "t1"})
+            return httpx.Response(
+                200, json={"runner_id": runner_id, "tenant_id": "t1", "heartbeat_co_s": 15})
         if request.url.path.endswith("/api/runners/stream"):
             return httpx.Response(
                 200, content=stream_body, headers={"content-type": "text/event-stream"})
@@ -463,6 +466,9 @@ def _main_z_atrapa_runnera(monkeypatch, tmp_path, wyjatek=None, env=None, plik=N
         async def listen(self):
             raise getattr(klient, wyjatek or "StrumienZamkniety")()
 
+        async def stop(self):
+            return None
+
     config = tmp_path / "credentials.json"
     if plik is not None:
         config.write_text(json.dumps(plik))
@@ -538,3 +544,124 @@ def test_komunikat_o_odrzuconym_tokenie_odsyla_do_wygenerowania_nowego_w_ustawie
     assert capsys.readouterr().err.splitlines() == [
         "token odrzucony przez kokpit - wygeneruj nowy w Ustawieniach "
         "i zapisz go w COCKPIT_RUNNER_TOKEN albo w ~/.config/cockpit/credentials.json"]
+
+
+# --- HAR-35: odpowiedz kokpitu lamiaca kontrakt i zatrzymanie sygnalem -----------
+
+def test_odpowiedz_kokpitu_lamiaca_kontrakt_konczy_proces_runnera_kodem_2_z_czytelnym_komunikatem(
+    monkeypatch, capsys,
+):
+    wyjscie = _uruchom_main(monkeypatch, "KokpitNiezgodny")
+
+    assert wyjscie.code == 2
+    wynik = capsys.readouterr()
+    assert "kokpit odpowiedzial niezgodnie z kontraktem" in wynik.err
+    assert "Traceback" not in wynik.err
+    assert TOKEN not in wynik.err
+    assert TOKEN not in wynik.out
+
+
+def test_rejestracja_bez_czestotliwosci_heartbeatu_konczy_proces_runnera_kodem_2_bez_sladu_stosu(
+    monkeypatch, capsys,
+):
+    from runner import __main__ as modul
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/runners/register":
+            return httpx.Response(200, json={"runner_id": "r1", "tenant_id": "t1"})
+        return httpx.Response(404)
+
+    monkeypatch.setattr(
+        modul, "Runner",
+        lambda base, token: Runner(base, token, transport=httpx.MockTransport(handler)))
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN)
+    monkeypatch.setenv("COCKPIT_URL", "http://kokpit.test")
+
+    with pytest.raises(SystemExit) as wyjscie:
+        modul.main()
+
+    assert wyjscie.value.code == 2
+    wynik = capsys.readouterr()
+    assert ("kokpit odpowiedzial niezgodnie z kontraktem: "
+            "odpowiedz rejestracji bez poprawnego heartbeat_co_s") in wynik.err.splitlines()
+    assert "Traceback" not in wynik.err
+    assert TOKEN not in wynik.err
+
+
+@pytest.mark.parametrize("sygnal", ["SIGTERM", "SIGINT"])
+def test_runner_zatrzymany_sygnalem_zatrzymuje_sie_porzadnie_i_konczy_prace_kodem_0(
+    monkeypatch, tmp_path, sygnal,
+):
+    """Sygnal idzie do wlasnego procesu testu, wiec siatka bezpieczenstwa: no-op handlery
+    na czas testu - brak obslugi sygnalu w `main` ma sie skonczyc oblanym testem, a nie
+    zabiciem calego przebiegu testow."""
+    import asyncio
+    import os
+    import signal
+
+    import runner.__main__ as modul
+    from runner import secrets
+
+    numer = getattr(signal, sygnal)
+    zapis = {"stop": 0}
+
+    class AtrapaRunnera:
+        def __init__(self, base_url, token, *reszta, **nazwane):
+            self._zatrzymany = asyncio.Event()
+
+        async def listen(self):
+            await asyncio.sleep(0.1)         # main zdazyl zarejestrowac obsluge sygnalu
+            os.kill(os.getpid(), numer)
+            await asyncio.wait_for(self._zatrzymany.wait(), 5)
+
+        async def stop(self):
+            zapis["stop"] += 1
+            self._zatrzymany.set()
+
+    monkeypatch.setattr(secrets, "CONFIG", tmp_path / "credentials.json")
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN)
+    monkeypatch.setattr(modul, "Runner", AtrapaRunnera)
+    stare = {s: signal.signal(s, lambda *a: None) for s in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        try:
+            modul.main()
+            kod = None
+        except SystemExit as wyjscie:
+            kod = wyjscie.code
+    finally:
+        for s, obsluga in stare.items():
+            signal.signal(s, obsluga)
+
+    assert zapis["stop"] >= 1
+    assert kod in (0, None)
+
+
+# --- HAR-35: pomiary i kanaly wyjscia kroku (zdarzenia faktycznie wyslane) -------
+
+async def test_linia_kroku_wypisana_na_stderr_trafia_do_zdarzen_output():
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "echo blad-kroku >&2"]))
+
+    assert [z["text"] for z in zdarzenia if z["kind"] == "output"] == ["blad-kroku"]
+
+
+async def test_bajty_niepoprawne_w_utf8_nie_przerywaja_kroku_i_trafiaja_do_wyjscia_jako_znak_zastepczy():
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "printf '\\377ok\\n'"]))
+
+    assert [z["text"] for z in zdarzenia if z["kind"] == "output"] == ["\ufffdok"]
+    assert zdarzenia[-1]["kind"] == "step_finished"
+
+
+async def test_czas_trwania_kroku_to_calkowite_milisekundy_zmierzone_na_zegarze_kroku():
+    zdarzenia = _zdarzenia(await _uruchom(["sleep", "0.2"]))
+
+    ms = zdarzenia[-1]["duration_ms"]
+    assert type(ms) is int
+    assert 150 <= ms < 5000
+
+
+async def test_koniec_kroku_bez_pomiaru_kosztu_ma_zrodlo_niedostepne_i_koszt_null_a_nie_zero():
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "exit 0"]))
+
+    koncowe = zdarzenia[-1]
+    assert "cost_usd" in koncowe and koncowe["cost_usd"] is None
+    assert koncowe["cost_source"] == "unavailable"

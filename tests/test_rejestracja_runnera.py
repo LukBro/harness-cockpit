@@ -219,7 +219,8 @@ async def _zarejestruj_i_przechwyc(base="http://kokpit.test") -> httpx.Request:
 
     def handler(request: httpx.Request) -> httpx.Response:
         wyslane.append(request)
-        return httpx.Response(200, json={"runner_id": "r-1", "tenant_id": "t-1"})
+        return httpx.Response(
+            200, json={"runner_id": "r-1", "tenant_id": "t-1", "heartbeat_co_s": 15})
 
     runner = RunnerKlient(base, "tajny-token")
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
@@ -299,6 +300,82 @@ async def test_runner_bez_zainstalowanego_pakietu_melduje_jawnie_nieznana_wersje
     assert json.loads(zadanie.content)["version"] == "0+nieznana"
 
 
+# --- HAR-35: czestotliwosc heartbeatu pochodzi z kokpitu -----------------------
+
+async def test_odpowiedz_rejestracji_niesie_czestotliwosc_heartbeatu_z_konfiguracji_kokpitu(
+    klient, monkeypatch,
+):
+    from cockpit.settings import settings
+    monkeypatch.setattr(settings, "heartbeat_co_s", 7)    # inna niz domyslna 15
+
+    r = await _zamelduj(klient, name="macbook")
+
+    assert r.status_code == 200
+    assert r.json()["heartbeat_co_s"] == 7
+    assert r.json()["runner_id"]
+
+
+async def test_runner_rejestrujacy_sie_w_prawdziwym_kokpicie_poznaje_czestotliwosc_heartbeatu(
+    klient, monkeypatch,
+):
+    from cockpit.settings import settings
+    monkeypatch.setattr(settings, "heartbeat_co_s", 7)
+    runner = RunnerKlient("http://test", TOKEN)
+
+    await runner.register(klient)
+
+    assert runner.heartbeat_co_s == 7
+
+
+async def test_runner_przyjmuje_dodatnia_calkowita_czestotliwosc_heartbeatu_z_odpowiedzi_kokpitu():
+    runner = RunnerKlient("http://kokpit.test", "tajny-token")
+    assert runner.heartbeat_co_s is None      # brak wartosci domyslnej: decyduje kokpit
+
+    await _zarejestruj_z_odpowiedzia(runner, {"heartbeat_co_s": 15})
+
+    assert runner.heartbeat_co_s == 15
+
+
+@pytest.mark.parametrize(
+    "odpowiedz",
+    [
+        {},
+        {"heartbeat_co_s": 0},
+        {"heartbeat_co_s": -1},
+        {"heartbeat_co_s": True},
+        {"heartbeat_co_s": "15"},
+    ],
+    ids=["brak_pola", "zero", "ujemna", "bool_zamiast_liczby", "napis_zamiast_liczby"],
+)
+async def test_odpowiedz_rejestracji_bez_poprawnej_czestotliwosci_heartbeatu_to_niezgodnosc_kokpitu(
+    odpowiedz,
+):
+    from runner.client import KokpitNiezgodny
+    runner = RunnerKlient("http://kokpit.test", "tajny-token")
+
+    with pytest.raises(KokpitNiezgodny) as wyjatek:
+        await _zarejestruj_z_odpowiedzia(runner, odpowiedz)
+
+    assert str(wyjatek.value) == "odpowiedz rejestracji bez poprawnego heartbeat_co_s"
+    assert runner.heartbeat_co_s is None
+
+
+async def test_runner_przyjmuje_najmniejsza_poprawna_czestotliwosc_heartbeatu_jedna_sekunde():
+    runner = RunnerKlient("http://kokpit.test", "tajny-token")
+
+    await _zarejestruj_z_odpowiedzia(runner, {"heartbeat_co_s": 1})
+
+    assert runner.heartbeat_co_s == 1
+
+
+async def _zarejestruj_z_odpowiedzia(runner: RunnerKlient, dodatkowe: dict) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"runner_id": "r-1", "tenant_id": "t-1", **dodatkowe})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        await runner.register(c)
+
+
 # --- czytelna odmowa przy niewaznym tokenie ------------------------------------
 
 TOKEN_RUNNERA = "zxqv7-NIEWAZNY-tokenrunnera-482913"
@@ -376,7 +453,8 @@ def test_odmowa_tokenu_przy_otwieraniu_strumienia_tez_konczy_sie_czytelnym_kodem
     """Rejestracja przechodzi, 401 dopiero na strumieniu - ta sama czytelna odmowa."""
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/runners/register":
-            return httpx.Response(200, json={"runner_id": "r-1", "tenant_id": "t-1"})
+            return httpx.Response(
+                200, json={"runner_id": "r-1", "tenant_id": "t-1", "heartbeat_co_s": 15})
         return httpx.Response(401)
 
     monkeypatch.setattr(
