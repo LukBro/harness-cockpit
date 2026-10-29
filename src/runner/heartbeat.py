@@ -36,6 +36,8 @@ class Heartbeat:
         await asyncio.wait({zadanie})
 
     async def _petla(self) -> None:
+        """Zadanie nie ma wolajacego, ktory odebralby wyjatek; cichy zgon petli to runner
+        uznany za offline bez sladu w logu, wiec kazdy wyjatek (poza anulowaniem) trwa dalej."""
         while True:
             await asyncio.sleep(self.co_s)
             try:
@@ -44,7 +46,7 @@ class Heartbeat:
                     self._client.post(self._url, headers=self._naglowki, timeout=self.timeout_s),
                     self.timeout_s,
                 )
-            except (httpx.HTTPError, TimeoutError) as e:
+            except Exception as e:
                 # tylko nazwa klasy: tresc wyjatku moze niesc adres albo naglowki
                 print(f"heartbeat nieudany: {type(e).__name__}", file=sys.stderr)
                 continue

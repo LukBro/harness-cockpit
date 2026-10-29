@@ -24,6 +24,12 @@ class Settings(BaseSettings):
         if self.heartbeat_co_s is None:
             # max(1, ..): prog < 4 s dalby 0, czyli petle bez przerwy
             self.heartbeat_co_s = max(1, self.runner_offline_after_s // 4)
+        if self.heartbeat_co_s >= self.runner_offline_after_s:
+            raise ValueError(
+                f"heartbeat_co_s ({self.heartbeat_co_s}) musi byc mniejszy niz "
+                f"runner_offline_after_s ({self.runner_offline_after_s}): inaczej runner "
+                "bylby offline miedzy meldunkami"
+            )
         return self
 
 
