@@ -96,3 +96,18 @@ odjęcia). Reguła i jej egzekucja istnieją, a wzorzec wraca w nowych kształta
 
 Egzekucja dodatkowa: krok CI z `tools/mutanty_zmian.py` na każdym PR (ticket z retro
 M1.2.1) — przeżywające mutanty zmienionych funkcji widać w raporcie PR.
+
+## Regresja (retro M1.3)
+
+Źródło: HAR-26 („korekta WRACA” za HAR-29), HAR-35 („korekta WRACA” za HAR-6 i HAR-133),
+HAR-141, uwagi bez odjęcia w HAR-34, HAR-36, HAR-38. Nowe kształty:
+
+- **Test błędu sprawdza dokładny typ wyjątku** — `pytest.raises(Exception)` przyjmuje też
+  wyjątek z innej gałęzi i nie chroni tej, którą test opisuje (HAR-26).
+- **Gałąź przepuszczająca wyjątek dalej** (`raise`, re-raise po anulowaniu) ma test, w
+  którym tylko ona decyduje, czy wołający dostanie wyjątek (HAR-35).
+- **Test na produkcyjnej ścieżce wywołania** — gałąź chroniąca niezmiennik ma test, w
+  którym żaden inny mechanizm (np. pętla sprzątająca w `stop()`) nie daje tego samego
+  skutku (HAR-141).
+- **Wartość, nie obecność** — test tabeli sprawdza wartość wpisu (np. `Zabronione → 403`),
+  nie tylko to, że wpis istnieje (HAR-38).
