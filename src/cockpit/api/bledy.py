@@ -20,6 +20,7 @@ from cockpit.services.errors import (
     NieZnaleziono,
     StanNiemozliwy,
     Zabronione,
+    ZbytWieleProb,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     StanNiemozliwy: 409,
     NaruszonyNiezmiennik: 422,
     BlednySkill: 422,
+    ZbytWieleProb: 429,
 }
 
 

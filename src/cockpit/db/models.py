@@ -160,3 +160,18 @@ class Sesja(Base):
     uniewazniona_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+
+
+class BlokadaLogowania(Base):
+    """Licznik nieudanych logowan (HAR-46): klucz to sha256 pary (adres, IP) albo adresu.
+
+    Bez FK, bo licznik dziala tez dla adresu bez konta; jawnego adresu i IP nie zapisujemy.
+    """
+    __tablename__ = "blokada_logowania"
+
+    klucz: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nieudane: Mapped[int] = mapped_column(Integer, nullable=False)
+    pierwsza_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    zablokowane_do: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
