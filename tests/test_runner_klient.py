@@ -10,10 +10,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
+import runner.client as runner_client
 from runner.bufor import Bufor
 from runner.client import Runner, TokenOdrzucony
 
@@ -578,6 +580,51 @@ def test_zamkniecie_strumienia_przez_kokpit_nie_konczy_procesu_runnera_ten_laczy
     assert len(odczekania) == 2
 
 
+def test_zamkniecie_strumienia_w_trakcie_zatrzymywania_runnera_konczy_jego_proces_kodem_0_a_nie_75(
+    monkeypatch, capsys,
+):
+    """Prawdziwy `Runner`: strumien konczy sie, gdy `stop()` juz trwa (np. po sygnale) -
+    to zatrzymanie na zyczenie, nie awaria kokpitu."""
+    import runner.__main__ as modul
+
+    utworzone: list[Runner] = []
+
+    class StrumienZatrzymujacyRunnera(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield POLACZONO
+            await utworzone[0].stop()
+
+    class Kokpit(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/runners/register":
+                return httpx.Response(
+                    200, json={"runner_id": "r1", "tenant_id": "t1", "heartbeat_co_s": 15})
+            if request.url.path == "/api/runners/stream":
+                return httpx.Response(
+                    200, stream=StrumienZatrzymujacyRunnera(),
+                    headers={"content-type": "text/event-stream"})
+            return httpx.Response(404)
+
+    def fabryka(base, token):
+        utworzone.append(Runner(base, token, transport=Kokpit()))
+        return utworzone[0]
+
+    monkeypatch.setattr(modul, "Runner", fabryka)
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN)
+    monkeypatch.setenv("COCKPIT_URL", "http://kokpit.test")
+    try:
+        modul.main()
+        kod = None
+    except SystemExit as wyjscie:
+        kod = wyjscie.code
+
+    assert utworzone[0]._zatrzymany.is_set()
+    assert kod in (0, None)
+    wynik = capsys.readouterr()
+    assert "kod 75" not in wynik.err
+    assert TOKEN not in wynik.err
+
+
 def test_odrzucony_token_konczy_proces_runnera_kodem_2(monkeypatch, capsys):
     wyjscie = _uruchom_main(monkeypatch, "TokenOdrzucony")
 
@@ -987,6 +1034,20 @@ async def test_czas_trwania_kroku_to_calkowite_milisekundy_zmierzone_na_zegarze_
     ms = zdarzenia[-1]["duration_ms"]
     assert type(ms) is int
     assert 150 <= ms < 5000
+
+
+async def test_czas_trwania_kroku_w_zdarzeniu_to_dokladna_roznica_zegara_w_milisekundach(
+    monkeypatch,
+):
+    odczyty = iter([100.0, 102.5])
+    # podmieniamy tylko `time` w module runnera: petla zdarzen asyncio ma wlasny zegar
+    monkeypatch.setattr(
+        runner_client, "time", SimpleNamespace(monotonic=lambda: next(odczyty)),
+    )
+
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "exit 0"]))
+
+    assert zdarzenia[-1]["duration_ms"] == 2500
 
 
 async def test_koniec_kroku_bez_pomiaru_kosztu_ma_zrodlo_niedostepne_i_koszt_null_a_nie_zero():

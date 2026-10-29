@@ -73,6 +73,7 @@ source_paths = [
 # alembic/ i alembic.ini: demo szkieletu (tools/demo_szkielet.py) buduje schemat
 # migracjami; bez nich test pada na niezmutowanym kodzie i mutmut przerywa przebieg.
 # .github/workflows/: test kroku mutacji uruchamia skrypt z workflow mutation.yml.
+# deploy/: test kernela czyta rejestracje hookow z deploy/hooks.example.json (HAR-22).
 # mutmut kopiuje plik z also_copy bez tworzenia katalogow nadrzednych (FileNotFoundError),
 # wiec wpis jest katalogiem; katalog kopiuje copytree, ktore je tworzy.
 also_copy = [
@@ -87,4 +88,5 @@ also_copy = [
   "alembic/",
   "alembic.ini",
   ".github/workflows/",
+  "deploy/",
 ]

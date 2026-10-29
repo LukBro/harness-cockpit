@@ -9,6 +9,10 @@ class BrakDostepu(BladDziedziny):
     """Brak sesji, zly token, brak czlonkostwa w zespole."""
 
 
+class ZbytWieleProb(BladDziedziny):
+    """Logowanie wstrzymane po serii nieudanych prob; komunikat podaje czas oczekiwania (HAR-46)."""
+
+
 class NieZnaleziono(BladDziedziny):
     pass
 

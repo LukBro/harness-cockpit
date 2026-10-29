@@ -31,7 +31,7 @@ pytestmark = [
     ),
 ]
 
-TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja"}
+TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja", "blokada_logowania"}
 TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole"}
 
 

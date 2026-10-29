@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     # Co ile sekund kokpit szuka runow runnerow offline (HAR-37; env COCKPIT_RUNNER_SWEEP_S).
     # ge=1: 0 oznaczaloby petle bez przerwy.
     runner_sweep_s: int = Field(default=10, ge=1)
+    # Ile dni jest wazna sesja (HAR-44; env COCKPIT_SESJA_WAZNA_DNI). ge=1: 0 wygasalaby od razu.
+    sesja_wazna_dni: int = Field(default=30, ge=1)
+    # Blokada logowania (HAR-46; env COCKPIT_LOGOWANIE_*). ge=1: 0 blokowaloby od pierwszej proby
+    # albo okno liczylo od zera.
+    logowanie_limit_prob: int = Field(default=5, ge=1)            # nieudane proby pary (adres, IP)
+    logowanie_okno_s: int = Field(default=900, ge=1)              # okno liczenia prob pary
+    logowanie_blokada_s: int = Field(default=900, ge=1)           # czas blokady (para i globalna)
+    logowanie_limit_globalny: int = Field(default=50, ge=1)       # nieudane proby adresu z dowolnych IP
+    logowanie_okno_globalne_s: int = Field(default=3600, ge=1)    # okno limitu globalnego
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)
@@ -22,6 +31,12 @@ class Settings(BaseSettings):
         if self.heartbeat_co_s is None:
             # max(1, ..): prog < 4 s dalby 0, czyli petle bez przerwy
             self.heartbeat_co_s = max(1, self.runner_offline_after_s // 4)
+        if self.heartbeat_co_s >= self.runner_offline_after_s:
+            raise ValueError(
+                f"heartbeat_co_s ({self.heartbeat_co_s}) musi byc mniejszy niz "
+                f"runner_offline_after_s ({self.runner_offline_after_s}): inaczej runner "
+                "bylby offline miedzy meldunkami"
+            )
         return self
 
 

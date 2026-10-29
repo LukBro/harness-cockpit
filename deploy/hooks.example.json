@@ -12,6 +12,22 @@
           { "type": "http", "async": true, "if": "Bash(*phase_timer*)", "url": "http://127.0.0.1:8765/hook" }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "http", "async": true, "if": "Bash(*phase_timer*)", "url": "http://127.0.0.1:8765/hook" }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "http", "async": true, "if": "Bash(*phase_timer*)", "url": "http://127.0.0.1:8765/hook" }
+        ]
+      }
     ]
   }
 }
