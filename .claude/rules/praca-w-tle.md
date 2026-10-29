@@ -28,3 +28,15 @@ czekają na człowieka (`MONOLYNX_SPRINT_MAX_WAITING`).
 
 - Raport agenta wymienia komendę z `rm -rf` albo `sed -i` na pliku repozytorium = **-10**.
 - Artefakty narzędzi (`*-E`, `*.orig`, katalogi `mut*`) w diffie = **-25**.
+
+## Reguły z review — komentarz ticketu, nie `.claude/` (retro M1.3)
+
+Źródło: HAR-35, HAR-38 — sesje stały na prośbie o zgodę przy zapisie do
+`.claude/agent-memory/*/MEMORY.md`; HAR-35 zostawił niezacommitowaną zmianę tego pliku.
+
+- Sesja w tle **nie edytuje plików w `.claude/`** (reguły, pamięć agentów, ustawienia).
+  W trybie `auto` każdy taki zapis czeka na człowieka.
+- Regułę z review zapisuje w komentarzu podsumowania ticketu jako linię `REGULA: …` —
+  retro zbiera ją stamtąd i przenosi do `.claude/rules/` przez osobny PR.
+- Komendy bez `cd … &&` i bez przeszukiwania cudzych worktree — każda taka komenda
+  także czeka na zgodę (HAR-45, HAR-52).
