@@ -404,7 +404,15 @@ def test_zasiew_jako_osobny_proces_nie_wypisuje_hasla_i_nie_przyjmuje_go_w_argum
         await engine.dispose()
 
     asyncio.run(schemat())
-    env = {k: v for k, v in os.environ.items() if not k.startswith("COCKPIT_")}
+    # Podproces importuje kod z KORZEN/src; pod mutmutem jest on zmutowany z
+    # trampolina. MUTANT_UNDER_TEST ("stats" przy zbieraniu statystyk) kazalaby
+    # trampolinie szukac konfiguracji mutmuta w cwd podprocesu (tmp_path) i padlaby.
+    # Bez tej zmiennej podproces wola oryginalne funkcje - to sprawdzamy.
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("COCKPIT_") and k != "MUTANT_UNDER_TEST"
+    }
     env["PYTHONPATH"] = os.pathsep.join(
         [str(KORZEN / "src"), *filter(None, [env.get("PYTHONPATH")])]
     )
