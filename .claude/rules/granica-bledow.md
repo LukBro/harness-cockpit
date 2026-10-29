@@ -39,3 +39,18 @@ przy kolizji numeru zdarzenia).
 - Gdy biblioteka nie rozróżnia przyczyn typem, rozróżnij je po danych wyjątku (nazwa
   ograniczenia, kod błędu) i resztę przepuść dalej.
 - W review: szeroki `except` obejmujący więcej niż obsługiwaną przyczynę = **-25**.
+
+## Regresja (retro M1.3)
+
+Źródło: HAR-42 (dwa razy -25 w kolejnych rundach), HAR-26, HAR-37, HAR-39. Reguła
+istnieje i nadal jest łamana, w nowych kształtach:
+
+- **Poprawka tylko w miejscu wskazanym przez krytyka** — po uwadze o jednym odczycie
+  dysku przejrzyj **wszystkie** dotknięcia dysku w tej funkcji i w funkcjach, które
+  woła: także `Path.is_file()`, `exists()`, `stat()`, `os.walk` (bez `onerror` pomija
+  błąd po cichu). Na Pythonie 3.11–3.13 `is_file()` przepuszcza `PermissionError`.
+- **Długość wejścia względem kolumny** — pole z API zapisywane do kolumny o ograniczonej
+  długości (`String(36)`) ma `max_length` w modelu wejścia; inaczej PostgreSQL rzuca
+  `DataError` i klient dostaje 500 zamiast 422 (HAR-39).
+- **Błąd strumienia runnera** (`HTTPStatusError`, `TransportError`) kończy proces
+  komunikatem dziedziny, nie tracebackiem (HAR-26).

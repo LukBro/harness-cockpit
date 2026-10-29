@@ -32,7 +32,7 @@ from cockpit.db import session as db_session
 from cockpit.db.models import Base, Run, Runner, Tenant
 from cockpit.settings import Settings, settings
 from runner import client as runner_client
-from runner.client import KokpitNiezgodny, Runner as RunnerKlient, StrumienZamkniety, TokenOdrzucony
+from runner.client import KokpitNiezgodny, Runner as RunnerKlient, TokenOdrzucony
 
 TOKEN_A = "tajne-a"          # runner zespolu Browarek (domyslny zespol kokpitu)
 TOKEN_B = "tajne-b"          # runner zespolu Piekarnia
@@ -870,7 +870,7 @@ async def test_zamkniecie_strumienia_w_trakcie_zatrzymywania_runnera_konczy_nasl
     wynik = await _koniec_nasluchu(nasluch, limit=5)
 
     assert wynik is None
-    assert runner._zatrzymany
+    assert runner._zatrzymany.is_set()
     assert zapis["stop"] >= 1
     assert asyncio.all_tasks() - przed == set()
 
@@ -891,7 +891,7 @@ async def test_anulowanie_nasluchu_przez_kogos_innego_niz_stop_dochodzi_do_wolaj
 
     assert nasluch in zakonczone
     assert nasluch.cancelled()
-    assert not runner._zatrzymany
+    assert not runner._zatrzymany.is_set()
     assert zapis["stop"] >= 1
     assert asyncio.all_tasks() - przed == set()
 
@@ -913,26 +913,82 @@ async def test_zawieszony_heartbeat_nie_blokuje_zatrzymania_runnera_dluzej_niz_t
     assert czas < 0.3        # timeout heartbeatu to 0.6 s
 
 
-@pytest.mark.parametrize(
-    ("atrapa", "wyjatek"),
-    [
-        (lambda: _AtrapaKokpitu(strumien_konczy=True), StrumienZamkniety),
-        (lambda: _AtrapaKokpitu(strumien_konczy=True, strumien_status=401), TokenOdrzucony),
-    ],
-    ids=["strumien_zamkniety_przez_kokpit", "token_odrzucony_na_strumieniu"],
-)
-async def test_blad_nasluchu_zatrzymuje_heartbeat_i_nie_zostawia_zadania(
-    monkeypatch, atrapa, wyjatek,
-):
+async def test_blad_nasluchu_zatrzymuje_heartbeat_i_nie_zostawia_zadania(monkeypatch):
+    """Odrzucony token na strumieniu: błąd bez ponawiania, heartbeat zatrzymany."""
     zapis = _podglad_heartbeatu(monkeypatch)
-    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa())
+    atrapa = _AtrapaKokpitu(strumien_konczy=True, strumien_status=401)
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     przed = asyncio.all_tasks()
 
-    with pytest.raises(wyjatek):
+    with pytest.raises(TokenOdrzucony):
         await asyncio.wait_for(runner.listen(), 10)
 
     assert zapis["start"] == 1
     assert zapis["stop"] == 1
+    assert asyncio.all_tasks() - przed == set()
+
+
+async def test_zamkniecie_strumienia_zatrzymuje_heartbeat_a_po_ponownym_polaczeniu_dziala_nowy(
+    monkeypatch,
+):
+    """HAR-45 (dawniej: zamknięcie strumienia kończyło `listen()` błędem). Teraz runner łączy
+    się ponownie: stary heartbeat musi być zatrzymany, zanim ruszy nowy, i nic nie zostaje."""
+    zapis = _podglad_heartbeatu(monkeypatch)
+    atrapa = _AtrapaKokpitu(strumien_konczy=True)
+    stan_przy_odczekaniu: list[tuple[int, int]] = []
+
+    async def odczekaj(sekundy: float) -> None:
+        stan_przy_odczekaniu.append((zapis["start"], zapis["stop"]))
+        if len(stan_przy_odczekaniu) == 2:
+            await runner.stop()
+
+    runner = RunnerKlient(
+        "http://kokpit.test", TOKEN_RUNNERA, transport=atrapa, odczekaj=odczekaj)
+    przed = asyncio.all_tasks()
+
+    assert await asyncio.wait_for(runner.listen(), 10) is None
+
+    # przy pierwszym odczekaniu: jeden heartbeat ruszył i jest już zatrzymany;
+    # przy drugim: ruszył nowy i też jest zatrzymany
+    assert stan_przy_odczekaniu == [(1, 1), (2, 2)]
+    assert len(zapis["utworzone"]) == 2
+    assert zapis["utworzone"][0]["klient"] is not zapis["utworzone"][1]["klient"]
+    assert len([z for z in atrapa.zadania if z.url.path.endswith("/api/runners/register")]) == 2
+    assert asyncio.all_tasks() - przed == set()
+
+
+async def test_heartbeat_dziala_po_ponownym_polaczeniu_i_milknie_po_stopie(monkeypatch):
+    """Strumień zamyka się raz; drugie połączenie jest otwarte bez końca. Nowy heartbeat
+    melduje kokpitowi życie, a `stop()` kończy wszystko w limicie czasu."""
+    _podglad_heartbeatu(monkeypatch, co_s_testowe=0.1)   # pierwsze polaczenie zyje milisekundy
+
+    class ZamknijPotemOtworz(_AtrapaKokpitu):
+        async def handle_async_request(self, request):
+            if request.url.path.endswith("/api/runners/stream"):
+                self.strumien_konczy = not any(
+                    z.url.path.endswith("/api/runners/stream") for z in self.zadania)
+            return await super().handle_async_request(request)
+
+    async def bez_czekania(sekundy: float) -> None:
+        return None
+
+    atrapa = ZamknijPotemOtworz()
+    runner = RunnerKlient(
+        "http://kokpit.test", TOKEN_RUNNERA, transport=atrapa, odczekaj=bez_czekania)
+    przed = asyncio.all_tasks()
+    nasluch = asyncio.create_task(runner.listen())
+    try:
+        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)
+    finally:
+        await asyncio.wait_for(runner.stop(), 10)
+        await _koniec_nasluchu(nasluch)
+
+    sciezki = [z.url.path for z in atrapa.zadania]
+    assert sciezki.count("/api/runners/register") == 2
+    assert atrapa.heartbeaty                     # zywe jest dopiero drugie polaczenie
+    wyslane = len(atrapa.heartbeaty)
+    await asyncio.sleep(0.3)
+    assert len(atrapa.heartbeaty) == wyslane
     assert asyncio.all_tasks() - przed == set()
 
 
@@ -1051,7 +1107,7 @@ async def test_krok_przyjety_w_trakcie_sprzatania_innego_kroku_przez_stop_jest_z
                 pid_b = await _pid_z_pliku(plik_b)
 
                 stop = asyncio.create_task(runner.stop())
-                await _poczekaj(lambda: runner._zatrzymany)
+                await _poczekaj(runner._zatrzymany.is_set)
                 await asyncio.sleep(0.2)                    # stop() czeka na krok A (do 0.8 s)
                 assert not stop.done()
                 bramka.otworz()                             # krok B zostaje przyjety w trakcie stop()
