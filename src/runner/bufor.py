@@ -7,18 +7,54 @@ cialo zdarzenia: token i naglowki nigdy nie trafiaja na dysk.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
 ODCZEKANIE_MAX_S = 30.0
 _RUN_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")      # nazwa pliku: bez "/", ".." i kropek
+PROG_WOLNEGO_MIEJSCA_MB = 200
+_ZMIENNA_PROGU = "COCKPIT_MIN_FREE_MB"
+_CYFRY_ASCII = re.compile(r"[0-9]+")                # fullmatch: "$" przepuscilby "5\n"
 
 
 class BladBufora(Exception):
     """Bufor nie daje sie odczytac ani zapisac (dysk, prawa, uszkodzona struktura)."""
+
+
+class BrakMiejsca(BladBufora):
+    """Zapis bufora nie powiodl sie, bo na dysku nie ma miejsca (ENOSPC)."""
+
+
+def _blad_zapisu(nazwa: str, e: OSError) -> BladBufora:
+    klasa = BrakMiejsca if e.errno == errno.ENOSPC else BladBufora
+    return klasa(f"zapis {nazwa}: {type(e).__name__}")
+
+
+def min_wolne_mb() -> int:
+    """Prog czytany przy kazdym wywolaniu, zeby zmiana zmiennej dzialala bez restartu."""
+    surowa = os.environ.get(_ZMIENNA_PROGU)
+    if not surowa:
+        return PROG_WOLNEGO_MIEJSCA_MB
+    if not _CYFRY_ASCII.fullmatch(surowa):
+        raise ValueError(f"{_ZMIENNA_PROGU} musi byc nieujemna liczba calkowita (cyfry ASCII)")
+    return int(surowa)
+
+
+def wolne_mb(katalog: Path) -> int:
+    """Katalog bufora moze jeszcze nie istniec - mierzymy najblizszego istniejacego przodka."""
+    mierzony = katalog
+    while not mierzony.exists():
+        if mierzony.parent == mierzony:
+            # wzgledna sciezka bez istniejacego przodka (np. usuniety cwd): bez tego
+            # petla nigdy by sie nie skonczyla i zablokowala petle zdarzen runnera
+            raise FileNotFoundError(errno.ENOENT, "brak istniejacego katalogu nad katalogiem stanu")
+        mierzony = mierzony.parent
+    return shutil.disk_usage(mierzony).free // (1024 * 1024)
 
 
 def odczekanie(proba: int) -> float:
@@ -65,17 +101,31 @@ class Bufor:
         try:
             self.katalog.mkdir(mode=0o700, parents=True, exist_ok=True)
             fd = os.open(plik, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600)
-            with os.fdopen(fd, "ab") as f:
+            try:
                 os.fchmod(fd, 0o600)               # umask nie moze poszerzyc praw
                 rozmiar = os.fstat(fd).st_size
                 # obcieta po awarii ostatnia linia skleilaby sie z nowym wpisem
                 if rozmiar and os.pread(fd, 1, rozmiar - 1) != b"\n":
                     dane = b"\n" + dane
-                f.write(dane)
-                f.flush()
-                os.fsync(fd)
+                try:
+                    # surowy deskryptor, bez bufora Pythona: po nieudanym zapisie nic nie
+                    # czeka w buforze na ponowna probe przy zamknieciu pliku
+                    zapisano = 0
+                    while zapisano < len(dane):
+                        zapisano += os.write(fd, dane[zapisano:])
+                    os.fsync(fd)
+                except OSError:
+                    # nieudane zdarzenie nie moze zostac w buforze: po restarcie wrocilby
+                    # do kokpitu jako dosylka runu, ktory juz przerwalismy
+                    try:
+                        os.ftruncate(fd, rozmiar)
+                    except OSError:
+                        pass                # dysk pelny: zostaje obciety wpis, czytnik go pomija
+                    raise
+            finally:
+                os.close(fd)
         except OSError as e:
-            raise BladBufora(f"zapis {plik.name}: {type(e).__name__}") from e
+            raise _blad_zapisu(plik.name, e) from e
 
     def potwierdz(self, run_id: str, event_id: str) -> None:
         plik = self._plik(run_id)
@@ -106,7 +156,7 @@ class Bufor:
             os.replace(tmp, plik)
         except OSError as e:
             tmp.unlink(missing_ok=True)
-            raise BladBufora(f"zapis {plik.name}: {type(e).__name__}") from e
+            raise _blad_zapisu(plik.name, e) from e
 
     def niepotwierdzone(self) -> list[dict]:
         try:

@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
-from runner.bufor import Bufor, odczekanie
+from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
 
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
@@ -161,9 +161,48 @@ class Runner:
         await self.dosylaj(client, wyniki)
         return wyniki.get(kw["event_id"], False)
 
+    async def _wyslij_bezposrednio(self, client: httpx.AsyncClient, **kw) -> bool:
+        """Jedna proba POST z pominieciem bufora: przy braku miejsca bufor sam nie zadziala,
+        a ponowienie opoznialoby przerwanie runu. Nigdy token ani tresc odpowiedzi w logu."""
+        kw.setdefault("event_id", str(uuid.uuid4()))
+        try:
+            r = await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
+        except httpx.TransportError as e:
+            przyczyna = type(e).__name__
+        else:
+            if r.is_success:
+                return True
+            if r.status_code == 401:
+                raise TokenOdrzucony()
+            przyczyna = f"http={r.status_code}"
+        print(
+            f"zdarzenie {kw.get('kind')} niewyslane: run_id={kw.get('run_id')} ({przyczyna})",
+            file=sys.stderr,
+        )
+        return False
+
+    def _powod_nie_startu(self) -> str | None:
+        """Tekst przerwania, gdy krok nie moze wystartowac z powodu dysku; inaczej None."""
+        try:
+            prog = min_wolne_mb()
+        except ValueError as e:
+            return f"zla konfiguracja: {e}"
+        try:
+            wolne = wolne_mb(self._bufor.katalog)
+        except OSError as e:
+            return f"nie mozna sprawdzic wolnego miejsca: {type(e).__name__}"
+        if wolne < prog:
+            return f"brak miejsca: {wolne} MB wolne, wymagane {prog} MB"
+        return None
+
     async def run_command(
         self, client: httpx.AsyncClient, run_id: str, step_id: str, command: list[str]
     ) -> None:
+        powod = self._powod_nie_startu()
+        if powod is not None:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted", text=powod)
+            return
         started = time.monotonic()
         proc = await asyncio.create_subprocess_exec(
             *command,
@@ -186,20 +225,28 @@ class Runner:
 
         ms = int((time.monotonic() - started) * 1000)
         wyslane_output = 0
-        for line in out.decode(errors="replace").splitlines():
-            wyslane_output += 1              # proba, takze nieudana
-            await self.send_event(client, run_id=run_id, step_id=step_id,
-                                  kind="output", text=line)
-        ok = proc.returncode == 0
-        await self.send_event(
-            client, run_id=run_id, step_id=step_id,
-            kind="step_finished" if ok else "step_failed",
-            text=f"kod wyjscia {proc.returncode}",
-            duration_ms=ms,
-            cost_usd=None,                   # subskrypcja nie podaje ceny
-            cost_source="unavailable",
-            wyslane_output=wyslane_output,
-        )
+        try:
+            for line in out.decode(errors="replace").splitlines():
+                wyslane_output += 1              # proba, takze nieudana
+                await self.send_event(client, run_id=run_id, step_id=step_id,
+                                      kind="output", text=line)
+            ok = proc.returncode == 0
+            await self.send_event(
+                client, run_id=run_id, step_id=step_id,
+                kind="step_finished" if ok else "step_failed",
+                text=f"kod wyjscia {proc.returncode}",
+                duration_ms=ms,
+                cost_usd=None,                   # subskrypcja nie podaje ceny
+                cost_source="unavailable",
+                wyslane_output=wyslane_output,
+            )
+        except BrakMiejsca:
+            # bez miejsca zaden krok nie zapisze zdarzen; nie stop(): nasluch i heartbeat zyja
+            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+            )
 
     @staticmethod
     def _zabij_grupe(proc: asyncio.subprocess.Process, sygnal: signal.Signals) -> None:
