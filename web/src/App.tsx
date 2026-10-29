@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { fetchZSesja, Konto, odswiezSesje, PanelKonta, ustawPowrotDoLogowania } from "./Konto";
 
 type Zdarzenie = { seq: number; kind: string; text: string; step_id: string };
 type Run = {
@@ -26,7 +27,54 @@ function runZAdresu(): string | null {
   return new URLSearchParams(window.location.search).get("run");
 }
 
+// Bramka: bez sesji ekran logowania, z sesja dotychczasowy widok runu.
+// Stan "ladowanie" nie pokazuje nic, zeby nie mignal zly ekran przed odpowiedzia "ja".
 export function App() {
+  const [stan, setStan] = useState<"ladowanie" | "gosc" | "blad" | { email: string }>("ladowanie");
+
+  useEffect(() => {
+    ustawPowrotDoLogowania(() => setStan("gosc"));
+    let anulowano = false;
+    // Wspolne odswiezenie: podwojny efekt StrictMode dostaje ten sam token i ta sama odpowiedz.
+    odswiezSesje().then(
+      (ja) => {
+        if (!anulowano && ja) setStan({ email: ja.email });
+      },
+      () => {
+        if (!anulowano) setStan("blad");
+      },
+    );
+    return () => {
+      anulowano = true;
+    };
+  }, []);
+
+  function poZalogowaniu() {
+    setStan("ladowanie");
+    odswiezSesje().then(
+      (ja) => setStan(ja ? { email: ja.email } : "gosc"),
+      () => setStan("blad"),
+    );
+  }
+
+  if (stan === "ladowanie") return <main />;
+  if (stan === "blad") {
+    return (
+      <main style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto" }}>
+        <p style={{ color: "#A5201A" }}>{KOMUNIKAT_SIEC}</p>
+      </main>
+    );
+  }
+  if (stan === "gosc") return <Konto onZalogowano={poZalogowaniu} />;
+  return (
+    <>
+      <PanelKonta email={stan.email} />
+      <WidokRunu />
+    </>
+  );
+}
+
+function WidokRunu() {
   const [runId, setRunId] = useState<string | null>(runZAdresu);
   const [zdarzenia, setZdarzenia] = useState<Zdarzenie[]>([]);
   const [status, setStatus] = useState<string | null>(null);
@@ -105,7 +153,7 @@ export function App() {
       setRunId(null);
     };
     try {
-      const r = await fetch("/api/runs", {
+      const r = await fetchZSesja("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workflow: "szkielet" }),

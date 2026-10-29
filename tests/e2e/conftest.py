@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -136,11 +137,22 @@ def czysta_baza():
 
 
 @pytest.fixture
-def token_runnera(czysta_baza, tmp_path) -> str:
-    """Zespol z runnerem zalozony przez tools/seed_dev.py; plik z tokenem w tmp_path."""
+def dane_wlasciciela() -> tuple[str, str]:
+    """Losowy e-mail i haslo wlasciciela zespolu zakladanego przez zasiew (HAR-50)."""
+    return f"wlasciciel-{uuid.uuid4().hex[:10]}@example.com", f"haslo-{uuid.uuid4().hex}"
+
+
+@pytest.fixture
+def token_runnera(czysta_baza, tmp_path, dane_wlasciciela) -> str:
+    """Zespol z runnerem i wlascicielem zalozony przez tools/seed_dev.py; plik z tokenem w tmp_path.
+
+    Dane wlasciciela ida zmiennymi srodowiska procesu, nigdy argumentami (widocznymi w ps).
+    """
+    email, haslo = dane_wlasciciela
     wynik = subprocess.run(
         [sys.executable, str(KORZEN / "tools" / "seed_dev.py")],
-        env=_srodowisko(tmp_path, COCKPIT_DATABASE_URL=czysta_baza),
+        env=_srodowisko(tmp_path, COCKPIT_DATABASE_URL=czysta_baza,
+                        COCKPIT_DEV_EMAIL=email, COCKPIT_DEV_PASSWORD=haslo),
         cwd=tmp_path, capture_output=True, text=True, timeout=60,
     )
     assert wynik.returncode == 0, f"zasiew nie powiodl sie: {wynik.stderr[-1500:]}"
@@ -155,7 +167,9 @@ def adres_kokpitu(czysta_baza, token_runnera, tmp_path):
     proc = _uruchom_w_grupie(
         [sys.executable, "-m", "uvicorn", "cockpit.api.app:app",
          "--host", "127.0.0.1", "--port", str(port)],
-        _srodowisko(tmp_path, COCKPIT_DATABASE_URL=czysta_baza), tmp_path, log,
+        # kokpit w e2e stoi na http: ciasteczko z flaga Secure nie wrociloby do serwera
+        _srodowisko(tmp_path, COCKPIT_DATABASE_URL=czysta_baza,
+                    COCKPIT_CIASTECZKO_SECURE="0"), tmp_path, log,
     )
     try:
         koniec = time.monotonic() + LIMIT_STARTU_S
@@ -171,6 +185,20 @@ def adres_kokpitu(czysta_baza, token_runnera, tmp_path):
         yield adres
     finally:
         _zabij_grupe(proc)
+
+
+@pytest.fixture
+def zalogowana_strona(page, adres_kokpitu, dane_wlasciciela):
+    """Strona zalogowana formularzem jak uzytkownik; zwraca ja po pojawieniu sie widoku runu."""
+    from playwright.sync_api import expect
+
+    email, haslo = dane_wlasciciela
+    page.goto(adres_kokpitu)
+    page.get_by_label("E-mail").fill(email)
+    page.get_by_label("Hasło", exact=True).fill(haslo)
+    page.get_by_role("button", name="Zaloguj", exact=True).click()
+    expect(page.get_by_role("button", name="Uruchom")).to_be_visible()
+    return page
 
 
 @pytest.fixture

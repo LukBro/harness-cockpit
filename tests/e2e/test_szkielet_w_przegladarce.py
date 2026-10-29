@@ -17,8 +17,8 @@ def _id_runu(page) -> str:
     return parse_qs(urlparse(page.url).query)["run"][0]
 
 
-def test_klikniecie_uruchom_pokazuje_wynik_procesu(page, adres_kokpitu, runner_online):
-    page.goto(adres_kokpitu)
+def test_klikniecie_uruchom_pokazuje_wynik_procesu(runner_online, zalogowana_strona):
+    page = zalogowana_strona
 
     page.get_by_role("button", name="Uruchom").click()
 
@@ -29,9 +29,9 @@ def test_klikniecie_uruchom_pokazuje_wynik_procesu(page, adres_kokpitu, runner_o
 
 
 def test_przeladowanie_strony_pokazuje_ten_sam_run_i_te_same_zdarzenia(
-    page, adres_kokpitu, runner_online
+    runner_online, zalogowana_strona
 ):
-    page.goto(adres_kokpitu)
+    page = zalogowana_strona
     page.get_by_role("button", name="Uruchom").click()
     expect(page.get_by_text("status: to_accept")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
     id_przed = _id_runu(page)
@@ -47,10 +47,10 @@ def test_przeladowanie_strony_pokazuje_ten_sam_run_i_te_same_zdarzenia(
 
 
 def test_zatrzymany_runner_daje_komunikat_offline_i_gotowy_przycisk(
-    page, adres_kokpitu, zatrzymaj_runnera, liczba_runow
+    zatrzymaj_runnera, zalogowana_strona, liczba_runow
 ):
+    page = zalogowana_strona
     runow_przed_kliknieciem = zatrzymaj_runnera()
-    page.goto(adres_kokpitu)
 
     page.get_by_role("button", name="Uruchom").click()
 
