@@ -5,16 +5,23 @@ JSON. Lezy poza katalogiem roboczym runu (jest w `-c`), bo inaczej migawka
 recenzenta widzialaby ja jako zmiane.
 """
 import asyncio
+import contextlib
 import json
 import os
-import signal
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
 from cockpit.services.invariants import Rola
+from procesy import (
+    WlasnaGrupaProcesow,
+    czekaj,
+    czekaj_na_warunek,
+    grupa_umarla,
+    zabij_grupe,
+    zabij_proces,
+)
 from runner.agent import SpecKroku
 from runner.krok import WynikKroku, wykonaj_krok
 
@@ -496,25 +503,23 @@ async def test_autor_z_nieczytelnym_plikiem_w_katalogu_runu_jest_zakonczony(run)
 # --- sprzatanie procesow -----------------------------------------------------
 
 
-async def czekaj_na_pidfile(plik: Path) -> tuple[int, int]:
-    koniec = time.monotonic() + 10
-    while time.monotonic() < koniec:
-        if plik.is_file():
-            pgid, wnuk = plik.read_text().split()
-            return int(pgid), int(wnuk)
-        await asyncio.sleep(0.02)
-    raise AssertionError("atrapa nie zapisala pidfile")
+async def czekaj_na_pidfile(plik: Path, zadanie: asyncio.Task) -> tuple[int, int]:
+    try:
+        await czekaj_na_warunek(plik.is_file, 10, "pidfile atrapy")
+    except BaseException:
+        zadanie.cancel()      # krok nie moze zostac w tle, gdy atrapa nie zapisala pidfile
+        raise
+    pgid, wnuk = plik.read_text().split()
+    return int(pgid), int(wnuk)
 
 
-async def grupa_umarla(pgid: int) -> bool:
-    koniec = time.monotonic() + 5
-    while time.monotonic() < koniec:
-        try:
-            os.killpg(pgid, 0)
-        except ProcessLookupError:
-            return True
-        await asyncio.sleep(0.05)
-    return False
+def sprzatnij_atrape(pgid: int, wnuk: int) -> None:
+    """Zabezpieczenie testu: wnuk nie moze przezyc nawet przy zlej implementacji.
+    Pod mutantem bez start_new_session atrapa dzieli grupe z pytestem: sygnal do grupy
+    nie idzie, a test pada na `grupa_umarla`, nie na bledzie sprzatania w `finally`."""
+    zabij_proces(wnuk)
+    with contextlib.suppress(WlasnaGrupaProcesow):
+        zabij_grupe(pgid)
 
 
 async def test_anulowanie_kroku_zabija_cala_grupe_procesow_wraz_z_wnukiem(run, tmp_path):
@@ -527,23 +532,14 @@ async def test_anulowanie_kroku_zabija_cala_grupe_procesow_wraz_z_wnukiem(run, t
     zadanie = asyncio.create_task(
         wykonaj_krok(spec(), atrapa(wnuk=str(pidfile)), run, emit)
     )
-    pgid, wnuk = await czekaj_na_pidfile(pidfile)
+    pgid, wnuk = await czekaj_na_pidfile(pidfile, zadanie)
     try:
         zadanie.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(zadanie, 10)
+            await czekaj(zadanie, 10, "koniec kroku")
         assert await grupa_umarla(pgid)
     finally:
-        # Zabezpieczenie testu: wnuk nie moze przezyc nawet przy zlej implementacji.
-        # Straznik pgid: bez start_new_session atrapa dzieli grupe z pytestem.
-        cele = [lambda: os.kill(wnuk, signal.SIGKILL)]
-        if pgid != os.getpgid(0):
-            cele.insert(0, lambda: os.killpg(pgid, signal.SIGKILL))
-        for cel in cele:
-            try:
-                cel()
-            except ProcessLookupError:
-                pass
+        sprzatnij_atrape(pgid, wnuk)
 
 
 async def test_wyjatek_z_emit_wychodzi_z_kroku_i_grupa_procesow_jest_martwa(run, tmp_path):
@@ -560,17 +556,10 @@ async def test_wyjatek_z_emit_wychodzi_z_kroku_i_grupa_procesow_jest_martwa(run,
             spec(), atrapa(wnuk=str(pidfile), linie=[["out", "linia\n"]]), run, emit
         )
     )
-    pgid, wnuk = await czekaj_na_pidfile(pidfile)
+    pgid, wnuk = await czekaj_na_pidfile(pidfile, zadanie)
     try:
         with pytest.raises(BladEmit, match="odbiorca zdarzen padl"):
-            await asyncio.wait_for(zadanie, 10)
+            await czekaj(zadanie, 10, "koniec kroku")
         assert await grupa_umarla(pgid)
     finally:
-        cele = [lambda: os.kill(wnuk, signal.SIGKILL)]
-        if pgid != os.getpgid(0):
-            cele.insert(0, lambda: os.killpg(pgid, signal.SIGKILL))
-        for cel in cele:
-            try:
-                cel()
-            except ProcessLookupError:
-                pass
+        sprzatnij_atrape(pgid, wnuk)

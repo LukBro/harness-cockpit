@@ -31,6 +31,17 @@ from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Run, Runner, Tenant
 from cockpit.settings import Settings, settings
+from procesy import (
+    czekaj_bez_anulowania,
+    czekaj_na_warunek,
+    czy_zyje,
+    uruchom_proces,
+    zabij_grupe,
+    zabij_proces,
+    zadanie_tla,
+    zakoncz_proces,
+    zapamietaj_proces,
+)
 from runner import client as runner_client
 from runner.client import KokpitNiezgodny, Runner as RunnerKlient, TokenOdrzucony
 
@@ -294,10 +305,7 @@ async def test_prog_offline_runnera_wynika_z_konfiguracji_kokpitu(swiat, polacze
 # --- runner: petla heartbeatu --------------------------------------------------
 
 async def _poczekaj(warunek, limit: float = 5.0) -> None:
-    koniec = time.monotonic() + limit
-    while not warunek():
-        assert time.monotonic() < koniec, "warunek nie spelnil sie w limicie czasu"
-        await asyncio.sleep(0.01)
+    await czekaj_na_warunek(warunek, limit, "warunek testu")
 
 
 class _AtrapaSieci(httpx.AsyncBaseTransport):
@@ -500,54 +508,21 @@ async def test_zawieszone_zadanie_heartbeatu_nie_blokuje_zatrzymania_dluzej_niz_
 
 # --- runner: stop() ------------------------------------------------------------
 
-def _zyje(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
-# pid -> grupa procesow w chwili zapamietania; sprzatane po kazdym tescie
-_PROCESY_TESTU: dict[int, int] = {}
-
-
-def _zapamietaj_proces(pid: int) -> None:
-    try:
-        _PROCESY_TESTU[pid] = os.getpgid(pid)
-    except ProcessLookupError:
-        pass
-
-
 def _zabij_proces_kroku(pid: int) -> None:
     """SIGKILL dla procesu kroku; cala grupa tylko wtedy, gdy krok ja prowadzi.
 
     Pod mutantem bez `start_new_session` krok siedzi w grupie procesu testow, a ta
     w CI jest tez grupa mutmuta i agenta runnera GitHuba: `killpg` tej grupy zrywal
-    caly job `mutation` (PR #52, "runner lost communication").
+    caly job `mutation` (PR #52, "runner lost communication"). Reszte osloni helper.
     """
     try:
-        if os.getpgid(pid) == pid:
-            os.killpg(pid, signal.SIGKILL)
-        else:
-            os.kill(pid, signal.SIGKILL)
+        lider = os.getpgid(pid) == pid
     except ProcessLookupError:
-        pass
-
-
-@pytest.fixture(autouse=True)
-def _sprzatnij_procesy_testu():
-    """Proces kroku albo jego potomek zostawiony przez oblany test (albo zmutowany
-    `stop()`) nie przezywa testu. Grupa porownywana z zapamietana, zeby nie zabic
-    obcego procesu, ktory dostal ten sam, zwolniony juz pid."""
-    yield
-    while _PROCESY_TESTU:
-        pid, grupa = _PROCESY_TESTU.popitem()
-        try:
-            if os.getpgid(pid) == grupa:
-                _zabij_proces_kroku(pid)
-        except ProcessLookupError:
-            pass
+        return
+    if lider:
+        zabij_grupe(pid)
+    else:
+        zabij_proces(pid)
 
 
 @asynccontextmanager
@@ -556,26 +531,25 @@ async def _krok(runner: RunnerKlient, komenda: list[str]):
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200))
     ) as klient:
-        zadanie = asyncio.create_task(runner.run_command(klient, "run-1", "s0", komenda))
-        proc = None
-        try:
-            await _poczekaj(lambda: runner._procesy)
-            proc = next(iter(runner._procesy))
-            _zapamietaj_proces(proc.pid)
-            yield zadanie, proc
-        finally:
-            if proc is not None:
-                _zabij_proces_kroku(proc.pid)
-            if not zadanie.done():
-                zadanie.cancel()
-            # wait, nie gather: zmutowany krok moze polknac anulowanie i wisiec
-            await asyncio.wait({zadanie}, timeout=5)
+        # zmutowany krok moze polknac anulowanie i wisiec: zadanie_tla nie maskuje tego
+        async with zadanie_tla(
+            runner.run_command(klient, "run-1", "s0", komenda), "run_command kroku"
+        ) as zadanie:
+            proc = None
+            try:
+                await _poczekaj(lambda: runner._procesy)
+                proc = next(iter(runner._procesy))
+                zapamietaj_proces(proc.pid)
+                yield zadanie, proc
+            finally:
+                if proc is not None:
+                    _zabij_proces_kroku(proc.pid)
 
 
 async def _pid_z_pliku(plik) -> int:
     await _poczekaj(lambda: plik.exists() and plik.read_text().strip())
     pid = int(plik.read_text().strip())
-    _zapamietaj_proces(pid)
+    zapamietaj_proces(pid)
     return pid
 
 
@@ -583,7 +557,7 @@ async def test_stop_runnera_konczy_proces_trwajacego_kroku_i_mozna_go_wywolac_dw
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
     async with _krok(runner, ["sleep", "60"]) as (zadanie, proc):
         pid = proc.pid
-        assert _zyje(pid)
+        assert czy_zyje(pid)
 
         start_pierwszego = time.monotonic()
         await asyncio.wait_for(runner.stop(), 10)
@@ -593,7 +567,7 @@ async def test_stop_runnera_konczy_proces_trwajacego_kroku_i_mozna_go_wywolac_dw
         await asyncio.wait_for(runner.stop(), 10)      # drugi raz: bez wyjatku i bez czekania
         assert time.monotonic() - start < 0.5
 
-        assert not _zyje(pid)                           # takze zombie: proces odebrany
+        assert not czy_zyje(pid)                        # takze zombie: proces odebrany
         await asyncio.wait_for(zadanie, 10)
     assert runner._procesy == set()
     assert runner._sprzatanie == {}                     # sprzatanie zakonczonego kroku nie zostaje w pamieci
@@ -604,11 +578,11 @@ async def test_stop_runnera_konczy_cala_grupe_procesow_kroku_takze_potomka(tmp_p
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
     async with _krok(runner, ["sh", "-c", f"sleep 60 & echo $! > {plik}; wait"]) as (_, proc):
         potomek = await _pid_z_pliku(plik)
-        assert _zyje(potomek) and potomek != proc.pid
+        assert czy_zyje(potomek) and potomek != proc.pid
 
         await asyncio.wait_for(runner.stop(), 10)
 
-        await _poczekaj(lambda: not _zyje(potomek), limit=3)
+        await _poczekaj(lambda: not czy_zyje(potomek), limit=3)
 
 
 async def test_krok_ignorujacy_sygnal_zakonczenia_ginie_po_czasie_na_zakonczenie(
@@ -628,8 +602,8 @@ async def test_krok_ignorujacy_sygnal_zakonczenia_ginie_po_czasie_na_zakonczenie
         czas = time.monotonic() - start
 
         assert czas >= 0.15                  # najpierw uprzejma prosba, potem SIGKILL
-        assert not _zyje(pid)
-        await _poczekaj(lambda: not _zyje(potomek), limit=3)
+        assert not czy_zyje(pid)
+        await _poczekaj(lambda: not czy_zyje(potomek), limit=3)
         await asyncio.wait_for(zadanie, 10)
 
 
@@ -657,7 +631,7 @@ async def test_krok_dostaje_szanse_na_sprzatanie_po_sygnale_zakonczenia_zanim_pa
 
         await asyncio.wait_for(runner.stop(), 10)
 
-        assert not _zyje(pid)
+        assert not czy_zyje(pid)
     assert znacznik.read_text().strip() == "uprzatniete"
 
 
@@ -675,14 +649,14 @@ async def test_anulowanie_zadania_kroku_przez_kogos_innego_niz_stop_zabija_grupe
     async with _krok(runner, ["sh", "-c", f"sleep 60 & echo $! > {plik}; wait"]) as (zadanie, proc):
         potomek = await _pid_z_pliku(plik)
         pid = proc.pid
-        assert _zyje(pid) and _zyje(potomek)
+        assert czy_zyje(pid) and czy_zyje(potomek)
 
         zadanie.cancel()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(zadanie, 5)
 
         # potomek nie jest dzieckiem runnera, wiec jego smierc obserwujemy sondowaniem
-        await _poczekaj(lambda: not _zyje(pid) and not _zyje(potomek), limit=3)
+        await _poczekaj(lambda: not czy_zyje(pid) and not czy_zyje(potomek), limit=3)
     assert runner._procesy == set()
 
 
@@ -798,15 +772,13 @@ def _podglad_heartbeatu(monkeypatch, co_s_testowe: float = 0.05):
 async def _koniec_nasluchu(nasluch: asyncio.Task, limit: float = 1.0):
     """Czeka na koniec zadania BEZ jego anulowania (`wait_for` anulowalby je po limicie,
     a `listen` po zatrzymaniu polyka anulowanie - test przechodzilby takze wtedy, gdy
-    `stop()` nic nie anuluje). Zwraca wynik nasluchu."""
+    `stop()` nic nie anuluje). Zwraca wynik nasluchu; niedoczekane zadanie sprzata
+    `zadanie_tla` wolajacego."""
     start = time.monotonic()
-    zakonczone, _ = await asyncio.wait({nasluch}, timeout=limit)
-    if nasluch not in zakonczone:
-        nasluch.cancel()
-        await asyncio.wait({nasluch}, timeout=5)
-        raise AssertionError(f"nasluch nie skonczyl sie w {limit} s po stop()")
+    wynik = await czekaj_bez_anulowania(
+        nasluch, limit, f"nasluch nie skonczyl sie w {limit} s po stop()")
     assert time.monotonic() - start < limit
-    return nasluch.result()
+    return wynik
 
 
 async def test_runner_w_trakcie_nasluchu_melduje_kokpitowi_ze_zyje_z_czestoscia_od_kokpitu(
@@ -815,12 +787,12 @@ async def test_runner_w_trakcie_nasluchu_melduje_kokpitowi_ze_zyje_z_czestoscia_
     zapis = _podglad_heartbeatu(monkeypatch)
     atrapa = _AtrapaKokpitu(heartbeat_co_s=7)
     runner = RunnerKlient("http://kokpit.test/", TOKEN_RUNNERA, transport=atrapa)
-    nasluch = asyncio.create_task(runner.listen())
-    try:
-        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
-    finally:
-        await asyncio.wait_for(runner.stop(), 10)
-        await _koniec_nasluchu(nasluch)
+    async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+        try:
+            await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
+        finally:
+            await asyncio.wait_for(runner.stop(), 10)
+            await _koniec_nasluchu(nasluch)
 
     assert runner.heartbeat_co_s == 7
     assert len(zapis["utworzone"]) == 1
@@ -842,11 +814,11 @@ async def test_stop_w_trakcie_nasluchu_konczy_nasluch_normalnie_bez_bledu_zamkni
     atrapa = _AtrapaKokpitu()
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     przed = asyncio.all_tasks()
-    nasluch = asyncio.create_task(runner.listen())
-    await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
+    async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
 
-    await asyncio.wait_for(runner.stop(), 10)
-    wynik = await _koniec_nasluchu(nasluch)
+        await asyncio.wait_for(runner.stop(), 10)
+        wynik = await _koniec_nasluchu(nasluch)
 
     assert wynik is None
     assert not nasluch.cancelled()
@@ -865,9 +837,8 @@ async def test_zamkniecie_strumienia_w_trakcie_zatrzymywania_runnera_konczy_nasl
     atrapa = _AtrapaKokpitu(po_polaczono=lambda: runner.stop())
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     przed = asyncio.all_tasks()
-    nasluch = asyncio.create_task(runner.listen())
-
-    wynik = await _koniec_nasluchu(nasluch, limit=5)
+    async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+        wynik = await _koniec_nasluchu(nasluch, limit=5)
 
     assert wynik is None
     assert runner._zatrzymany.is_set()
@@ -882,12 +853,12 @@ async def test_anulowanie_nasluchu_przez_kogos_innego_niz_stop_dochodzi_do_wolaj
     atrapa = _AtrapaKokpitu()
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     przed = asyncio.all_tasks()
-    nasluch = asyncio.create_task(runner.listen())
-    await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
+    async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 3)
 
-    nasluch.cancel()
-    # wait, nie wait_for: wait_for sam anulowalby zadanie i maskowal polkniete anulowanie
-    zakonczone, _ = await asyncio.wait({nasluch}, timeout=5)
+        nasluch.cancel()
+        # wait, nie wait_for: wait_for sam anulowalby zadanie i maskowal polkniete anulowanie
+        zakonczone, _ = await asyncio.wait({nasluch}, timeout=5)
 
     assert nasluch in zakonczone
     assert nasluch.cancelled()
@@ -902,13 +873,13 @@ async def test_zawieszony_heartbeat_nie_blokuje_zatrzymania_runnera_dluzej_niz_t
     _podglad_heartbeatu(monkeypatch, co_s_testowe=0.6)
     atrapa = _AtrapaKokpitu(heartbeat_wisi=True)
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
-    nasluch = asyncio.create_task(runner.listen())
-    await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)   # zadanie faktycznie wisi
+    async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)   # zadanie faktycznie wisi
 
-    start = time.monotonic()
-    await asyncio.wait_for(runner.stop(), 10)
-    czas = time.monotonic() - start
-    await _koniec_nasluchu(nasluch)
+        start = time.monotonic()
+        await asyncio.wait_for(runner.stop(), 10)
+        czas = time.monotonic() - start
+        await _koniec_nasluchu(nasluch)
 
     assert czas < 0.3        # timeout heartbeatu to 0.6 s
 
@@ -976,12 +947,12 @@ async def test_heartbeat_dziala_po_ponownym_polaczeniu_i_milknie_po_stopie(monke
     runner = RunnerKlient(
         "http://kokpit.test", TOKEN_RUNNERA, transport=atrapa, odczekaj=bez_czekania)
     przed = asyncio.all_tasks()
-    nasluch = asyncio.create_task(runner.listen())
-    try:
-        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)
-    finally:
-        await asyncio.wait_for(runner.stop(), 10)
-        await _koniec_nasluchu(nasluch)
+    async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+        try:
+            await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)
+        finally:
+            await asyncio.wait_for(runner.stop(), 10)
+            await _koniec_nasluchu(nasluch)
 
     sciezki = [z.url.path for z in atrapa.zadania]
     assert sciezki.count("/api/runners/register") == 2
@@ -1048,9 +1019,10 @@ def _zabij_proces_kroku_jesli_zyje(proc) -> None:
         _zabij_proces_kroku(proc.pid)
 
 
-async def _koniec_zadania(zadanie: asyncio.Task, limit: float = 5.0) -> bool:
-    zakonczone, _ = await asyncio.wait({zadanie}, timeout=limit)
-    return zadanie in zakonczone
+async def _koniec_zadania(zadanie: asyncio.Task, limit: float, nazwa: str) -> None:
+    """Czeka na koniec zadania BEZ anulowania go i BEZ wyjatku z jego wyniku (test sam
+    sprawdza, czy zadanie zostalo anulowane); po limicie `LimitCzasuTestu` z `nazwa`."""
+    await czekaj_na_warunek(zadanie.done, limit, nazwa)
 
 
 async def test_krok_przyjety_juz_po_zakonczeniu_stop_ginie_po_czasie_na_zakonczenie_i_nie_zostaje_sierota(
@@ -1063,28 +1035,27 @@ async def test_krok_przyjety_juz_po_zakonczeniu_stop_ginie_po_czasie_na_zakoncze
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200))
     ) as klient:
-        zadanie = asyncio.create_task(runner.run_command(
-            klient, "run-1", "s0", _program_ignorujacy_sigterm(plik_pid, plik_potomka)))
-        try:
-            await asyncio.wait_for(bramka.powstal.wait(), 10)
-            pid = await _pid_z_pliku(plik_pid)
-            potomek = await _pid_z_pliku(plik_potomka)
-            await asyncio.wait_for(runner.stop(), 10)       # stop() konczy sie przed rejestracja kroku
-            assert runner._procesy == set()
+        async with zadanie_tla(runner.run_command(
+            klient, "run-1", "s0", _program_ignorujacy_sigterm(plik_pid, plik_potomka)
+        ), "run_command kroku") as zadanie:
+            try:
+                await asyncio.wait_for(bramka.powstal.wait(), 10)
+                pid = await _pid_z_pliku(plik_pid)
+                potomek = await _pid_z_pliku(plik_potomka)
+                await asyncio.wait_for(runner.stop(), 10)   # stop() konczy sie przed rejestracja kroku
+                assert runner._procesy == set()
 
-            bramka.otworz()
+                bramka.otworz()
 
-            assert await _koniec_zadania(zadanie), "krok przyjety po stop() nie zostal zakonczony"
-            assert bramka.proc.returncode == -signal.SIGKILL    # SIGTERM zignorowany, wiec SIGKILL
-            assert not _zyje(pid)
-            await _poczekaj(lambda: not _zyje(potomek), limit=3)
-            assert runner._procesy == set()
-        finally:
-            bramka.otworz()
-            _zabij_proces_kroku_jesli_zyje(bramka.proc)
-            if not zadanie.done():
-                zadanie.cancel()
-            await asyncio.wait({zadanie}, timeout=5)
+                await _koniec_zadania(
+                    zadanie, 5, "krok przyjety po stop() nie zostal zakonczony")
+                assert bramka.proc.returncode == -signal.SIGKILL    # SIGTERM zignorowany, wiec SIGKILL
+                assert not czy_zyje(pid)
+                await _poczekaj(lambda: not czy_zyje(potomek), limit=3)
+                assert runner._procesy == set()
+            finally:
+                bramka.otworz()
+                _zabij_proces_kroku_jesli_zyje(bramka.proc)
 
 
 async def test_krok_przyjety_w_trakcie_sprzatania_innego_kroku_przez_stop_jest_zakonczony_zanim_stop_wroci(
@@ -1094,37 +1065,33 @@ async def test_krok_przyjety_w_trakcie_sprzatania_innego_kroku_przez_stop_jest_z
     plik_a, plik_b = tmp_path / "pid-a", tmp_path / "pid-b"
     bramka = _BramkaRejestracji(monkeypatch, plik_b)
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
-    zadanie_b = stop = None
     async with _krok(runner, _program_ignorujacy_sigterm(plik_a)):
         pid_a = await _pid_z_pliku(plik_a)
         try:
             async with httpx.AsyncClient(
                 transport=httpx.MockTransport(lambda request: httpx.Response(200))
             ) as klient:
-                zadanie_b = asyncio.create_task(runner.run_command(
-                    klient, "run-1", "s1", _program_ignorujacy_sigterm(plik_b)))
-                await asyncio.wait_for(bramka.powstal.wait(), 10)
-                pid_b = await _pid_z_pliku(plik_b)
+                async with zadanie_tla(runner.run_command(
+                    klient, "run-1", "s1", _program_ignorujacy_sigterm(plik_b)
+                ), "run_command kroku B") as zadanie_b:
+                    await asyncio.wait_for(bramka.powstal.wait(), 10)
+                    pid_b = await _pid_z_pliku(plik_b)
 
-                stop = asyncio.create_task(runner.stop())
-                await _poczekaj(runner._zatrzymany.is_set)
-                await asyncio.sleep(0.2)                    # stop() czeka na krok A (do 0.8 s)
-                assert not stop.done()
-                bramka.otworz()                             # krok B zostaje przyjety w trakcie stop()
+                    async with zadanie_tla(runner.stop(), "stop runnera") as stop:
+                        await _poczekaj(runner._zatrzymany.is_set)
+                        await asyncio.sleep(0.2)            # stop() czeka na krok A (do 0.8 s)
+                        assert not stop.done()
+                        bramka.otworz()                     # krok B zostaje przyjety w trakcie stop()
 
-                assert await _koniec_zadania(stop, 10), "stop() nie wrocil"
-                assert not _zyje(pid_b), "krok przyjety w trakcie stop() przezyl stop()"
-                assert bramka.proc.returncode is not None   # odebrany: bez zombie
-                assert not _zyje(pid_a)
-                assert await _koniec_zadania(zadanie_b)
-                assert runner._procesy == set()
+                        await _koniec_zadania(stop, 10, "stop() nie wrocil")
+                    assert not czy_zyje(pid_b), "krok przyjety w trakcie stop() przezyl stop()"
+                    assert bramka.proc.returncode is not None   # odebrany: bez zombie
+                    assert not czy_zyje(pid_a)
+                    await _koniec_zadania(zadanie_b, 5, "krok B nie zostal zakonczony")
+                    assert runner._procesy == set()
         finally:
             bramka.otworz()
             _zabij_proces_kroku_jesli_zyje(bramka.proc)
-            for zadanie in (zadanie_b, stop):
-                if zadanie is not None and not zadanie.done():
-                    zadanie.cancel()
-                    await asyncio.wait({zadanie}, timeout=5)
 
 
 # --- runner: krok z nasluchu ginie przy stop() z osobnego zadania ---------------
@@ -1143,29 +1110,24 @@ async def test_krok_ignorujacy_sygnal_zakonczenia_uruchomiony_z_nasluchu_jest_za
         "command": _program_ignorujacy_sigterm(plik_pid),
     }])
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
-    nasluch = asyncio.create_task(runner.listen())
-    stop = None
     proc = None
     try:
-        pid = await _pid_z_pliku(plik_pid)
-        await _poczekaj(lambda: runner._procesy)
-        proc = next(iter(runner._procesy))
-        assert proc.pid == pid and _zyje(pid)
+        async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+            pid = await _pid_z_pliku(plik_pid)
+            await _poczekaj(lambda: runner._procesy)
+            proc = next(iter(runner._procesy))
+            assert proc.pid == pid and czy_zyje(pid)
 
-        stop = asyncio.create_task(runner.stop())
-        assert await _koniec_zadania(stop, 10), "stop() nie wrocil"
+            async with zadanie_tla(runner.stop(), "stop runnera") as stop:
+                await _koniec_zadania(stop, 10, "stop() nie wrocil")
 
-        # w chwili powrotu stop() krok jest juz martwy i odebrany
-        assert proc.returncode == -signal.SIGKILL
-        assert not _zyje(pid)
-        assert await _koniec_nasluchu(nasluch, limit=5) is None
-        assert runner._procesy == set()
+            # w chwili powrotu stop() krok jest juz martwy i odebrany
+            assert proc.returncode == -signal.SIGKILL
+            assert not czy_zyje(pid)
+            assert await _koniec_nasluchu(nasluch, limit=5) is None
+            assert runner._procesy == set()
     finally:
         _zabij_proces_kroku_jesli_zyje(proc)
-        for zadanie in (stop, nasluch):
-            if zadanie is not None and not zadanie.done():
-                zadanie.cancel()
-                await asyncio.wait({zadanie}, timeout=5)
 
 
 async def test_anulowanie_kroku_ignorujacego_sygnal_zakonczenia_przez_kogos_innego_niz_stop_konczy_sie_sigkill_i_odebraniem_procesu(
@@ -1176,15 +1138,15 @@ async def test_anulowanie_kroku_ignorujacego_sygnal_zakonczenia_przez_kogos_inne
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
     async with _krok(runner, _program_ignorujacy_sigterm(plik_pid)) as (zadanie, proc):
         pid = await _pid_z_pliku(plik_pid)
-        assert _zyje(pid)
+        assert czy_zyje(pid)
 
         zadanie.cancel()
-        # wait, nie wait_for: wait_for sam anulowalby zadanie i maskowal brak anulowania
-        assert await _koniec_zadania(zadanie, 5)
+        # bez wait_for: wait_for sam anulowalby zadanie i maskowal brak anulowania
+        await _koniec_zadania(zadanie, 5, "anulowany krok nie zakonczyl sie")
 
-        assert zadanie.cancelled()                  # CancelledError dochodzi do wolajacego
+        assert zadanie.cancelled()                 # CancelledError dochodzi do wolajacego
         assert proc.returncode == -signal.SIGKILL   # zabity i odebrany przed koncem zadania
-        assert not _zyje(pid)
+        assert not czy_zyje(pid)
         assert runner._procesy == set()
         assert runner._sprzatanie == {}             # anulowany krok nie zostawia zadania sprzatania
 
@@ -1204,13 +1166,13 @@ async def test_drugie_anulowanie_kroku_w_trakcie_sprzatania_nie_przerywa_zabicia
         await asyncio.sleep(0.1)                    # sprzatanie trwa: krok ignoruje SIGTERM
         assert not zadanie.done()
         zadanie.cancel()
-        assert await _koniec_zadania(zadanie, 5)
+        await _koniec_zadania(zadanie, 5, "dwukrotnie anulowany krok nie zakonczyl sie")
 
         assert zadanie.cancelled()
         # sprzatanie dokancza osobne zadanie spod shield, wiec smierc kroku obserwujemy z boku
         await _poczekaj(lambda: proc.returncode is not None, limit=5)
         assert proc.returncode == -signal.SIGKILL
-        assert not _zyje(pid)
+        assert not czy_zyje(pid)
 
 
 # --- runner: odebrany proces i kolejnosc stop() ---------------------------------
@@ -1227,8 +1189,7 @@ def _podmien_killpg(monkeypatch) -> list[tuple[int, signal.Signals]]:
 async def test_odebrany_proces_kroku_nie_dostaje_sygnalu_bo_jego_pid_moze_nalezec_do_obcej_grupy(
     monkeypatch,
 ):
-    proc = await asyncio.create_subprocess_exec("true", start_new_session=True)
-    _zapamietaj_proces(proc.pid)
+    proc = await uruchom_proces("true")
     await asyncio.wait_for(proc.wait(), 5)
     assert proc.returncode == 0
     wywolania = _podmien_killpg(monkeypatch)
@@ -1239,8 +1200,7 @@ async def test_odebrany_proces_kroku_nie_dostaje_sygnalu_bo_jego_pid_moze_naleze
 
 
 async def test_zywy_proces_kroku_dostaje_sygnal_w_swojej_grupie_procesow(monkeypatch):
-    proc = await asyncio.create_subprocess_exec("sleep", "60", start_new_session=True)
-    _zapamietaj_proces(proc.pid)
+    proc = await uruchom_proces("sleep", "60")
     try:
         wywolania = _podmien_killpg(monkeypatch)
 
@@ -1248,8 +1208,8 @@ async def test_zywy_proces_kroku_dostaje_sygnal_w_swojej_grupie_procesow(monkeyp
 
         assert wywolania == [(proc.pid, signal.SIGTERM)]
     finally:
-        _zabij_proces_kroku(proc.pid)
-        await asyncio.wait({asyncio.ensure_future(proc.wait())}, timeout=5)
+        # sygnal produkcyjny byl atrapa (nic nie poszlo), wiec proces nadal zyje
+        await zakoncz_proces(proc, nazwa="sleep 60 z testu _zabij_grupe")
 
 
 async def test_polecenie_kroku_ktore_przyszlo_w_trakcie_zatrzymywania_runnera_nie_uruchamia_procesu(
@@ -1280,7 +1240,7 @@ async def test_polecenie_kroku_ktore_przyszlo_w_trakcie_zatrzymywania_runnera_ni
         proc = await prawdziwa(*args, **kwargs)
         if any(znacznik in str(a) for a in args):
             uruchomione.append(proc.pid)
-            _zapamietaj_proces(proc.pid)
+            zapamietaj_proces(proc.pid)
         return proc
 
     monkeypatch.setattr(runner_client.asyncio, "create_subprocess_exec", exec_z_rejestrem)
@@ -1290,26 +1250,21 @@ async def test_polecenie_kroku_ktore_przyszlo_w_trakcie_zatrzymywania_runnera_ni
         "command": [sys.executable, "-c", f"import time; time.sleep(60)  # {znacznik}"],
     }])
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
-    nasluch = asyncio.create_task(runner.listen())
-    stop = None
     try:
-        await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)     # nasluch jest w strumieniu
-        stop = asyncio.create_task(runner.stop())
-        await asyncio.wait_for(w_stopie_heartbeatu.wait(), 5)           # stop() czeka na heartbeat
+        async with zadanie_tla(runner.listen(), "nasluch") as nasluch:
+            await asyncio.wait_for(atrapa.heartbeat_odebrany.wait(), 5)     # nasluch jest w strumieniu
+            async with zadanie_tla(runner.stop(), "stop runnera") as stop:
+                await asyncio.wait_for(w_stopie_heartbeatu.wait(), 5)       # stop() czeka na heartbeat
 
-        dosylka.set()
-        await asyncio.sleep(0.3)                                        # czas na przyjecie kroku
+                dosylka.set()
+                await asyncio.sleep(0.3)                                    # czas na przyjecie kroku
 
-        assert uruchomione == []
-        puszczony.set()
-        assert await _koniec_zadania(stop, 10), "stop() nie wrocil"
-        assert await _koniec_nasluchu(nasluch, limit=5) is None
-        assert uruchomione == []
+                assert uruchomione == []
+                puszczony.set()
+                await _koniec_zadania(stop, 10, "stop() nie wrocil")
+            assert await _koniec_nasluchu(nasluch, limit=5) is None
+            assert uruchomione == []
     finally:
         puszczony.set()
         for pid in uruchomione:
             _zabij_proces_kroku(pid)
-        for zadanie in (stop, nasluch):
-            if zadanie is not None and not zadanie.done():
-                zadanie.cancel()
-                await asyncio.wait({zadanie}, timeout=5)

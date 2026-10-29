@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 import runner.client as runner_client
+from procesy import czekaj, czekaj_bez_anulowania, zadanie_tla
 from runner.bufor import Bufor
 from runner.client import Runner, TokenOdrzucony
 
@@ -500,23 +501,20 @@ async def test_stop_w_trakcie_odczekiwania_przed_ponownym_laczeniem_konczy_naslu
 ):
     transport, odwiedzone = _kokpit(stream_body=POLACZONO)
     runner = Runner("http://kokpit.test", TOKEN, transport=transport)   # prawdziwe odczekanie
-    nasluch = asyncio.create_task(runner.listen())
     log = ""
-    try:
+    async with zadanie_tla(runner.listen(), "nasluch runnera") as nasluch:
         for _ in range(300):
             log += capsys.readouterr().err
             if "lacze ponownie" in log:
                 break
             await asyncio.sleep(0.01)
         assert "lacze ponownie" in log, "runner nie zaczal odczekiwania przed ponownym laczeniem"
-    finally:
-        await asyncio.wait_for(runner.stop(), 10)
-        zakonczone, _ = await asyncio.wait({nasluch}, timeout=3)
-        if nasluch not in zakonczone:
-            nasluch.cancel()
-            await asyncio.wait({nasluch}, timeout=5)
+        await czekaj(runner.stop(), 10, "stop() runnera")
+        # Bez anulowania: nasluch ma skonczyc sie sam po stop(), anulowanie by to zamaskowalo.
+        await czekaj_bez_anulowania(
+            nasluch, 3, "nasluch nie skonczyl sie po stop() w trakcie odczekiwania"
+        )
 
-    assert nasluch in zakonczone, "nasluch nie skonczyl sie po stop() w trakcie odczekiwania"
     assert not nasluch.cancelled()
     assert nasluch.exception() is None
     assert odwiedzone == ["/api/runners/register", "/api/runners/stream"]
