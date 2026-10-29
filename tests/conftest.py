@@ -15,6 +15,8 @@ import os
 
 import pytest
 
+from procesy import sprzatnij_zapamietane
+
 pytest_plugins = ["pytester"]
 
 ZMIENNA = "COCKPIT_WYMAGAJ_BAZY"
@@ -25,6 +27,14 @@ def _katalog_stanu_runnera_w_katalogu_testu(tmp_path, monkeypatch):
     """HAR-45: bufor zdarzen runnera leży w katalogu stanu. Żaden test nie pisze do
     ~/.local/state; podprocesy testów dziedziczą tę zmienną środowiskową."""
     monkeypatch.setenv("COCKPIT_STATE_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _sprzatnij_procesy_uruchomione_przez_helper():
+    """HAR-142: procesy z `procesy.uruchom_proces*` nie przezywaja testu, takze padnietego.
+    Sprzata tylko grupy utworzone przez helper (zob. `tests/procesy.py`)."""
+    yield
+    sprzatnij_zapamietane()
 
 
 def _wymaga_bazy(item: pytest.Item) -> bool:

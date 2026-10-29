@@ -147,6 +147,9 @@ def _uruchom(
         monkeypatch.setenv(ZMIENNA, zmienna)
     pytester.makeini(INI_PROBKI)  # rootpath = katalog pytestera, nie wyzej
     pytester.makeconftest((KORZEN / "tests" / "conftest.py").read_text(encoding="utf-8"))
+    # Produkcyjny conftest importuje `procesy` (HAR-142); bez niego obok przebieg
+    # pytestera konczy sie ImportError zamiast sprawdzac regule bazy.
+    pytester.makepyfile(procesy=(KORZEN / "tests" / "procesy.py").read_text(encoding="utf-8"))
     for sciezka, tresc in pliki.items():
         plik = pytester.path / sciezka
         plik.parent.mkdir(parents=True, exist_ok=True)

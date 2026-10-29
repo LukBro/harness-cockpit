@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import signal
 import socket
 import subprocess
 import sys
@@ -23,6 +22,14 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from procesy import (
+    SIGTERM,
+    grupa_istnieje,
+    uruchom_proces_sync,
+    zabij_grupe,
+    zakoncz_proces_sync,
+)
 
 KORZEN = Path(__file__).resolve().parents[2]
 URL_BAZY = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
@@ -42,10 +49,10 @@ def _srodowisko(tmp_path: Path, **dodatkowe: str) -> dict[str, str]:
 
 
 def _uruchom_w_grupie(argv: list[str], env: dict[str, str], cwd: Path, log: Path):
+    # wlasna sesja i grupa (robi to helper): zabijamy ja cala, zero sierot
     with log.open("wb") as wyjscie:
-        return subprocess.Popen(
+        return uruchom_proces_sync(
             argv, env=env, cwd=cwd, stdout=wyjscie, stderr=subprocess.STDOUT,
-            start_new_session=True,   # wlasna grupa: zabijamy ja cala, zero sierot
         )
 
 
@@ -53,31 +60,16 @@ def _koniec_logu(log: Path) -> str:
     return log.read_text(errors="replace")[-2000:] if log.exists() else ""
 
 
-def _grupa_istnieje(pgid: int) -> bool:
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
 def _zabij_grupe(proc: subprocess.Popen) -> None:
     """Zabija cala grupe procesu i sprawdza, ze nic po niej nie zostalo."""
     pgid = proc.pid   # start_new_session=True: lider sesji ma pgid == pid
-    if _grupa_istnieje(pgid):
-        try:
-            os.killpg(pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        os.killpg(pgid, signal.SIGKILL)
-        proc.wait(timeout=10)
+    zakoncz_proces_sync(proc, nazwa=f"proces e2e {proc.pid}", limit_term=10, limit_wait=10)
+    # Lider mogl zakonczyc sie wczesniej niz jego potomkowie - helper wtedy nic nie robi.
+    zabij_grupe(pgid)
     koniec = time.monotonic() + 5
-    while _grupa_istnieje(pgid) and time.monotonic() < koniec:
+    while grupa_istnieje(pgid) and time.monotonic() < koniec:
         time.sleep(0.05)
-    assert not _grupa_istnieje(pgid), f"po tescie zostaly procesy grupy {pgid}"
+    assert not grupa_istnieje(pgid), f"po tescie zostaly procesy grupy {pgid}"
 
 
 def _wolny_port() -> int:
@@ -207,7 +199,7 @@ def zatrzymaj_runnera(runner_online, adres_kokpitu):
     """
 
     def _zatrzymaj() -> int:
-        os.killpg(os.getpgid(runner_online.pid), signal.SIGTERM)
+        zabij_grupe(runner_online.pid, SIGTERM)   # start w nowej sesji: pgid == pid
         runner_online.wait(timeout=10)
         # Rozlaczenie strumienia widac tylko w pamieci kokpitu: pytamy o nowy run az odpowie 409.
         koniec = time.monotonic() + 10
