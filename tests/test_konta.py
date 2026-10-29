@@ -28,6 +28,7 @@ KOMUNIKAT_LOGOWANIA = "nieprawidłowy adres lub hasło"
 HASLO = "Sekret-Hasl0-Alfa"
 JAN = "jan@przyklad.pl"
 EWA = "ewa@przyklad.pl"
+IP = "203.0.113.7"
 
 
 @pytest.fixture
@@ -232,14 +233,14 @@ async def test_haslo_jest_zapisane_jako_skrot_argon2id(maker):
 async def test_poprawne_haslo_loguje_i_zwraca_uzytkownika(maker):
     user = await _rejestruj(maker)
     async with maker() as s:
-        zalogowany = await konta.zaloguj(s, JAN, HASLO)
+        zalogowany = await konta.zaloguj(s, JAN, HASLO, IP)
     assert zalogowany.id == user.id
 
 
 async def test_logowanie_dziala_dla_adresu_w_innej_wielkosci_liter_i_ze_spacjami(maker):
     user = await _rejestruj(maker)
     async with maker() as s:
-        zalogowany = await konta.zaloguj(s, "  JAN@Przyklad.PL ", HASLO)
+        zalogowany = await konta.zaloguj(s, "  JAN@Przyklad.PL ", HASLO, IP)
     assert zalogowany.id == user.id
 
 
@@ -247,10 +248,10 @@ async def test_zle_haslo_i_nieistniejacy_adres_daja_ten_sam_komunikat(maker):
     await _rejestruj(maker)
     async with maker() as s:
         with pytest.raises(BrakDostepu) as zle_haslo:
-            await konta.zaloguj(s, JAN, "Zle-Haslo-Gamma")
+            await konta.zaloguj(s, JAN, "Zle-Haslo-Gamma", IP)
     async with maker() as s:
         with pytest.raises(BrakDostepu) as brak_konta:
-            await konta.zaloguj(s, EWA, HASLO)
+            await konta.zaloguj(s, EWA, HASLO, IP)
     assert str(zle_haslo.value) == str(brak_konta.value) == KOMUNIKAT_LOGOWANIA
     assert "Zle-Haslo-Gamma" not in str(zle_haslo.value)
 
@@ -277,7 +278,7 @@ async def test_nieistniejacy_adres_tez_kosztuje_weryfikacje_skrotu_atrapy(maker,
 
     async with maker() as s:
         with pytest.raises(BrakDostepu):
-            await konta.zaloguj(s, EWA, "Cokolwiek-Delta-1")
+            await konta.zaloguj(s, EWA, "Cokolwiek-Delta-1", IP)
 
     assert len(szpieg.weryfikacje) == 1
     skrot_atrapy, sprawdzane = szpieg.weryfikacje[0]
@@ -295,7 +296,7 @@ async def test_skrot_hasla_z_slabszymi_parametrami_jest_przeliczony_przy_logowan
         user_id = u.id
 
     async with maker() as s:
-        zalogowany = await konta.zaloguj(s, JAN, HASLO)
+        zalogowany = await konta.zaloguj(s, JAN, HASLO, IP)
     assert zalogowany.id == user_id
 
     nowy = (await _user_w_bazie(maker, user_id)).haslo_skrot
@@ -308,7 +309,7 @@ async def test_skrot_z_domyslnymi_parametrami_zostaje_bez_zmian_po_logowaniu(mak
     user = await _rejestruj(maker)
     przed = (await _user_w_bazie(maker, user.id)).haslo_skrot
     async with maker() as s:
-        await konta.zaloguj(s, JAN, HASLO)
+        await konta.zaloguj(s, JAN, HASLO, IP)
     assert (await _user_w_bazie(maker, user.id)).haslo_skrot == przed
 
 
@@ -509,10 +510,10 @@ async def test_po_zmianie_hasla_dziala_nowe_a_stare_nie_i_zmienia_sie_znacznik_c
         await konta.zmien_haslo(s, jan, HASLO, "Nowe-Haslo-Omega", biezaca_sesja_id=biezaca)
 
     async with maker() as s:
-        assert (await konta.zaloguj(s, JAN, "Nowe-Haslo-Omega")).id == jan.id
+        assert (await konta.zaloguj(s, JAN, "Nowe-Haslo-Omega", IP)).id == jan.id
     async with maker() as s:
         with pytest.raises(BrakDostepu) as e:
-            await konta.zaloguj(s, JAN, HASLO)
+            await konta.zaloguj(s, JAN, HASLO, IP)
     assert str(e.value) == KOMUNIKAT_LOGOWANIA
     zmienione = (await _user_w_bazie(maker, jan.id)).haslo_zmienione_at
     assert zmienione is not None
@@ -564,13 +565,13 @@ async def test_jawne_haslo_nie_trafia_do_bazy_ani_do_logow(maker, caplog):
 
     jan = await _rejestruj(maker, JAN, haslo)
     async with maker() as s:
-        await konta.zaloguj(s, JAN, haslo)
+        await konta.zaloguj(s, JAN, haslo, IP)
     async with maker() as s:
         with pytest.raises(BrakDostepu):
-            await konta.zaloguj(s, JAN, zle)
+            await konta.zaloguj(s, JAN, zle, IP)
     async with maker() as s:
         with pytest.raises(BrakDostepu):
-            await konta.zaloguj(s, EWA, zle)
+            await konta.zaloguj(s, EWA, zle, IP)
     ident, _ = await _nowa_sesja(maker, jan)
     async with maker() as s:
         await konta.zmien_haslo(s, jan, haslo, nowe, biezaca_sesja_id=ident)
@@ -740,7 +741,7 @@ async def test_nowe_haslo_dokladnie_osmioznakowe_jest_przyjete_przy_zmianie_hasl
         await konta.zmien_haslo(s, jan, HASLO, "12345678", biezaca_sesja_id=biezaca)
 
     async with maker() as s:
-        assert (await konta.zaloguj(s, JAN, "12345678")).id == jan.id
+        assert (await konta.zaloguj(s, JAN, "12345678", IP)).id == jan.id
 
 
 async def test_zmiana_hasla_nie_nadpisuje_czasu_wczesniejszego_uniewaznienia_sesji(maker):
@@ -930,7 +931,7 @@ async def test_uzytkownik_z_uszkodzonym_skrotem_hasla_w_bazie_dostaje_ten_sam_ko
 
     async with maker() as s:
         with pytest.raises(BrakDostepu) as e:
-            await konta.zaloguj(s, JAN, HASLO)
+            await konta.zaloguj(s, JAN, HASLO, IP)
     assert str(e.value) == KOMUNIKAT_LOGOWANIA
 
 

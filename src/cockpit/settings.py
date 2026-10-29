@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     runner_sweep_s: int = Field(default=10, ge=1)
     # Ile dni jest wazna sesja (HAR-44; env COCKPIT_SESJA_WAZNA_DNI). ge=1: 0 wygasalaby od razu.
     sesja_wazna_dni: int = Field(default=30, ge=1)
+    # Blokada logowania (HAR-46; env COCKPIT_LOGOWANIE_*). ge=1: 0 blokowaloby od pierwszej proby
+    # albo okno liczylo od zera.
+    logowanie_limit_prob: int = Field(default=5, ge=1)            # nieudane proby pary (adres, IP)
+    logowanie_okno_s: int = Field(default=900, ge=1)              # okno liczenia prob pary
+    logowanie_blokada_s: int = Field(default=900, ge=1)           # czas blokady (para i globalna)
+    logowanie_limit_globalny: int = Field(default=50, ge=1)       # nieudane proby adresu z dowolnych IP
+    logowanie_okno_globalne_s: int = Field(default=3600, ge=1)    # okno limitu globalnego
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)
