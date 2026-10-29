@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from argon2 import PasswordHasher
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import BlokadaLogowania, Membership, RolaWZespole, Sesja, Tenant, User
 from cockpit.services import sesje
+from cockpit.services.dostep import Kontekst
 from cockpit.services.errors import BrakDostepu, StanNiemozliwy, ZbytWieleProb
 from cockpit.settings import settings
 
@@ -194,3 +196,30 @@ async def zmien_haslo(
         .values(uniewazniona_at=teraz)
     )
     await s.commit()
+
+
+@dataclass(frozen=True)
+class Profil:
+    email: str
+    zespol: str
+    rola: RolaWZespole
+
+
+async def profil(s: AsyncSession, kontekst: Kontekst) -> Profil:
+    user = await s.get(User, kontekst.user_id)
+    # filtr po tenant_id z kontekstu: nigdy "pierwszy zespol" uzytkownika
+    nazwa = (
+        await s.execute(select(Tenant.name).where(Tenant.id == kontekst.tenant_id))
+    ).scalar_one_or_none()
+    if user is None or nazwa is None:
+        raise BrakDostepu(sesje.KOMUNIKAT_SESJI)
+    return Profil(email=user.email, zespol=nazwa, rola=kontekst.rola)
+
+
+async def zmien_haslo_uzytkownika(
+    s: AsyncSession, user_id: str, stare: str, nowe: str, biezaca_sesja_id: str
+) -> None:
+    user = await s.get(User, user_id)
+    if user is None:
+        raise BrakDostepu(sesje.KOMUNIKAT_SESJI)
+    await zmien_haslo(s, user, stare, nowe, biezaca_sesja_id)

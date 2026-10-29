@@ -30,3 +30,4 @@
 - HAR-44: Każda gałąź sprzątająca lub tłumacząca wyjątek (rollback, element krotki `except`) i każde nowe ograniczenie ustawień (wartość domyślna, `ge`) ma test, który oblewa po jej usunięciu; zamknięcie sesji w teście, które samo cofa transakcję, nie chroni jawnego rollbacku.
 - HAR-22: Każdy człon warunku, który zawęża przeniesienie pola z payloadu do określonego zdarzenia, ma test, w którym to pole jest obecne w zdarzeniu innego rodzaju, bo inaczej usunięcie członu przeżywa.
 - HAR-46: Każdy wpis tabeli i każdy element zapytania ustalony w kontrakcie (kod HTTP błędu, blokada wiersza) ma test, w którym tylko ta konkretna wartość decyduje o wyniku; test samej obecności klucza nie chroni jego wartości.
+- HAR-48: Każde ograniczenie wejścia (max_length, element zbioru metod, wartość zastępcza przy brakujących danych) ma test na wejściu, na którym tylko ono decyduje o wyniku, bo mutmut takich mutantów nie generuje i zielony `mutanty_zmian.py` ich nie widzi.

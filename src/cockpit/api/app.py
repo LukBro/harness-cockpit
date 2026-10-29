@@ -31,7 +31,7 @@ from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
 from cockpit.settings import settings
 
-from . import bus
+from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 
 logger = logging.getLogger(__name__)
@@ -257,6 +257,8 @@ def zamontuj_front(aplikacja: FastAPI, katalog: Path) -> bool:
     aplikacja.mount("/", StaticFiles(directory=katalog, html=True), name="front")
     return True
 
+
+app.include_router(konta.router)
 
 # Na samym koncu: mount "/" po wszystkich trasach, wiec /api/* ma pierwszenstwo.
 zamontuj_front(app, STATIC)
