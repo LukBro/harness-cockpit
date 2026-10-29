@@ -20,6 +20,13 @@ pytest_plugins = ["pytester"]
 ZMIENNA = "COCKPIT_WYMAGAJ_BAZY"
 
 
+@pytest.fixture(autouse=True)
+def _katalog_stanu_runnera_w_katalogu_testu(tmp_path, monkeypatch):
+    """HAR-45: bufor zdarzen runnera leży w katalogu stanu. Żaden test nie pisze do
+    ~/.local/state; podprocesy testów dziedziczą tę zmienną środowiskową."""
+    monkeypatch.setenv("COCKPIT_STATE_DIR", str(tmp_path))
+
+
 def _wymaga_bazy(item: pytest.Item) -> bool:
     return item.get_closest_marker("baza") is not None
 

@@ -3,12 +3,9 @@ import os
 import signal
 import sys
 
-from runner.client import KokpitNiezgodny, Runner, StrumienZamkniety, TokenOdrzucony
+from runner.bufor import BladBufora
+from runner.client import KokpitNiezgodny, Runner, TokenOdrzucony
 from runner.secrets import get_token
-
-# EX_TEMPFAIL: stan przejsciowy - ponowne laczenie dopiero w BRO-75, wiec
-# skrypt nadrzedny moze po tym kodzie sprobowac ponownie (kod 0 tego nie wyraza).
-EX_TEMPFAIL = 75
 
 
 async def _uruchom(base: str, token: str) -> None:
@@ -38,13 +35,9 @@ def main() -> None:
     base = os.environ.get("COCKPIT_URL", "http://127.0.0.1:8765")
     try:
         asyncio.run(_uruchom(base, token))
-    except StrumienZamkniety:
-        print(
-            "strumien zamkniety przez kokpit - koncze prace (kod 75); "
-            "ponowne laczenie: BRO-75",
-            file=sys.stderr,
-        )
-        raise SystemExit(EX_TEMPFAIL)
+    except BladBufora as e:
+        print(f"bufor zdarzen: {e}", file=sys.stderr)
+        raise SystemExit(2)
     except KokpitNiezgodny as e:
         print(f"kokpit odpowiedzial niezgodnie z kontraktem: {e}", file=sys.stderr)
         raise SystemExit(2)

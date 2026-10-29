@@ -7,29 +7,59 @@ Asercje dotyczą rodzaju zdarzenia (`kind`); pola pomiarowe (`duration_ms`, `cos
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
 import runner.client as runner_client
-from runner.client import Runner
+from runner.bufor import Bufor
+from runner.client import Runner, TokenOdrzucony
 
 RUN_ID = "run-1"
 STEP_ID = "krok-1"
 
 
+class Odczekania:
+    """Atrapa odczekania (HAR-45): nie śpi, zapisuje argumenty i po `zatrzymaj_po`
+    wywołaniach zatrzymuje runnera, dzięki czemu pętla ponawiania zawsze się kończy."""
+
+    def __init__(self, zatrzymaj_po: int | None = None) -> None:
+        self.argumenty: list[float] = []
+        self.zatrzymaj_po = zatrzymaj_po
+        self.runner: Runner | None = None
+
+    async def __call__(self, sekundy: float) -> None:
+        self.argumenty.append(sekundy)
+        if self.zatrzymaj_po is not None and len(self.argumenty) >= self.zatrzymaj_po:
+            await self.runner.stop()
+
+
+def _runner(
+    base_url: str = "http://kokpit.test", transport=None, zatrzymaj_po: int | None = None,
+    name: str | None = None,
+) -> tuple[Runner, Odczekania]:
+    odczekania = Odczekania(zatrzymaj_po)
+    nazwane = {} if name is None else {"name": name}
+    runner = Runner(base_url, TOKEN, transport=transport, odczekaj=odczekania, **nazwane)
+    odczekania.runner = runner
+    return runner, odczekania
+
+
 async def _uruchom(command: list[str], status: int = 200) -> list[httpx.Request]:
     """Uruchamia komendę przez Runnera i zwraca żądania wysłane do kokpitu.
-    `status` to kod, którym kokpit odpowiada na każde zdarzenie."""
+    `status` to kod, którym kokpit odpowiada na każde zdarzenie. Odczekanie przed
+    ponowieniem zatrzymuje runnera, więc odpowiedź 5xx nie zapętla testu."""
     wyslane: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         wyslane.append(request)
         return httpx.Response(status)
 
-    runner = Runner("http://kokpit.test", "tajny-token")
+    runner, _ = _runner(zatrzymaj_po=1)
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await runner.run_command(client, RUN_ID, STEP_ID, command)
     return wyslane
@@ -84,23 +114,34 @@ async def test_zdarzenia_runnera_trafiaja_do_kokpitu_z_tokenem_runnera():
 
 
 async def _wyslij_zdarzenie(status: int) -> bool:
-    runner = Runner("http://kokpit.test", "tajny-token")
+    """Wysyła jedno zdarzenie; odpowiedź 5xx kończy się zatrzymaniem runnera (zdarzenie
+    zostaje w buforze), więc wynik to `False` także wtedy."""
+    runner, _ = _runner(zatrzymaj_po=1)
     transport = httpx.MockTransport(lambda request: httpx.Response(status))
     async with httpx.AsyncClient(transport=transport) as client:
-        return await runner.send_event(client, run_id=RUN_ID, kind="output", text="x")
+        return await asyncio.wait_for(
+            runner.send_event(client, run_id=RUN_ID, kind="output", text="x"), 10)
 
 
-@pytest.mark.parametrize("status", [401, 500])
-async def test_odpowiedz_odrzucajaca_zdarzenie_jest_widoczna_w_logu_runnera(status, capsys):
+@pytest.mark.parametrize("status", [400, 404])
+async def test_zdarzenie_odrzucone_kodem_4xx_jest_widoczne_w_logu_runnera_jako_utracone(
+    status, capsys,
+):
     await _wyslij_zdarzenie(status)
 
-    err = capsys.readouterr().err
-    assert "output" in err
-    assert RUN_ID in err
-    assert str(status) in err
+    assert capsys.readouterr().err.splitlines() == [
+        f"zdarzenie utracone: kind=output run_id={RUN_ID} http={status}"]
 
 
-@pytest.mark.parametrize("status", [401, 500])
+async def test_awaria_kokpitu_przy_wysylce_zdarzenia_jest_widoczna_w_logu_runnera(capsys):
+    await _wyslij_zdarzenie(500)
+
+    wpisy = capsys.readouterr().err.splitlines()
+    assert len(wpisy) == 1
+    assert re.fullmatch(r"kokpit niedostepny \(http=500\) - ponawiam za 1(\.0)? s", wpisy[0])
+
+
+@pytest.mark.parametrize("status", [400, 500])
 async def test_log_runnera_o_odrzuconym_zdarzeniu_nie_zawiera_tokenu(status, capsys):
     await _uruchom(["sh", "-c", "echo tajne; exit 1"], status=status)
 
@@ -110,14 +151,36 @@ async def test_log_runnera_o_odrzuconym_zdarzeniu_nie_zawiera_tokenu(status, cap
     assert "tajny-token" not in wyjscie.out
 
 
+async def test_odrzucony_token_przy_zdarzeniu_kroku_przerywa_krok_bledem_tokenu(capsys):
+    with pytest.raises(TokenOdrzucony):
+        await _uruchom(["sh", "-c", "echo tajne; exit 1"], status=401)
+
+    wyjscie = capsys.readouterr()
+    assert "tajny-token" not in wyjscie.err
+    assert "tajny-token" not in wyjscie.out
+
+
 async def test_przyjete_zdarzenie_nie_zostawia_sladu_w_logu_runnera(capsys):
     assert await _wyslij_zdarzenie(200) is True
     assert capsys.readouterr().err == ""
 
 
-@pytest.mark.parametrize("status", [401, 500, 302])
-async def test_wysylka_zdarzenia_odrzuconego_przez_kokpit_zwraca_porazke(status):
+@pytest.mark.parametrize("status", [400, 404, 500])
+async def test_wysylka_zdarzenia_utraconego_albo_niedoreczonego_zwraca_porazke(status):
     assert await _wyslij_zdarzenie(status) is False
+
+
+async def test_zdarzenie_niedoreczone_z_powodu_awarii_kokpitu_zostaje_w_buforze():
+    await _wyslij_zdarzenie(500)
+
+    (w_buforze,) = Bufor().niepotwierdzone()
+    assert (w_buforze["run_id"], w_buforze["kind"], w_buforze["text"]) == (RUN_ID, "output", "x")
+
+
+async def test_zdarzenie_utracone_przez_odpowiedz_4xx_nie_zostaje_w_buforze():
+    await _wyslij_zdarzenie(400)
+
+    assert Bufor().niepotwierdzone() == []
 
 
 async def test_wysylka_zdarzenia_z_kodem_2xx_innym_niz_200_zwraca_sukces(capsys):
@@ -125,12 +188,11 @@ async def test_wysylka_zdarzenia_z_kodem_2xx_innym_niz_200_zwraca_sukces(capsys)
     assert capsys.readouterr().err == ""
 
 
-async def test_log_odrzuconego_zdarzenia_koncowego_podaje_jego_rodzaj(capsys):
-    await _uruchom(["sh", "-c", "exit 3"], status=500)
+async def test_log_utraconego_zdarzenia_koncowego_podaje_jego_rodzaj(capsys):
+    await _uruchom(["sh", "-c", "exit 3"], status=400)
 
-    err = capsys.readouterr().err
-    assert "step_failed" in err
-    assert "500" in err
+    assert capsys.readouterr().err.splitlines() == [
+        f"zdarzenie utracone: kind=step_failed run_id={RUN_ID} http=400"]
 
 
 async def test_zdarzenie_koncowe_niesie_liczbe_linii_output_ktore_runner_wyslal():
@@ -141,7 +203,7 @@ async def test_zdarzenie_koncowe_niesie_liczbe_linii_output_ktore_runner_wyslal(
 
 
 async def test_zdarzenie_koncowe_liczy_tez_nieudane_proby_wyslania_output():
-    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "echo a; echo b; exit 1"], status=500))
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "echo a; echo b; exit 1"], status=400))
 
     assert zdarzenia[-1]["kind"] == "step_failed"
     assert zdarzenia[-1]["wyslane_output"] == 2
@@ -179,26 +241,59 @@ def _kokpit(stream_status: int = 200, stream_body: bytes = b"", register_status:
     return httpx.MockTransport(handler), odwiedzone
 
 
-async def test_zamkniecie_strumienia_przez_kokpit_konczy_nasluchiwanie_bledem_a_nie_cichym_powrotem(
+async def _nasluch(runner: Runner) -> None:
+    """`listen()` z twardym limitem czasu; po `stop()` z atrapy odczekania wraca bez wyjątku."""
+    assert await asyncio.wait_for(runner.listen(), 10) is None
+
+
+async def test_zamkniecie_strumienia_przez_kokpit_nie_konczy_nasluchiwania_runner_laczy_sie_ponownie(
     capsys,
 ):
-    from runner.client import StrumienZamkniety
+    transport, odwiedzone = _kokpit(stream_body=POLACZONO)
+    runner, odczekania = _runner(transport=transport, zatrzymaj_po=2)
+
+    await _nasluch(runner)
+
+    assert odwiedzone == ["/api/runners/register", "/api/runners/stream"] * 2
+    assert len(odczekania.argumenty) == 2
+    assert capsys.readouterr().err.count("strumien otwarty") == 2
+
+
+async def test_przerwany_strumien_jest_widoczny_w_logu_z_przyczyna_i_czasem_do_ponowienia(capsys):
     transport, _ = _kokpit(stream_body=POLACZONO)
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
 
-    with pytest.raises(StrumienZamkniety):
-        await runner.listen()
+    await _nasluch(runner)
 
-    assert "strumien otwarty" in capsys.readouterr().err
+    wpisy = [w for w in capsys.readouterr().err.splitlines() if "przerwany" in w]
+    assert len(wpisy) == 1
+    assert re.fullmatch(
+        r"strumien polecen przerwany \(.+\) - lacze ponownie za 1(\.0)? s", wpisy[0]), wpisy[0]
+
+
+async def test_odczekanie_przed_ponownym_laczeniem_zaczyna_sie_od_nowa_po_kazdym_otwarciu_strumienia():
+    transport, _ = _kokpit(stream_body=POLACZONO)
+    runner, odczekania = _runner(transport=transport, zatrzymaj_po=3)
+
+    await _nasluch(runner)
+
+    assert odczekania.argumenty == [1.0, 1.0, 1.0]
+
+
+async def test_odczekanie_przed_ponownym_laczeniem_rosnie_gdy_strumien_nigdy_sie_nie_otwiera():
+    transport, _ = _kokpit(stream_body=b'data: {"type": "inne"}\n\n')
+    runner, odczekania = _runner(transport=transport, zatrzymaj_po=4)
+
+    await _nasluch(runner)
+
+    assert odczekania.argumenty == [1.0, 2.0, 4.0, 8.0]
 
 
 async def test_strumien_z_innym_poleceniem_niz_polaczono_nie_jest_zglaszany_jako_otwarty(capsys):
-    from runner.client import StrumienZamkniety
     transport, _ = _kokpit(stream_body=b'data: {"type": "inne"}\n\n')
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
 
-    with pytest.raises(StrumienZamkniety):
-        await runner.listen()
+    await _nasluch(runner)
 
     assert "strumien otwarty" not in capsys.readouterr().err
 
@@ -206,62 +301,225 @@ async def test_strumien_z_innym_poleceniem_niz_polaczono_nie_jest_zglaszany_jako
 async def test_runner_nie_zglasza_otwartego_strumienia_po_samej_odpowiedzi_200_bez_polecenia(
     capsys,
 ):
-    from runner.client import StrumienZamkniety
     transport, _ = _kokpit(stream_body=b"")
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
 
-    with pytest.raises(StrumienZamkniety):
-        await runner.listen()
+    await _nasluch(runner)
 
     assert "strumien otwarty" not in capsys.readouterr().err
 
 
 async def test_odrzucony_token_przy_zameldowaniu_konczy_nasluchiwanie_bez_ponawiania():
-    from runner.client import TokenOdrzucony
     transport, odwiedzone = _kokpit(register_status=401)
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    runner, odczekania = _runner(transport=transport)
 
     with pytest.raises(TokenOdrzucony):
-        await runner.listen()
+        await asyncio.wait_for(runner.listen(), 10)
 
     assert odwiedzone == ["/api/runners/register"]
+    assert odczekania.argumenty == []
 
 
 async def test_odrzucony_token_przy_otwieraniu_strumienia_konczy_nasluchiwanie_bez_ponawiania():
-    from runner.client import TokenOdrzucony
     transport, odwiedzone = _kokpit(stream_status=401)
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    runner, odczekania = _runner(transport=transport)
 
     with pytest.raises(TokenOdrzucony):
-        await runner.listen()
+        await asyncio.wait_for(runner.listen(), 10)
 
     assert odwiedzone == ["/api/runners/register", "/api/runners/stream"]
+    assert odczekania.argumenty == []
 
 
-async def test_awaria_kokpitu_przy_zameldowaniu_nie_jest_mylona_z_odrzuconym_tokenem():
-    from runner.client import TokenOdrzucony
-    transport, _ = _kokpit(register_status=500)
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+# --- HAR-45: kokpit znika i wraca ---
+
+class KokpitZawodny(httpx.AsyncBaseTransport):
+    """Pierwsze `awarii` żądań kończy wyjątkiem transportu, potem odpowiada jak normalny kokpit."""
+
+    def __init__(self, awarii: int, wyjatek: Exception | None = None, stream_body=POLACZONO):
+        self.pozostalo = awarii
+        self.wyjatek = wyjatek or httpx.ConnectError("kokpit nie odpowiada")
+        self.stream_body = stream_body
+        self.sciezki: list[str] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.sciezki.append(request.url.path)
+        if self.pozostalo > 0:
+            self.pozostalo -= 1
+            raise self.wyjatek
+        if request.url.path == "/api/runners/register":
+            return httpx.Response(
+                200, json={"runner_id": "r1", "tenant_id": "t1", "heartbeat_co_s": 15})
+        return httpx.Response(
+            200, content=self.stream_body, headers={"content-type": "text/event-stream"})
+
+
+async def test_kokpit_niedostepny_przy_zameldowaniu_runner_czeka_i_probuje_ponownie_z_rosnacym_odczekaniem():
+    kokpit = KokpitZawodny(awarii=3)
+    runner, odczekania = _runner(transport=kokpit, zatrzymaj_po=4)
+
+    await _nasluch(runner)
+
+    assert odczekania.argumenty[:3] == [1.0, 2.0, 4.0]
+    assert kokpit.sciezki[:5] == ["/api/runners/register"] * 3 + [
+        "/api/runners/register", "/api/runners/stream"]
+
+
+async def test_blad_polaczenia_przy_otwieraniu_strumienia_nie_konczy_runnera(capsys):
+    class RozlaczonyStrumien(KokpitZawodny):
+        async def handle_async_request(self, request):
+            if request.url.path == "/api/runners/stream" and not self.sciezki.count(
+                    "/api/runners/stream"):
+                self.sciezki.append(request.url.path)
+                raise httpx.ReadError("polaczenie zerwane Bearer tajny-token")
+            return await super().handle_async_request(request)
+
+    kokpit = RozlaczonyStrumien(awarii=0)
+    runner, odczekania = _runner(transport=kokpit, zatrzymaj_po=2)
+
+    await _nasluch(runner)
+
+    assert kokpit.sciezki.count("/api/runners/register") == 2
+    assert odczekania.argumenty == [1.0, 1.0]
+    err = capsys.readouterr().err
+    assert "ReadError" in err
+    assert "tajny-token" not in err and "zerwane" not in err
+
+
+@pytest.mark.parametrize(
+    ("rejestracja", "strumien"),
+    [(500, 200), (503, 200), (200, 502)],
+    ids=["rejestracja_500", "rejestracja_503", "strumien_502"],
+)
+async def test_blad_serwera_kokpitu_przy_zameldowaniu_albo_strumieniu_jest_ponawiany_z_odczekaniem(
+    rejestracja, strumien, capsys,
+):
+    """Awaria serwera nie jest mylona z odrzuconym tokenem: `listen()` wraca bez wyjątku
+    (gdyby poleciał `TokenOdrzucony` albo `HTTPStatusError`, `_nasluch` by oblał), a na
+    odpowiedzi 5xx strumień nigdy nie jest zgłoszony jako otwarty."""
+    transport, odwiedzone = _kokpit(
+        stream_status=strumien, stream_body=POLACZONO, register_status=rejestracja)
+    runner, odczekania = _runner(transport=transport, zatrzymaj_po=3)
+
+    await _nasluch(runner)
+
+    assert odczekania.argumenty == [1.0, 2.0, 4.0]
+    assert odwiedzone.count("/api/runners/register") == 3
+    assert "strumien otwarty" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("rejestracja", "strumien"),
+    [(403, 200), (404, 200), (200, 403)],
+    ids=["rejestracja_403", "rejestracja_404", "strumien_403"],
+)
+async def test_odpowiedz_4xx_inna_niz_401_przy_zameldowaniu_albo_strumieniu_nie_jest_ponawiana_ani_mylona_z_tokenem(
+    rejestracja, strumien,
+):
+    transport, odwiedzone = _kokpit(
+        stream_status=strumien, stream_body=POLACZONO, register_status=rejestracja)
+    runner, odczekania = _runner(transport=transport)
 
     with pytest.raises(httpx.HTTPStatusError) as wyjatek:
-        await runner.listen()
+        await asyncio.wait_for(runner.listen(), 10)
 
     assert not isinstance(wyjatek.value, TokenOdrzucony)
+    assert wyjatek.value.response.status_code == (rejestracja if rejestracja != 200 else strumien)
+    assert odczekania.argumenty == []
+    assert odwiedzone.count("/api/runners/register") == 1
 
 
-async def test_awaria_kokpitu_przy_otwieraniu_strumienia_nie_jest_mylona_z_odrzuconym_tokenem(
+async def test_przerwanie_strumienia_przez_kokpit_ma_w_logu_dokladna_przyczyne(capsys):
+    transport, _ = _kokpit(stream_body=POLACZONO)
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+
+    await _nasluch(runner)
+
+    assert capsys.readouterr().err.splitlines() == [
+        "strumien otwarty",
+        "strumien polecen przerwany (kokpit zamknal strumien) - lacze ponownie za 1.0 s"]
+
+
+async def test_awaria_serwera_kokpitu_ma_w_logu_dokladna_przyczyne_z_kodem_http(capsys):
+    transport, _ = _kokpit(register_status=502)
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+
+    await _nasluch(runner)
+
+    assert capsys.readouterr().err.splitlines() == [
+        "strumien polecen przerwany (http=502) - lacze ponownie za 1.0 s"]
+
+
+async def test_blad_polaczenia_ma_w_logu_dokladna_przyczyne_z_nazwa_klasy_wyjatku(capsys):
+    runner, _ = _runner(transport=KokpitZawodny(awarii=1), zatrzymaj_po=1)
+
+    await _nasluch(runner)
+
+    assert capsys.readouterr().err.splitlines() == [
+        "strumien polecen przerwany (ConnectError) - lacze ponownie za 1.0 s"]
+
+
+async def test_runner_z_wlasnym_buforem_trzyma_niewyslane_zdarzenia_w_nim_a_nie_w_domyslnym(
+    tmp_path,
+):
+    wlasny = Bufor(tmp_path / "wlasny-katalog")
+    odczekania = Odczekania(zatrzymaj_po=1)
+    runner = Runner("http://kokpit.test", TOKEN, bufor=wlasny, odczekaj=odczekania)
+    odczekania.runner = runner
+    transport = httpx.MockTransport(lambda request: httpx.Response(500))
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        assert await asyncio.wait_for(
+            runner.send_event(client, run_id=RUN_ID, kind="output", text="x"), 10) is False
+
+    assert [z["text"] for z in wlasny.niepotwierdzone()] == ["x"]
+    assert Bufor().niepotwierdzone() == []          # katalog domyslny (COCKPIT_STATE_DIR) pusty
+
+
+async def test_domyslne_odczekanie_wraca_po_zadanym_czasie_bez_stop():
+    runner = Runner("http://kokpit.test", TOKEN)
+
+    await asyncio.wait_for(runner._czekaj(0.01), 2)      # TimeoutError = czeka bez konca
+
+
+async def test_domyslne_odczekanie_pozwala_dokonczyc_ponowienie_po_awarii_kokpitu():
+    odpowiedzi = [500, 200]
+    transport = httpx.MockTransport(lambda request: httpx.Response(odpowiedzi.pop(0)))
+    runner = Runner("http://kokpit.test", TOKEN)
+    runner._odczekaj = lambda sekundy: runner._czekaj(0.01)      # prawdziwe, tylko krótsze
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        przyjete = await asyncio.wait_for(
+            runner.send_event(client, run_id=RUN_ID, kind="output", text="x"), 5)
+
+    assert przyjete is True
+
+
+async def test_stop_w_trakcie_odczekiwania_przed_ponownym_laczeniem_konczy_nasluchiwanie_bez_bledu(
     capsys,
 ):
-    from runner.client import TokenOdrzucony
-    transport, _ = _kokpit(stream_status=500, stream_body=POLACZONO)
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    transport, odwiedzone = _kokpit(stream_body=POLACZONO)
+    runner = Runner("http://kokpit.test", TOKEN, transport=transport)   # prawdziwe odczekanie
+    nasluch = asyncio.create_task(runner.listen())
+    log = ""
+    try:
+        for _ in range(300):
+            log += capsys.readouterr().err
+            if "lacze ponownie" in log:
+                break
+            await asyncio.sleep(0.01)
+        assert "lacze ponownie" in log, "runner nie zaczal odczekiwania przed ponownym laczeniem"
+    finally:
+        await asyncio.wait_for(runner.stop(), 10)
+        zakonczone, _ = await asyncio.wait({nasluch}, timeout=3)
+        if nasluch not in zakonczone:
+            nasluch.cancel()
+            await asyncio.wait({nasluch}, timeout=5)
 
-    with pytest.raises(httpx.HTTPStatusError) as wyjatek:
-        await runner.listen()
-
-    assert not isinstance(wyjatek.value, TokenOdrzucony)
-    assert wyjatek.value.response.status_code == 500
-    assert "strumien otwarty" not in capsys.readouterr().err
+    assert nasluch in zakonczone, "nasluch nie skonczyl sie po stop() w trakcie odczekiwania"
+    assert not nasluch.cancelled()
+    assert nasluch.exception() is None
+    assert odwiedzone == ["/api/runners/register", "/api/runners/stream"]
 
 
 def _uruchom_main(monkeypatch, wyjatek: str) -> SystemExit:
@@ -279,16 +537,47 @@ def _uruchom_main(monkeypatch, wyjatek: str) -> SystemExit:
     return wyjscie.value
 
 
-def test_zamkniecie_strumienia_przez_kokpit_konczy_proces_runnera_kodem_nie_zero(
-    monkeypatch, capsys,
+@pytest.mark.parametrize("sygnal", ["SIGTERM", "SIGINT"])
+def test_zamkniecie_strumienia_przez_kokpit_nie_konczy_procesu_runnera_ten_laczy_sie_ponownie(
+    monkeypatch, sygnal,
 ):
-    wyjscie = _uruchom_main(monkeypatch, "StrumienZamkniety")
+    """Prawdziwe `main()` i prawdziwy `Runner`; kokpit zamyka strumień za każdym razem.
+    Proces kończy się dopiero sygnałem (kod 0), po dwóch kolejnych połączeniach. Sygnał idzie
+    do własnego procesu testu, więc siatka bezpieczeństwa: no-op handlery na czas testu."""
+    import os
+    import signal
 
-    assert wyjscie.code == 75
-    wyjscie_procesu = capsys.readouterr()
-    assert wyjscie_procesu.err.strip()      # powod jest widoczny w logu runnera
-    assert TOKEN not in wyjscie_procesu.err
-    assert TOKEN not in wyjscie_procesu.out
+    import runner.__main__ as modul
+
+    numer = getattr(signal, sygnal)
+    transport, odwiedzone = _kokpit(stream_body=POLACZONO)
+    odczekania: list[float] = []
+
+    async def odczekaj(sekundy: float) -> None:
+        odczekania.append(sekundy)
+        if len(odczekania) == 2:
+            os.kill(os.getpid(), numer)
+        await asyncio.sleep(0.05)       # stop() z obsługi sygnału zdąży ruszyć
+
+    monkeypatch.setattr(
+        modul, "Runner",
+        lambda base, token: Runner(base, token, transport=transport, odczekaj=odczekaj))
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN)
+    monkeypatch.setenv("COCKPIT_URL", "http://kokpit.test")
+    stare = {s: signal.signal(s, lambda *a: None) for s in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        try:
+            modul.main()
+            kod = None
+        except SystemExit as wyjscie:
+            kod = wyjscie.code
+    finally:
+        for s, obsluga in stare.items():
+            signal.signal(s, obsluga)
+
+    assert kod in (0, None)                 # nie 75: zamkniecie strumienia nie konczy procesu
+    assert odwiedzone.count("/api/runners/register") == 2      # zameldowal sie ponownie
+    assert len(odczekania) == 2
 
 
 def test_zamkniecie_strumienia_w_trakcie_zatrzymywania_runnera_konczy_jego_proces_kodem_0_a_nie_75(
@@ -329,7 +618,7 @@ def test_zamkniecie_strumienia_w_trakcie_zatrzymywania_runnera_konczy_jego_proce
     except SystemExit as wyjscie:
         kod = wyjscie.code
 
-    assert utworzone[0]._zatrzymany
+    assert utworzone[0]._zatrzymany.is_set()
     assert kod in (0, None)
     wynik = capsys.readouterr()
     assert "kod 75" not in wynik.err
@@ -377,9 +666,9 @@ def _nagrywajacy_kokpit(stream_body: bytes = POLACZONO, runner_id: str = "r-42")
 
 
 async def _nasluchuj(runner: Runner) -> None:
-    from runner.client import StrumienZamkniety
-    with pytest.raises(StrumienZamkniety):
-        await runner.listen()
+    """Jedno połączenie: runner zbudowany przez `_runner(..., zatrzymaj_po=1)` zatrzymuje się
+    przy pierwszym odczekaniu po zamknięciu strumienia przez kokpit."""
+    await _nasluch(runner)
 
 
 def _zadanie(zadania: list[httpx.Request], koncowka: str) -> httpx.Request:
@@ -399,7 +688,8 @@ async def test_rejestracja_zglasza_kokpitowi_nazwe_wersje_i_backendy_z_tokenem_r
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr("importlib.metadata.version", lambda nazwa: "1.2.3-test")
     transport, zadania = _nagrywajacy_kokpit()
-    await _nasluchuj(Runner("http://kokpit.test", TOKEN, name="moj-runner", transport=transport))
+    runner, _ = _runner(transport=transport, name="moj-runner", zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
     zadanie = _zadanie(zadania, "/api/runners/register")
     assert zadanie.method == "POST"
@@ -412,14 +702,15 @@ async def test_rejestracja_zglasza_kokpitowi_nazwe_wersje_i_backendy_z_tokenem_r
 
 async def test_runner_bez_podanej_nazwy_melduje_sie_jako_lokalny():
     transport, zadania = _nagrywajacy_kokpit()
-    await _nasluchuj(Runner("http://kokpit.test", TOKEN, transport=transport))
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
     assert json.loads(_zadanie(zadania, "/api/runners/register").content)["name"] == "lokalny"
 
 
 async def test_po_zameldowaniu_runner_zna_identyfikator_nadany_przez_kokpit():
     transport, _ = _nagrywajacy_kokpit(runner_id="r-42")
-    runner = Runner("http://kokpit.test", TOKEN, transport=transport)
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
     await _nasluchuj(runner)
 
     assert runner.runner_id == "r-42"
@@ -427,7 +718,8 @@ async def test_po_zameldowaniu_runner_zna_identyfikator_nadany_przez_kokpit():
 
 async def test_strumien_polecen_otwierany_jest_przez_get_z_tokenem_runnera():
     transport, zadania = _nagrywajacy_kokpit()
-    await _nasluchuj(Runner("http://kokpit.test", TOKEN, transport=transport))
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
     zadanie = _zadanie(zadania, "/api/runners/stream")
     assert zadanie.method == "GET"
@@ -443,7 +735,8 @@ async def test_adres_kokpitu_z_koncowym_ukosnikiem_nie_daje_podwojnego_ukosnika_
     adres, prefiks,
 ):
     transport, zadania = _nagrywajacy_kokpit()
-    await _nasluchuj(Runner(adres, TOKEN, transport=transport))
+    runner, _ = _runner(adres, transport=transport, zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
     assert [z.url.path for z in zadania] == [
         f"{prefiks}/api/runners/register", f"{prefiks}/api/runners/stream"]
@@ -452,9 +745,12 @@ async def test_adres_kokpitu_z_koncowym_ukosnikiem_nie_daje_podwojnego_ukosnika_
 async def test_linie_strumienia_inne_niz_dane_nie_przerywaja_czytania_polecen(capsys):
     cialo = b"event: command\n: ping\n\n" + POLACZONO
     transport, _ = _nagrywajacy_kokpit(stream_body=cialo)
-    await _nasluchuj(Runner("http://kokpit.test", TOKEN, transport=transport))
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
-    assert capsys.readouterr().err.splitlines() == ["strumien otwarty"]
+    wpisy = [w for w in capsys.readouterr().err.splitlines()
+             if not w.startswith("strumien polecen przerwany")]
+    assert wpisy == ["strumien otwarty"]
 
 
 async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_wynik():
@@ -462,7 +758,8 @@ async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_
                  "command": ["sh", "-c", "echo hej"]}
     cialo = f"data: {json.dumps(polecenie)}\n\n".encode()
     transport, zadania = _nagrywajacy_kokpit(stream_body=cialo)
-    await _nasluchuj(Runner("http://kokpit.test", TOKEN, transport=transport))
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
     zdarzenia = [json.loads(z.content) for z in zadania if z.url.path == "/api/events"]
     assert [z["kind"] for z in zdarzenia] == ["output", "step_finished"]
@@ -481,27 +778,32 @@ async def test_strumien_polecen_nie_ma_limitu_czasu_bo_trwa_godzinami(monkeypatc
 
     monkeypatch.setattr("runner.client.httpx.AsyncClient", klient_z_zapisem)
     transport, _ = _nagrywajacy_kokpit()
-    await _nasluchuj(Runner("http://kokpit.test", TOKEN, transport=transport))
+    runner, _ = _runner(transport=transport, zatrzymaj_po=1)
+    await _nasluchuj(runner)
 
     assert len(kwargs_klienta) == 1
     assert kwargs_klienta[0].get("timeout", "brak") is None
 
 
-async def test_zamkniecie_strumienia_ma_komunikat_wyjasniajacy_przyczyne():
+async def test_zamkniecie_strumienia_przez_kokpit_ma_wewnetrzny_sygnal_z_komunikatem_przyczyny():
     from runner.client import StrumienZamkniety
     transport, _ = _nagrywajacy_kokpit()
     runner = Runner("http://kokpit.test", TOKEN, transport=transport)
 
     with pytest.raises(StrumienZamkniety) as wyjatek:
-        await runner.listen()
+        await asyncio.wait_for(runner._nasluchuj(), 10)
 
     assert str(wyjatek.value) == "kokpit zamknal strumien polecen"
 
 
-def _main_z_atrapa_runnera(monkeypatch, tmp_path, wyjatek=None, env=None, plik=None):
+def _main_z_atrapa_runnera(
+    monkeypatch, tmp_path, wyjatek=None, env=None, plik=None, komunikat=None,
+):
     """Uruchamia prawdziwe `main()` z atrapa klasy Runner. Zwraca (SystemExit, argumenty Runnera).
-    Srodowisko i plik konfiguracji sa izolowane: nic z zewnatrz nie przecieka."""
+    Srodowisko i plik konfiguracji sa izolowane: nic z zewnatrz nie przecieka.
+    `listen` konczy sie wskazanym wyjatkiem dziedziny (domyslnie odrzucony token -> kod 2)."""
     import runner.__main__ as modul
+    import runner.bufor as bufor
     import runner.client as klient
     from runner import secrets
 
@@ -513,7 +815,9 @@ def _main_z_atrapa_runnera(monkeypatch, tmp_path, wyjatek=None, env=None, plik=N
             zapis["token"] = token
 
         async def listen(self):
-            raise getattr(klient, wyjatek or "StrumienZamkniety")()
+            nazwa = wyjatek or "TokenOdrzucony"
+            klasa = getattr(bufor, nazwa, None) or getattr(klient, nazwa)
+            raise klasa(*([] if komunikat is None else [komunikat]))
 
         async def stop(self):
             return None
@@ -572,15 +876,39 @@ def test_bez_adresu_w_srodowisku_runner_laczy_sie_z_kokpitem_na_localhoscie(
     assert zapis["base_url"] == "http://127.0.0.1:8765"
 
 
-def test_komunikat_o_zamknietym_strumieniu_podaje_kod_75_i_odsyla_do_ponownego_laczenia(
+def test_blad_bufora_zdarzen_konczy_proces_runnera_kodem_2_z_komunikatem_o_buforze(
     monkeypatch, tmp_path, capsys,
 ):
     wyjscie, _ = _main_z_atrapa_runnera(
-        monkeypatch, tmp_path, "StrumienZamkniety", env={"COCKPIT_RUNNER_TOKEN": TOKEN})
+        monkeypatch, tmp_path, "BladBufora", env={"COCKPIT_RUNNER_TOKEN": TOKEN},
+        komunikat="katalog stanu nie do zapisu")
 
-    assert wyjscie.code == 75
-    assert capsys.readouterr().err.splitlines() == [
-        "strumien zamkniety przez kokpit - koncze prace (kod 75); ponowne laczenie: BRO-75"]
+    assert wyjscie.code == 2
+    wynik = capsys.readouterr()
+    assert wynik.err.splitlines() == ["bufor zdarzen: katalog stanu nie do zapisu"]
+    assert TOKEN not in wynik.err and TOKEN not in wynik.out
+
+
+def test_uszkodzony_bufor_na_dysku_konczy_prawdziwy_proces_runnera_kodem_2_bez_sladu_stosu(
+    monkeypatch, tmp_path, capsys,
+):
+    import runner.__main__ as modul
+
+    # plik runu jest katalogiem: odczyt zaleglych zdarzen konczy sie OSError, nie wyjatkiem biblioteki
+    (tmp_path / "bufor" / "run-1.ndjson").mkdir(parents=True)
+    transport, _ = _kokpit(stream_body=POLACZONO)
+    monkeypatch.setattr(
+        modul, "Runner", lambda base, token: Runner(base, token, transport=transport))
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN)
+    monkeypatch.setenv("COCKPIT_URL", "http://kokpit.test")
+
+    with pytest.raises(SystemExit) as wyjscie:
+        modul.main()
+
+    assert wyjscie.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("bufor zdarzen: ")
+    assert "Traceback" not in err and TOKEN not in err
 
 
 def test_komunikat_o_odrzuconym_tokenie_odsyla_do_wygenerowania_nowego_w_ustawieniach(

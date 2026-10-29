@@ -14,17 +14,19 @@ import signal
 import sys
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 
 import httpx
 
+from runner.bufor import Bufor, odczekanie
 from runner.heartbeat import Heartbeat
 
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
 
 
 class StrumienZamkniety(Exception):
-    """Kokpit zamknal strumien polecen. Runner nie moze wtedy wrocic cicho
-    (kod 0 sugerowalby udana prace); ponowne laczenie to BRO-75."""
+    """Kokpit zamknal strumien polecen. Sygnal wewnetrzny: `listen()` laczy sie wtedy
+    ponownie, proces runnera sie nie konczy."""
 
 
 class KokpitNiezgodny(Exception):
@@ -59,6 +61,8 @@ class Runner:
         token: str,
         name: str = "lokalny",
         transport: httpx.AsyncBaseTransport | None = None,
+        bufor: Bufor | None = None,
+        odczekaj: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
@@ -70,8 +74,11 @@ class Runner:
         self._procesy: set[asyncio.subprocess.Process] = set()
         self._sprzatanie: dict[asyncio.subprocess.Process, asyncio.Task] = {}
         self._heartbeat: Heartbeat | None = None
-        self._zatrzymany = False
+        self._zatrzymany = asyncio.Event()
         self._zadanie: asyncio.Task | None = None
+        self._bufor = bufor if bufor is not None else Bufor()
+        self._odczekaj = odczekaj if odczekaj is not None else self._czekaj
+        self._proba_laczenia = 0
 
     async def register(self, client: httpx.AsyncClient) -> None:
         r = await client.post(
@@ -94,19 +101,65 @@ class Runner:
         self.runner_id = tresc["runner_id"]
         self.heartbeat_co_s = co_s
 
+    async def _czekaj(self, sekundy: float) -> None:
+        """Domyslne odczekanie: przerywane przez `stop()`."""
+        try:
+            await asyncio.wait_for(self._zatrzymany.wait(), sekundy)
+        except TimeoutError:
+            pass                            # uplynal czas - o to chodzilo
+
+    async def dosylaj(
+        self, client: httpx.AsyncClient, wyniki: dict[str, bool] | None = None,
+    ) -> None:
+        """Wysyla zdarzenia z bufora po kolei (FIFO) i usuwa potwierdzone. Awaria kokpitu
+        wstrzymuje kolejke do jego powrotu. `wyniki` dostaje event_id -> True dla zdarzen przyjetych (2xx)."""
+        for wpis in self._bufor.niepotwierdzone():
+            proba = 0
+            while True:
+                try:
+                    r = await client.post(
+                        f"{self.base_url}/api/events", json=wpis, headers=self._headers
+                    )
+                except httpx.TransportError as e:
+                    przyczyna = type(e).__name__     # tresc wyjatku moze niesc adres albo naglowki
+                else:
+                    kod = r.status_code
+                    if r.is_success:
+                        self._bufor.potwierdz(wpis["run_id"], wpis["event_id"])
+                        if wyniki is not None:
+                            wyniki[wpis["event_id"]] = True
+                        break
+                    if kod == 401:
+                        raise TokenOdrzucony()      # zdarzenie zostaje w buforze
+                    if kod < 500:
+                        # ponowienie nic nie zmieni (4xx, takze nieobslugiwane 3xx)
+                        print(
+                            f"zdarzenie utracone: kind={wpis.get('kind')} "
+                            f"run_id={wpis['run_id']} http={kod}",
+                            file=sys.stderr,
+                        )
+                        self._bufor.potwierdz(wpis["run_id"], wpis["event_id"])
+                        break
+                    przyczyna = f"http={kod}"
+                sekundy = odczekanie(proba)
+                print(
+                    f"kokpit niedostepny ({przyczyna}) - ponawiam za {sekundy} s",
+                    file=sys.stderr,
+                )
+                await self._odczekaj(sekundy)
+                if self._zatrzymany.is_set():
+                    return                  # wpisy zostaja w buforze do nastepnego startu
+                proba += 1
+
     async def send_event(self, client: httpx.AsyncClient, **kw) -> bool:
-        """True tylko dla 2xx. Odrzucenie trafia na stderr: rodzaj, run_id, kod.
-        Nigdy token, naglowki ani tresc odpowiedzi."""
+        """True tylko dla 2xx tego zdarzenia. Nigdy token, naglowki ani tresc odpowiedzi
+        w logu."""
         # event_id nadaje runner; ponowienie z tym samym nie tworzy duplikatu (HAR-39)
         kw.setdefault("event_id", str(uuid.uuid4()))
-        r = await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
-        if not r.is_success:
-            print(
-                f"zdarzenie odrzucone: kind={kw.get('kind')} "
-                f"run_id={kw.get('run_id')} http={r.status_code}",
-                file=sys.stderr,
-            )
-        return r.is_success
+        self._bufor.dopisz(kw)
+        wyniki: dict[str, bool] = {}
+        await self.dosylaj(client, wyniki)
+        return wyniki.get(kw["event_id"], False)
 
     async def run_command(
         self, client: httpx.AsyncClient, run_id: str, step_id: str, command: list[str]
@@ -120,7 +173,7 @@ class Runner:
         )
         self._procesy.add(proc)
         try:
-            if self._zatrzymany:
+            if self._zatrzymany.is_set():
                 # stop() mogl juz skonczyc sprzatanie: bez tego krok ignorujacy SIGTERM zostalby sierota
                 await self._zakoncz_krok(proc)
             out, _ = await proc.communicate()
@@ -176,9 +229,10 @@ class Runner:
 
     async def stop(self) -> None:
         """Idempotentny: kolejne wywolanie wraca od razu."""
-        if self._zatrzymany:
+        if self._zatrzymany.is_set():
             return
-        self._zatrzymany = True
+        # flaga przerywa odczekanie przed ponownym polaczeniem i blokuje kolejna probe
+        self._zatrzymany.set()
         # nasluch odcinamy pierwszy, zeby w trakcie stop() nie przyjmowac nowych krokow;
         # kroki, ktore mimo to wystartuja, sprzatajaja petla ponizej i galaz _zatrzymany
         zadanie = self._zadanie
@@ -195,19 +249,38 @@ class Runner:
     async def listen(self) -> None:
         self._zadanie = asyncio.current_task()
         try:
-            await self._nasluchuj()
+            while not self._zatrzymany.is_set():
+                try:
+                    await self._nasluchuj()
+                except StrumienZamkniety:
+                    przyczyna = "kokpit zamknal strumien"
+                except httpx.TransportError as e:
+                    przyczyna = type(e).__name__
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code < 500:
+                        raise
+                    przyczyna = f"http={e.response.status_code}"
+                if self._zatrzymany.is_set():
+                    break
+                sekundy = odczekanie(self._proba_laczenia)
+                print(
+                    f"strumien polecen przerwany ({przyczyna}) - lacze ponownie za {sekundy} s",
+                    file=sys.stderr,
+                )
+                await self._odczekaj(sekundy)
+                self._proba_laczenia += 1
         except asyncio.CancelledError:
-            if not self._zatrzymany:
+            if not self._zatrzymany.is_set():
                 raise                       # cudze anulowanie nie jest nasze do polkniecia
             asyncio.current_task().uncancel()
-            return None
-        if self._zatrzymany:
-            return None                     # strumien zamkniety przez stop(): zatrzymanie na zyczenie
-        raise StrumienZamkniety("kokpit zamknal strumien polecen")
+        return None
 
     async def _nasluchuj(self) -> None:
         async with httpx.AsyncClient(timeout=None, transport=self._transport) as client:
             await self.register(client)
+            await self.dosylaj(client)      # zalegle z poprzedniego polaczenia albo startu
+            if self._zatrzymany.is_set():
+                return
             self._heartbeat = Heartbeat(
                 client, f"{self.base_url}/api/runners/heartbeat",
                 self._headers, self.heartbeat_co_s,
@@ -226,9 +299,11 @@ class Runner:
                         cmd = json.loads(line.removeprefix("data:").strip())
                         if cmd.get("type") == "polaczono":
                             print("strumien otwarty", file=sys.stderr)
+                            self._proba_laczenia = 0
                         elif cmd.get("type") == "run_step":
                             await self.run_command(
                                 client, cmd["run_id"], cmd["step_id"], cmd["command"]
                             )
             finally:
                 await self._heartbeat.stop()
+        raise StrumienZamkniety("kokpit zamknal strumien polecen")
