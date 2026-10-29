@@ -200,7 +200,12 @@ async def run_runnera(s: AsyncSession, run_id: str, runner: Runner) -> Run:
 
 
 # Status runu wylicza kokpit ze zdarzenia; deklaracja runnera nie jest zrodlem prawdy.
-_STATUS_PO_ZDARZENIU = {"step_finished": RunStatus.to_accept, "step_failed": RunStatus.failed}
+_STATUS_PO_ZDARZENIU = {
+    "step_finished": RunStatus.to_accept,
+    "step_failed": RunStatus.failed,
+    "step_aborted": RunStatus.aborted,     # runner przerywa krok sam, np. brak miejsca (HAR-47)
+}
+_PORAZKI = frozenset({RunStatus.failed, RunStatus.aborted})
 # `aborted` jest koncowy, bo nie ma go w zbiorze ruchomych (HAR-37).
 _STATUSY_RUCHOME_ZDARZENIAMI = {RunStatus.running, RunStatus.to_accept}
 
@@ -209,8 +214,8 @@ def nastepny_status(obecny: RunStatus, kind: str) -> RunStatus:
     docelowy = _STATUS_PO_ZDARZENIU.get(kind)
     if docelowy is None or obecny not in _STATUSY_RUCHOME_ZDARZENIAMI:
         return obecny
-    # pozniejsza porazka przykrywa sukces, ale sukces nie cofa porazki
-    if obecny == RunStatus.to_accept and docelowy != RunStatus.failed:
+    # pozniejsza porazka (failed albo aborted) przykrywa sukces, ale sukces nie cofa porazki
+    if obecny == RunStatus.to_accept and docelowy not in _PORAZKI:
         return obecny
     return docelowy
 
@@ -248,6 +253,14 @@ async def zapisz_zdarzenie(
         return istniejace, False
 
     for _ in range(_PROBY_SEQ):
+        # blokada wiersza: status odczytany tu nie zmieni sie do commitu, wiec powod
+        # przerwania dostaje tylko zdarzenie, ktore faktycznie przestawilo run (HAR-47)
+        # obiekt spoza sesji nie ma wiersza do zablokowania, a zapis zdarzenia i tak
+        # padnie na kluczu obcym - blad ma wyjsc stamtad, nie z odswiezenia.
+        # Obiekt wygaszony rollbackiem kolizji nadal jest w sesji (`in` daje True).
+        if run in s:
+            await s.refresh(run, with_for_update=True)
+        status_przed = run.status
         seq = await _nastepny_seq(s, run_id, tenant_id)
         if kind in _KONCZACE_KROK and wyslane_output is not None:
             zapisano = (
@@ -268,7 +281,10 @@ async def zapisz_zdarzenie(
                    event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=text, cost_usd=cost_usd,
                    cost_source=cost_source, tokens=tokens, duration_ms=duration_ms)
         s.add(ev)
-        run.status = nastepny_status(run.status, kind)
+        run.status = nastepny_status(status_przed, kind)
+        if (kind == "step_aborted" and status_przed != RunStatus.aborted
+                and run.status == RunStatus.aborted):
+            run.reason = text
         try:
             await s.commit()
         except IntegrityError as e:
@@ -284,10 +300,9 @@ async def zapisz_zdarzenie(
                 await s.rollback()
                 raise
             # numer zajety przez rownolegly zapis: cofamy cala transakcje (zdarzenie
-            # i zmiany runu), wczytujemy run od nowa i liczymy numer, status i reason
-            # jeszcze raz. Rollback zamiast SAVEPOINT - dziala tak samo na SQLite i PG.
+            # i zmiany runu); poczatek petli wczytuje run od nowa i liczy numer, status
+            # i reason jeszcze raz. Rollback zamiast SAVEPOINT - dziala tak samo na SQLite i PG.
             await s.rollback()
-            await s.refresh(run)
             continue
         return ev, True
 
