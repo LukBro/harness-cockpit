@@ -15,9 +15,10 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import Column, MetaData, String, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from cockpit.db.models import Base, RolaWZespole, RunnerKind, RunStatus
+from cockpit.db.models import Base, Event, RolaWZespole, Run, RunnerKind, RunStatus
 
 KORZEN = Path(__file__).resolve().parent.parent
 URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
@@ -150,3 +151,251 @@ def test_zmiana_modelu_bez_migracji_daje_roznice_w_schemacie(cfg):
 
     kolumny_po = {t.name: set(t.columns.keys()) for t in Base.metadata.sorted_tables}
     assert kolumny_po == kolumny_przed, "test zostawil slad w Base.metadata"
+
+
+# --- HAR-51: identyfikator ticketu w runie i znacznik obciecia tekstu zdarzenia ---
+
+
+def _kolumny_tabeli(tabela: str) -> dict[str, str]:
+    """Nazwa kolumny -> 'YES'/'NO' (czy dopuszcza NULL), schemat public."""
+
+    def zapytaj(c):
+        wiersze = c.execute(
+            text(
+                "SELECT column_name, is_nullable FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = :tabela"
+            ),
+            {"tabela": tabela},
+        )
+        return {w[0]: w[1] for w in wiersze}
+
+    return _z_polaczeniem(zapytaj)
+
+
+def _definicje_indeksow(tabela: str) -> dict[str, str]:
+    def zapytaj(c):
+        wiersze = c.execute(
+            text(
+                "SELECT indexname, indexdef FROM pg_indexes "
+                "WHERE schemaname = 'public' AND tablename = :tabela"
+            ),
+            {"tabela": tabela},
+        )
+        return {w[0]: w[1] for w in wiersze}
+
+    return _z_polaczeniem(zapytaj)
+
+
+def _wstaw_run(c, *, ticket_id: str | None = None, z_ticketem: bool = False) -> None:
+    c.execute(
+        text(
+            "INSERT INTO tenant (id, name, created_at) "
+            "VALUES ('t1', 'Zespol', now())"
+        )
+    )
+    kolumny = "id, tenant_id, runner_kind, workflow, status, created_at"
+    wartosci = "'r1', 't1', 'local', 'wf', 'pending', now()"
+    if z_ticketem:
+        kolumny += ", ticket_id"
+        wartosci += ", :ticket"
+    c.execute(
+        text(f"INSERT INTO run ({kolumny}) VALUES ({wartosci})"),
+        {"ticket": ticket_id} if z_ticketem else {},
+    )
+
+
+_EVENT_BAZA = (
+    "id, tenant_id, run_id, seq, step_id, agent_id, kind, text, cost_source, at, event_id"
+)
+_EVENT_WARTOSCI = "'e1', 't1', 'r1', 1, 's', 'a', 'k', 'tresc', 'none', now(), 'ev1'"
+
+
+def test_pierwsza_migracja_ma_juz_tenant_runner_kind_i_runner_id_w_runie(cfg):
+    command.upgrade(cfg, "0001")
+
+    kolumny = set(_kolumny_tabeli("run"))
+
+    assert {"tenant_id", "runner_kind", "runner_id"} <= kolumny
+    # kontrast: to stan pierwszej migracji, a nie head - pola ticketu jeszcze nie ma
+    assert "ticket_id" not in kolumny
+
+
+def test_run_bez_podanego_ticketu_ma_ticket_nieznany_a_nie_pusty_napis(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run(c)
+        return c.execute(text("SELECT ticket_id FROM run WHERE id = 'r1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is None
+
+
+def test_run_zapamietuje_identyfikator_ticketu(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run(c, ticket_id="HAR-51", z_ticketem=True)
+        return c.execute(text("SELECT ticket_id FROM run WHERE id = 'r1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == "HAR-51"
+
+
+def test_ticket_runu_dopuszcza_brak_wartosci(cfg):
+    command.upgrade(cfg, "head")
+
+    assert _kolumny_tabeli("run")["ticket_id"] == "YES"
+
+
+def test_zdarzenie_bez_podanego_znacznika_nie_jest_obciete(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run(c)
+        c.execute(text(f"INSERT INTO event ({_EVENT_BAZA}) VALUES ({_EVENT_WARTOSCI})"))
+        return c.execute(
+            text("SELECT text_truncated FROM event WHERE id = 'e1'")
+        ).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is False
+
+
+def test_zdarzenie_nie_przyjmuje_nieznanego_znacznika_obciecia(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run(c)
+        c.execute(
+            text(
+                f"INSERT INTO event ({_EVENT_BAZA}, text_truncated) "
+                f"VALUES ({_EVENT_WARTOSCI}, NULL)"
+            )
+        )
+
+    with pytest.raises(IntegrityError):
+        _z_polaczeniem(zapytaj)
+
+
+def test_znacznik_obciecia_jest_wymagany_w_schemacie(cfg):
+    command.upgrade(cfg, "head")
+
+    assert _kolumny_tabeli("event")["text_truncated"] == "NO"
+
+
+def test_zdarzenie_bez_pomiaru_dlugosci_ma_dlugosc_nieznana_a_nie_zero(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run(c)
+        c.execute(text(f"INSERT INTO event ({_EVENT_BAZA}) VALUES ({_EVENT_WARTOSCI})"))
+        return c.execute(
+            text("SELECT text_full_len FROM event WHERE id = 'e1'")
+        ).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is None
+
+
+def test_zdarzenie_zapamietuje_pelna_dlugosc_obcietego_tekstu(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run(c)
+        c.execute(
+            text(
+                f"INSERT INTO event ({_EVENT_BAZA}, text_truncated, text_full_len) "
+                f"VALUES ({_EVENT_WARTOSCI}, true, 123456)"
+            )
+        )
+        return tuple(
+            c.execute(
+                text("SELECT text_truncated, text_full_len FROM event WHERE id = 'e1'")
+            ).one()
+        )
+
+    assert _z_polaczeniem(zapytaj) == (True, 123456)
+
+
+def test_pelna_dlugosc_tekstu_zdarzenia_dopuszcza_brak_wartosci(cfg):
+    command.upgrade(cfg, "head")
+
+    assert _kolumny_tabeli("event")["text_full_len"] == "YES"
+
+
+def test_indeks_runow_wedlug_zespolu_i_ticketu_zaczyna_sie_od_zespolu(cfg):
+    command.upgrade(cfg, "head")
+
+    indeksy = _definicje_indeksow("run")
+
+    assert "ix_run_tenant_ticket" in indeksy
+    # kolejnosc ma znaczenie: zapytania zawsze niosa tenant_id
+    assert "(tenant_id, ticket_id)" in indeksy["ix_run_tenant_ticket"]
+
+
+def test_cofniecie_do_poprzedniej_migracji_usuwa_ticket_obciecie_i_indeks(cfg):
+    command.upgrade(cfg, "head")
+    assert "ticket_id" in _kolumny_tabeli("run")  # kontrast: przed cofnieciem jest
+
+    command.downgrade(cfg, "0006")
+
+    run = _kolumny_tabeli("run")
+    event = _kolumny_tabeli("event")
+    assert "ticket_id" not in run
+    assert "text_truncated" not in event
+    assert "text_full_len" not in event
+    assert "ix_run_tenant_ticket" not in _definicje_indeksow("run")
+    # to cofniecie tylko jednej migracji: reszta schematu zostaje
+    assert {"tenant_id", "runner_kind", "runner_id"} <= set(run)
+    assert "agent_type" in event
+
+
+# --- HAR-51: wartosci domyslne zapisu przez model (nie surowy SQL) ---
+
+
+def _wstaw_zespol(c) -> None:
+    c.execute(text("INSERT INTO tenant (id, name, created_at) VALUES ('t1', 'Zespol', now())"))
+
+
+def test_run_zapisany_przez_model_bez_ticketu_ma_ticket_nieznany_a_nie_pusty_napis(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_zespol(c)
+        c.execute(Run.__table__.insert().values(id="r1", tenant_id="t1"))
+        return c.execute(text("SELECT ticket_id FROM run WHERE id = 'r1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is None
+
+
+def test_zdarzenie_zapisane_przez_model_bez_znacznika_nie_jest_obciete(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_zespol(c)
+        c.execute(Run.__table__.insert().values(id="r1", tenant_id="t1"))
+        c.execute(
+            Event.__table__.insert().values(
+                id="e1", tenant_id="t1", run_id="r1", seq=1, kind="k"
+            )
+        )
+        return c.execute(
+            text("SELECT text_truncated FROM event WHERE id = 'e1'")
+        ).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is False
+
+
+def test_zdarzenie_zapisane_przez_model_bez_pomiaru_dlugosci_ma_dlugosc_nieznana_a_nie_zero(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_zespol(c)
+        c.execute(Run.__table__.insert().values(id="r1", tenant_id="t1"))
+        c.execute(
+            Event.__table__.insert().values(
+                id="e1", tenant_id="t1", run_id="r1", seq=1, kind="k"
+            )
+        )
+        return c.execute(
+            text("SELECT text_full_len FROM event WHERE id = 'e1'")
+        ).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is None
