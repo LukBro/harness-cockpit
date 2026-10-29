@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, text,
+    JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text,
+    UniqueConstraint, text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 
@@ -70,6 +71,8 @@ class Runner(Base):
 
 class Run(Base):
     __tablename__ = "run"
+    __table_args__ = (Index("ix_run_tenant_ticket", "tenant_id", "ticket_id"),)
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
     runner_id: Mapped[str | None] = mapped_column(ForeignKey("runner.id"), default=None)
@@ -78,6 +81,7 @@ class Run(Base):
     base_commit: Mapped[str | None] = mapped_column(String(40), default=None)  # SHA, nie nazwa galezi
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), default=RunStatus.pending)
     reason: Mapped[str | None] = mapped_column(Text, default=None)
+    ticket_id: Mapped[str | None] = mapped_column(String(200), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     events: Mapped[list["Event"]] = relationship(back_populates="run")
@@ -101,6 +105,9 @@ class Event(Base):
     agent_type: Mapped[str] = mapped_column(String(100), default="")
     kind: Mapped[str] = mapped_column(String(50))
     text: Mapped[str] = mapped_column(Text, default="")
+    text_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # pelna dlugosc tekstu przed obcieciem; brak pomiaru to None, nigdy 0 (measured_or_null)
+    text_full_len: Mapped[int | None] = mapped_column(Integer, default=None)
     # brak pomiaru to None, nigdy 0 (BRO-87)
     cost_usd: Mapped[float | None] = mapped_column(Float, default=None)
     cost_source: Mapped[str] = mapped_column(String(20), default="unavailable")
