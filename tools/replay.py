@@ -42,8 +42,11 @@ def main():
         for i in ids:
             post(a.url, {"hook_event_name": "SubagentStop", "session_id": sid,
                          "agent_id": i, "agent_type": kind})
-        post(a.url, {"hook_event_name": "PreToolUse", "session_id": sid,
-                     "tool_name": "Bash", "tool_input": {"command": cmd % "end"}})
+        # Koniec fazy to PostToolUse (po wykonaniu komendy), jak w prawdziwych hookach.
+        post(a.url, {"hook_event_name": "PostToolUse", "session_id": sid,
+                     "tool_name": "Bash", "tool_input": {"command": cmd % "end"},
+                     "tool_response": {"stdout": "", "stderr": "", "interrupted": False,
+                                       "isImage": False, "noOutputExpected": False}})
     post(a.url, {"hook_event_name": "SessionEnd", "session_id": sid})
     print(sid)
 
