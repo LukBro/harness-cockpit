@@ -80,7 +80,7 @@ jobs:
             echo "::error::mutanty_zmian.py zakonczyl sie bledem (kod $kod): $(tr '\n' ' ' < mutants/mutanty-zmian.err) Baseline NIE zapisany."
             exit 1
           fi
-          python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit ${{ github.sha }} || true
+          python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit ${{ github.event.pull_request.head.sha }} || true
 
       - uses: actions/upload-artifact@v4
         if: always()
