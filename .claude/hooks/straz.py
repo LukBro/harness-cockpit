@@ -43,7 +43,6 @@ GH_ZAKAZANE = {"repo", "secret", "variable", "workflow", "ruleset", "auth", "rel
 SCIEZKI_STRAZY = (".claude/settings.json", ".claude/settings.local.json", ".claude/hooks/")
 TYLKO_ODCZYT = {"cat", "head", "tail", "less", "grep", "rg", "wc", "ls", "diff"}
 GIT_ODCZYT = {"show", "diff", "log", "status", "blame"}
-SEPARATORY = re.compile(r"&&|\|\||[;|\n]")
 
 
 class Odmowa(Exception):
@@ -65,18 +64,25 @@ def _repo_z_url(url: str) -> str | None:
 
 
 def _segmenty(komenda: str) -> list[list[str]]:
-    segmenty = []
-    for kawalek in SEPARATORY.split(komenda):
-        if not kawalek.strip():
-            continue
-        try:
-            slowa = shlex.split(kawalek)
-        except ValueError as e:
-            raise Odmowa(f"nieczytelna komenda ({e})") from e
-        while slowa and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", slowa[0]):
-            slowa = slowa[1:]          # przypisania zmiennych przed komenda
-        if slowa:
-            segmenty.append(slowa)
+    """Dzieli komende na proste polecenia po `;`, `&&`, `||`, `|`, `&` i nowej linii -
+    tylko POZA cudzyslowami (`jq '... | ...'`, `git commit -m "a; b"` to jedno polecenie)."""
+    lekser = shlex.shlex(komenda, posix=True, punctuation_chars=";&|\n")
+    lekser.whitespace = " \t\r"
+    lekser.whitespace_split = True
+    try:
+        tokeny = list(lekser)
+    except ValueError as e:
+        raise Odmowa(f"nieczytelna komenda ({e})") from e
+    segmenty, slowa = [], []
+    for t in tokeny + [";"]:
+        if t and set(t) <= set(";&|\n"):
+            while slowa and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", slowa[0]):
+                slowa = slowa[1:]      # przypisania zmiennych przed komenda
+            if slowa:
+                segmenty.append(slowa)
+            slowa = []
+        else:
+            slowa.append(t)
     return segmenty
 
 
