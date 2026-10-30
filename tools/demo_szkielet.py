@@ -18,11 +18,15 @@ if not URL:
              "UWAGA: skrypt robi `alembic downgrade base` przed i po przelocie "
              "i kasuje dane wskazanej bazy - uzyj bazy testowej.")
 os.environ["COCKPIT_DATABASE_URL"] = URL
+# Demo chodzi po http://127.0.0.1: ciasteczko z flaga Secure nie wrociloby do serwera.
+# Serwer dziala w tym samym procesie, wiec zmienna wystarczy ustawic przed importem cockpit.*
+os.environ["COCKPIT_CIASTECZKO_SECURE"] = "0"
 
 import httpx
 import uvicorn
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, InvalidRequestError, NoSuchModuleError, SQLAlchemyError
 
@@ -43,8 +47,9 @@ try:
     # engine powstaje juz przy imporcie cockpit.db.session, wiec zly URL
     # wybucha tam, nie w migracjach
     from cockpit.db.models import Runner as RunnerRow
-    from cockpit.db.models import Tenant
+    from cockpit.db.models import Membership
     from cockpit.db.session import SessionLocal, engine
+    from cockpit.services.konta import zarejestruj
 except NoSuchModuleError:
     zle_url("nieznany sterownik bazy")
 except InvalidRequestError:  # sterownik synchroniczny (np. sqlite://) w silniku async
@@ -58,14 +63,17 @@ from runner.client import Runner
 
 BASE = "http://127.0.0.1:8799"
 TOKEN = "demo-token"
+EMAIL = "demo@example.com"
+HASLO = "demo-haslo-przelotu"   # konto jednorazowe w bazie testowej; nie idzie przez argv
 
 
 async def seed():
     async with SessionLocal() as s:
-        t = Tenant(name="Browarek")
-        s.add(t)
-        await s.flush()
-        s.add(RunnerRow(tenant_id=t.id, name="macbook",
+        user = await zarejestruj(s, EMAIL, HASLO, "Browarek")
+        tenant_id = (await s.execute(
+            select(Membership.tenant_id).where(Membership.user_id == user.id)
+        )).scalar_one()
+        s.add(RunnerRow(tenant_id=tenant_id, name="macbook",
                         token_hash=hashlib.sha256(TOKEN.encode()).hexdigest()))
         await s.commit()
 
@@ -89,7 +97,11 @@ async def main():
     await asyncio.sleep(1.0)
 
     async with httpx.AsyncClient() as c:
-        r = await c.post(f"{BASE}/api/runs",
+        wejscie = await c.post(f"{BASE}/api/konto/logowanie",
+                               json={"email": EMAIL, "haslo": HASLO})
+        wejscie.raise_for_status()
+        naglowki = {"X-CSRF-Token": wejscie.json()["csrf"]}
+        r = await c.post(f"{BASE}/api/runs", headers=naglowki,
                          json={"workflow": "szkielet",
                                "command": ["python3", "-c",
                                            "print('krok wykonany na maszynie runnera')"]})

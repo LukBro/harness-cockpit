@@ -42,10 +42,11 @@ from procesy import (
     zakoncz_proces,
     zapamietaj_proces,
 )
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 from runner import client as runner_client
 from runner.client import KokpitNiezgodny, Runner as RunnerKlient, TokenOdrzucony
 
-TOKEN_A = "tajne-a"          # runner zespolu Browarek (domyslny zespol kokpitu)
+TOKEN_A = "tajne-a"          # runner zespolu Browarek (zespol zalogowanego wlasciciela)
 TOKEN_B = "tajne-b"          # runner zespolu Piekarnia
 TOKEN_C = "tajne-c"          # runner Browarka, ktory nigdy sie nie zameldowal
 ID_A = "a-wlasny"
@@ -133,7 +134,7 @@ def polaczenia():
 
 @pytest.fixture
 async def swiat(tmp_path, monkeypatch):
-    """Dwa zespoly. Browarek (pierwszy, wiec domyslny): runner A ze starym heartbeatem
+    """Dwa zespoly; klient ma sesje wlasciciela Browarka. Browarek: runner A ze starym heartbeatem
     i runner C, ktory nigdy sie nie zameldowal. Piekarnia: runner B ze starym heartbeatem."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'t.db'}")
     maker = async_sessionmaker(engine, expire_on_commit=False)
@@ -147,18 +148,18 @@ async def swiat(tmp_path, monkeypatch):
                       token_hash=hashlib.sha256(token.encode()).hexdigest(),
                       last_seen_at=widziany)
 
+    wlasciciel, browarek_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        browarek, piekarnia = Tenant(name="Browarek"), Tenant(name="Piekarnia")
-        s.add(browarek)
-        await s.flush()
+        piekarnia = Tenant(name="Piekarnia")
         s.add(piekarnia)
         await s.flush()
-        s.add(runner(ID_A, browarek.id, TOKEN_A, _stary()))
-        s.add(runner(ID_C, browarek.id, TOKEN_C, None))
+        s.add(runner(ID_A, browarek_id, TOKEN_A, _stary()))
+        s.add(runner(ID_C, browarek_id, TOKEN_C, None))
         s.add(runner(ID_B, piekarnia.id, TOKEN_B, _stary()))
         await s.commit()
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel)
             yield c
     finally:
         await engine.dispose()

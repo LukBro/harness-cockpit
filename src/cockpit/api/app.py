@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, Header, Query, Request, Response
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +36,7 @@ from cockpit.settings import settings
 
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
-from .zaleznosci import kontekst_sesji
+from .zaleznosci import kontekst_sesji, runner_z_tokenu, trasa_publiczna
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ class OdpowiedzRunneraIn(BaseModel):
     kod: str | None = Field(default=None, max_length=64)
 
 
-@app.get("/api/health")
+@app.get("/api/health", dependencies=[Depends(trasa_publiczna)])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
@@ -130,10 +130,9 @@ async def health() -> dict[str, str]:
 @app.post("/api/runners/register")
 async def register_runner(
     body: RunnerRegister,
-    authorization: str | None = Header(default=None),
+    r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
 ) -> dict[str, str | int]:
-    r = await uslugi.runner_po_tokenie(s, authorization)
     r = await uslugi.zamelduj_runnera(
         s, r, body.name, body.version, [b.model_dump() for b in body.backends]
     )
@@ -146,10 +145,9 @@ async def register_runner(
 
 @app.post("/api/runners/heartbeat")
 async def runner_heartbeat(
-    authorization: str | None = Header(default=None),
+    r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
-    r = await uslugi.runner_po_tokenie(s, authorization)
     await uslugi.odnotuj_heartbeat(s, r)
     return {"status": "ok"}
 
@@ -157,11 +155,10 @@ async def runner_heartbeat(
 @app.post("/api/runners/odpowiedzi", status_code=204)
 async def runner_odpowiedz(
     body: OdpowiedzRunneraIn,
-    authorization: str | None = Header(default=None),
+    r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
 ) -> Response:
     """Odpowiedz runnera na zapytanie z `req_id`; cudze albo nieznane zapytanie to 404."""
-    r = await uslugi.runner_po_tokenie(s, authorization)
     przyjeta = bus.odpowiedz(
         r.id, body.req_id,
         {"ok": body.ok, "wynik": body.wynik, "blad": body.blad, "kod": body.kod},
@@ -174,11 +171,10 @@ async def runner_odpowiedz(
 @app.get("/api/runners/stream")
 async def runner_stream(
     request: Request,
-    authorization: str | None = Header(default=None),
+    r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
 ) -> EventSourceResponse:
     """SSE w dol: polecenia dla runnera. Odpowiedzi wracaja POST-em."""
-    r = await uslugi.runner_po_tokenie(s, authorization)
     q = bus.runner_queue(r.id)
     runner_id, tenant_id = r.id, r.tenant_id
 
@@ -209,11 +205,13 @@ async def runner_stream(
 
 @app.post("/api/runs")
 async def create_run(
-    body: RunCreate, s: AsyncSession = Depends(get_session)
+    body: RunCreate,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
-    tenant = await uslugi.domyslny_tenant(s)
+    dostep.wymagaj(k, Uprawnienie.uruchamianie)
     run = await uslugi.utworz_run(
-        s, tenant.id, body.workflow, polaczone=bus.connected_runner_ids(),
+        s, k.tenant_id, body.workflow, polaczone=bus.connected_runner_ids(),
     )
     await bus.send_to_runner(
         run.runner_id,
@@ -225,10 +223,9 @@ async def create_run(
 @app.post("/api/events")
 async def ingest_event(
     body: EventIn,
-    authorization: str | None = Header(default=None),
+    r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
 ) -> dict[str, int]:
-    r = await uslugi.runner_po_tokenie(s, authorization)
     run = await uslugi.run_runnera(s, body.run_id, r)
     ev, nowe = await uslugi.zapisz_zdarzenie(
         s, run, event_id=body.event_id, kind=body.kind, step_id=body.step_id,
@@ -246,9 +243,12 @@ async def ingest_event(
 
 
 @app.get("/api/runs/{run_id}")
-async def get_run(run_id: str, s: AsyncSession = Depends(get_session)) -> dict:
-    tenant = await uslugi.domyslny_tenant(s)
-    run = await uslugi.run_dla_najemcy(s, run_id, tenant.id)
+async def get_run(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> dict:
+    run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
     rows = await uslugi.zdarzenia_runu(s, run)
     return {
         "id": run.id,
@@ -263,7 +263,15 @@ async def get_run(run_id: str, s: AsyncSession = Depends(get_session)) -> dict:
 
 
 @app.get("/api/runs/{run_id}/stream")
-async def run_stream(run_id: str, request: Request) -> EventSourceResponse:
+async def run_stream(
+    run_id: str,
+    request: Request,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> EventSourceResponse:
+    # cudzy lub nieznany run to 404 przed otwarciem strumienia
+    await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+
     async def gen():
         q = None
         try:

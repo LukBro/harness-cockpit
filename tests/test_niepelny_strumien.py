@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 
 TOKEN = "token-runnera"
 
@@ -36,25 +37,25 @@ async def swiat(tmp_path, monkeypatch):
     monkeypatch.setattr(db_session, "SessionLocal", maker)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    wlasciciel, browarek_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        browarek = Tenant(name="Browarek")
-        s.add(browarek)
         piekarnia = Tenant(name="Piekarnia")
         s.add(piekarnia)
         await s.flush()
-        runner = Runner(tenant_id=browarek.id, name="r",
+        runner = Runner(tenant_id=browarek_id, name="r",
                         token_hash=hashlib.sha256(TOKEN.encode()).hexdigest(),
                         last_seen_at=datetime.now(timezone.utc))
         s.add(runner)
         await s.flush()
-        run = Run(tenant_id=browarek.id, runner_id=runner.id, status=RunStatus.running)
-        inny = Run(tenant_id=browarek.id, runner_id=runner.id, status=RunStatus.running)
+        run = Run(tenant_id=browarek_id, runner_id=runner.id, status=RunStatus.running)
+        inny = Run(tenant_id=browarek_id, runner_id=runner.id, status=RunStatus.running)
         s.add_all([run, inny])
         await s.commit()
         ids = (run.id, inny.id, piekarnia.id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app),
                                base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel)
             yield Swiat(c, *ids)
     finally:
         await engine.dispose()

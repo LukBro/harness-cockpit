@@ -15,7 +15,7 @@ from cockpit.services import sesje
 from cockpit.services.dostep import Kontekst
 from cockpit.settings import settings
 
-from .zaleznosci import CIASTECZKO_SESJI, identyfikator_sesji, kontekst_sesji
+from .zaleznosci import CIASTECZKO_SESJI, identyfikator_sesji, kontekst_sesji, trasa_publiczna
 
 router = APIRouter(prefix="/api/konto")
 
@@ -62,7 +62,7 @@ def _skasuj_ciasteczko(odp: Response) -> None:
     )
 
 
-@router.post("/rejestracja", status_code=201)
+@router.post("/rejestracja", status_code=201, dependencies=[Depends(trasa_publiczna)])
 async def rejestracja(
     dane: DaneRejestracji, odp: Response, s: AsyncSession = Depends(get_session)
 ) -> dict[str, str]:
@@ -74,7 +74,7 @@ async def rejestracja(
     return {"csrf": csrf}
 
 
-@router.post("/logowanie")
+@router.post("/logowanie", dependencies=[Depends(trasa_publiczna)])
 async def logowanie(
     dane: DaneLogowania,
     request: Request,
