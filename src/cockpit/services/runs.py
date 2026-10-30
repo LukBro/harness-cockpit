@@ -169,6 +169,11 @@ async def utworz_run(
 
 
 async def domyslny_tenant(s: AsyncSession) -> Tenant:
+    """Tymczasowa atrapa M1.0 - nie jest izolacja zespolow.
+
+    Wybor zespolu jest niedeterministyczny przy wiecej niz jednym (limit(1)
+    bez ORDER BY). Izolacja zespolow niezweryfikowana do BRO-85 i BRO-115.
+    """
     t = (await s.execute(select(Tenant).limit(1))).scalar_one_or_none()
     if t is None:
         raise StanNiemozliwy("brak zespolu - zarejestruj sie najpierw")

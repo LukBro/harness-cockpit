@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
+from runner import operacje
 from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
 
@@ -79,6 +80,7 @@ class Runner:
         self._bufor = bufor if bufor is not None else Bufor()
         self._odczekaj = odczekaj if odczekaj is not None else self._czekaj
         self._proba_laczenia = 0
+        self._zapytania: set[asyncio.Task] = set()
 
     async def register(self, client: httpx.AsyncClient) -> None:
         r = await client.post(
@@ -248,6 +250,28 @@ class Runner:
                 text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
             )
 
+    async def _odpowiedz_na_zapytanie(self, client: httpx.AsyncClient, cmd: dict) -> None:
+        """Wykonuje operacje i odsyla wynik POST-em. Nigdy token, naglowki ani tresc odpowiedzi w logu."""
+        wynik = await operacje.wykonaj(cmd)
+        try:
+            r = await client.post(
+                f"{self.base_url}/api/runners/odpowiedzi", json=wynik, headers=self._headers)
+        except httpx.TransportError as e:
+            przyczyna = type(e).__name__
+        else:
+            if r.status_code < 400:
+                return
+            przyczyna = f"http={r.status_code}"
+        print(f"odpowiedz na zapytanie {cmd.get('req_id')} niewyslana ({przyczyna})",
+              file=sys.stderr)
+
+    async def _anuluj_zapytania(self) -> None:
+        zadania = list(self._zapytania)
+        for zadanie in zadania:
+            zadanie.cancel()
+        if zadania:
+            await asyncio.wait(zadania)     # odczekanie, zeby po powrocie nie zostaly zadania
+
     @staticmethod
     def _zabij_grupe(proc: asyncio.subprocess.Process, sygnal: signal.Signals) -> None:
         if proc.returncode is not None:
@@ -285,6 +309,7 @@ class Runner:
         zadanie = self._zadanie
         if zadanie is not None and zadanie is not asyncio.current_task() and not zadanie.done():
             zadanie.cancel()
+        await self._anuluj_zapytania()
         if self._heartbeat is not None:
             await self._heartbeat.stop()
         # petla, bo krok moze zostac przyjety w trakcie sprzatania innego; _procesy oprozniaja
@@ -351,6 +376,13 @@ class Runner:
                             await self.run_command(
                                 client, cmd["run_id"], cmd["step_id"], cmd["command"]
                             )
+                        elif "req_id" in cmd:
+                            # osobne zadanie: wolna operacja nie wstrzymuje czytania strumienia
+                            zadanie = asyncio.create_task(
+                                self._odpowiedz_na_zapytanie(client, cmd))
+                            self._zapytania.add(zadanie)
+                            zadanie.add_done_callback(self._zapytania.discard)
             finally:
+                await self._anuluj_zapytania()
                 await self._heartbeat.stop()
         raise StrumienZamkniety("kokpit zamknal strumien polecen")
