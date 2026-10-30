@@ -95,6 +95,8 @@ class RunnerRegister(BaseModel):
 class RunCreate(BaseModel):
     workflow: str = "szkielet"
     command: list[str] = ["echo", "szkielet dziala"]
+    ticket_id: str | None = Field(default=None, min_length=1, max_length=200)  # kolumna String(200)
+    potwierdz_rownolegly: bool = False
 
 
 class EventIn(BaseModel):
@@ -212,6 +214,7 @@ async def create_run(
     dostep.wymagaj(k, Uprawnienie.uruchamianie)
     run = await uslugi.utworz_run(
         s, k.tenant_id, body.workflow, polaczone=bus.connected_runner_ids(),
+        ticket_id=body.ticket_id, potwierdz_rownolegly=body.potwierdz_rownolegly,
     )
     await bus.send_to_runner(
         run.runner_id,
