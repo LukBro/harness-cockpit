@@ -307,3 +307,43 @@ def test_zgoda_na_gh_trafia_do_dziennika(monkeypatch, tmp_path):
 def test_nieczytelne_wejscie_hooka_to_odmowa(monkeypatch, tmp_path, capsys):
     assert _uruchom(monkeypatch, tmp_path, "{nie json") == 2
     assert "odmowa" in capsys.readouterr().err
+
+
+# --- gh pr merge: tylko z gwarancja zielonego CI (poprawka po wlaczeniu ochrony main) ----------
+
+SPRINT = {"MONOLYNX_SPRINT_RUN": "1"}
+
+
+def test_w_sesji_sprintu_zwykly_merge_jest_odrzucony():
+    assert "--auto" in _odmowa(_bash("gh pr merge 5 --squash"), srodowisko=SPRINT)
+
+
+def test_w_sesji_sprintu_merge_z_match_head_commit_tez_jest_odrzucony():
+    assert "--auto" in _odmowa(_bash("gh pr merge 5 --merge --match-head-commit abc"),
+                               srodowisko=SPRINT)
+
+
+def test_w_sesji_sprintu_merge_po_zielonym_ci_przechodzi():
+    assert _zgoda(_bash("gh pr merge 5 --auto --squash"), srodowisko=SPRINT)
+
+
+def test_wylaczenie_automatycznego_merge_przechodzi():
+    assert _zgoda(_bash("gh pr merge 5 --disable-auto"), srodowisko=SPRINT)
+
+
+def test_poza_sprintem_goly_merge_jest_odrzucony():
+    assert "--match-head-commit" in _odmowa(_bash("gh pr merge 5 --squash"))
+
+
+@pytest.mark.parametrize("forma", ["--match-head-commit abc123", "--match-head-commit=abc123"])
+def test_poza_sprintem_merge_sprawdzonego_commita_jak_w_mr_queue_przechodzi(forma):
+    assert _zgoda(_bash(f"gh pr merge 5 --merge {forma}"))
+
+
+def test_admin_jest_odrzucony_nawet_z_auto():
+    assert "--admin" in _odmowa(_bash("gh pr merge 5 --auto --admin"))
+
+
+def test_inna_wartosc_zmiennej_sprintu_nie_wlacza_trybu_sprintu():
+    assert _zgoda(_bash("gh pr merge 5 --merge --match-head-commit abc"),
+                  srodowisko={"MONOLYNX_SPRINT_RUN": "0"})
