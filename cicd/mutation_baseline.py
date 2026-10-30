@@ -39,12 +39,18 @@ CLI:
     --summary - (myslnik) czyta podsumowanie ze stdin zamiast z pliku.
     --scope domyslnie "diff".
     --dry-run pokazuje raport, ale nigdy nie zapisuje baseline'u.
+    --commit <sha> jest WYMAGANY, gdy przebieg faktycznie zapisze baseline
+    (statusy "first" i "up" bez --dry-run): baseline musi wskazywac commit z
+    historii repozytorium, inaczej nie da sie go odtworzyc. Bez --commit (albo
+    z pustym) zapis jest odrzucany, plik zostaje nietkniety. Statusy bez
+    zapisu i --dry-run nie wymagaja --commit.
 
 Kody wyjscia:
     0  - raport wypisany poprawnie na stdout (kazdy status porownania,
          takze "down"/"no-mutants"/"scope-mismatch" - krok jest nieblokujacy).
     2  - blad wejscia: niepoprawny JSON, brak pliku podsumowania, zly
-         ksztalt podsumowania albo uszkodzony plik baseline.
+         ksztalt podsumowania, uszkodzony plik baseline albo odmowa zapisu
+         baseline bez --commit.
     64 - blad uzycia CLI: brak wymaganego argumentu, nieznany argument,
          albo niepoprawna wartosc --scope.
 
@@ -384,6 +390,13 @@ def main(argv: list[str]) -> int:
         result["baseline_path"] = args.baseline
         result["written"] = False
         if result["write"] and not args.dry_run:
+            if not args.commit:
+                # Baseline bez commita z historii repozytorium nie da sie
+                # odtworzyc - odmawiamy zapisu zamiast zapisac "commit": null.
+                raise _InputError(
+                    f"status={result['status']}: zapis baseline wymaga --commit <sha> "
+                    "(commit z historii repozytorium); baseline NIE zostal zapisany"
+                )
             new_baseline = build_baseline(
                 summary,
                 scope=args.scope,
