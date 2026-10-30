@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from cockpit.db.models import Base, Membership, RolaWZespole, Sesja, Tenant, User
 from cockpit.services import konta, sesje
 from cockpit.services.dostep import Kontekst
-from cockpit.services.errors import BrakDostepu, StanNiemozliwy
+from cockpit.services.errors import (
+    BladDziedziny,
+    BrakDostepu,
+    NieprawidloweObecneHaslo,
+    StanNiemozliwy,
+)
 from cockpit.settings import Settings, settings
 
 KOMUNIKAT_SESJI = "sesja wygasła, zaloguj się"
@@ -526,7 +531,7 @@ async def test_zle_stare_haslo_odmawia_i_niczego_nie_zmienia(maker):
     przed = await _user_w_bazie(maker, jan.id)
 
     async with maker() as s:
-        with pytest.raises(BrakDostepu) as e:
+        with pytest.raises(NieprawidloweObecneHaslo) as e:
             await konta.zmien_haslo(
                 s, jan, "Zle-Stare-Haslo-1", "Nowe-Haslo-Omega", biezaca_sesja_id=biezaca
             )
@@ -538,6 +543,12 @@ async def test_zle_stare_haslo_odmawia_i_niczego_nie_zmienia(maker):
     assert po.haslo_skrot == przed.haslo_skrot
     assert po.haslo_zmienione_at == przed.haslo_zmienione_at
     assert (await _kontekst(maker, inna)).user_id == jan.id
+
+
+def test_zle_obecne_haslo_to_blad_formularza_a_nie_brak_dostepu_jak_wygasla_sesja():
+    """Decyzja właściciela (HAR-145): dziedziczy wprost z BladDziedziny, nie z BrakDostepu."""
+    assert issubclass(NieprawidloweObecneHaslo, BladDziedziny)
+    assert not issubclass(NieprawidloweObecneHaslo, BrakDostepu)
 
 
 async def test_za_krotkie_nowe_haslo_odmawia_i_niczego_nie_zmienia(maker):

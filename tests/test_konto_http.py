@@ -580,7 +580,7 @@ async def test_po_zmianie_hasla_logowanie_dziala_tylko_z_nowym_haslem(klient, no
     assert (await _zaloguj(nowy_klient(), JAN, HASLO)).status_code == 401
 
 
-async def test_zmiana_hasla_ze_zlym_starym_haslem_daje_401_i_nic_nie_uniewaznia(
+async def test_zmiana_hasla_ze_zlym_starym_haslem_daje_422_i_nic_nie_uniewaznia(
     klient, nowy_klient, maker
 ):
     id_a, csrf_a = await _zaloz_sesje(klient)
@@ -591,10 +591,30 @@ async def test_zmiana_hasla_ze_zlym_starym_haslem_daje_401_i_nic_nie_uniewaznia(
         json={"stare": ZLE_HASLO, "nowe": NOWE_HASLO},
         headers={"X-CSRF-Token": csrf_a},
     )
-    assert odp.status_code == 401
+    assert odp.status_code == 422
+    assert odp.json() == {"detail": "nieprawidłowe hasło"}
     assert await _wazna(maker, id_a)
     assert await _wazna(maker, id_b)
     assert (await _zaloguj(nowy_klient(), JAN, HASLO)).status_code == 200
+
+
+async def test_zmiana_hasla_z_wylogowana_sesja_i_poprawnym_tokenem_daje_401_i_nie_zmienia_hasla(
+    klient, nowy_klient
+):
+    _, csrf = await _zaloz_sesje(klient)
+    cookies = dict(klient.cookies)
+    await klient.post("/api/konto/wyloguj", headers={"X-CSRF-Token": csrf})
+    klient.cookies.clear()
+    klient.cookies.set(CIASTECZKO, cookies[CIASTECZKO])
+    odp = await klient.post(
+        "/api/konto/haslo",
+        json={"stare": HASLO, "nowe": NOWE_HASLO},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert odp.status_code == 401
+    assert odp.json() == {"detail": "sesja wygasła, zaloguj się"}
+    assert (await _zaloguj(nowy_klient(), JAN, HASLO)).status_code == 200
+    assert (await _zaloguj(nowy_klient(), JAN, NOWE_HASLO)).status_code == 401
 
 
 async def test_zmiana_hasla_bez_sesji_daje_401(klient):

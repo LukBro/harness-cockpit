@@ -9,6 +9,10 @@ class BrakDostepu(BladDziedziny):
     """Brak sesji, zly token, brak czlonkostwa w zespole."""
 
 
+class NieprawidloweObecneHaslo(BladDziedziny):
+    """Zle obecne haslo przy zmianie hasla: blad formularza, nie wygasla sesja (HAR-145)."""
+
+
 class ZbytWieleProb(BladDziedziny):
     """Logowanie wstrzymane po serii nieudanych prob; komunikat podaje czas oczekiwania (HAR-46)."""
 

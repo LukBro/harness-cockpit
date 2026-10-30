@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cockpit.db.models import BlokadaLogowania, Membership, RolaWZespole, Sesja, Tenant, User
 from cockpit.services import sesje
 from cockpit.services.dostep import Kontekst
-from cockpit.services.errors import BrakDostepu, StanNiemozliwy, ZbytWieleProb
+from cockpit.services.errors import (
+    BrakDostepu,
+    NieprawidloweObecneHaslo,
+    StanNiemozliwy,
+    ZbytWieleProb,
+)
 from cockpit.settings import settings
 
 KOMUNIKAT_LOGOWANIA = "nieprawidłowy adres lub hasło"
@@ -180,7 +185,7 @@ async def zmien_haslo(
     # user moze pochodzic z innej sesji SQLAlchemy, wiec bierzemy go z tej
     zapisany = await s.get(User, user.id)
     if not _zgodne(zapisany.haslo_skrot, stare):
-        raise BrakDostepu("nieprawidłowe hasło")
+        raise NieprawidloweObecneHaslo("nieprawidłowe hasło")
     if len(nowe) < MIN_DLUGOSC_HASLA:
         raise StanNiemozliwy(_ZA_KROTKIE)
     teraz = sesje.teraz()
