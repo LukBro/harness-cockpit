@@ -337,7 +337,8 @@ async def test_przerwanie_jest_publikowane_przegladarce_z_numerem_zdarzenia_i_st
         bus._run_subscribers.pop(run_id, None)
 
     assert ev == {"seq": 3, "kind": "run_aborted", "text": POWOD, "step_id": "",
-                  "status": "aborted", "reason": POWOD}
+                  "status": "aborted", "reason": POWOD,
+                  "text_truncated": False, "text_full_len": None}
 
 
 async def test_przerwanie_nie_jest_publikowane_subskrybentom_innego_runu(swiat):
@@ -382,9 +383,11 @@ async def test_zdarzenia_przerwania_zwracaja_ostatnie_zdarzenie_przerwania_kazde
 
     assert dict(wynik) == {
         a: {"seq": 2, "kind": "run_aborted", "text": "l2", "step_id": "",
-            "status": "aborted", "reason": POWOD},
+            "status": "aborted", "reason": POWOD,
+            "text_truncated": False, "text_full_len": None},
         b: {"seq": 1, "kind": "run_aborted", "text": "l1", "step_id": "",
-            "status": "aborted", "reason": POWOD},
+            "status": "aborted", "reason": POWOD,
+            "text_truncated": False, "text_full_len": None},
     }
     assert len(wynik) == 2
 

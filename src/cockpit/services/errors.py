@@ -43,3 +43,7 @@ class PlikPozaZakresem(Zabronione):
 
 class RunnerOffline(StanNiemozliwy):
     """Zespol nie ma runnera online: kokpit dziala w trybie tylko do odczytu (HAR-55)."""
+
+
+class NiespojneDane(BladDziedziny):
+    """Dane wejsciowe wzajemnie sprzeczne, np. pelna dlugosc krotsza niz przyslany tekst (HAR-56)."""
