@@ -20,6 +20,7 @@ from typing import Any
 from cockpit.kernel.events import normalize
 from cockpit.services.errors import BladDziedziny
 from runner import bufor
+from runner.bufor import BladBufora
 
 ZMIENNA_PLIKU = "COCKPIT_HOOK_FILE"
 _RUN_ID = bufor._RUN_ID  # ten sam obiekt wzorca co w buforze, nie kopia
@@ -215,3 +216,49 @@ class CzytnikHookow:
                 f"hooki: nieprzeczytane zdarzenia kroku {self.step_id}: {nieprzeczytane}",
                 file=sys.stderr,
             )
+
+
+# WHY 100: agent_id i agent_type trafiaja do kolumn String(100); dluzsza wartosc dalaby
+# DataError po stronie bazy (500), a zdarzenie przepadloby mimo dosylki.
+_MAKS_ID_AGENTA = 100
+
+
+def do_wysylki(ev: dict, run_id: str, step_id: str) -> dict:
+    """Zdarzenie hooka -> pola wysylane w gore: same metadane, nigdy tresc.
+
+    Wynik budowany jawnie z bialej listy kluczy (nie `{**ev}`): `extra`, `tool_input`,
+    `tool_response` i reszta tresci nie maja jak wyjsc. Brak pomiaru to `None`, nie 0.
+    """
+    ms = ev.get("ms")
+    return {
+        "kind": "hook:" + ev["event"],
+        "run_id": run_id,
+        "step_id": step_id,
+        # None -> "": EventIn.agent_id to str, null daje 422 i zdarzenie przepada
+        "agent_id": (ev.get("agent_id") or "")[:_MAKS_ID_AGENTA],
+        "agent_type": (ev.get("agent_type") or "")[:_MAKS_ID_AGENTA],
+        # measured_or_null: bool jest podklasa int, ale to nie jest pomiar
+        "duration_ms": ms if isinstance(ms, int) and not isinstance(ms, bool) else None,
+        "text": ev.get("tool") or ev.get("phase") or "",
+    }
+
+
+async def przekazuj(czytnik: CzytnikHookow, wyslij) -> None:
+    """Przekazuje zdarzenia z kolejki czytnika w gore, same metadane (HAR-66).
+
+    Produkcyjnie `wyslij = functools.partial(runner.send_event, client)`; zdarzenia
+    nie niosa event_id - nadaje go `send_event`. Konczy sie tylko przez anulowanie.
+    """
+    while True:
+        ev = await czytnik.kolejka.get()
+        try:
+            await wyslij(**do_wysylki(ev, czytnik.run_id, czytnik.step_id))
+        except BladBufora as e:
+            # tylko nazwa klasy: tresc wyjatku albo zdarzenia nie trafia do logu
+            print(
+                f"hooki: zdarzenie kroku {czytnik.step_id} nie weszlo do bufora: "
+                f"{type(e).__name__}",
+                file=sys.stderr,
+            )
+        finally:
+            czytnik.kolejka.task_done()
