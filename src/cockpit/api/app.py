@@ -18,9 +18,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,7 @@ from sse_starlette.sse import EventSourceResponse
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi
+from cockpit.services.errors import NieZnaleziono
 from cockpit.settings import settings
 
 from . import bus, konta
@@ -108,6 +109,14 @@ class EventIn(BaseModel):
     wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
 
 
+class OdpowiedzRunneraIn(BaseModel):
+    req_id: str = Field(min_length=1, max_length=64)
+    ok: bool
+    wynik: Any = None
+    blad: str | None = Field(default=None, max_length=2000)
+    kod: str | None = Field(default=None, max_length=64)
+
+
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -138,6 +147,23 @@ async def runner_heartbeat(
     r = await uslugi.runner_po_tokenie(s, authorization)
     await uslugi.odnotuj_heartbeat(s, r)
     return {"status": "ok"}
+
+
+@app.post("/api/runners/odpowiedzi", status_code=204)
+async def runner_odpowiedz(
+    body: OdpowiedzRunneraIn,
+    authorization: str | None = Header(default=None),
+    s: AsyncSession = Depends(get_session),
+) -> Response:
+    """Odpowiedz runnera na zapytanie z `req_id`; cudze albo nieznane zapytanie to 404."""
+    r = await uslugi.runner_po_tokenie(s, authorization)
+    przyjeta = bus.odpowiedz(
+        r.id, body.req_id,
+        {"ok": body.ok, "wynik": body.wynik, "blad": body.blad, "kod": body.kod},
+    )
+    if not przyjeta:
+        raise NieZnaleziono("nieznane zapytanie")
+    return Response(status_code=204)
 
 
 @app.get("/api/runners/stream")
