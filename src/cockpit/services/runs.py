@@ -12,7 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
+from cockpit.db.models import Event, Run, Runner, RunStatus
 
 from cockpit.settings import settings
 
@@ -168,18 +168,6 @@ async def utworz_run(
     s.add(run)
     await s.commit()
     return run
-
-
-async def domyslny_tenant(s: AsyncSession) -> Tenant:
-    """Tymczasowa atrapa M1.0 - nie jest izolacja zespolow.
-
-    Wybor zespolu jest niedeterministyczny przy wiecej niz jednym (limit(1)
-    bez ORDER BY). Izolacja zespolow niezweryfikowana do BRO-85 i BRO-115.
-    """
-    t = (await s.execute(select(Tenant).limit(1))).scalar_one_or_none()
-    if t is None:
-        raise StanNiemozliwy("brak zespolu - zarejestruj sie najpierw")
-    return t
 
 
 async def run_dla_najemcy(s: AsyncSession, run_id: str, tenant_id: str) -> Run:

@@ -20,10 +20,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.api import bus
 from cockpit.api.app import app
+from cockpit.api.zaleznosci import runner_z_tokenu
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Runner, Tenant
 from cockpit.settings import settings
 from runner import secrets
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 
 
 @asynccontextmanager
@@ -35,17 +37,16 @@ async def _kokpit_z_runnerem(tmp_path, monkeypatch, last_seen_at):
     monkeypatch.setattr(db_session, "SessionLocal", maker)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    wlasciciel, tenant_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        t = Tenant(name="Browarek")
-        s.add(t)
-        await s.flush()
-        s.add(Runner(tenant_id=t.id, name="macbook",
+        s.add(Runner(tenant_id=tenant_id, name="macbook",
                      token_hash=hashlib.sha256(b"tajne").hexdigest(),
                      last_seen_at=last_seen_at))
         await s.commit()
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(transport=transport, base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel)
             yield c
     finally:
         await engine.dispose()
@@ -817,7 +818,8 @@ async def test_runner_ktorego_polaczenie_przyjeto_ale_strumien_nie_ruszyl_nie_je
 
     async with db_session.SessionLocal() as s:
         odpowiedz = await runner_stream(
-            request=SimpleNamespace(), authorization="Bearer tajne", s=s)
+            request=SimpleNamespace(),
+            r=await runner_z_tokenu("Bearer tajne", s), s=s)
     # Porzucamy odpowiedz tak, jak zerwane polaczenie: cialo nigdy nie ruszylo.
     await odpowiedz.body_iterator.aclose()
 
@@ -841,7 +843,7 @@ async def _otworz_strumien_runnera():
     async with db_session.SessionLocal() as s:
         odpowiedz = await runner_stream(
             request=SimpleNamespace(is_disconnected=nie_rozlaczony),
-            authorization="Bearer tajne", s=s)
+            r=await runner_z_tokenu("Bearer tajne", s), s=s)
     return odpowiedz.body_iterator
 
 
@@ -897,7 +899,20 @@ def _subskrybenci(run_id: str) -> list:
     return bus._run_subscribers.get(run_id, [])
 
 
-async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(subskrypcje_runow):
+async def _run_zespolu(run_id: str):
+    """Istniejacy run zespolu "Browarek" i kontekst jego wlasciciela (strumien wymaga sesji, HAR-57)."""
+    from cockpit.db.models import Membership, Run
+    from cockpit.services.dostep import Kontekst
+    async with db_session.SessionLocal() as s:
+        m = (await s.execute(select(Membership))).scalars().one()
+        s.add(Run(id=run_id, tenant_id=m.tenant_id))
+        await s.commit()
+        return Kontekst(user_id=m.user_id, tenant_id=m.tenant_id, rola=m.rola)
+
+
+async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(
+    subskrypcje_runow, klient_bez_strumienia,
+):
     """Klient odpada, zanim kokpit zaczal nadawac - nikt nie sprzatnie po nim w strumieniu."""
     from types import SimpleNamespace
 
@@ -905,7 +920,9 @@ async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(su
 
     subskrypcje_runow.append("r-porzucony")
 
-    odpowiedz = await run_stream("r-porzucony", SimpleNamespace())
+    kontekst = await _run_zespolu("r-porzucony")
+    async with db_session.SessionLocal() as s:
+        odpowiedz = await run_stream("r-porzucony", SimpleNamespace(), kontekst, s)
     # Porzucamy odpowiedz tak, jak zerwane polaczenie: cialo nigdy nie ruszylo.
     await odpowiedz.body_iterator.aclose()
 
@@ -913,7 +930,7 @@ async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(su
 
 
 async def test_strumien_runu_dostaje_zdarzenia_w_trakcie_a_po_zamknieciu_nie_ma_subskrypcji(
-    subskrypcje_runow,
+    subskrypcje_runow, klient_bez_strumienia,
 ):
     from types import SimpleNamespace
 
@@ -924,7 +941,10 @@ async def test_strumien_runu_dostaje_zdarzenia_w_trakcie_a_po_zamknieciu_nie_ma_
     async def nie_rozlaczony() -> bool:
         return False
 
-    odpowiedz = await run_stream("r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony))
+    kontekst = await _run_zespolu("r-czynny")
+    async with db_session.SessionLocal() as s:
+        odpowiedz = await run_stream(
+            "r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony), kontekst, s)
     strumien = odpowiedz.body_iterator
     pierwsze = asyncio.ensure_future(strumien.__anext__())
     try:
