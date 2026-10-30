@@ -1,0 +1,90 @@
+{
+  "issue": {
+    "url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65",
+    "repository_url": "https://api.github.com/repos/LukBro/harness-cockpit",
+    "labels_url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65/labels{/name}",
+    "comments_url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65/comments",
+    "events_url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65/events",
+    "html_url": "https://github.com/LukBro/harness-cockpit/issues/65",
+    "id": 2201234567,
+    "node_id": "I_kwDOLxyz5s6C1a2b",
+    "number": 65,
+    "title": "Adapter GitHub Issues: pobranie zgłoszenia",
+    "user": {
+      "login": "LukBro",
+      "id": 1234567,
+      "type": "User",
+      "site_admin": false
+    },
+    "labels": [
+      {
+        "id": 6100000001,
+        "node_id": "LA_kwDOLxyz5s8AAAABfabc123",
+        "url": "https://api.github.com/repos/LukBro/harness-cockpit/labels/backend",
+        "name": "backend",
+        "color": "0e8a16",
+        "default": false,
+        "description": "Praca po stronie serwera"
+      },
+      {
+        "id": 6100000002,
+        "node_id": "LA_kwDOLxyz5s8AAAABfabc456",
+        "url": "https://api.github.com/repos/LukBro/harness-cockpit/labels/integracje",
+        "name": "integracje",
+        "color": "1d76db",
+        "default": false,
+        "description": null
+      }
+    ],
+    "state": "closed",
+    "state_reason": "completed",
+    "locked": false,
+    "assignee": null,
+    "assignees": [],
+    "milestone": null,
+    "comments": 2,
+    "created_at": "2026-03-01T08:00:00Z",
+    "updated_at": "2026-03-03T10:20:30Z",
+    "closed_at": "2026-03-03T10:20:30Z",
+    "author_association": "OWNER",
+    "active_lock_reason": null,
+    "body": "Zażółć gęślą jaźń.\n\nRunner pobiera zgłoszenie przez REST API GitHuba.",
+    "reactions": {
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0
+    },
+    "timeline_url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65/timeline"
+  },
+  "comments": [
+    {
+      "url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/comments/9000000001",
+      "html_url": "https://github.com/LukBro/harness-cockpit/issues/65#issuecomment-9000000001",
+      "issue_url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65",
+      "id": 9000000001,
+      "node_id": "IC_kwDOLxyz5s8AAAACAbcdef1",
+      "user": {
+        "login": "anna-nowak",
+        "id": 7654321,
+        "type": "User",
+        "site_admin": false
+      },
+      "created_at": "2026-03-01T09:15:00Z",
+      "updated_at": "2026-03-01T09:15:00Z",
+      "author_association": "COLLABORATOR",
+      "body": "Sprawdź limit zapytań — żądań jest dużo."
+    },
+    {
+      "url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/comments/9000000002",
+      "html_url": "https://github.com/LukBro/harness-cockpit/issues/65#issuecomment-9000000002",
+      "issue_url": "https://api.github.com/repos/LukBro/harness-cockpit/issues/65",
+      "id": 9000000002,
+      "node_id": "IC_kwDOLxyz5s8AAAACAbcdef2",
+      "user": null,
+      "created_at": "2026-03-02T18:45:30Z",
+      "updated_at": "2026-03-02T18:45:30Z",
+      "author_association": "NONE",
+      "body": "Komentarz automatu bez autora."
+    }
+  ]
+}
