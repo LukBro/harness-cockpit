@@ -10,6 +10,7 @@ kokpitu nie gubil polecenia (BRO-75).
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -65,3 +66,30 @@ def unsubscribe_run(run_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
 async def publish_event(run_id: str, event: dict[str, Any]) -> None:
     for q in list(_run_subscribers.get(run_id, [])):
         await q.put(event)
+
+
+# req_id -> (runner_id, future). Odpowiedz rozwiazuje tylko zapytanie wyslane do tego runnera (HAR-49).
+_oczekujace: dict[str, tuple[str, asyncio.Future[dict[str, Any]]]] = {}
+
+
+async def zapytaj(
+    runner_id: str, typ: str, dane: dict[str, Any], timeout_s: float,
+) -> dict[str, Any]:
+    req_id = uuid.uuid4().hex
+    fut: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+    # wpis przed wysylka: szybki runner moze odpowiedziec, zanim send_to_runner wroci
+    _oczekujace[req_id] = (runner_id, fut)
+    try:
+        # type i req_id na koncu: dane nie moga ich nadpisac
+        await send_to_runner(runner_id, {**dane, "type": typ, "req_id": req_id})
+        return await asyncio.wait_for(fut, timeout_s)
+    finally:
+        _oczekujace.pop(req_id, None)
+
+
+def odpowiedz(runner_id: str, req_id: str, cialo: dict[str, Any]) -> bool:
+    wpis = _oczekujace.get(req_id)
+    if wpis is None or wpis[0] != runner_id or wpis[1].done():
+        return False
+    wpis[1].set_result(cialo)
+    return True
