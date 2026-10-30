@@ -21,7 +21,8 @@ dependencies = [
 [project.optional-dependencies]
 # ruff: minor zmienia reguly/defaulty; czerwone CI ma znaczyc "twoja zmiana", nie "nowy ruff".
 # pytest: 9.2 usunal Item._nodeid, ktorego uzywa harness mutmut 3.8.0; zdjac gorna granice, gdy mutmut to obsluzy.
-dev = ["ruff>=0.17,<0.18", "pytest>=8,<9.2", "pytest-asyncio>=1.4", "aiosqlite>=0.20", "mutmut>=3.8", "pytest-playwright>=0.7"]
+# pytest-xdist: -n 4 tylko w poleceniach (CI, testy_pelne.sh, toolchain), nigdy w addopts - mutmut woła pytest per mutant.
+dev = ["ruff>=0.17,<0.18", "pytest>=8,<9.2", "pytest-asyncio>=1.4", "pytest-xdist>=3.8,<4", "aiosqlite>=0.20", "mutmut>=3.8", "pytest-playwright>=0.7"]
 
 [project.scripts]
 cockpit = "cockpit.__main__:main"

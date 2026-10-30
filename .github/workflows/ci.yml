@@ -32,7 +32,7 @@ jobs:
       - run: pip install -e ".[dev]"
 
       - name: Testy - niezmienniki, kernel, szkielet
-        run: pytest -q
+        run: pytest -q -n 4
 
       - name: Granica warstw - api nie dotyka bazy
         run: python tools/check_layers.py
