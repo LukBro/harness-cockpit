@@ -18,6 +18,8 @@ from cockpit.services.errors import (
     BrakDostepu,
     NaruszonyNiezmiennik,
     NieZnaleziono,
+    PlikPozaZakresem,
+    RunnerOffline,
     StanNiemozliwy,
     Zabronione,
     ZbytWieleProb,
@@ -36,6 +38,8 @@ KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     NaruszonyNiezmiennik: 422,
     BlednySkill: 422,
     ZbytWieleProb: 429,
+    PlikPozaZakresem: 403,
+    RunnerOffline: 409,
 }
 
 

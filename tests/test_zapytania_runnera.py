@@ -34,6 +34,7 @@ from cockpit.services.errors import StanNiemozliwy
 from cockpit.settings import Settings, settings
 from runner import operacje
 from runner.client import Runner as RunnerKlient
+from transport_asgi import TransportASGIStrumieniujacy
 
 B_STARY = "b-0-stary"   # Browarek, strumien otwarty, ale heartbeat sprzed 10 progow; id sortuje sie pierwsze
 B1 = "b-1"              # Browarek, swiezy
@@ -330,8 +331,10 @@ def test_limit_czasu_zapytania_do_runnera_zero_albo_ujemny_jest_odrzucony(
         Settings(_env_file=None, runner_zapytanie_timeout_s=wartosc)
 
 
-def test_odpowiedz_runnera_domyslnie_moze_miec_256_kb(czyste_srodowisko):
-    assert Settings(_env_file=None).runner_odpowiedz_max_kb == 256
+def test_odpowiedz_runnera_domyslnie_moze_miec_4096_kb(czyste_srodowisko):
+    # HAR-55: 6 x 512 KB (domyslny limit odczytu pliku x najgorsze rozdmuchanie przez JSON)
+    # plus zapas na opakowanie odpowiedzi (req_id, ok, sciezka, rozmiar)
+    assert Settings(_env_file=None).runner_odpowiedz_max_kb == 4096
 
 
 def test_limit_rozmiaru_odpowiedzi_runnera_mozna_ustawic_zmienna_srodowiskowa(
@@ -810,103 +813,12 @@ async def test_awaria_sieci_przy_odpowiedzi_to_jedna_linia_na_stderr_bez_wyjatku
 # Przelot end-to-end: prawdziwa aplikacja kokpitu + prawdziwy runner
 # =================================================================================
 
-class _StrumienOdpowiedziASGI(httpx.AsyncByteStream):
-    """Cialo odpowiedzi karmione z kolejki komunikatow `http.response.body` aplikacji."""
-
-    def __init__(self, odpowiedzi: asyncio.Queue, rozlaczenie: asyncio.Event, zadanie: asyncio.Task):
-        self._odpowiedzi = odpowiedzi
-        self._rozlaczenie = rozlaczenie
-        self._zadanie = zadanie
-
-    async def __aiter__(self):
-        while True:
-            komunikat = await self._odpowiedzi.get()
-            if komunikat is None:
-                return
-            if isinstance(komunikat, BaseException):
-                raise komunikat
-            if komunikat["type"] != "http.response.body":
-                continue
-            if komunikat.get("body"):
-                yield komunikat["body"]
-            if not komunikat.get("more_body", False):
-                return
-
-    async def aclose(self) -> None:
-        """Klient zamknal odpowiedz = rozlaczyl sie: aplikacja dostaje `http.disconnect`, a gdy
-        generator SSE tkwi w oczekiwaniu na polecenie, zadanie jest anulowane (zwalnia zasoby)."""
-        self._rozlaczenie.set()
-        gotowe, _ = await asyncio.wait({self._zadanie}, timeout=1)
-        if not gotowe:
-            self._zadanie.cancel()
-            await asyncio.wait({self._zadanie}, timeout=5)
-
-
-class _TransportASGIStrumieniujacy(httpx.AsyncBaseTransport):
-    """Jak `httpx.ASGITransport`, ale oddaje odpowiedz po `http.response.start` i dalej karmi
-    jej cialo na biezaco. Dzieki temu nieskonczony `GET /api/runners/stream` nie wiesza
-    klienta, a wszystkie zadania runnera przechodza przez prawdziwa aplikacje FastAPI."""
-
-    def __init__(self, aplikacja) -> None:
-        self._aplikacja = aplikacja
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        tresc = b"".join([kawalek async for kawalek in request.stream])
-        scope = {
-            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-            "method": request.method,
-            "headers": [(k.lower(), v) for (k, v) in request.headers.raw],
-            "scheme": request.url.scheme, "path": request.url.path,
-            "raw_path": request.url.raw_path.split(b"?")[0],
-            "query_string": request.url.query,
-            "server": (request.url.host, request.url.port),
-            "client": ("127.0.0.1", 123), "root_path": "",
-        }
-        odpowiedzi: asyncio.Queue = asyncio.Queue()
-        rozlaczenie = asyncio.Event()
-        tresc_wyslana = False
-
-        async def receive():
-            nonlocal tresc_wyslana
-            if not tresc_wyslana:
-                tresc_wyslana = True
-                return {"type": "http.request", "body": tresc, "more_body": False}
-            await rozlaczenie.wait()
-            return {"type": "http.disconnect"}
-
-        async def send(komunikat):
-            await odpowiedzi.put(komunikat)
-
-        async def uruchom():
-            try:
-                await self._aplikacja(scope, receive, send)
-            except Exception as e:
-                await odpowiedzi.put(e)
-            finally:
-                odpowiedzi.put_nowait(None)
-
-        zadanie = asyncio.create_task(uruchom())
-        try:
-            pierwszy = await odpowiedzi.get()
-        except asyncio.CancelledError:
-            zadanie.cancel()
-            raise
-        if isinstance(pierwszy, BaseException):
-            raise pierwszy
-        if pierwszy is None:
-            raise RuntimeError("aplikacja zakonczyla sie bez odpowiedzi")
-        assert pierwszy["type"] == "http.response.start"
-        return httpx.Response(
-            pierwszy["status"], headers=pierwszy.get("headers", []),
-            stream=_StrumienOdpowiedziASGI(odpowiedzi, rozlaczenie, zadanie))
-
-
 @pytest.fixture
 async def runner_zywy(swiat, monkeypatch):
     """Prawdziwy runner Browarka (B1) polaczony z prawdziwa aplikacja; zatrzymany po tescie."""
     monkeypatch.setattr(settings, "runner_zapytanie_timeout_s", 20.0)
     runner = RunnerKlient("http://kokpit.test", TOKENY[B1],
-                          transport=_TransportASGIStrumieniujacy(app_mod.app))
+                          transport=TransportASGIStrumieniujacy(app_mod.app))
     nasluch = asyncio.create_task(runner.listen())
     try:
         await _poczekaj(lambda: B1 in bus.connected_runner_ids(), limit=10)
@@ -1144,3 +1056,32 @@ async def test_zamkniecie_strumienia_przez_kokpit_anuluje_trwajace_zapytanie_prz
         await asyncio.wait_for(runner.stop(), 10)
 
     assert stan == {"zapytania": 0, "anulowana": True, "zatrzymany": False}
+
+
+# --- HAR-55: limit odpowiedzi kokpitu miesci kazdy plik przepuszczony przez runnera ---------
+
+async def test_plik_o_rozmiarze_domyslnego_limitu_odczytu_z_samych_znakow_sterujacych_miesci_sie_w_odpowiedzi(
+    swiat, runner_zywy, tmp_path, monkeypatch,
+):
+    """Najgorszy plik dla JSON: kazdy bajt to znak sterujacy (poprawny UTF-8, bez NUL), a
+    `json.dumps` zamienia go w `\\u0001` (6 bajtow). Plik rowny domyslnemu limitowi odczytu
+    runnera (512 KB) musi przejsc przez DOMYSLNY limit odpowiedzi kokpitu."""
+    projekt = tmp_path / "projekt"
+    projekt.mkdir()
+    plik = projekt / "sterujace.txt"
+    plik.write_bytes(b"\x01" * (512 * 1024))
+    konfig = tmp_path / "runner.json"
+    konfig.write_text(json.dumps({"projekty": [str(projekt)]}), encoding="utf-8")
+    dom = tmp_path / "dom"
+    dom.mkdir()
+    monkeypatch.setenv("COCKPIT_RUNNER_CONFIG", str(konfig))
+    monkeypatch.setenv("HOME", str(dom))
+    monkeypatch.delenv("COCKPIT_MAX_READ_KB", raising=False)
+    monkeypatch.delenv("COCKPIT_RUNNER_ODPOWIEDZ_MAX_KB", raising=False)
+    monkeypatch.setattr(settings, "runner_odpowiedz_max_kb",
+                        Settings(_env_file=None).runner_odpowiedz_max_kb)
+
+    wynik = await _zapytaj_zespol(swiat.browarek, "read_file", {"sciezka": str(plik.resolve())})
+
+    assert wynik["rozmiar"] == 512 * 1024
+    assert wynik["tresc"] == "\x01" * (512 * 1024)
