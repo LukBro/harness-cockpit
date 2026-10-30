@@ -286,3 +286,47 @@ def test_skan_zglasza_kazdy_wariant_uzycia_httpexception(zrodlo):
 )
 def test_skan_nie_zglasza_czystego_zrodla_ani_samego_slowa(zrodlo):
     assert uzycia_httpexception(zrodlo) == []
+
+
+# --- HAR-58: ostrzezenie o aktywnym runie na tickecie -----------------------------------------
+
+def test_ostrzezenie_o_rownoleglym_runie_ma_wlasny_wpis_w_tabeli_z_kodem_409():
+    from cockpit.services.errors import WymagaPotwierdzenia
+
+    assert KODY_BLEDOW[WymagaPotwierdzenia] == 409
+    assert issubclass(WymagaPotwierdzenia, StanNiemozliwy)
+
+
+async def test_wymagane_potwierdzenie_zwraca_409_z_id_aktywnego_runu_w_odpowiedzi():
+    from cockpit.services.errors import WymagaPotwierdzenia
+
+    wyjatek = WymagaPotwierdzenia("r-1")
+    async with _klient(lambda: wyjatek) as c:
+        r = await c.get("/rzuc")
+    assert r.status_code == 409
+    assert r.json() == {"detail": str(wyjatek), "aktywny_run_id": "r-1"}
+    assert "r-1" in str(wyjatek)
+
+
+async def test_inny_stan_niemozliwy_nie_niesie_id_aktywnego_runu():
+    async with _klient(lambda: StanNiemozliwy("runner offline")) as c:
+        r = await c.get("/rzuc")
+    assert r.status_code == 409
+    assert "aktywny_run_id" not in r.json()
+
+
+async def test_blad_dziedziny_bez_wpisu_w_tabeli_trafia_do_logu_z_wlasnym_wyjatkiem(caplog):
+    class BladBezWpisu(BladDziedziny):
+        pass
+
+    rzucony = BladBezWpisu("szczegol tylko do logu")
+    with caplog.at_level(logging.ERROR, logger="cockpit.api.bledy"):
+        async with _klient(lambda: rzucony) as c:
+            r = await c.get("/rzuc")
+    assert r.status_code == 500
+    assert r.json() == {"detail": KOMUNIKAT_WEWNETRZNY}
+    zalogowane = [
+        rec.exc_info[1] for rec in caplog.records
+        if rec.name == "cockpit.api.bledy" and rec.levelno == logging.ERROR and rec.exc_info
+    ]
+    assert any(e is rzucony for e in zalogowane)

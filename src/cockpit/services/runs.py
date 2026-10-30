@@ -18,12 +18,14 @@ from cockpit.settings import settings
 
 from .errors import (
     BrakDostepu, NaruszonyNiezmiennik, NiespojneDane, NieZnaleziono, StanNiemozliwy,
+    WymagaPotwierdzenia,
 )
 from .walidacja import sprawdz_pomiar
 
 
 POWOD_RUNNER_OFFLINE = "runner offline"  # (HAR-37)
 KIND_PRZERWANIA = "run_aborted"
+STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
 _PROBY_SEQ = 5  # ile razy powtarzamy wyliczenie seq po kolizji (HAR-25)
 _OGRANICZENIE_SEQ = "uq_event_run_seq"  # nazwa z UniqueConstraint(run_id, seq) w modelu
@@ -145,9 +147,27 @@ async def utworz_run(
     tenant_id: str,
     workflow: str,
     polaczone: Collection[str] = frozenset(),
+    *,
+    ticket_id: str | None = None,
+    potwierdz_rownolegly: bool = False,
 ) -> Run:
     """Run powstaje tylko wtedy, gdy zespol ma runnera z otwartym strumieniem
-    (`polaczone`; HAR-2, HAR-26)."""
+    (`polaczone`; HAR-2, HAR-26).
+
+    Drugi run na tickecie z aktywnym runem wymaga `potwierdz_rownolegly` (HAR-58).
+    To ostrzezenie, nie blokada: dwa rownoczesne starty moga oba przejsc."""
+    if ticket_id is not None and not potwierdz_rownolegly:
+        aktywny = (
+            await s.execute(
+                select(Run.id)
+                .where(Run.tenant_id == tenant_id, Run.ticket_id == ticket_id,
+                       Run.status.in_(STATUSY_AKTYWNE))
+                .order_by(Run.created_at, Run.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if aktywny is not None:
+            raise WymagaPotwierdzenia(aktywny)
     runnery = (
         await s.execute(
             select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
@@ -164,7 +184,7 @@ async def utworz_run(
         )
 
     run = Run(tenant_id=tenant_id, runner_id=runner.id, workflow=workflow,
-              status=RunStatus.running)
+              status=RunStatus.running, ticket_id=ticket_id)
     s.add(run)
     await s.commit()
     return run
