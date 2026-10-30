@@ -88,5 +88,6 @@ also_copy = [
   "alembic/",
   "alembic.ini",
   ".github/workflows/",
+  ".claude/hooks/",
   "deploy/",
 ]

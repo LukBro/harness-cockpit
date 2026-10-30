@@ -1,0 +1,38 @@
+name: straz-sciezek
+
+# Required check on main. A PR that touches a sensitive path fails this check and cannot
+# be auto-merged: a human merges it by hand, bypassing branch protection as admin.
+# pull_request_target runs THIS file from the base branch, so a PR cannot edit the guard
+# to let itself through. Only the list of changed file names is read - PR code never runs.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  straz-sciezek:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: wrazliwe sciezki wymagaja czlowieka
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr diff "$PR" --repo "$REPO" --name-only > zmienione.txt
+          if [ ! -s zmienione.txt ]; then
+            echo "::error::nie udalo sie odczytac listy zmienionych plikow - brak dowodu to nie zielone"
+            exit 1
+          fi
+          wrazliwe=$(grep -E '^(\.github/|\.claude/settings|\.claude/hooks/|pyproject\.toml$|alembic/versions/|alembic\.ini$|src/runner/secrets\.py$|CLAUDE\.md$)' zmienione.txt || true)
+          if [ -n "$wrazliwe" ]; then
+            echo "::error::PR zmienia wrazliwe sciezki - merge tylko recznie przez czlowieka:"
+            echo "$wrazliwe"
+            exit 1
+          fi
+          echo "brak wrazliwych sciezek ($(wc -l < zmienione.txt) plikow)"
