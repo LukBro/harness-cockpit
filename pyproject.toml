@@ -75,6 +75,7 @@ source_paths = [
 # migracjami; bez nich test pada na niezmutowanym kodzie i mutmut przerywa przebieg.
 # .github/workflows/: test kroku mutacji uruchamia skrypt z workflow mutation.yml.
 # deploy/: test kernela czyta rejestracje hookow z deploy/hooks.example.json (HAR-22).
+# .cockpit/skills/: test skilli przegladu czyta prawdziwe SKILL.md z repo (HAR-74).
 # mutmut kopiuje plik z also_copy bez tworzenia katalogow nadrzednych (FileNotFoundError),
 # wiec wpis jest katalogiem; katalog kopiuje copytree, ktore je tworzy.
 also_copy = [
@@ -91,4 +92,5 @@ also_copy = [
   ".github/workflows/",
   ".claude/hooks/",
   "deploy/",
+  ".cockpit/skills/",
 ]
