@@ -111,3 +111,21 @@ HAR-141, uwagi bez odjęcia w HAR-34, HAR-36, HAR-38. Nowe kształty:
   skutku (HAR-141).
 - **Wartość, nie obecność** — test tabeli sprawdza wartość wpisu (np. `Zabronione → 403`),
   nie tylko to, że wpis istnieje (HAR-38).
+
+## Regresja (retro M1.4)
+
+Źródło: 13 z 14 ticketów M1.4/M1.5 dostało -25 z tej reguły, w 10 „korekta WRACA”
+(HAR-22, 44, 46, 47, 48, 49, 50, 51, 52, 53, 141, 142, 65). Nowe kształty:
+
+- **Ograniczenia pól i wartości domyślne** — `Field(max_length=…, ge=…)`, `default=` w
+  modelu i elementy stałych zbiorów (`METODY_BEZPIECZNE`) mają test, w którym tylko ta
+  wartość decyduje (HAR-44, 48, 51). `tools/mutanty_zmian.py` takich mutantów nie generuje —
+  „brak zmienionych funkcji” to brak dowodu, nie „czysto”: dopisz ręczny mutant i test.
+- **Każdy warunek zapytania** wybierającego istniejący rekord (adres, użytkownik, zespół)
+  ma w danych rekord odrzucany tylko przez ten warunek (HAR-50) — uogólnienie punktu o
+  filtrze `tenant_id`.
+- **Warunek typu i „użyj wartości dosłownie”** (`isinstance`, parametry tylko dla pierwszej
+  strony) ma wejście, które wersja bez warunku przetwarza inaczej (HAR-53, HAR-65).
+- **Gałąź sprzątania w `finally`** ma test poza ścieżką `stop()`, który ją wyzwala (HAR-49).
+- **Równoważność mutanta** uzasadniasz wskazaniem, że żadne wejście nie odróżnia wersji;
+  „test przechodzi” albo „to tylko kosmetyka” nie jest uzasadnieniem (HAR-52).

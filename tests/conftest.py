@@ -8,6 +8,10 @@ Pytest pokazuje ja jako
 ERROR (faza setup, np. skipif albo skip w fixture) albo FAILED (faza call);
 w obu przypadkach przebieg konczy sie kodem niezerowym. Bez zmiennej nic sie
 nie zmienia.
+
+HAR-143: test z markerem `baza` w workerze xdist (przebieg `-n`) przy ustawionym
+COCKPIT_TEST_DATABASE_URL konczy sie porazka, nie skipem: testy bazy dziela jedna
+baze (`alembic downgrade base`) i port 8799 w demo, wiec ida sekwencyjnie.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ from procesy import sprzatnij_zapamietane
 pytest_plugins = ["pytester"]
 
 ZMIENNA = "COCKPIT_WYMAGAJ_BAZY"
+ZMIENNA_URL_BAZY = "COCKPIT_TEST_DATABASE_URL"
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +44,24 @@ def _sprzatnij_procesy_uruchomione_przez_helper():
 
 def _wymaga_bazy(item: pytest.Item) -> bool:
     return item.get_closest_marker("baza") is not None
+
+
+def _w_workerze_xdist(item: pytest.Item) -> bool:
+    # workerinput ustawia tylko xdist w workerze; zmienna srodowiskowa PYTEST_XDIST_WORKER
+    # przechodzi do zagniezdzonych przebiegow pytestera i dalaby falszywe wykrycie.
+    return hasattr(item.config, "workerinput")
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    if not _wymaga_bazy(item) or not os.environ.get(ZMIENNA_URL_BAZY):
+        return
+    if _w_workerze_xdist(item):
+        pytest.fail(
+            "Test bazy w workerze xdist: testy bazy dziela jedna baze "
+            "cockpit_test i port 8799, wiec nie wolno ich uruchamiac rownolegle. "
+            'Uruchom je bez -n: pytest -m "baza and not e2e"',
+            pytrace=False,
+        )
 
 
 def _powod_pominiecia(longrepr) -> str:
