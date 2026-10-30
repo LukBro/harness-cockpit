@@ -347,3 +347,40 @@ def test_admin_jest_odrzucony_nawet_z_auto():
 def test_inna_wartosc_zmiennej_sprintu_nie_wlacza_trybu_sprintu():
     assert _zgoda(_bash("gh pr merge 5 --merge --match-head-commit abc"),
                   srodowisko={"MONOLYNX_SPRINT_RUN": "0"})
+
+
+# --- dzielenie komendy z poszanowaniem cudzyslowow (blad z 30.10: odmowa commita HAR-58) ------
+
+@pytest.mark.parametrize("komenda", [
+    'git commit -m "HAR-58: run pamieta ticket; drugi run | ostrzezenie"',
+    "gh pr list --json number --jq '.[] | \"\\(.number)\"'",
+    "python3 -c 'import json; print(1)'",
+    'grep -nE "worktree-|pull/|MR|PR" plik.txt',
+    "pytest -q 2>&1 | tail -3",
+])
+def test_separator_w_cudzyslowie_nie_dzieli_komendy(komenda):
+    assert _zgoda(_bash(komenda)) is None
+
+
+def test_push_po_nowej_linii_jest_sprawdzany():
+    assert "main" in _odmowa(_bash("ruff check .\ngit push origin main"))
+
+
+def test_push_po_srednku_bez_spacji_jest_sprawdzany():
+    assert "main" in _odmowa(_bash("ruff check .;git push origin main"))
+
+
+def test_push_w_tle_po_ampersandzie_jest_sprawdzany():
+    assert "main" in _odmowa(_bash("sleep 1 & git push origin main"))
+
+
+def test_push_po_potoku_jest_sprawdzany():
+    assert "main" in _odmowa(_bash("echo x | git push origin main"))
+
+
+def test_srednik_wewnatrz_cudzyslowu_nie_ukrywa_pushu_po_nim():
+    assert "main" in _odmowa(_bash('echo "a; b" && git push origin main'))
+
+
+def test_niezamkniety_cudzyslow_dalej_jest_odmowa():
+    assert "nieczytelna" in _odmowa(_bash('git commit -m "bez konca'))
