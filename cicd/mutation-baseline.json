@@ -1,9 +1,9 @@
 {
-  "score": 71.64,
-  "survived": 481,
-  "total": 1696,
+  "score": 94.29,
+  "survived": 381,
+  "total": 6676,
   "scope": "full",
-  "measured_at": "2026-10-26",
-  "commit": null,
+  "measured_at": "2026-10-30",
+  "commit": "fc76884e9c151e8986b47564868074ae41e9bffb",
   "tool": "mutmut 3.8.0"
 }

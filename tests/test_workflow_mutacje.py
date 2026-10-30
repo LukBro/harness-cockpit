@@ -16,7 +16,12 @@ from ruamel.yaml import YAML
 KORZEN = Path(__file__).resolve().parents[1]
 WORKFLOW = KORZEN / ".github" / "workflows" / "mutation.yml"
 NAZWA_KROKU = "przebieg mutacyjny i zapadka"
-BASELINE_SCORE = 71.64
+# Prawdziwy baseline repozytorium: testy wyprowadzaja z niego "lepszy" i "gorszy" wynik, wiec nowy pomiar
+# nie lamie testow. Lepszy = 100% zabitych (dziala dla kazdego baseline < 100), gorszy = 1 zabity na 10.
+BASELINE_SCORE = json.loads((KORZEN / "cicd" / "mutation-baseline.json").read_text(encoding="utf-8"))["score"]
+WYNIK_LEPSZY = 100.0
+SHA_GLOWY_PR = "abc1234"
+SHA_SCALENIA = "merge9999"
 
 # Atrapa pisze katalog mutants/ jak prawdziwy `mutmut run`, a kod wyjscia i raport bierze ze srodowiska.
 ATRAPA_MUTMUT = """#!/bin/sh
@@ -138,7 +143,8 @@ def uruchom_krok(
     raport.write_text("\n".join(_linia_mutanta(i, s) for i, s in enumerate(statusy, 1)) + "\n", encoding="utf-8")
 
     skrypt_krok = _krok()["run"]
-    skrypt_krok = skrypt_krok.replace("${{ github.base_ref }}", "main").replace("${{ github.sha }}", "abc1234")
+    skrypt_krok = skrypt_krok.replace("${{ github.base_ref }}", "main").replace("${{ github.sha }}", SHA_SCALENIA)
+    skrypt_krok = skrypt_krok.replace("${{ github.event.pull_request.head.sha }}", SHA_GLOWY_PR)
     assert "${{" not in skrypt_krok, "krok uzywa wyrazenia, ktorego test nie podstawia"
     skrypt = tmp_path / "krok.sh"
     skrypt.write_text(skrypt_krok, encoding="utf-8")
@@ -198,12 +204,19 @@ def test_przebieg_mutacyjny_bez_zabitego_mutanta_oblewa_zadanie_i_nie_zapisuje_b
 
 
 def test_przebieg_mutacyjny_z_wynikiem_lepszym_od_baseline_podnosi_baseline(tmp_path):
-    # 7 z 8 = 87.5, wyraznie powyzej 71.64; sprawdzamy wartosc w pliku, nie sam kod wyjscia.
-    przebieg = uruchom_krok(tmp_path, statusy=["killed"] * 7 + ["survived"])
+    # 100% zabitych jest powyzej kazdego baseline < 100; sprawdzamy wartosc w pliku, nie sam kod wyjscia.
+    przebieg = uruchom_krok(tmp_path, statusy=_lepszy_od_baseline())
 
     assert przebieg.kod == 0, przebieg.wyjscie
     assert not _jest_blad_ci(przebieg)
-    assert _score_w_baseline(przebieg) == 87.5
+    assert _score_w_baseline(przebieg) == WYNIK_LEPSZY
+
+
+def test_baseline_zapisany_przez_ci_niesie_sha_glowy_pull_requestu_nie_commit_scalajacy(tmp_path):
+    przebieg = uruchom_krok(tmp_path, statusy=_lepszy_od_baseline())
+
+    zapisany = json.loads(przebieg.baseline.read_text(encoding="utf-8"))
+    assert zapisany["commit"] == SHA_GLOWY_PR
 
 
 def test_przebieg_mutacyjny_z_wynikiem_gorszym_od_baseline_nie_oblewa_zadania_i_zostawia_baseline(tmp_path):
@@ -232,8 +245,9 @@ def test_zadanie_mutacyjne_nie_swieci_na_zielono_mimo_czerwonego_kroku():
 
 
 def _lepszy_od_baseline() -> list[str]:
-    # 7 z 8 = 87.5 > 71.64: bez wczesnego wyjscia zapadka podnioslaby baseline.
-    return ["killed"] * 7 + ["survived"]
+    # 100% > baseline: bez wczesnego wyjscia zapadka podnioslaby baseline.
+    assert BASELINE_SCORE < WYNIK_LEPSZY, "baseline 100: lepszy wynik niemozliwy, test wymaga innego kryterium"
+    return ["killed"] * 8
 
 
 def _linie_kroku() -> list[str]:
@@ -256,7 +270,7 @@ def test_przebieg_mutacyjny_z_przezywajacymi_mutantami_zmian_nie_oblewa_zadania_
         assert klucz in pod_naglowkiem
     assert "czysto" not in przebieg.podsumowanie
     # Zapadka dziala dalej: wynik lepszy od baseline podnosi baseline mimo survivorow zmian.
-    assert _score_w_baseline(przebieg) == 87.5
+    assert _score_w_baseline(przebieg) == WYNIK_LEPSZY
 
 
 def test_przebieg_mutacyjny_bez_przezywajacych_mutantow_zmian_pisze_w_podsumowaniu_ze_jest_czysto(tmp_path):
@@ -266,7 +280,7 @@ def test_przebieg_mutacyjny_bez_przezywajacych_mutantow_zmian_pisze_w_podsumowan
     assert not _jest_blad_ci(przebieg)
     assert NAGLOWEK_ZMIAN in przebieg.podsumowanie
     assert "czysto" in przebieg.podsumowanie.split(NAGLOWEK_ZMIAN, 1)[1]
-    assert _score_w_baseline(przebieg) == 87.5
+    assert _score_w_baseline(przebieg) == WYNIK_LEPSZY
 
 
 def test_przebieg_mutacyjny_z_bledem_narzedzia_zmian_oblewa_zadanie_i_nie_podnosi_baseline(tmp_path):
