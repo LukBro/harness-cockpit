@@ -7,7 +7,10 @@ Odmawia (kod 2 + powod na stderr), gdy narzedzie probuje:
   z wymuszeniem albo kasowaniem, albo commity innego autora niz LukBro
   lub z linia wspolautora (CLAUDE.md, sekcja Commity);
 - uzyc `gh` poza tym repozytorium albo w trybie zmieniajacym repozytorium,
-  sekrety, workflow, uwierzytelnienie; scalic PR z pominieciem ochrony (`--admin`);
+  sekrety, workflow, uwierzytelnienie; scalic PR z pominieciem ochrony (`--admin`)
+  albo bez gwarancji zielonego CI: w sesji sprintu (MONOLYNX_SPRINT_RUN=1) tylko
+  `gh pr merge --auto` (GitHub scala po zielonych checkach), w innych sesjach
+  `--auto` albo `--match-head-commit <sha>` (forma `/monolynx:mr-queue`);
 - zmienic ustawienia albo hooki Claude Code w `.claude/` (sesja nie zmienia sobie
   uprawnien). Odblokowanie wylacznie przez czlowieka: zmienna
   COCKPIT_STRAZ_ODBLOKUJ=1 w srodowisku procesu `claude`, nie w komendzie.
@@ -135,7 +138,20 @@ def _git_push(slowa: list[str], cwd: str, git=_git) -> None:
                 raise Odmowa(f"commit {sha[:7]} ma linie Co-Authored-By (CLAUDE.md)")
 
 
-def _gh(slowa: list[str]) -> None:
+def _gh_merge(slowa: list[str], srodowisko) -> None:
+    if "--admin" in slowa:
+        raise Odmowa("gh pr merge --admin (z pominieciem ochrony) robi tylko czlowiek")
+    if "--auto" in slowa or "--disable-auto" in slowa:
+        return
+    if srodowisko.get("MONOLYNX_SPRINT_RUN") == "1":
+        raise Odmowa("w sesji sprintu gh pr merge tylko z --auto (merge po zielonym CI)")
+    if not any(a == "--match-head-commit" or a.startswith("--match-head-commit=")
+               for a in slowa):
+        raise Odmowa("gh pr merge tylko z --auto albo --match-head-commit <sha>: konto ma"
+                     " prawa admina i zwykly merge moglby ominac czerwone checki")
+
+
+def _gh(slowa: list[str], srodowisko=os.environ) -> None:
     for j, a in enumerate(slowa):
         if a in ("-R", "--repo") and j + 1 < len(slowa) and slowa[j + 1] != REPO:
             raise Odmowa(f"gh tylko dla {REPO}, nie {slowa[j + 1]}")
@@ -146,9 +162,8 @@ def _gh(slowa: list[str]) -> None:
         return
     if polecenie[0] in GH_ZAKAZANE:
         raise Odmowa(f"gh {polecenie[0]} jest zabronione w sesjach agentow")
-    if polecenie[0] == "pr" and len(polecenie) > 1 and polecenie[1] == "merge" \
-            and "--admin" in slowa:
-        raise Odmowa("gh pr merge --admin (z pominieciem ochrony) robi tylko czlowiek")
+    if polecenie[0] == "pr" and len(polecenie) > 1 and polecenie[1] == "merge":
+        _gh_merge(slowa, srodowisko)
     if polecenie[0] == "api":
         metoda = next((slowa[j + 1] for j, a in enumerate(slowa)
                        if a in ("-X", "--method") and j + 1 < len(slowa)), "GET").upper()
@@ -194,7 +209,7 @@ def ocen(zdarzenie: dict, git=_git, srodowisko=os.environ) -> str | None:
                 and slowa[i + 1] in ("add", "set-url", "rename", "remove", "rm"):
             raise Odmowa("zmiana zdalnych repozytoriow jest zabroniona")
         elif program == "gh":
-            _gh(slowa)
+            _gh(slowa, srodowisko)
             if any(a in slowa for a in ("create", "merge", "rerun", "update-branch")):
                 opis = f"gh: {' '.join(slowa)}"
     return opis
