@@ -32,8 +32,9 @@ from procesy import uruchom_proces, zakoncz_proces
 from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Event, Run, RunStatus, Tenant
+from cockpit.db.models import Base, Event, Run, RunStatus
 from cockpit.db.models import Runner as RunnerWBazie
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 from cockpit.services.runs import nastepny_status
 from runner.bufor import BladBufora, BrakMiejsca, Bufor, min_wolne_mb, wolne_mb
 from runner.client import Runner, TokenOdrzucony
@@ -805,11 +806,9 @@ async def klient(tmp_path, monkeypatch):
     monkeypatch.setattr(db_session, "SessionLocal", maker)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    wlasciciel, tenant_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        t = Tenant(name="Browarek")
-        s.add(t)
-        await s.flush()
-        s.add(RunnerWBazie(tenant_id=t.id, name="macbook",
+        s.add(RunnerWBazie(tenant_id=tenant_id, name="macbook",
                            token_hash=hashlib.sha256(b"tajne").hexdigest(),
                            last_seen_at=datetime.now(timezone.utc)))
         await s.commit()
@@ -818,6 +817,7 @@ async def klient(tmp_path, monkeypatch):
     bus.mark_runner_connected(runner_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel)
             yield c
     finally:
         while runner_id in bus.connected_runner_ids():

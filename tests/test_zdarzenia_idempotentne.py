@@ -33,6 +33,7 @@ from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
 from cockpit.services import runs as uslugi_runow
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 from runner.client import Runner as RunnerKlienta
 
 KORZEN = Path(__file__).resolve().parent.parent
@@ -65,27 +66,26 @@ async def swiat(tmp_path, monkeypatch):
     monkeypatch.setattr(db_session, "SessionLocal", maker)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Klient ma sesje wlasciciela Browarka: GET /api/runs/{id} czyta run zespolu z sesji
+    wlasciciel_konta, browarek_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        # Browarek pierwszy: GET /api/runs/{id} wybiera pierwszy zespol
-        browarek = Tenant(name="Browarek")
-        s.add(browarek)
-        await s.flush()
         piekarnia = Tenant(name="Piekarnia")
         s.add(piekarnia)
         await s.flush()
         wlasciciel = Runner(
-            tenant_id=browarek.id, name="wlasciciel", last_seen_at=datetime.now(timezone.utc),
+            tenant_id=browarek_id, name="wlasciciel", last_seen_at=datetime.now(timezone.utc),
             token_hash=hashlib.sha256(TOKEN.encode()).hexdigest())
         s.add(wlasciciel)
         await s.flush()
-        run = Run(tenant_id=browarek.id, runner_id=wlasciciel.id, status=RunStatus.running)
-        drugi = Run(tenant_id=browarek.id, runner_id=wlasciciel.id, status=RunStatus.running)
+        run = Run(tenant_id=browarek_id, runner_id=wlasciciel.id, status=RunStatus.running)
+        drugi = Run(tenant_id=browarek_id, runner_id=wlasciciel.id, status=RunStatus.running)
         s.add_all([run, drugi])
         await s.commit()
-        ids = (run.id, drugi.id, browarek.id, piekarnia.id)
+        ids = (run.id, drugi.id, browarek_id, piekarnia.id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app),
                                base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel_konta)
             yield Swiat(c, *ids)
     finally:
         await engine.dispose()

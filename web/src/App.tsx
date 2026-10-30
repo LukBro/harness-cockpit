@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { fetchZSesja, Konto, odswiezSesje, PanelKonta, ustawPowrotDoLogowania } from "./Konto";
 
-type Zdarzenie = { seq: number; kind: string; text: string; step_id: string };
+type Zdarzenie = {
+  seq: number;
+  kind: string;
+  text: string;
+  step_id: string;
+  text_truncated: boolean;
+  text_full_len: number | null;
+};
 type Run = {
   id: string;
   workflow: string;
@@ -200,6 +207,13 @@ function WidokRunu() {
         {zdarzenia.map((z) => (
           <li key={z.seq}>
             <b>{z.kind}</b> {z.text}
+            {z.text_truncated && (
+              // === null, nie truthiness: brak pomiaru to "nieznana", nigdy 0 (measured_or_null).
+              <span style={{ color: "#58616D" }}>
+                {" "}
+                obcięte, pełna długość {z.text_full_len === null ? "nieznana" : `${z.text_full_len} znaków`}
+              </span>
+            )}
           </li>
         ))}
       </ul>

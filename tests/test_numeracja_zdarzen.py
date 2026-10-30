@@ -32,6 +32,7 @@ from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
 from cockpit.services import runs as uslugi_runow
 from cockpit.services.errors import StanNiemozliwy
 from cockpit.services.runs import _kolizja_numeru
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 
 KORZEN = Path(__file__).resolve().parent.parent
 URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
@@ -65,31 +66,30 @@ async def swiat(tmp_path, monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     teraz = datetime.now(timezone.utc)
+    # Klient ma sesje wlasciciela Browarka: GET /api/runs/{id} czyta run zespolu z sesji
+    wlasciciel_konta, browarek_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        # Browarek pierwszy: GET /api/runs/{id} wybiera pierwszy zespol
-        browarek = Tenant(name="Browarek")
-        s.add(browarek)
-        await s.flush()
         piekarnia = Tenant(name="Piekarnia")
         s.add(piekarnia)
         await s.flush()
         wlasciciel = Runner(
-            tenant_id=browarek.id, name="wlasciciel", last_seen_at=teraz,
+            tenant_id=browarek_id, name="wlasciciel", last_seen_at=teraz,
             token_hash=hashlib.sha256(TOKEN.encode()).hexdigest())
         obcy = Runner(
             tenant_id=piekarnia.id, name="obcy", last_seen_at=teraz,
             token_hash=hashlib.sha256(b"token-obcego").hexdigest())
         s.add_all([wlasciciel, obcy])
         await s.flush()
-        run = Run(tenant_id=browarek.id, runner_id=wlasciciel.id, status=RunStatus.running)
-        drugi = Run(tenant_id=browarek.id, runner_id=wlasciciel.id, status=RunStatus.running)
+        run = Run(tenant_id=browarek_id, runner_id=wlasciciel.id, status=RunStatus.running)
+        drugi = Run(tenant_id=browarek_id, runner_id=wlasciciel.id, status=RunStatus.running)
         run_obcego = Run(tenant_id=piekarnia.id, runner_id=obcy.id, status=RunStatus.running)
         s.add_all([run, drugi, run_obcego])
         await s.commit()
-        ids = (run.id, drugi.id, run_obcego.id, browarek.id, piekarnia.id)
+        ids = (run.id, drugi.id, run_obcego.id, browarek_id, piekarnia.id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app),
                                base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel_konta)
             yield Swiat(c, *ids)
     finally:
         await engine.dispose()
@@ -202,7 +202,7 @@ async def test_po_wyczerpaniu_prob_kolizji_zdarzenie_nie_powstaje_i_jest_blad_st
 
     async with db_session.SessionLocal() as s:
         run = await uslugi_runow.run_dla_najemcy(
-            s, swiat.run_id, (await uslugi_runow.domyslny_tenant(s)).id)
+            s, swiat.run_id, swiat.browarek_id)
         with pytest.raises(StanNiemozliwy):
             await uslugi_runow.zapisz_zdarzenie(
             s, run, event_id=str(uuid.uuid4()), kind="output")
@@ -217,7 +217,7 @@ async def test_po_wyczerpaniu_prob_kolizji_blad_stanu_mowi_uzytkownikowi_co_zrob
 
     async with db_session.SessionLocal() as s:
         run = await uslugi_runow.run_dla_najemcy(
-            s, swiat.run_id, (await uslugi_runow.domyslny_tenant(s)).id)
+            s, swiat.run_id, swiat.browarek_id)
         with pytest.raises(StanNiemozliwy) as wyjatek:
             await uslugi_runow.zapisz_zdarzenie(
             s, run, event_id=str(uuid.uuid4()), kind="output")

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Co ile sekund kokpit szuka runow runnerow offline (HAR-37; env COCKPIT_RUNNER_SWEEP_S).
     # ge=1: 0 oznaczaloby petle bez przerwy.
     runner_sweep_s: int = Field(default=10, ge=1)
+    # Najwiekszy zapisywany tekst zdarzenia, w znakach (HAR-56; env COCKPIT_LIMIT_TEKSTU_ZDARZENIA).
+    # Dluzszy jest obcinany ze znacznikiem i pelna dlugoscia. ge=1: 0 obcinalby kazdy tekst.
+    limit_tekstu_zdarzenia: int = Field(default=64_000, ge=1)
     # Ile dni jest wazna sesja (HAR-44; env COCKPIT_SESJA_WAZNA_DNI). ge=1: 0 wygasalaby od razu.
     sesja_wazna_dni: int = Field(default=30, ge=1)
     # Ciasteczko sesji z flaga Secure (HAR-48; env COCKPIT_CIASTECZKO_SECURE). Lokalny development
@@ -27,7 +30,9 @@ class Settings(BaseSettings):
     # Zapytania kokpitu do runnera (HAR-49; env COCKPIT_RUNNER_ZAPYTANIE_TIMEOUT_S,
     # COCKPIT_RUNNER_ODPOWIEDZ_MAX_KB). gt/ge: 0 czekaloby bez sensu albo odrzucalo wszystko.
     runner_zapytanie_timeout_s: float = Field(default=15, gt=0)
-    runner_odpowiedz_max_kb: int = Field(default=256, ge=1)
+    # 4096 KB (HAR-55): json.dumps rozdyma znak sterujacy do 6 bajtow (\u0001), a runner oddaje
+    # plik do 512 KB; 6 x 512 = 3072 KB tresci plus opakowanie odpowiedzi - 4096 daje zapas.
+    runner_odpowiedz_max_kb: int = Field(default=4096, ge=1)
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)

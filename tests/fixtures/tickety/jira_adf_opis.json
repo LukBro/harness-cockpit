@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "type": "doc",
+  "content": [
+    {
+      "type": "heading",
+      "attrs": { "level": 2 },
+      "content": [{ "type": "text", "text": "Logowanie nie działa" }]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        { "type": "text", "text": "Użytkownik " },
+        { "type": "text", "text": "token", "marks": [{ "type": "code" }] },
+        { "type": "text", "text": " nie jest odświeżany, zob. " },
+        {
+          "type": "text",
+          "text": "dokumentację",
+          "marks": [
+            { "type": "link", "attrs": { "href": "https://example.com/docs/auth" } }
+          ]
+        },
+        { "type": "text", "text": ". Zgłosił " },
+        {
+          "type": "mention",
+          "attrs": { "id": "5b10a2844c20165700ede21g", "text": "@Jan Kowalski" }
+        },
+        { "type": "text", "text": " " },
+        {
+          "type": "emoji",
+          "attrs": { "shortName": ":warning:", "id": "26a0", "text": "⚠️" }
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Kroki do wykonania:", "marks": [{ "type": "strong" }] }]
+    },
+    {
+      "type": "bulletList",
+      "content": [
+        {
+          "type": "listItem",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [{ "type": "text", "text": "Otwórz stronę logowania" }]
+            }
+          ]
+        },
+        {
+          "type": "listItem",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [{ "type": "text", "text": "Sprawdź sesję" }]
+            },
+            {
+              "type": "orderedList",
+              "attrs": { "order": 1 },
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [{ "type": "text", "text": "Odczytaj ciasteczko" }]
+                    },
+                    {
+                      "type": "bulletList",
+                      "content": [
+                        {
+                          "type": "listItem",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [{ "type": "text", "text": "flaga httpOnly" }]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [{ "type": "text", "text": "Porównaj z bazą" }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "listItem",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [{ "type": "text", "text": "Zgłoś wynik" }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "codeBlock",
+      "attrs": { "language": "python" },
+      "content": [
+        { "type": "text", "text": "def odswiez(token):\n    return token" }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [{ "type": "text", "text": "Dziękujemy za pomoc." }]
+    }
+  ]
+}

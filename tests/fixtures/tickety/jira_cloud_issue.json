@@ -1,0 +1,116 @@
+{
+  "expand": "renderedFields,names,schema",
+  "id": "10042",
+  "self": "https://firma.atlassian.net/rest/api/3/issue/10042",
+  "key": "AB-7",
+  "fields": {
+    "summary": "Adapter Jira: pobranie zgłoszenia",
+    "description": {
+      "version": 1,
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            { "type": "text", "text": "Zażółć gęślą jaźń — runner pobiera zgłoszenie przez REST." }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": { "level": 2 },
+          "content": [{ "type": "text", "text": "Acceptance criteria" }]
+        },
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "Z OPISU pierwsze" }]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "Z OPISU drugie" }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "status": { "id": "10001", "name": "W recenzji" },
+    "priority": { "id": "2", "name": "High" },
+    "labels": ["backend", "integracje"],
+    "comment": {
+      "total": 2,
+      "comments": [
+        {
+          "id": "20001",
+          "author": { "accountId": "5b10a2844c20165700ede21g", "displayName": "Łukasz Żółć" },
+          "body": {
+            "version": 1,
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [{ "type": "text", "text": "Sprawdź limit zapytań — żądań jest dużo." }]
+              }
+            ]
+          },
+          "created": "2026-03-04T12:30:15.000+0100"
+        },
+        {
+          "id": "20002",
+          "author": null,
+          "body": {
+            "version": 1,
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [{ "type": "text", "text": "Komentarz automatu bez autora." }]
+              }
+            ]
+          },
+          "created": "2026-03-05T08:00:00.000-0500"
+        }
+      ]
+    },
+    "customfield_10050": {
+      "version": 1,
+      "type": "doc",
+      "content": [
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "Lista zwraca klucz, tytuł i stan" }]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "Błędny token daje czytelny komunikat" }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

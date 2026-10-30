@@ -28,9 +28,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.api import app as app_mod
 from cockpit.api import bus
+from cockpit.api.zaleznosci import runner_z_tokenu
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
 from cockpit.services import runs as uslugi
+from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 from cockpit.services.errors import StanNiemozliwy
 from cockpit.settings import Settings, settings
 
@@ -99,21 +101,21 @@ async def swiat(tmp_path, monkeypatch):
                       token_hash=hashlib.sha256(token.encode()).hexdigest(),
                       last_seen_at=widziany)
 
+    wlasciciel, browarek_id = await zaloz_wlasciciela(maker, nazwa_zespolu="Browarek")
     async with maker() as s:
-        browarek, piekarnia = Tenant(name="Browarek"), Tenant(name="Piekarnia")
-        s.add(browarek)
-        await s.flush()
+        piekarnia = Tenant(name="Piekarnia")
         s.add(piekarnia)
         await s.flush()
-        s.add(runner(R_STARY, browarek.id, "tajne", _stary()))
-        s.add(runner(R_SWIEZY, browarek.id, "tajne-swiezy", _teraz()))
+        s.add(runner(R_STARY, browarek_id, "tajne", _stary()))
+        s.add(runner(R_SWIEZY, browarek_id, "tajne-swiezy", _teraz()))
         s.add(runner(P_SWIEZY, piekarnia.id, "tajne-p1", _teraz()))
         s.add(runner(P_STARY, piekarnia.id, "tajne-p2", _stary()))
         await s.commit()
-        ids = SimpleNamespace(browarek=browarek.id, piekarnia=piekarnia.id)
+        ids = SimpleNamespace(browarek=browarek_id, piekarnia=piekarnia.id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app_mod.app),
                                base_url="http://test") as c:
+            await zaloguj_klienta(c, maker, wlasciciel)
             ids.klient = c
             yield ids
     finally:
@@ -337,7 +339,8 @@ async def test_przerwanie_jest_publikowane_przegladarce_z_numerem_zdarzenia_i_st
         bus._run_subscribers.pop(run_id, None)
 
     assert ev == {"seq": 3, "kind": "run_aborted", "text": POWOD, "step_id": "",
-                  "status": "aborted", "reason": POWOD}
+                  "status": "aborted", "reason": POWOD,
+                  "text_truncated": False, "text_full_len": None}
 
 
 async def test_przerwanie_nie_jest_publikowane_subskrybentom_innego_runu(swiat):
@@ -382,9 +385,11 @@ async def test_zdarzenia_przerwania_zwracaja_ostatnie_zdarzenie_przerwania_kazde
 
     assert dict(wynik) == {
         a: {"seq": 2, "kind": "run_aborted", "text": "l2", "step_id": "",
-            "status": "aborted", "reason": POWOD},
+            "status": "aborted", "reason": POWOD,
+            "text_truncated": False, "text_full_len": None},
         b: {"seq": 1, "kind": "run_aborted", "text": "l1", "step_id": "",
-            "status": "aborted", "reason": POWOD},
+            "status": "aborted", "reason": POWOD,
+            "text_truncated": False, "text_full_len": None},
     }
     assert len(wynik) == 2
 
@@ -436,7 +441,7 @@ async def _otworz_strumien():
     async with db_session.SessionLocal() as s:
         odpowiedz = await app_mod.runner_stream(
             request=SimpleNamespace(is_disconnected=nie_rozlaczony),
-            authorization="Bearer tajne", s=s)
+            r=await runner_z_tokenu("Bearer tajne", s), s=s)
     return odpowiedz.body_iterator
 
 

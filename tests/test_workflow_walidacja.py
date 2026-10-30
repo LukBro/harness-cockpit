@@ -21,7 +21,9 @@ from cockpit.services.workflow_walidacja import (
     NIEZNANA_ZALEZNOSC,
     NIEZNANY_KLUCZ,
     NIEZNANY_SKILL,
+    POLE_BEZ_KONSUMENTA,
     RETRY_NIE_WSTECZ,
+    ROLA_W_KROKU_IGNOROWANA,
     waliduj_workflow,
 )
 
@@ -798,7 +800,8 @@ steps:
 """,
     )
     problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
-    assert kody(problemy, "a") == [NIEZNANY_SKILL]
+    # HAR-16: krok ma dokladnie dwa problemy - blad nieznanego skilla i ostrzezenie o roli w kroku
+    assert kody(problemy, "a") == [NIEZNANY_SKILL, ROLA_W_KROKU_IGNOROWANA]
     assert not any("nieznana rola" in p.komunikat for p in problemy)
 
 
@@ -1005,3 +1008,270 @@ steps:
     problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
     problem(problemy, FOREACH_ZLY_FORMAT, "rozdziel")
     assert FOREACH_BEZ_PRODUCENTA not in kody(problemy, "rozdziel")
+
+
+# --- pola kroku bez konsumenta i rola w kroku (HAR-16) ---------------------
+
+
+def _ostrzezenia_pola(problemy: list[Problem], krok: str) -> list[Problem]:
+    return [p for p in problemy if p.krok == krok and p.kod == POLE_BEZ_KONSUMENTA]
+
+
+def test_krok_optional_true_dostaje_ostrzezenie_ze_pole_nie_ma_jeszcze_skutku(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, optional: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, POLE_BEZ_KONSUMENTA, "a")
+    assert p.poziom == Poziom.ostrzezenie
+    assert "optional" in p.komunikat
+    assert "require_distinct_vendors" not in p.komunikat
+
+
+def test_krok_optional_false_nie_dostaje_ostrzezenia_o_polu_bez_skutku(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, optional: false}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert POLE_BEZ_KONSUMENTA not in kody(problemy)
+
+
+def test_krok_z_require_distinct_vendors_true_dostaje_ostrzezenie_ze_pole_nie_ma_jeszcze_skutku(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, require_distinct_vendors: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, POLE_BEZ_KONSUMENTA, "a")
+    assert p.poziom == Poziom.ostrzezenie
+    assert "require_distinct_vendors" in p.komunikat
+    assert len(_ostrzezenia_pola(problemy, "a")) == 1
+
+
+def test_krok_z_require_distinct_vendors_false_nie_dostaje_ostrzezenia_o_polu_bez_skutku(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, require_distinct_vendors: false}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert POLE_BEZ_KONSUMENTA not in kody(problemy)
+
+
+def test_oba_pola_bez_skutku_w_jednym_kroku_daja_po_jednym_ostrzezeniu_na_pole(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, optional: true, require_distinct_vendors: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    ostrzezenia = _ostrzezenia_pola(problemy, "a")
+    assert len(ostrzezenia) == 2
+    assert all(p.poziom == Poziom.ostrzezenie for p in ostrzezenia)
+    assert sum("optional" in p.komunikat for p in ostrzezenia) == 1
+    assert sum("require_distinct_vendors" in p.komunikat for p in ostrzezenia) == 1
+
+
+def test_ostrzezenie_dotyczy_tylko_tego_pola_ktore_jest_wlaczone_w_danym_kroku(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, optional: false, require_distinct_vendors: true}
+  b: {skill: s, optional: true, require_distinct_vendors: false}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    [pa] = _ostrzezenia_pola(problemy, "a")
+    [pb] = _ostrzezenia_pola(problemy, "b")
+    assert "require_distinct_vendors" in pa.komunikat
+    assert "optional" not in pa.komunikat
+    assert "optional" in pb.komunikat
+    assert "require_distinct_vendors" not in pb.komunikat
+
+
+def test_ostrzezenie_o_polu_bez_skutku_dotyczy_tylko_kroku_ktory_to_pole_ma(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: s, optional: true}
+  b: {skill: s, needs: [a]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problem(problemy, POLE_BEZ_KONSUMENTA, "a")
+    assert kody(problemy, "b") == []
+
+
+def test_rola_reviewer_wpisana_w_kroku_skilla_author_daje_ostrzezenie_z_rola_author(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", role="author")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: pisarz, role: reviewer}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, ROLA_W_KROKU_IGNOROWANA, "a")
+    assert p.poziom == Poziom.ostrzezenie
+    assert "author" in p.komunikat
+    # rola z rejestru nie robi z kroku recenzenta
+    assert "reviewer_readonly" not in kody(problemy, "a")
+
+
+def test_ostrzezenie_o_roli_w_kroku_podaje_role_skilla_a_nie_wpisana_w_kroku(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "wykonawca", role="executor")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: wykonawca, role: author}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, ROLA_W_KROKU_IGNOROWANA, "a")
+    assert "executor" in p.komunikat
+
+
+def test_rola_w_kroku_nieznanego_skilla_zostanie_ustalona_z_rejestru(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: widmo, role: reviewer}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, ROLA_W_KROKU_IGNOROWANA, "a")
+    assert p.poziom == Poziom.ostrzezenie
+    assert p.komunikat == "role w kroku jest ignorowane: rola zostanie ustalona z rejestru"
+    assert "reviewer_readonly" not in kody(problemy, "a")
+
+
+def test_rola_w_kroku_zgodna_z_rola_skilla_tez_jest_ostrzezeniem_bo_klucz_jest_ignorowany(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", role="author")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: pisarz, role: author}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, ROLA_W_KROKU_IGNOROWANA, "a")
+    assert p.poziom == Poziom.ostrzezenie
+    assert "author" in p.komunikat
+
+
+def test_krok_bez_roli_nie_dostaje_ostrzezenia_o_roli_w_kroku(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "pisarz", role="author")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: pisarz}
+  b: {skill: pisarz, role: author}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert ROLA_W_KROKU_IGNOROWANA not in kody(problemy, "a")
+    assert kody(problemy, "b") == [ROLA_W_KROKU_IGNOROWANA]
+
+
+def test_same_ostrzezenia_o_polach_i_roli_nie_czynia_workflow_blednym(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", role="author")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: pisarz, role: reviewer, optional: true, require_distinct_vendors: true}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert sorted(kody(problemy, "a")) == sorted(
+        [POLE_BEZ_KONSUMENTA, POLE_BEZ_KONSUMENTA, ROLA_W_KROKU_IGNOROWANA]
+    )
+    assert all(p.poziom == Poziom.ostrzezenie for p in problemy)
+    assert not ma_bledy(problemy)
+
+
+def test_ostrzezenia_o_polach_i_roli_obok_prawdziwego_bledu_nie_ukrywaja_bledu(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", role="author")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  a: {skill: pisarz, role: reviewer, optional: true, require_distinct_vendors: true}
+  b: {skill: pisarz, needs: [nikt]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, NIEZNANA_ZALEZNOSC, "b").poziom == Poziom.blad
+    assert ROLA_W_KROKU_IGNOROWANA in kody(problemy, "a")
+    assert POLE_BEZ_KONSUMENTA in kody(problemy, "a")
+    assert ma_bledy(problemy)

@@ -23,6 +23,8 @@ from cockpit.services.errors import (
     BrakDostepu,
     NaruszonyNiezmiennik,
     NieZnaleziono,
+    PlikPozaZakresem,
+    RunnerOffline,
     StanNiemozliwy,
 )
 
@@ -120,8 +122,13 @@ def test_nowy_rodzaj_bledu_bez_kodu_http_oblewa_kontrole(nowy_rodzaj_bledu):
         (lambda: StanNiemozliwy("runner offline"), 409, "runner offline"),
         (lambda: NaruszonyNiezmiennik("no_git_write", "push"), 422, "niezmiennik no_git_write: push"),
         (lambda: BlednySkill("skill bez pola role"), 422, "skill bez pola role"),
+        (lambda: PlikPozaZakresem("sciezka poza zakresem runnera"), 403,
+         "sciezka poza zakresem runnera"),
+        (lambda: RunnerOffline("runner offline — tryb tylko do odczytu"), 409,
+         "runner offline — tryb tylko do odczytu"),
     ],
-    ids=["brak_dostepu", "nie_znaleziono", "stan_niemozliwy", "naruszony_niezmiennik", "bledny_skill"],
+    ids=["brak_dostepu", "nie_znaleziono", "stan_niemozliwy", "naruszony_niezmiennik", "bledny_skill",
+         "plik_poza_zakresem", "runner_offline"],
 )
 async def test_kazdy_rodzaj_bledu_dziedziny_daje_swoj_kod_http_i_komunikat(
     fabryka, oczekiwany_kod, komunikat
@@ -130,6 +137,19 @@ async def test_kazdy_rodzaj_bledu_dziedziny_daje_swoj_kod_http_i_komunikat(
         r = await c.get("/rzuc")
     assert r.status_code == oczekiwany_kod
     assert r.json() == {"detail": komunikat}
+
+
+def test_plik_poza_zakresem_i_runner_offline_maja_wlasne_wpisy_w_tabeli_z_wartoscia_403_i_409():
+    """Same podklasy dziedziczylyby 403/409 po rodzicach przez MRO; wpis ma byc jawny (HAR-55)."""
+    assert KODY_BLEDOW[PlikPozaZakresem] == 403
+    assert KODY_BLEDOW[RunnerOffline] == 409
+
+
+def test_plik_poza_zakresem_jest_zabronionym_a_runner_offline_stanem_niemozliwym():
+    from cockpit.services.errors import Zabronione
+
+    assert issubclass(PlikPozaZakresem, Zabronione)
+    assert issubclass(RunnerOffline, StanNiemozliwy)
 
 
 async def test_blednie_opisany_skill_zwraca_422_z_komunikatem_dla_czlowieka():

@@ -15,6 +15,7 @@
       "Bash(ruff:*)",
       "Bash(python tools/check_layers.py)",
       "Bash(python3 tools/check_layers.py)",
+      "Bash(python tools/mutanty_zmian.py:*)",
       "Bash(python3 */skills/*/scripts/monolynx_op.py *)",
       "Bash(python3 */skills/*/scripts/monolynx_transport.py)",
       "Bash(git status:*)",
@@ -26,8 +27,19 @@
       "Bash(git fetch:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push -u origin worktree-*)",
-      "Bash(git push origin worktree-*)",
+      "Bash(git push -u origin worktree-HAR-*)",
+      "Bash(git push origin worktree-HAR-*)",
+      "Bash(git push -u origin retro-*)",
+      "Bash(git push -u origin fix-*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr merge * --auto *)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Edit(.claude/agent-memory/**)",
+      "Write(.claude/agent-memory/**)",
       "mcp__monolynx"
     ],
     "ask": [
@@ -38,8 +50,38 @@
     "deny": [
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
-      "Bash(git push * main)",
-      "Bash(git push * main:*)"
+      "Bash(git push --delete:*)",
+      "Bash(git push origin main)",
+      "Bash(git push origin master)",
+      "Bash(git remote add:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(gh pr merge * --admin*)",
+      "Bash(gh repo:*)",
+      "Bash(gh secret:*)",
+      "Bash(gh variable:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh auth:*)",
+      "Edit(.claude/settings.json)",
+      "Write(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Write(.claude/settings.local.json)",
+      "Edit(.claude/hooks/**)",
+      "Write(.claude/hooks/**)",
+      "Read(.env)",
+      "Read(**/.env)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/straz.py\""
+          }
+        ]
+      }
     ]
   }
 }

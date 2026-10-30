@@ -24,6 +24,10 @@ FOREACH_ZLY_FORMAT = "foreach_zly_format"
 RETRY_NIE_WSTECZ = "retry_nie_wstecz"
 NIEPRZENOSNY_SKILL = "nieprzenosny_skill"
 NIEZNANY_KLUCZ = "nieznany_klucz"
+POLE_BEZ_KONSUMENTA = "pole_bez_konsumenta"
+ROLA_W_KROKU_IGNOROWANA = "rola_w_kroku_ignorowana"
+
+_POLA_BEZ_KONSUMENTA = ("optional", "require_distinct_vendors")
 
 _POLA_KROKU = frozenset(Krok.model_fields) - {"id"}
 
@@ -110,6 +114,33 @@ def _niezmienniki_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> 
     for klucz in surowy:
         if klucz not in _POLA_KROKU and klucz not in KLUCZE_DEFINICJI:
             problemy.append(Problem(krok.id, NIEZNANY_KLUCZ, f"nieznany klucz kroku: {klucz!r}"))
+    return problemy
+
+
+def _ostrzezenia_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> list[Problem]:
+    """Ostrzezenia o polach kroku bez skutku (HAR-16); nie zmieniaja `ma_bledy()`.
+
+    Pole bez konsumenta: wlaczone `optional` / `require_distinct_vendors` (po jednym
+    ostrzezeniu na pole). `role` w surowym kroku jest zawsze ignorowana - rola pochodzi
+    z rejestru - wiec ostrzegamy za kazdym razem, gdy klucz jest w pliku.
+    """
+    problemy = [
+        Problem(
+            krok.id,
+            POLE_BEZ_KONSUMENTA,
+            f"pole {pole} nie ma jeszcze skutku: silnik go nie odczytuje",
+            Poziom.ostrzezenie,
+        )
+        for pole in _POLA_BEZ_KONSUMENTA
+        if getattr(krok, pole)
+    ]
+    if KLUCZ_ROLI in workflow.surowy_krok(krok.id):
+        komunikat = (
+            f"role w kroku jest ignorowane: krok pojdzie z rola {skill.role.value}"
+            if skill is not None
+            else "role w kroku jest ignorowane: rola zostanie ustalona z rejestru"
+        )
+        problemy.append(Problem(krok.id, ROLA_W_KROKU_IGNOROWANA, komunikat, Poziom.ostrzezenie))
     return problemy
 
 
@@ -225,5 +256,7 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
                     Poziom.ostrzezenie,
                 )
             )
+
+        problemy.extend(_ostrzezenia_kroku(krok, skill, workflow))
 
     return problemy

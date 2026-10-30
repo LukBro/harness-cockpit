@@ -12,11 +12,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cockpit.db.models import Event, Run, Runner, RunStatus, Tenant
+from cockpit.db.models import Event, Run, Runner, RunStatus
 
 from cockpit.settings import settings
 
-from .errors import BrakDostepu, NaruszonyNiezmiennik, NieZnaleziono, StanNiemozliwy
+from .errors import (
+    BrakDostepu, NaruszonyNiezmiennik, NiespojneDane, NieZnaleziono, StanNiemozliwy,
+)
 from .walidacja import sprawdz_pomiar
 
 
@@ -168,18 +170,6 @@ async def utworz_run(
     return run
 
 
-async def domyslny_tenant(s: AsyncSession) -> Tenant:
-    """Tymczasowa atrapa M1.0 - nie jest izolacja zespolow.
-
-    Wybor zespolu jest niedeterministyczny przy wiecej niz jednym (limit(1)
-    bez ORDER BY). Izolacja zespolow niezweryfikowana do BRO-85 i BRO-115.
-    """
-    t = (await s.execute(select(Tenant).limit(1))).scalar_one_or_none()
-    if t is None:
-        raise StanNiemozliwy("brak zespolu - zarejestruj sie najpierw")
-    return t
-
-
 async def run_dla_najemcy(s: AsyncSession, run_id: str, tenant_id: str) -> Run:
     """Kazde siegniecie po run przechodzi przez tenant_id (BRO-85)."""
     run = await s.get(Run, run_id)
@@ -240,6 +230,7 @@ async def zapisz_zdarzenie(
     tokens: int | None = None,
     duration_ms: int | None = None,
     wyslane_output: int | None = None,
+    text_full_len: int | None = None,
 ) -> tuple[Event, bool]:
     """Zapisuje zdarzenie od runnera; zwraca `(zdarzenie, nowe)`.
 
@@ -249,6 +240,16 @@ async def zapisz_zdarzenie(
     naruszenie = sprawdz_pomiar(cost_usd, cost_source)
     if naruszenie is not None:
         raise NaruszonyNiezmiennik(naruszenie.niezmiennik, naruszenie.szczegol)
+    if text_full_len is not None and text_full_len < len(text):
+        raise NiespojneDane(
+            f"text_full_len ({text_full_len} znakow) jest krotsza niz przyslany tekst "
+            f"({len(text)} znakow)"
+        )
+    # tekst ponad limit nigdy nie udaje calosci: znacznik i pelna dlugosc (HAR-56)
+    pelna = max(len(text), text_full_len or 0)
+    limit = settings.limit_tekstu_zdarzenia
+    zapisany = text[:limit]
+    obciety = pelna > len(zapisany)
 
     # po rollbacku obiekty sesji sa wygaszone - trzymamy same napisy
     run_id, tenant_id = run.id, run.tenant_id
@@ -283,13 +284,14 @@ async def zapisz_zdarzenie(
                 run.reason = komunikat
 
         ev = Event(tenant_id=tenant_id, run_id=run_id, seq=seq, step_id=step_id,
-                   event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=text, cost_usd=cost_usd,
-                   cost_source=cost_source, tokens=tokens, duration_ms=duration_ms)
+                   event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=zapisany, cost_usd=cost_usd,
+                   cost_source=cost_source, tokens=tokens, duration_ms=duration_ms,
+                   text_truncated=obciety, text_full_len=pelna)
         s.add(ev)
         run.status = nastepny_status(status_przed, kind)
         if (kind == "step_aborted" and status_przed != RunStatus.aborted
                 and run.status == RunStatus.aborted):
-            run.reason = text
+            run.reason = zapisany
         try:
             await s.commit()
         except IntegrityError as e:
@@ -401,6 +403,7 @@ async def zdarzenia_przerwania(
         wynik.append((run_id, {
             "seq": ev.seq, "kind": ev.kind, "text": ev.text, "step_id": ev.step_id,
             "status": run.status.value, "reason": run.reason,
+            "text_truncated": ev.text_truncated, "text_full_len": ev.text_full_len,
         }))
     return wynik
 

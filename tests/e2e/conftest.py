@@ -122,7 +122,7 @@ def czysta_baza():
         with ThreadPoolExecutor(max_workers=1) as pula:
             pula.submit(akcja, cfg, rewizja).result()
 
-    _migruj(command.downgrade, "base")   # domyslny_tenant bierze pierwszy zespol: ma byc jeden
+    _migruj(command.downgrade, "base")   # czysta baza: zasiew zaklada jeden zespol i jednego wlasciciela
     _migruj(command.upgrade, "head")
     yield URL_BAZY
     _migruj(command.downgrade, "base")
@@ -218,7 +218,7 @@ def runner_online(adres_kokpitu, token_runnera, tmp_path):
 
 
 @pytest.fixture
-def zatrzymaj_runnera(runner_online, adres_kokpitu):
+def zatrzymaj_runnera(runner_online, adres_kokpitu, dane_wlasciciela):
     """Zatrzymuje runnera jak uzytkownik (SIGTERM na grupe) i czeka, az kokpit to zauwazy.
 
     Zwraca liczbe runow w bazie po zakonczeniu sondowania: sonda w oknie miedzy SIGTERM
@@ -230,11 +230,17 @@ def zatrzymaj_runnera(runner_online, adres_kokpitu):
         zabij_grupe(runner_online.pid, SIGTERM)   # start w nowej sesji: pgid == pid
         runner_online.wait(timeout=10)
         # Rozlaczenie strumienia widac tylko w pamieci kokpitu: pytamy o nowy run az odpowie 409.
-        koniec = time.monotonic() + 10
-        while httpx.post(f"{adres_kokpitu}/api/runs", json={"workflow": "szkielet"}
-                         ).status_code != 409:
-            assert time.monotonic() < koniec, "kokpit nie wykryl rozlaczenia runnera"
-            time.sleep(0.2)
+        # POST /api/runs wymaga sesji (HAR-57): sonda loguje sie jak uzytkownik.
+        email, haslo = dane_wlasciciela
+        with httpx.Client(base_url=adres_kokpitu) as klient:
+            logowanie = klient.post("/api/konto/logowanie", json={"email": email, "haslo": haslo})
+            assert logowanie.status_code == 200, f"sonda nie zalogowala sie: {logowanie.text}"
+            naglowki = {"X-CSRF-Token": logowanie.json()["csrf"]}
+            koniec = time.monotonic() + 10
+            while klient.post("/api/runs", json={"workflow": "szkielet"},
+                              headers=naglowki).status_code != 409:
+                assert time.monotonic() < koniec, "kokpit nie wykryl rozlaczenia runnera"
+                time.sleep(0.2)
         return _liczba_runow()
 
     return _zatrzymaj
