@@ -16,7 +16,6 @@ import hashlib
 import json
 import os
 import re
-import signal
 import uuid
 from collections import namedtuple
 from datetime import datetime, timezone
@@ -29,6 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import runner.bufor as bufor_mod
+from procesy import uruchom_proces, zakoncz_proces
 from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
@@ -696,8 +696,7 @@ async def test_brak_miejsca_przy_zapisie_zdarzen_zatrzymuje_trwajacy_proces_krok
 ):
     _podstaw_dysk(monkeypatch, 10_000)
     runner = _runner()
-    dlugi = await asyncio.create_subprocess_exec(
-        "sleep", "30", start_new_session=True)
+    dlugi = await uruchom_proces("sleep", "30")
     runner._procesy.add(dlugi)
     try:
         _awaria_na_plikach_bufora(monkeypatch, "fsync", errno.ENOSPC)
@@ -709,9 +708,7 @@ async def test_brak_miejsca_przy_zapisie_zdarzen_zatrzymuje_trwajacy_proces_krok
         assert [z["kind"] for z in _zdarzenia(zadania)] == ["step_aborted"]
         assert not runner._zatrzymany.is_set()         # to nie jest stop(): nasluch i heartbeat zyja
     finally:
-        if dlugi.returncode is None:
-            os.killpg(dlugi.pid, signal.SIGKILL)
-        await dlugi.wait()
+        await zakoncz_proces(dlugi, nazwa="dlugi")
 
 
 async def test_przerwanie_z_braku_miejsca_przed_krokiem_nie_zatrzymuje_innych_procesow(
@@ -720,7 +717,7 @@ async def test_przerwanie_z_braku_miejsca_przed_krokiem_nie_zatrzymuje_innych_pr
     # zatrzymanie procesow dotyczy ENOSPC w trakcie zapisu, nie sprawdzenia progu przed krokiem
     _podstaw_dysk(monkeypatch, 50)
     runner = _runner()
-    inny = await asyncio.create_subprocess_exec("sleep", "30", start_new_session=True)
+    inny = await uruchom_proces("sleep", "30")
     runner._procesy.add(inny)
     try:
         transport, _ = _kokpit()
@@ -729,9 +726,7 @@ async def test_przerwanie_z_braku_miejsca_przed_krokiem_nie_zatrzymuje_innych_pr
 
         assert inny.returncode is None
     finally:
-        if inny.returncode is None:
-            os.killpg(inny.pid, signal.SIGKILL)
-        await inny.wait()
+        await zakoncz_proces(inny, nazwa="inny")
 
 
 # --- 8. wysylka bezposrednia -----------------------------------------------------------------------
