@@ -40,7 +40,11 @@ raporcie zrodlowym.
 
 W mutmut linia z id mutanta (zawiera "__mutmut_"), ktorego ksztalt nie pasuje
 do funkcji ani metody klasy, jest bledem wejscia; ostrzezenia narzedzia sa
-ignorowane.
+ignorowane. Linia wyniku (status DOKLADNIE jeden z: killed, survived,
+no tests, timeout, skipped) z id, ktorego nie umiemy przypisac mutantowi,
+jest "odrzucona": gdy odsetek odrzuconych wsrod linii wyniku przekracza
+PROG_NIEROZPOZNANYCH_LINII (domyslnie 0, czyli kazda taka linia), parser
+konczy sie bledem z liczbami odrzuconych i rozpoznanych linii.
 
 Kazdy zbior literalow statusow ponizej jest wyprowadzony z realnego
 fixture'u przechwyconego zgodnie z .claude/rules/external-tool-output.md
@@ -308,12 +312,22 @@ _MUTMUT_SURVIVED = {"survived", "no tests"}
 _MUTMUT_KILLED = {"killed", "timeout"}
 # jw. - "skipped" zaobserwowany tylko jako licznik dokumentacyjny.
 _MUTMUT_EXCLUDED = {"skipped"}
+# Statusy, po ktorych linia jest linia WYNIKU (a nie ostrzezeniem narzedzia).
+_MUTMUT_RESULT_STATUSES = _MUTMUT_SURVIVED | _MUTMUT_KILLED | _MUTMUT_EXCLUDED
+
+# Maksymalny dopuszczalny ulamek (0..1) linii wyniku, ktorych identyfikatora nie
+# umiemy przypisac mutantowi: odrzucone / (odrzucone + rozpoznane).
+# WHY 0: zmiana formatu id, ktora dotyka tylko czesci linii, zanizylaby total i
+# zawyzyla wynik bez zadnego sygnalu (jak 13,88 pkt w M1.0). Przy 0 kazda linia
+# wyniku, ktorej nie umiemy przypisac mutantowi, uniewaznia caly wynik.
+PROG_NIEROZPOZNANYCH_LINII = 0.0
 
 
 def _parse_mutmut(path: Path) -> dict[str, Any]:
     text = _load_text(path, "mutmut")
 
     recognized = 0
+    rejected = 0
     killed = 0
     survivors: list[dict[str, Any]] = []
     for raw_line in text.splitlines():
@@ -333,6 +347,12 @@ def _parse_mutmut(path: Path) -> dict[str, Any]:
             # pominiecie po cichu zanizyloby total i zawyzylo score
             raise _InputError(f"mutmut: nierozpoznany identyfikator mutanta '{candidate_id}'")
         else:
+            # Linia ze znanym statusem wyniku, ale z id, ktorego nie umiemy
+            # przypisac mutantowi, jest odrzuceniem (liczy sie do progu).
+            # Status musi byc dokladnym literalem; inna linia to ostrzezenie
+            # narzedzia i jest ignorowana.
+            if status in _MUTMUT_RESULT_STATUSES:
+                rejected += 1
             continue
 
         recognized += 1
@@ -356,6 +376,13 @@ def _parse_mutmut(path: Path) -> dict[str, Any]:
             )
         )
 
+    # Prog sprawdzamy przed straznikiem "recognized == 0": raport z samymi
+    # odrzuconymi liniami to blad progu, nie "brak linii wyniku".
+    if rejected and rejected / (rejected + recognized) > PROG_NIEROZPOZNANYCH_LINII:
+        raise _InputError(
+            "mutmut: odsetek linii wyniku z nierozpoznanym identyfikatorem przekracza prog "
+            f"{PROG_NIEROZPOZNANYCH_LINII} (odrzucone: {rejected}, rozpoznane: {recognized})"
+        )
     if recognized == 0:
         raise _InputError(
             "mutmut: brak linii wyniku w raporcie - uzyj 'mutmut results --all true' "
