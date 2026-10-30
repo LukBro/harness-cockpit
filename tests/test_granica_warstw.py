@@ -2,6 +2,7 @@
 
 Każdy wzorzec leży w osobnym pliku w osobnym katalogu `api/` (osobny `tmp_path`
 na przypadek), więc o wyniku decyduje wyłącznie ta jedna reguła.
+Plik pilnuje też wywołań metod sesji na zmiennej typu `AsyncSession` (HAR-28).
 """
 import sys
 from pathlib import Path
@@ -264,6 +265,161 @@ def test_poziom_importu_wzglednego_liczy_sie_od_pakietu_pliku(
 def test_naruszenie_wskazuje_numer_linii_importu_a_nie_poczatek_pliku(tmp_path):
     tresc = '"""Trasa."""\n\nimport cockpit.db.models as m2\n'
     assert _sprawdz_plik_api(tmp_path, tresc) == ["api/m.py:3 import cockpit.db.models"]
+
+
+def _modul_z_sesja(metoda: str) -> str:
+    """Moduł z wywołaniem metody na parametrze `s: AsyncSession` w linii 4."""
+    return (
+        "from sqlalchemy.ext.asyncio import AsyncSession\n"
+        "\n"
+        "async def f(s: AsyncSession):\n"
+        f"    return await s.{metoda}(1)\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "metoda",
+    [
+        pytest.param("get", id="pobranie_po_kluczu_get"),
+        pytest.param("scalar", id="pojedyncza_wartosc_scalar"),
+        pytest.param("scalars", id="seria_wartosci_scalars"),
+        pytest.param("merge", id="scalenie_encji_merge"),
+        pytest.param("flush", id="zrzut_zmian_flush"),
+        pytest.param("refresh", id="odswiezenie_encji_refresh"),
+        pytest.param("stream", id="strumien_wierszy_stream"),
+        pytest.param("stream_scalars", id="strumien_wartosci_stream_scalars"),
+    ],
+)
+def test_metoda_sesji_wolana_na_parametrze_async_session_lamie_granice_warstw(
+    tmp_path, metoda
+):
+    # Wywołanie leży w linii 4 modułu pomocniczego; liczymy numer z samej treści.
+    tresc = _modul_z_sesja(metoda)
+    linia = tresc.splitlines().index(f"    return await s.{metoda}(1)") + 1
+    assert _sprawdz_plik_api(tmp_path, tresc) == [
+        f"api/m.py:{linia} wywolanie .{metoda}()"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tresc", "oczekiwane"),
+    [
+        pytest.param(
+            "def f(s: AsyncSession):\n    return s.get(1)\n",
+            ["api/m.py:2 wywolanie .get()"],
+            id="parametr_w_zwyklej_funkcji_nie_async",
+        ),
+        pytest.param(
+            "def f(s: AsyncSession, /):\n    return s.get(1)\n",
+            ["api/m.py:2 wywolanie .get()"],
+            id="parametr_tylko_pozycyjny",
+        ),
+        pytest.param(
+            "def f(*, s: AsyncSession):\n    return s.get(1)\n",
+            ["api/m.py:2 wywolanie .get()"],
+            id="parametr_tylko_nazwany",
+        ),
+        pytest.param(
+            "def f():\n    s: AsyncSession = zrob()\n    return s.get(1)\n",
+            ["api/m.py:3 wywolanie .get()"],
+            id="zmienna_z_adnotacja_w_ciele_funkcji_bez_parametru_sesji",
+        ),
+        pytest.param(
+            "async def f(sesja: AsyncSession):\n    return await sesja.get(1)\n",
+            ["api/m.py:2 wywolanie .get()"],
+            id="sesja_pod_inna_nazwa_niz_s",
+        ),
+        pytest.param(
+            "def f(s: AsyncSession):\n    def g(s):\n        return 1\n    return s.get(1)\n",
+            ["api/m.py:4 wywolanie .get()"],
+            id="wywolanie_po_funkcji_zagniezdzonej_jest_zgloszone_z_wlasna_linia",
+        ),
+    ],
+)
+def test_sesja_zwiazana_na_rozne_sposoby_jest_rozpoznana_po_typie(
+    tmp_path, tresc, oczekiwane
+):
+    assert _sprawdz_plik_api(tmp_path, tresc) == oczekiwane
+
+
+def test_wywolanie_execute_na_sesji_jest_zgloszone_dokladnie_raz(tmp_path):
+    tresc = "async def f(s: AsyncSession):\n    return await s.execute('x')\n"
+    assert _sprawdz_plik_api(tmp_path, tresc) == ["api/m.py:2 wywolanie .execute()"]
+
+
+@pytest.mark.parametrize(
+    "tresc",
+    [
+        pytest.param(
+            "def f(d: dict):\n    return d.get('k')\n",
+            id="get_na_slowniku",
+        ),
+        pytest.param(
+            "import asyncio\n\nasync def f(q: asyncio.Queue):\n    return await q.get()\n",
+            id="get_na_kolejce_asyncio",
+        ),
+        pytest.param(
+            "from fastapi import FastAPI\n\n"
+            "app = FastAPI()\n\n"
+            "@app.get('/x')\n"
+            "async def trasa(s: AsyncSession):\n"
+            "    return 1\n",
+            id="dekorator_trasy_get_na_obiekcie_app_choc_sesja_jest_w_trasie",
+        ),
+        pytest.param(
+            "def f(s: AsyncSession):\n    return 1\n\n"
+            "def g(s):\n    return s.get('k')\n",
+            id="sesja_w_jednej_funkcji_nie_dotyczy_innej_funkcji_o_tej_samej_nazwie",
+        ),
+        pytest.param(
+            "def f(s: AsyncSession):\n"
+            "    def g(s):\n"
+            "        return s.get('k')\n"
+            "    return g\n",
+            id="funkcja_zagniezdzona_z_wlasnym_parametrem_bez_adnotacji",
+        ),
+        pytest.param(
+            "def f(s: dict):\n    return s.get('k')\n",
+            id="adnotacja_innego_typu_niz_async_session",
+        ),
+        pytest.param(
+            "async def f(s: AsyncSession):\n    await s.rollback()\n",
+            id="metoda_spoza_zbioru_na_sesji",
+        ),
+        pytest.param(
+            "def f(s: AsyncSession, request):\n    return request.cookies.get('x')\n",
+            id="odbiorca_inny_niz_sesja_choc_sesja_jest_w_funkcji",
+        ),
+        pytest.param(
+            "def f():\n    x: dict = {}\n    return x.get('k')\n",
+            id="zmienna_w_ciele_z_adnotacja_innego_typu_niz_sesja",
+        ),
+        pytest.param(
+            "def f(self):\n    self.s: AsyncSession = zrob()\n    return self.s.get(1)\n",
+            id="adnotacja_sesji_na_atrybucie_obiektu_nie_robi_z_niego_nazwy_sesji",
+        ),
+        pytest.param(
+            "def f():\n    def g():\n        x: AsyncSession = zrob()\n    return x.get(1)\n",
+            id="zmienna_sesji_z_funkcji_zagniezdzonej_nie_przecieka_do_zewnetrznej",
+        ),
+        pytest.param(
+            "def f():\n    async def g():\n        x: AsyncSession = zrob()\n    return x.get(1)\n",
+            id="zmienna_sesji_z_asynchronicznej_funkcji_zagniezdzonej_nie_przecieka",
+        ),
+        pytest.param(
+            "cfg = {}\ncfg.get('k')\n",
+            id="get_na_slowniku_poza_jakakolwiek_funkcja_na_poziomie_modulu",
+        ),
+        pytest.param(
+            "class Ustawienia:\n    cfg = {}\n    wartosc = cfg.get('k')\n",
+            id="get_na_slowniku_w_ciele_klasy_poza_funkcja",
+        ),
+    ],
+)
+def test_wywolanie_ktore_nie_jest_metoda_sesji_na_sesji_nie_lamie_granicy_warstw(
+    tmp_path, tresc
+):
+    assert _sprawdz_plik_api(tmp_path, tresc) == []
 
 
 def test_dzisiejsza_warstwa_api_nie_ma_naruszen():
