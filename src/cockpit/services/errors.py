@@ -35,3 +35,11 @@ class StanNiemozliwy(BladDziedziny):
 
 class Zabronione(BladDziedziny):
     """Czlonek zespolu bez uprawnienia do operacji (HAR-38)."""
+
+
+class PlikPozaZakresem(Zabronione):
+    """Runner odmowil dostepu do sciezki: poza zakresem, sekret, .git przy zapisie (HAR-55)."""
+
+
+class RunnerOffline(StanNiemozliwy):
+    """Zespol nie ma runnera online: kokpit dziala w trybie tylko do odczytu (HAR-55)."""

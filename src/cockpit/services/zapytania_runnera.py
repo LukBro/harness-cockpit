@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cockpit.db.models import Runner
 from cockpit.settings import settings
 
-from .errors import StanNiemozliwy
+from .errors import PlikPozaZakresem, RunnerOffline, StanNiemozliwy
 from .runs import runner_online
 
 Wyslij = Callable[[str, str, dict[str, Any], float], Awaitable[dict[str, Any]]]
@@ -29,7 +29,7 @@ async def zapytaj_runnera_zespolu(
     )).scalars().all()
     runner = next((r for r in runnery if runner_online(r, polaczone)), None)
     if runner is None:
-        raise StanNiemozliwy("runner offline")
+        raise RunnerOffline("runner offline — tryb tylko do odczytu")
     try:
         cialo = await wyslij(runner.id, typ, dane, settings.runner_zapytanie_timeout_s)
     except TimeoutError:
@@ -38,5 +38,7 @@ async def zapytaj_runnera_zespolu(
         raise StanNiemozliwy(
             f"odpowiedz runnera jest za duza (limit {settings.runner_odpowiedz_max_kb} KB)")
     if cialo.get("ok") is not True:
+        if cialo.get("kod") == "poza_zakresem":
+            raise PlikPozaZakresem(cialo.get("blad") or "sciezka poza zakresem runnera")
         raise StanNiemozliwy(cialo.get("blad") or "runner zglosil blad")
     return cialo.get("wynik")

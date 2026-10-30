@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, Header, Request, Response
+from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,12 +28,15 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
+from cockpit.services import dostep, pliki_runnera
 from cockpit.services import runs as uslugi
+from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import NieZnaleziono
 from cockpit.settings import settings
 
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
+from .zaleznosci import kontekst_sesji
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +274,43 @@ async def run_stream(run_id: str, request: Request) -> EventSourceResponse:
                 bus.unsubscribe_run(run_id, q)
 
     return EventSourceResponse(gen())
+
+
+class PlikIn(BaseModel):
+    sciezka: str = Field(min_length=1, max_length=4096)
+    tresc: str = Field(max_length=3 * 1024 * 1024)
+
+
+@app.get("/api/pliki")
+async def czytaj_plik(
+    sciezka: str = Query(max_length=4096),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    return await pliki_runnera.czytaj(
+        s, k.tenant_id, sciezka, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.get("/api/pliki/lista")
+async def listuj_pliki(
+    sciezka: str = Query(max_length=4096),
+    wzorzec: str = Query(default="*", max_length=512),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    return await pliki_runnera.listuj(
+        s, k.tenant_id, sciezka, wzorzec, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.put("/api/pliki")
+async def zapisz_plik(
+    body: PlikIn,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)  # przed zapytaniem: viewer nie budzi runnera
+    return await pliki_runnera.zapisz(
+        s, k.tenant_id, body.sciezka, body.tresc, bus.connected_runner_ids(), bus.zapytaj)
 
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
