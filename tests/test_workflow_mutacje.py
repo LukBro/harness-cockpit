@@ -328,11 +328,31 @@ def test_blad_narzedzia_mutantow_zmian_oblewa_krok_i_stderr_trafia_do_podsumowan
 
 
 def test_nieoczekiwany_kod_narzedzia_mutantow_zmian_tez_oblewa_krok(tmp_path):
-    # Zielony jest tylko kod 0; kod 3 nie jest "tylko 1 i 2 sa bledem".
-    przebieg = _krok_pr(tmp_path, kod_zmian=3, stderr_zmian="nieoczekiwany stan narzedzia")
+    # Zielone sa tylko kody 0 i 3 (HAR-144); kod 4 nie jest "tylko 1 i 2 sa bledem".
+    przebieg = _krok_pr(tmp_path, kod_zmian=4, stderr_zmian="nieoczekiwany stan narzedzia")
 
     assert przebieg.kod != 0, przebieg.wyjscie
     assert "nieoczekiwany stan narzedzia" in przebieg.podsumowanie
+    assert "czysto" not in przebieg.podsumowanie
+
+
+def test_zmiany_poza_zasiegiem_mutmuta_daja_zielony_krok_z_lista_do_recznego_sprawdzenia_nie_czysto(tmp_path):
+    wpisy = ["src/cockpit/db/models.py:12", "src/cockpit/services/stale.py:3"]
+    # Stdout bez nagłówka: tekst "bez mutantów — sprawdź ręcznie" w podsumowaniu musi pochodzić z kroku.
+    stdout = "\n".join(wpisy) + "\n"
+
+    przebieg = _krok_pr(
+        tmp_path, kod_zmian=3, stdout_zmian=stdout, stderr_zmian="wskazowka narzedzia"
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert not przebieg.jest_blad_ci
+    assert NAGLOWEK_ZMIAN in przebieg.podsumowanie
+    pod_naglowkiem = przebieg.podsumowanie.split(NAGLOWEK_ZMIAN, 1)[1]
+    assert "### bez mutantów — sprawdź ręcznie" in pod_naglowkiem.splitlines()
+    assert "::warning::" in przebieg.wyjscie
+    for wpis in wpisy:
+        assert wpis in pod_naglowkiem
     assert "czysto" not in przebieg.podsumowanie
 
 

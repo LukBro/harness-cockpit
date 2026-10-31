@@ -78,7 +78,9 @@ jobs:
           command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono, check nie moze przejsc"; exit 1; }
           git fetch origin "$BASE_REF"
           mkdir -p mutants
-          # Kod wyjscia narzedzia: 0 = czysto, 1 = przezywajace mutanty, inny = blad narzedzia.
+          # Kod wyjscia narzedzia: 0 = czysto, 1 = przezywajace mutanty (czerwony krok),
+          # 3 = zmiany poza zasiegiem mutmuta (HAR-144: zielony krok, lista do recznego
+          # sprawdzenia w podsumowaniu), inny = blad narzedzia (czerwony krok).
           # Przechwytujemy go do zmiennej, zeby trafil do `case` ponizej, a nie zostal polkniety.
           kod=0
           python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
@@ -91,6 +93,15 @@ jobs:
                 ;;
               1)
                 echo "Przezywajace mutanty zmienionych funkcji (bramka - krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/mutanty-zmian.txt
+                echo '```'
+                ;;
+              3)
+                echo "### bez mutantów — sprawdź ręcznie"
+                echo
+                echo "Zmiany poza zasięgiem mutmuta - wymagają ręcznego mutanta i testu (krok jest zielony):"
                 echo
                 echo '```'
                 cat mutants/mutanty-zmian.txt
@@ -111,6 +122,9 @@ jobs:
             1)
               echo "::error::przezywajace mutanty zmienionych funkcji - lista w podsumowaniu zadania i w artefakcie mutation-report"
               exit 1
+              ;;
+            3)
+              echo "::warning::zmiany poza zasiegiem mutmuta - lista w podsumowaniu zadania; dopisz reczny mutant i test"
               ;;
             *)
               echo "::error::mutanty_zmian.py zakonczyl sie bledem (kod $kod): $(tr '\n' ' ' < mutants/mutanty-zmian.err)"

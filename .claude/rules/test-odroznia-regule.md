@@ -50,10 +50,20 @@ Skrypt mutuje wyłącznie funkcje i metody zmienione względem bazy (także
 niescommitowane i nowe pliki w `source_paths` z `pyproject.toml`) i wypisuje
 przeżywające mutanty, po jednym w linii.
 
-- Kod wyjścia **0** — brak przeżywających mutantów albo brak zmienionych funkcji.
+- Kod wyjścia **0** — wszystkie mutanty zmienionych funkcji zabite (albo brak zmienionych
+  funkcji) i brak zmian poza zasięgiem mutmuta.
 - Kod wyjścia **1** — są przeżywające mutanty; dopisz test na wejściu, które je zabija.
 - Kod wyjścia **2** — błąd narzędzia (nieznana baza, zły `pyproject.toml`, błąd składni,
   błąd mutmuta); to nie jest wynik „czysto”.
+- Kod wyjścia **3** (HAR-144) — zmiany poza zasięgiem mutmuta: stdout zaczyna się od
+  `bez mutantów — sprawdź ręcznie`, dalej wpisy `plik:linia`, po jednym w linii. To nie
+  jest „czysto”: dopisz ręczny mutant i test. Zakres: pliki `.py` pod `src/` spoza
+  `source_paths` oraz w `source_paths` linie kodu poza funkcjami i metodami (bez pustych
+  linii, komentarzy, docstringów i importów) oraz funkcje i metody z dekoratorem innym niż
+  pojedynczy `staticmethod`/`classmethod` (mutmut 3.8.0 ich nie mutuje); `tests/`, `web/`, `tools/` i `*.md` są
+  poza zakresem. Priorytet kodów: 2 > 1 > 3 > 0; przy kodzie 1 lista bez mutantów idzie
+  na stderr. W CI krok jest zielony, a lista trafia do sekcji podsumowania „bez mutantów —
+  sprawdź ręcznie”.
 - Przeżywający mutant w zmienionej funkcji bez uzasadnienia równoważności = **-25**
   w review.
 - Skrypt nie czyści cache `mutants/`. Po zmianie samych testów (bez zmiany kodu
@@ -119,7 +129,7 @@ HAR-141, uwagi bez odjęcia w HAR-34, HAR-36, HAR-38. Nowe kształty:
 
 - **Ograniczenia pól i wartości domyślne** — `Field(max_length=…, ge=…)`, `default=` w
   modelu i elementy stałych zbiorów (`METODY_BEZPIECZNE`) mają test, w którym tylko ta
-  wartość decyduje (HAR-44, 48, 51). `tools/mutanty_zmian.py` takich mutantów nie generuje —
+  wartość decyduje (HAR-44, 48, 51). `tools/mutanty_zmian.py` takich mutantów nie generuje, ale zgłasza je kodem 3 (HAR-144) —
   „brak zmienionych funkcji” to brak dowodu, nie „czysto”: dopisz ręczny mutant i test.
 - **Każdy warunek zapytania** wybierającego istniejący rekord (adres, użytkownik, zespół)
   ma w danych rekord odrzucany tylko przez ten warunek (HAR-50) — uogólnienie punktu o

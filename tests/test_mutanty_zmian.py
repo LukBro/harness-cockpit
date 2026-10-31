@@ -470,6 +470,295 @@ def test_mutant_metody_nie_pasuje_do_wzorca_metody_innej_klasy():
     assert mutanty_zmian.przezywajace(wyniki, [f"{MODUL}.x{ZNAK}Serwis{ZNAK}a__mutmut_*"]) == []
 
 
+# --- linie_bez_mutantow (HAR-144) -------------------------------------------
+
+
+def _bez(zrodlo: str, *linie: int, w_zrodlach: bool = True) -> list[int]:
+    return mutanty_zmian.linie_bez_mutantow(zrodlo, set(linie), w_zrodlach=w_zrodlach)
+
+
+def test_zmieniona_stala_modulu_jest_zgloszona_jako_kod_bez_mutantow():
+    assert _bez("LIMIT = 3\n\n\ndef f():\n    return 1\n", 1) == [1]
+
+
+def test_zmienione_pole_klasy_z_ograniczeniem_jest_zgloszone():
+    zrodlo = "class Model:\n    x: str = Field(max_length=5)\n\n    def m(self):\n        return 1\n"
+    assert _bez(zrodlo, 2) == [2]
+
+
+def test_zmieniony_naglowek_klasy_jest_zgloszony():
+    zrodlo = "class Model:\n    def m(self):\n        return 1\n"
+    assert _bez(zrodlo, 1) == [1]
+
+
+def test_linia_tuz_za_funkcja_jest_zgloszona():
+    assert _bez("def f():\n    return 1\nY = 2\n", 3) == [3]
+
+
+@pytest.mark.parametrize(
+    ("zrodlo", "linia"),
+    [
+        pytest.param("def f():\n    return 1\n", 2, id="cialo_funkcji"),
+        pytest.param("def f():\n    return 1\n", 1, id="naglowek_funkcji"),
+        pytest.param("async def f():\n    return 1\n", 2, id="cialo_funkcji_async"),
+        pytest.param("class K:\n    def m(self):\n        return 1\n", 3, id="cialo_metody"),
+        pytest.param("class K:\n    async def m(self):\n        return 1\n", 3, id="cialo_metody_async"),
+    ],
+)
+def test_linia_w_funkcji_lub_metodzie_z_source_paths_ma_mutanty_wiec_nie_jest_zgloszona(zrodlo, linia):
+    assert _bez(zrodlo, linia) == []
+
+
+@pytest.mark.parametrize(
+    ("zrodlo", "linia"),
+    [
+        pytest.param("def f():\n    return 1\n", 2, id="cialo_funkcji"),
+        pytest.param("async def f():\n    return 1\n", 2, id="cialo_funkcji_async"),
+        pytest.param("class K:\n    def m(self):\n        return 1\n", 3, id="cialo_metody"),
+    ],
+)
+def test_linia_w_funkcji_poza_source_paths_jest_zgloszona_bo_mutmut_jej_nie_mutuje(zrodlo, linia):
+    assert _bez(zrodlo, linia, w_zrodlach=False) == [linia]
+
+
+@pytest.mark.parametrize(
+    ("zrodlo", "linie"),
+    [
+        pytest.param("@functools.cache\ndef f():\n    return 1\n", (1, 2, 3), id="funkcja_cache"),
+        pytest.param('@router.get("/x")\ndef f():\n    return 1\n', (1, 2, 3), id="funkcja_trasa"),
+        pytest.param(
+            "class K:\n    @property\n    def m(self):\n        return 1\n", (2, 3, 4), id="metoda_property"
+        ),
+        pytest.param(
+            "@a\n@b\ndef f():\n    return 1\n", (1, 2, 3, 4), id="dwa_dekoratory"
+        ),
+        pytest.param(
+            "class K:\n    @staticmethod\n    @other\n    def m():\n        return 1\n",
+            (2, 3, 4, 5),
+            id="staticmethod_z_drugim_dekoratorem",
+        ),
+        pytest.param(
+            "class K:\n    @pkg.staticmethod\n    def m():\n        return 1\n",
+            (2, 3, 4),
+            id="staticmethod_jako_atrybut_a_nie_goła_nazwa",
+        ),
+    ],
+)
+def test_funkcja_z_dekoratorem_jest_poza_zasiegiem_mutmuta_wiec_jej_linie_sa_zgloszone(zrodlo, linie):
+    assert _bez(zrodlo, *linie) == list(linie)
+
+
+@pytest.mark.parametrize("dekorator", ["staticmethod", "classmethod"])
+def test_metoda_z_jednym_dekoratorem_staticmethod_lub_classmethod_jest_mutowana_wiec_nie_jest_zgloszona(
+    dekorator,
+):
+    zrodlo = f"class K:\n    @{dekorator}\n    def m(*a):\n        return 1\n"
+    assert _bez(zrodlo, 2, 3, 4) == []
+
+
+def test_metoda_bez_dekoratora_w_klasie_z_dekoratorem_jest_mutowana_a_atrybut_klasy_zgloszony():
+    zrodlo = "@dataclass\nclass K:\n    X = 1\n    def m(self):\n        return 1\n"
+    assert _bez(zrodlo, 3, 4, 5) == [3]
+
+
+def test_wielokropek_jako_pierwsza_instrukcja_klasy_nie_jest_docstringiem():
+    assert _bez("class K:\n    ...\n", 2) == [2]
+
+
+def test_wielokropek_jako_pierwsza_instrukcja_modulu_nie_jest_docstringiem():
+    assert _bez("...\nX = 1\n", 1) == [1]
+
+
+def test_liczba_jako_pierwsza_instrukcja_modulu_nie_jest_docstringiem():
+    assert _bez("1\n", 1) == [1]
+
+
+def test_wielokropek_jako_pierwsza_instrukcja_funkcji_poza_source_paths_nie_jest_docstringiem():
+    assert _bez("def f():\n    ...\n", 2, w_zrodlach=False) == [2]
+
+
+@pytest.mark.parametrize("w_zrodlach", [True, False])
+@pytest.mark.parametrize("linie", [(), (1,)])
+def test_pusty_plik_nie_ma_linii_bez_mutantow(w_zrodlach, linie):
+    assert _bez("", *linie, w_zrodlach=w_zrodlach) == []
+
+
+def test_dekorator_funkcji_poza_source_paths_jest_zgloszony():
+    assert _bez("@functools.cache\ndef f():\n    return 1\n", 1, w_zrodlach=False) == [1]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("A = 1\n\nB = 2\n", id="pusta_linia"),
+        pytest.param("A = 1\n   \nB = 2\n", id="linia_z_samymi_bialymi_znakami"),
+    ],
+)
+def test_pusta_linia_na_poziomie_modulu_nie_jest_zgloszona(zrodlo):
+    assert _bez(zrodlo, 2) == []
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("A = 1\n# komentarz\nB = 2\n", id="komentarz_na_poziomie_modulu"),
+        pytest.param("if A:\n    # komentarz\n    B = 2\n", id="komentarz_wciety_w_instrukcji"),
+    ],
+)
+def test_linia_z_samym_komentarzem_nie_jest_zgloszona(zrodlo):
+    assert _bez(zrodlo, 2) == []
+
+
+def test_komentarz_na_koncu_linii_kodu_nie_ukrywa_tej_linii():
+    assert _bez("A = 1  # tlumaczenie\n", 1) == [1]
+
+
+def test_docstring_modulu_wieloliniowy_nie_jest_zgloszony_a_kod_po_nim_tak():
+    zrodlo = '"""Opis\nkolejna linia opisu\nostatnia linia\n"""\nA = 1\n'
+    assert _bez(zrodlo, 1, 2, 3, 4, 5) == [5]
+
+
+def test_luzny_napis_po_pierwszej_instrukcji_modulu_nie_jest_docstringiem():
+    assert _bez('A = 1\n"""luzny napis"""\n', 2) == [2]
+
+
+def test_docstring_klasy_wieloliniowy_nie_jest_zgloszony_a_atrybut_po_nim_tak():
+    zrodlo = 'class K:\n    """Opis\n    druga linia\n    """\n    X = 1\n'
+    assert _bez(zrodlo, 2, 3, 4, 5) == [5]
+
+
+@pytest.mark.parametrize("slowo", ["def", "async def"])
+def test_docstring_funkcji_poza_source_paths_nie_jest_zgloszony_a_kod_po_nim_tak(slowo):
+    zrodlo = f'{slowo} f():\n    """Opis\n    druga linia\n    """\n    return 1\n'
+    assert _bez(zrodlo, 2, 3, 4, 5, w_zrodlach=False) == [5]
+
+
+def test_docstring_metody_poza_source_paths_nie_jest_zgloszony_a_kod_po_nim_tak():
+    zrodlo = 'class K:\n    def m(self):\n        """Opis\n        druga linia\n        """\n        return 1\n'
+    assert _bez(zrodlo, 3, 4, 5, 6, w_zrodlach=False) == [6]
+
+
+def test_luzny_napis_w_funkcji_poza_source_paths_jest_zgloszony():
+    zrodlo = 'def f():\n    a = 1\n    "luzny napis"\n    return a\n'
+    assert _bez(zrodlo, 3, w_zrodlach=False) == [3]
+
+
+def test_import_jednoliniowy_nie_jest_zgloszony():
+    assert _bez("import os\nA = 1\n", 1) == []
+
+
+def test_import_wieloliniowy_nie_jest_zgloszony_w_calym_zakresie():
+    zrodlo = "from x import (\n    a,\n    b,\n)\nA = 1\n"
+    assert _bez(zrodlo, 1, 2, 3, 4, 5) == [5]
+
+
+def test_import_wewnatrz_instrukcji_warunkowej_nie_jest_zgloszony():
+    assert _bez("if A:\n    import os\n", 2) == []
+
+
+def test_import_wewnatrz_funkcji_poza_source_paths_nie_jest_zgloszony():
+    zrodlo = "def f():\n    import os\n    return os\n"
+    assert _bez(zrodlo, 2, 3, w_zrodlach=False) == [3]
+
+
+def test_wieloliniowa_stala_zglasza_tylko_zmienione_linie():
+    zrodlo = "X = {\n    'a': 1,\n    'b': 2,\n}\n"
+    assert _bez(zrodlo, 2) == [2]
+
+
+def test_zgloszone_linie_sa_posortowane_rosnaco():
+    zrodlo = "A = 1\nB = 2\nC = 3\nD = 4\n"
+    assert _bez(zrodlo, 4, 2, 3) == [2, 3, 4]
+
+
+def test_numer_linii_poza_plikiem_jest_pominiety():
+    assert _bez("A = 1\n", 1, 2, 99) == [1]
+
+
+def test_numer_linii_zero_jest_pominiety_a_nie_czytany_od_konca_pliku():
+    assert _bez("X = 1\nY = 2\n", 0) == []
+
+
+def test_blad_skladni_przy_szukaniu_linii_bez_mutantow_to_blad_narzedzia():
+    with pytest.raises(BladNarzedzia):
+        _bez("def f(:\n", 1)
+
+
+# --- bez_mutantow (pliki z diffu, HAR-144) ----------------------------------
+
+POZA_ZRODLAMI = "src/cockpit/db/models.py"
+FUNKCJA = "def f():\n    return 1\n"
+
+
+def _bez_pliku(korzen: Path, zmiany: dict[str, set[int]]) -> list[str]:
+    return mutanty_zmian.bez_mutantow(zmiany, ZRODLA, korzen)
+
+
+def test_plik_src_spoza_source_paths_zglasza_takze_linie_w_funkcjach(tmp_path):
+    _plik(tmp_path, POZA_ZRODLAMI, FUNKCJA)
+    assert _bez_pliku(tmp_path, {POZA_ZRODLAMI: {2}}) == [f"{POZA_ZRODLAMI}:2"]
+
+
+def test_plik_w_source_paths_zglasza_tylko_linie_poza_funkcjami(tmp_path):
+    sciezka = "src/cockpit/services/stale.py"
+    _plik(tmp_path, sciezka, "LIMIT = 3\n\n\ndef f():\n    return 1\n")
+    assert _bez_pliku(tmp_path, {sciezka: {1, 5}}) == [f"{sciezka}:1"]
+
+
+@pytest.mark.parametrize(
+    "sciezka",
+    [
+        pytest.param("tools/x.py", id="narzedzia"),
+        pytest.param("tests/x.py", id="testy"),
+        pytest.param("web/x.py", id="front"),
+        pytest.param("web/src/x.py", id="src_zagniezdzone_w_innym_katalogu"),
+        pytest.param("srcx/x.py", id="katalog_o_wspolnym_prefiksie_z_src"),
+        pytest.param("src/cockpit/x.md", id="plik_nie_python_pod_src"),
+    ],
+)
+def test_zmiana_poza_kodem_src_nie_trafia_na_liste_bez_mutantow(tmp_path, sciezka):
+    _plik(tmp_path, sciezka, "X = 1\n")
+    assert _bez_pliku(tmp_path, {sciezka: {1}}) == []
+
+
+def test_plik_nieistniejacy_jest_pominiety_a_pozostale_pliki_sa_zgloszone(tmp_path):
+    _plik(tmp_path, POZA_ZRODLAMI, "X = 1\n")
+    zmiany = {"src/cockpit/db/brak.py": {1}, POZA_ZRODLAMI: {1}}
+    assert _bez_pliku(tmp_path, zmiany) == [f"{POZA_ZRODLAMI}:1"]
+
+
+def test_plik_z_bajtami_spoza_utf8_to_blad_narzedzia(tmp_path):
+    cel = tmp_path / "src/cockpit/db/zly.py"
+    cel.parent.mkdir(parents=True)
+    cel.write_bytes(b"X = '\xff\xfe'\n")
+    with pytest.raises(BladNarzedzia):
+        _bez_pliku(tmp_path, {"src/cockpit/db/zly.py": {1}})
+
+
+def test_katalog_zamiast_pliku_py_spoza_source_paths_to_blad_narzedzia(tmp_path):
+    (tmp_path / "src/cockpit/db/katalog.py").mkdir(parents=True)
+    with pytest.raises(BladNarzedzia):
+        _bez_pliku(tmp_path, {"src/cockpit/db/katalog.py": {1}})
+
+
+def test_blad_skladni_w_pliku_spoza_source_paths_to_blad_narzedzia(tmp_path):
+    _plik(tmp_path, POZA_ZRODLAMI, "def f(:\n")
+    with pytest.raises(BladNarzedzia) as blad:
+        _bez_pliku(tmp_path, {POZA_ZRODLAMI: {1}})
+    assert POZA_ZRODLAMI in str(blad.value)
+
+
+def test_wpisy_bez_mutantow_sa_posortowane_po_pliku_i_numerycznie_po_linii(tmp_path):
+    _plik(tmp_path, "src/cockpit/db/a.py", "A = 1\nB = 2\n")
+    _plik(tmp_path, "src/cockpit/db/b.py", "".join(f"V{n} = {n}\n" for n in range(1, 11)))
+    zmiany = {"src/cockpit/db/b.py": {10, 9}, "src/cockpit/db/a.py": {2}}
+    assert _bez_pliku(tmp_path, zmiany) == [
+        "src/cockpit/db/a.py:2",
+        "src/cockpit/db/b.py:9",
+        "src/cockpit/db/b.py:10",
+    ]
+
+
 # --- main z podmienionym uruchom --------------------------------------------
 
 ZRODLO_A = "def zapisz():\n    return 1\n\n\ndef inna():\n    return 2\n"
@@ -527,13 +816,18 @@ def _diff_a(linia: int = 2) -> str:
     return _diff("src/cockpit/services/a.py", f"@@ -1 +{linia} @@")
 
 
-def _main(monkeypatch, tmp_path, srodowisko, *argv):
+def _main(monkeypatch, tmp_path, srodowisko, *argv, pliki=None):
+    """`pliki`: sciezka -> tresc dodatkowych plikow na dysku (np. spoza source_paths)."""
     monkeypatch.setattr(mutanty_zmian, "uruchom", srodowisko)
-    return mutanty_zmian.main(["--korzen", str(_repo(tmp_path)), *argv])
+    korzen = _repo(tmp_path)
+    for sciezka, tresc in (pliki or {}).items():
+        _plik(korzen, sciezka, tresc)
+    return mutanty_zmian.main(["--korzen", str(korzen), *argv])
 
 
 def test_brak_zmienionych_funkcji_daje_kod_0_i_nie_woła_mutmuta(monkeypatch, tmp_path):
-    s = _Srodowisko(diff=_diff_a(4))  # linia 4 to przerwa między funkcjami
+    # Linia 4 to pusta przerwa między funkcjami: nic poza zasięgiem mutmuta, więc nadal 0 (HAR-144).
+    s = _Srodowisko(diff=_diff_a(4))
     assert _main(monkeypatch, tmp_path, s) == 0
     assert s.mutmut("run") == []
     assert s.mutmut("results") == []
@@ -573,6 +867,7 @@ def test_survivor_w_niezmienionej_funkcji_nie_psuje_wyniku(monkeypatch, tmp_path
 
 
 def test_mutmut_run_bez_pasujacych_mutantow_daje_kod_0(monkeypatch, tmp_path):
+    # Zmieniona linia 2 jest wewnątrz funkcji (jej mutanty istnieją), więc nic poza zasięgiem (HAR-144).
     s = _Srodowisko(
         diff=_diff_a(),
         run_rc=1,
@@ -684,7 +979,7 @@ def test_domyslna_baza_to_origin_main(monkeypatch, tmp_path):
     assert s.wywolania[0] == ["git", "merge-base", "origin/main", "HEAD"]
 
 
-def test_diff_liczony_od_wspolnego_przodka_ograniczony_do_source_paths(monkeypatch, tmp_path):
+def test_diff_liczony_od_wspolnego_przodka_obejmuje_caly_src_i_source_paths(monkeypatch, tmp_path):
     s = _Srodowisko()
     _main(monkeypatch, tmp_path, s)
     diff = next(w for w in s.wywolania if w[:2] == ["git", "diff"])
@@ -698,8 +993,176 @@ def test_diff_liczony_od_wspolnego_przodka_ograniczony_do_source_paths(monkeypat
         "--dst-prefix=b/",
         "abc123",
         "--",
+        "src/",
         "src/cockpit/services/",
     ]
+
+
+def test_nowe_pliki_szukane_w_calym_src_i_source_paths(monkeypatch, tmp_path):
+    s = _Srodowisko()
+    _main(monkeypatch, tmp_path, s)
+    nowe = next(w for w in s.wywolania if w[:2] == ["git", "ls-files"])
+    assert nowe == [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "--",
+        "src/",
+        "src/cockpit/services/",
+    ]
+
+
+# --- zmiany poza zasięgiem mutmuta: kod 3 (HAR-144) -------------------------
+
+NAGLOWEK_BEZ_MUTANTOW = "bez mutantów — sprawdź ręcznie"
+STALE = "src/cockpit/services/stale.py"
+MODELE = "src/cockpit/db/models.py"
+ZRODLO_STALE = "LIMIT = 3\n\n\ndef f():\n    return 1\n"
+
+
+def _diff_linii(plik: str, linia: int) -> str:
+    return _diff(plik, f"@@ -1 +{linia} @@")
+
+
+def test_zmiana_stalej_modulu_w_source_paths_daje_kod_3_bez_wolania_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_linii(STALE, 1))
+    assert _main(monkeypatch, tmp_path, s, pliki={STALE: ZRODLO_STALE}) == 3
+    assert s.mutmut("run") == []
+    assert s.mutmut("results") == []
+    wyjscie = capsys.readouterr()
+    assert wyjscie.out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{STALE}:1"]
+    assert wyjscie.err != ""
+
+
+def test_zmiana_pola_klasy_z_ograniczeniem_daje_kod_3_z_numerem_linii(monkeypatch, tmp_path, capsys):
+    plik = "src/cockpit/services/model.py"
+    zrodlo = "class Model:\n    x: str = Field(max_length=5)\n\n    def m(self):\n        return 1\n"
+    s = _Srodowisko(diff=_diff_linii(plik, 2))
+    assert _main(monkeypatch, tmp_path, s, pliki={plik: zrodlo}) == 3
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{plik}:2"]
+
+
+def test_zmiana_w_pliku_spoza_source_paths_daje_kod_3_takze_dla_linii_w_funkcji(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_linii(MODELE, 2))
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: FUNKCJA}) == 3
+    assert s.mutmut("run") == []
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{MODELE}:2"]
+
+
+def test_nowy_nieśledzony_plik_spoza_source_paths_daje_kod_3_z_linia_kodu(
+    monkeypatch, tmp_path, capsys
+):
+    nowy = "src/cockpit/db/nowy.py"
+    s = _Srodowisko(nowe=f"{nowy}\n")
+    assert _main(monkeypatch, tmp_path, s, pliki={nowy: "X = 1\n\n\ndef f():\n    return 1\n"}) == 3
+    assert capsys.readouterr().out.splitlines() == [
+        NAGLOWEK_BEZ_MUTANTOW,
+        f"{nowy}:1",
+        f"{nowy}:4",
+        f"{nowy}:5",
+    ]
+
+
+def test_wpisy_bez_mutantow_z_kilku_plikow_sa_w_osobnych_liniach_posortowane(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_linii(MODELE, 2) + _diff_linii(STALE, 1))
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: FUNKCJA, STALE: ZRODLO_STALE}) == 3
+    assert capsys.readouterr().out.splitlines() == [
+        NAGLOWEK_BEZ_MUTANTOW,
+        f"{MODELE}:2",
+        f"{STALE}:1",
+    ]
+
+
+def test_zmiana_tylko_w_funkcji_z_zabitymi_mutantami_daje_kod_0_bez_naglowka(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_a(), results=_wyniki((KLUCZ_A, "killed")))
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert NAGLOWEK_BEZ_MUTANTOW not in capsys.readouterr().out
+
+
+def test_przezywajacy_mutant_i_zmiana_poza_zasiegiem_daja_kod_1_a_lista_bez_mutantow_idzie_na_stderr(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(
+        diff=_diff_a() + _diff_linii(MODELE, 2), results=_wyniki((KLUCZ_A, "survived"))
+    )
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: FUNKCJA}) == 1
+    wyjscie = capsys.readouterr()
+    assert wyjscie.out.splitlines() == [KLUCZ_A]
+    assert NAGLOWEK_BEZ_MUTANTOW in wyjscie.err
+    assert f"{MODELE}:2" in wyjscie.err
+
+
+def test_brak_pasujacych_mutantow_i_zmiana_poza_zasiegiem_daje_kod_3(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(
+        diff=_diff_a() + _diff_linii(MODELE, 2),
+        run_rc=1,
+        run_out="AssertionError: Filtered for specific mutants, but nothing matches",
+    )
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: FUNKCJA}) == 3
+    assert s.mutmut("results") == []
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{MODELE}:2"]
+
+
+def test_wszystkie_mutanty_zabite_i_zmiana_poza_zasiegiem_daje_kod_3(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(
+        diff=_diff_a() + _diff_linii(MODELE, 2), results=_wyniki((KLUCZ_A, "killed"))
+    )
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: FUNKCJA}) == 3
+    assert len(s.mutmut("run")) == 1
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{MODELE}:2"]
+
+
+def test_zmiana_tylko_w_narzedziach_i_testach_daje_kod_0_bez_naglowka(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(diff=_diff_linii("tools/x.py", 1) + _diff_linii("tests/test_x.py", 1))
+    pliki = {"tools/x.py": "X = 1\n", "tests/test_x.py": "X = 1\n"}
+    assert _main(monkeypatch, tmp_path, s, pliki=pliki) == 0
+    assert s.mutmut("run") == []
+    assert NAGLOWEK_BEZ_MUTANTOW not in capsys.readouterr().out
+
+
+def test_blad_narzedzia_przy_zmianie_poza_zasiegiem_daje_kod_2_a_nie_3(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(diff=_diff_a() + _diff_linii(MODELE, 2), results_rc=1)
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: FUNKCJA}) == 2
+    assert NAGLOWEK_BEZ_MUTANTOW not in capsys.readouterr().out
+
+
+def test_plik_spoza_source_paths_z_bledem_skladni_daje_kod_2_ze_sciezka_pliku_na_stderr(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_linii(MODELE, 1))
+    assert _main(monkeypatch, tmp_path, s, pliki={MODELE: "def f(:\n"}) == 2
+    assert s.mutmut("run") == []
+    assert MODELE in capsys.readouterr().err
+
+
+def test_nowy_pusty_plik_spoza_source_paths_daje_kod_0(monkeypatch, tmp_path, capsys):
+    pusty = "src/cockpit/db/pusty.py"
+    s = _Srodowisko(nowe=f"{pusty}\n")
+    assert _main(monkeypatch, tmp_path, s, pliki={pusty: ""}) == 0
+    assert NAGLOWEK_BEZ_MUTANTOW not in capsys.readouterr().out
+
+
+def test_zmiana_w_ciele_funkcji_z_dekoratorem_trasy_przy_braku_mutantow_daje_kod_3(
+    monkeypatch, tmp_path, capsys
+):
+    plik = "src/cockpit/services/trasy.py"
+    zrodlo = '@router.get("/x")\ndef h():\n    return 1\n'
+    s = _Srodowisko(
+        diff=_diff_linii(plik, 3),
+        run_rc=1,
+        run_out="AssertionError: Filtered for specific mutants, but nothing matches",
+    )
+    assert _main(monkeypatch, tmp_path, s, pliki={plik: zrodlo}) == 3
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{plik}:3"]
 
 
 def test_brak_pyproject_daje_kod_2(monkeypatch, tmp_path, capsys):
