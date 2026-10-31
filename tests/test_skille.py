@@ -962,3 +962,104 @@ def test_skill_kokpitu_z_pustym_frontmatterem_jest_bledem_z_nazwa_brakujacego_po
 
     assert "'id'" in str(wyjatek.value)
     assert str(plik) in str(wyjatek.value)
+
+
+# --- HAR-67: metadane z samego frontmattera i wspolna walidacja pol -------------------
+
+
+def _meta(frontmatter: str, katalog: str = "x", *, scisle: bool = True):
+    from cockpit.services.skills import metadane_skilla
+
+    return metadane_skilla(frontmatter, katalog, scisle=scisle)
+
+
+def _komunikat_bledu(frontmatter: str, katalog: str = "zly", *, scisle: bool = True) -> str:
+    with pytest.raises(BlednySkill) as wyjatek:
+        _meta(frontmatter, katalog, scisle=scisle)
+    return str(wyjatek.value)
+
+
+def test_metadane_skilla_oddaja_id_nazwe_i_role_jako_napisy():
+    assert _meta("id: x\nname: Nazwa X\nrole: reviewer\n") == ("x", "Nazwa X", "reviewer")
+
+
+def test_metadane_skilla_konwencyjnego_bez_roli_to_none_a_z_rola_bierze_id_i_nazwe_z_katalogu():
+    assert _meta("name: Cudzy\n", "k", scisle=False) is None
+    assert _meta("role: executor\n", "k", scisle=False) == ("k", "k", "executor")
+
+
+def test_skill_kokpitu_bez_roli_ma_w_komunikacie_nazwe_pola_i_katalog():
+    assert _komunikat_bledu("id: zly\nname: Zly\n") == "brak pola 'role' w 'zly'"
+
+
+def test_skill_kokpitu_z_nieznana_rola_ma_w_komunikacie_liste_dozwolonych_rol_po_przecinku():
+    dozwolone = ", ".join(r.value for r in Rola)
+
+    assert _komunikat_bledu("id: zly\nname: Zly\nrole: czarodziej\n") == (
+        f"nieznana rola 'czarodziej' w 'zly' (dozwolone: {dozwolone})")
+
+
+def test_skill_o_id_roznym_od_katalogu_ma_w_komunikacie_oba_identyfikatory():
+    assert _komunikat_bledu("id: inny\nname: Zly\nrole: author\n") == (
+        "id 'inny' rozni sie od nazwy katalogu 'zly' w 'zly'")
+
+
+def test_frontmatter_z_blednym_yaml_ma_w_komunikacie_nazwe_katalogu():
+    assert _komunikat_bledu("id: zly\nname: [niezamkniete\n").startswith(
+        "niepoprawny frontmatter w 'zly':")
+
+
+def test_frontmatter_bedacy_lista_ma_w_komunikacie_nazwe_katalogu():
+    assert _komunikat_bledu("- id\n- name\n") == "frontmatter w 'zly' nie jest mapa"
+
+
+def test_zbyt_gleboko_zagniezdzony_frontmatter_to_blad_skilla_a_nie_wyjatek_biblioteki():
+    zagniezdzony = "id: x\nname: " + "[" * 3000 + "]" * 3000 + "\nrole: author\n"
+
+    assert _komunikat_bledu(zagniezdzony, "x").startswith("niepoprawny frontmatter w 'x':")
+
+
+@pytest.mark.parametrize("frontmatter", [
+    "id: x\nname: 5\nrole: author\n",      # tylko nazwa nie jest napisem
+    "id: 5\nname: Nazwa\nrole: author\n",  # tylko id nie jest napisem (id == nazwa katalogu "5")
+], ids=["nazwa_liczba", "id_liczba"])
+def test_id_i_nazwa_skilla_musza_byc_napisami_kazde_z_osobna(frontmatter):
+    katalog = "5" if "id: 5" in frontmatter else "x"
+
+    assert _komunikat_bledu(frontmatter, katalog) == (
+        f"id i name skilla '{katalog}' musza byc napisami")
+
+
+def test_lista_w_polu_listowym_skilla_jest_zapisana_jako_lista_napisow(tmp_path: Path):
+    plik = tmp_path / "x" / "SKILL.md"
+    plik.parent.mkdir()
+    plik.write_text(
+        "---\nid: x\nname: X\nrole: author\nconsumes: [1, dwa]\nproduces: [3]\n---\nBrief\n",
+        encoding="utf-8")
+
+    skill = wczytaj_skill(plik)
+
+    assert skill.consumes == ["1", "dwa"]
+    assert skill.produces == ["3"]
+
+
+def test_konwencyjny_skill_bez_roli_ma_w_pominietych_stale_uzasadnienie(repo: Path, dom: Path):
+    katalog = repo / ".claude" / "skills" / "cudzy"
+    katalog.mkdir(parents=True)
+    (katalog / "SKILL.md").write_text("---\nname: Cudzy\n---\nBrief\n", encoding="utf-8")
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert [p.powod for p in rejestr.pominiete] == ["brak pola role - to nie skill kokpitu"]
+
+
+@pytest.mark.parametrize("dodatek", [
+    "utworzono: 2024-02-30\n",                              # ValueError
+    "utworzono: 9999-12-31T23:59:59.999999999-23:59\n",     # OverflowError
+    "? [a, {b: c}]\n: 1\n",                                 # TypeError (klucz zlozony)
+], ids=["niepoprawna_data", "data_poza_zakresem", "klucz_zlozony"])
+def test_frontmatter_ktorego_parser_nie_zbuduje_to_dokladnie_blad_skilla(dodatek):
+    with pytest.raises(BlednySkill) as wyjatek:
+        _meta("id: x\nname: X\nrole: author\n" + dodatek)
+
+    assert type(wyjatek.value) is BlednySkill
