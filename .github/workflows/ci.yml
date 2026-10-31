@@ -40,6 +40,9 @@ jobs:
       - name: Lint - ruff (E4, E7, E9, F)
         run: ruff check .
 
+      - name: Kontrakt API — schemat w repo zgodny z kodem
+        run: python tools/eksport_openapi.py --sprawdz
+
   web:
     runs-on: ubuntu-24.04
     steps:

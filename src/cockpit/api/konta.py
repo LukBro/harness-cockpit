@@ -15,6 +15,7 @@ from cockpit.services import sesje
 from cockpit.services.dostep import Kontekst
 from cockpit.settings import settings
 
+from .schematy import Profil, TokenCsrf, odpowiedzi_bledow
 from .zaleznosci import CIASTECZKO_SESJI, identyfikator_sesji, kontekst_sesji, trasa_publiczna
 
 router = APIRouter(prefix="/api/konto")
@@ -62,44 +63,47 @@ def _skasuj_ciasteczko(odp: Response) -> None:
     )
 
 
-@router.post("/rejestracja", status_code=201, dependencies=[Depends(trasa_publiczna)])
+@router.post("/rejestracja", status_code=201, dependencies=[Depends(trasa_publiczna)],
+             response_model=TokenCsrf, responses=odpowiedzi_bledow(409, 422))
 async def rejestracja(
     dane: DaneRejestracji, odp: Response, s: AsyncSession = Depends(get_session)
-) -> dict[str, str]:
+) -> TokenCsrf:
     user = await uslugi.zarejestruj(
         s, dane.email, dane.haslo.get_secret_value(), dane.nazwa_zespolu
     )
     identyfikator, csrf = await sesje.utworz(s, user)
     _ustaw_ciasteczko(odp, identyfikator)
-    return {"csrf": csrf}
+    return TokenCsrf(csrf=csrf)
 
 
-@router.post("/logowanie", dependencies=[Depends(trasa_publiczna)])
+@router.post("/logowanie", dependencies=[Depends(trasa_publiczna)], response_model=TokenCsrf,
+             responses=odpowiedzi_bledow(401, 422, 429))
 async def logowanie(
     dane: DaneLogowania,
     request: Request,
     odp: Response,
     s: AsyncSession = Depends(get_session),
-) -> dict[str, str]:
+) -> TokenCsrf:
     ip = request.client.host if request.client else BRAK_ADRESU_KLIENTA
     user = await uslugi.zaloguj(s, dane.email, dane.haslo.get_secret_value(), ip)
     identyfikator, csrf = await sesje.utworz(s, user)
     _ustaw_ciasteczko(odp, identyfikator)
-    return {"csrf": csrf}
+    return TokenCsrf(csrf=csrf)
 
 
-@router.get("/ja")
+@router.get("/ja", response_model=Profil, responses=odpowiedzi_bledow(401))
 async def ja(
     kontekst: Kontekst = Depends(kontekst_sesji),
     identyfikator: str = Depends(identyfikator_sesji),
     s: AsyncSession = Depends(get_session),
-) -> dict[str, str]:
+) -> Profil:
     profil = await uslugi.profil(s, kontekst)
     csrf = await sesje.odnow_csrf(s, identyfikator)
-    return {"email": profil.email, "zespol": profil.zespol, "rola": profil.rola.value, "csrf": csrf}
+    return Profil(email=profil.email, zespol=profil.zespol, rola=profil.rola.value, csrf=csrf)
 
 
-@router.post("/wyloguj", status_code=204)
+@router.post("/wyloguj", status_code=204, response_model=None,
+             responses=odpowiedzi_bledow(401, 403))
 async def wyloguj(
     _: Kontekst = Depends(kontekst_sesji),
     identyfikator: str = Depends(identyfikator_sesji),
@@ -111,7 +115,8 @@ async def wyloguj(
     return odp
 
 
-@router.post("/wyloguj-wszedzie", status_code=204)
+@router.post("/wyloguj-wszedzie", status_code=204, response_model=None,
+             responses=odpowiedzi_bledow(401, 403))
 async def wyloguj_wszedzie(
     kontekst: Kontekst = Depends(kontekst_sesji), s: AsyncSession = Depends(get_session)
 ) -> Response:
@@ -121,7 +126,8 @@ async def wyloguj_wszedzie(
     return odp
 
 
-@router.post("/haslo", status_code=204)
+@router.post("/haslo", status_code=204, response_model=None,
+             responses=odpowiedzi_bledow(401, 403, 409, 422))
 async def zmiana_hasla(
     dane: ZmianaHasla,
     kontekst: Kontekst = Depends(kontekst_sesji),
