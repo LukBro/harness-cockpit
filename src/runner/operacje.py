@@ -17,9 +17,12 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from cockpit.services.errors import BlednySkill
+from cockpit.services.skills import NAZWA_PLIKU, ZRODLA, _podziel
 from runner.zakres import PozaZakresem, Zakres
 
 LIMIT_WYNIKOW = 2000
+LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
 DOMYSLNY_LIMIT_ODCZYTU_KB = 512
 _ZMIENNA_LIMITU = "COCKPIT_MAX_READ_KB"
 _CYFRY_ASCII = re.compile(r"[0-9]{1,12}")   # fullmatch: "$" przepuscilby "5\n"
@@ -232,6 +235,113 @@ def _zapisz_plik(sciezka: str, dane: bytes) -> dict:
     return {"sciezka": str(cel), "rozmiar": len(dane)}
 
 
+def _nazwy_podkatalogow(katalog: Path) -> list[str]:
+    """Posortowane nazwy wpisow katalogu; brak katalogu to pusta lista, inny blad dysku to wyjatek."""
+    try:
+        with os.scandir(katalog) as wpisy:
+            return sorted(w.name for w in wpisy)
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+    except OSError as e:
+        raise _blad_dysku(e) from None
+
+
+def _frontmatter_skilla(zakres: Zakres, plik: Path, limit: int) -> tuple[bool, str | None]:
+    """(jest_skillem, frontmatter). Tresc po frontmatterze nigdy nie wychodzi z tej funkcji;
+    plik nieczytelny, za duzy, nie-UTF-8 albo bez frontmattera daje (True, None)."""
+    try:
+        cel = _rozwiaz(zakres, plik)
+    except PozaZakresem:
+        return False, None   # sekret albo dowiazanie poza zakres: pomijamy bez bledu
+    except BladOperacji:
+        return True, None
+    try:
+        tryb = os.stat(cel).st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return False, None
+    except OSError:
+        return True, None
+    if not stat.S_ISREG(tryb):   # katalog albo FIFO: open() moglby zawisnac
+        return False, None
+    try:
+        with open(cel, "rb") as f:
+            surowe = f.read(limit + 1)
+    except OSError:
+        return True, None
+    if len(surowe) > limit:
+        return True, None
+    try:
+        tekst = surowe.decode("utf-8")
+    except UnicodeDecodeError:
+        return True, None
+    if "\0" in tekst:
+        return True, None
+    try:
+        frontmatter, _ = _podziel(tekst, plik)
+    except BlednySkill:
+        return True, None
+    return True, frontmatter
+
+
+def _skille_ze_zrodla(zakres: Zakres, baza: Path, podkatalog: str, zrodlo: str,
+                      limit: int) -> list[dict]:
+    wynik: list[dict] = []
+    for nazwa in _nazwy_podkatalogow(baza / podkatalog):
+        plik = baza / podkatalog / nazwa / NAZWA_PLIKU
+        jest_skillem, frontmatter = _frontmatter_skilla(zakres, plik, limit)
+        if jest_skillem:
+            wynik.append({
+                "zrodlo": zrodlo, "podkatalog": podkatalog, "katalog": nazwa,
+                "sciezka": f"{podkatalog}/{nazwa}/{NAZWA_PLIKU}", "frontmatter": frontmatter})
+    return wynik
+
+
+def _workflow_projektu(zakres: Zakres, projekt: Path) -> list[dict]:
+    katalog = projekt / ".cockpit" / "workflows"
+    wynik: list[dict] = []
+    for nazwa in _nazwy_podkatalogow(katalog):
+        if not nazwa.endswith(".yaml") or nazwa == ".yaml":
+            continue
+        plik = katalog / nazwa
+        try:
+            cel = _rozwiaz(zakres, plik)
+        except PozaZakresem:
+            continue
+        try:
+            if not stat.S_ISREG(os.stat(cel).st_mode):
+                continue
+        except OSError:
+            continue   # zniknal w trakcie albo wiszace dowiazanie
+        wynik.append({"sciezka": f".cockpit/workflows/{nazwa}"})
+    return wynik
+
+
+def _katalog_definicji() -> dict:
+    zakres = Zakres.z_konfiguracji()
+    limit = _limit_odczytu()
+    dom = Path.home()
+    z_domu = [
+        (zrodlo, podkatalog, _skille_ze_zrodla(zakres, dom, podkatalog, zrodlo, limit))
+        for zrodlo, podkatalog, _ in ZRODLA if zrodlo == "dom"
+    ]
+    razem = 0
+    projekty: list[dict] = []
+    for projekt in zakres.projekty:
+        skille: list[dict] = []
+        for zrodlo, podkatalog, _ in ZRODLA:
+            if zrodlo == "repo":
+                skille += _skille_ze_zrodla(zakres, projekt, podkatalog, zrodlo, limit)
+            else:
+                skille += next(s for z, p, s in z_domu if (z, p) == (zrodlo, podkatalog))
+        workflow = _workflow_projektu(zakres, projekt)
+        razem += len(skille) + len(workflow)
+        if razem > LIMIT_DEFINICJI:   # nigdy obciety katalog podany jako pelny
+            raise BladOperacji(
+                "za_duzo", f"za duzo skilli i workflow w projektach (limit {LIMIT_DEFINICJI})")
+        projekty.append({"projekt": str(projekt), "skille": skille, "workflow": workflow})
+    return {"projekty": projekty}
+
+
 async def ping(dane: dict) -> dict:
     return {"pong": True}
 
@@ -259,11 +369,16 @@ async def write_file(dane: dict) -> dict:
     return await asyncio.to_thread(_zapisz_plik, sciezka, surowe)
 
 
+async def katalog_definicji(dane: dict) -> dict:
+    return await asyncio.to_thread(_katalog_definicji)
+
+
 OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "ping": ping,
     "read_file": read_file,
     "list_files": list_files,
     "write_file": write_file,
+    "katalog_definicji": katalog_definicji,
 }
 
 
