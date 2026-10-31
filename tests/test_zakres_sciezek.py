@@ -426,6 +426,61 @@ def test_domyslny_plik_konfiguracji_jest_liczony_przy_wywolaniu_z_aktualnego_dom
     assert swiat.projekt not in zakres.korzenie
 
 
+def test_konfiguracja_z_bledem_skladni_daje_pusty_zakres_i_ostrzezenie_z_sciezka_i_rodzajem_bledu(
+    swiat, tmp_path, capsys,
+):
+    plik = _konfig(tmp_path / "zepsuty.json", "{to nie jest json")
+
+    zakres = Zakres.z_konfiguracji(plik)
+
+    assert zakres.korzenie == ()
+    assert (f"konfiguracja {str(plik)!r} nieczytelna (JSONDecodeError), zakres pusty"
+            in capsys.readouterr().err)
+
+
+def test_konfiguracja_ktorej_nie_da_sie_odczytac_daje_pusty_zakres_i_ostrzezenie(
+    swiat, tmp_path, capsys,
+):
+    katalog = tmp_path / "katalog-zamiast-pliku.json"
+    katalog.mkdir()
+
+    zakres = Zakres.z_konfiguracji(katalog)
+
+    assert zakres.korzenie == ()
+    assert (f"konfiguracja {str(katalog)!r} nieczytelna (IsADirectoryError), zakres pusty"
+            in capsys.readouterr().err)
+
+
+def test_konfiguracja_o_zlej_strukturze_daje_pusty_zakres_i_ostrzezenie_z_sciezka(
+    swiat, tmp_path, capsys,
+):
+    plik = _konfig(tmp_path / "zla-struktura.json", {"projekty": "nie-lista"})
+
+    zakres = Zakres.z_konfiguracji(plik)
+
+    assert zakres.korzenie == ()
+    assert (f"konfiguracja {str(plik)!r} ma zla strukture, zakres pusty"
+            in capsys.readouterr().err)
+
+
+def test_konfiguracja_jest_czytana_jako_utf8_niezaleznie_od_ustawien_systemu(
+    swiat, tmp_path, monkeypatch,
+):
+    plik = _konfig(tmp_path / "cfg.json", {"projekty": [str(swiat.projekt)]})
+    kodowania: list = []
+    prawdziwe = Path.read_text
+
+    def sledzace(self, *args, **kwargs):
+        kodowania.append(kwargs.get("encoding", args[0] if args else None))
+        return prawdziwe(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", sledzace)
+
+    Zakres.z_konfiguracji(plik)
+
+    assert kodowania == ["utf-8"]
+
+
 def test_brak_domyslnego_pliku_konfiguracji_daje_pusty_zakres(swiat):
     assert Zakres.z_konfiguracji().korzenie == ()
 

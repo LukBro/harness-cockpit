@@ -1,19 +1,48 @@
 name: mutation
 
-# Mutation testing on every PR. Mutation score is a trend, not a gate: a low or
-# falling score never fails the build. A run that measured nothing (tests did not
-# start, zero killed) does fail it - broken tooling is not a weak result.
-# A missing mutmut on the runner only skips the step. The ratchet baseline lives in
-# cicd/mutation-baseline.json and is committed by a human from the artifact.
-# `mutmut run` mutates all core modules (mutmut 3 has no diff mode), hence
-# --scope full: the same scope as the sprint-close run sharing this baseline.
-# Surviving mutants of functions changed in the PR are listed in the job summary.
+# Uklad (HAR-149):
+# - `mutation` (wymagany check na pull_request): mutuje TYLKO funkcje zmienione w PR
+#   (tools/mutanty_zmian.py, baza = galaz docelowa PR). Przezywajacy mutant, blad
+#   narzedzia i brak mutmuta to czerwony krok: brak dowodu to nie zielone.
+#   Pelnego przebiegu ani zapadki tu nie ma, wiec check trwa minuty.
+# - `mutation-main` (push na main, niewymagany): pelny przebieg mutmuta, raport i zapadka
+#   baseline. Spadek score nie oblewa joba; przebieg, ktory niczego nie zmierzyl
+#   (testy nie wystartowaly, zero zabitych), oblewa go.
+# - Baseline cicd/mutation-baseline.json commituje czlowiek recznie z artefaktu
+#   `mutation-report` joba mutation-main; CI niczego nie commituje ani nie pushuje.
+#
+# Cache mutmuta: jedyny stan mutmuta lezy w katalogu mutants/ (kopie zrodel, pliki .meta
+# z wynikami i hashami funkcji, mutmut-stats.json). Zapisuje go tylko mutation-main;
+# PR czyta (actions/cache/restore). Klucz w obu jobach:
+# mutmut-v1-<hash tests/** i pyproject.toml>-<hash src/**>.
+# Dowod w kodzie mutmut 3.8.0 (mutmut/__main__.py):
+# - zrodlo nowsze od kopii w mutants/ (swiezy checkout ma mtime "teraz", tar z cache
+#   zachowuje stary mtime) jest generowane od nowa (linie 159-165); przy regeneracji wynik
+#   zostaje tylko dla funkcji o niezmienionym hashu AST, dla zmienionej jest kasowany do
+#   None (linie 198-214). Poza hashem zrodla mutmut unieważnia wyniki takze po odcisku
+#   konfiguracji pytest (_apply_config_change_invalidation, linie 624-655); w kluczu
+#   pokrywa to hash pyproject.toml,
+# - zmiana samych testow nie kasuje zapisanych werdyktow: nowe testy odswiezaja tylko
+#   statystyki (linie 694-698), a survived/killed zostaja ze starego stanu,
+# - kopia testow w mutants/tests tylko przybywa: mutmut dokleja tests/ do also_copy
+#   (mutmut/configuration.py:186) i kopiuje przez shutil.copytree(dirs_exist_ok=True)
+#   (mutmut/utils/file_utils.py:77), wiec nie usuwa plikow. Test usuniety w zmianie
+#   zostalby w przywroconym cache i dalej zabijalby mutanty - falszywa zielen.
+# Zaden job nie przywraca wiec cache z innymi testami ani konfiguracja: oba maja jeden
+# restore-key z hashem tests/** i pyproject.toml. Po zmianie testow albo konfiguracji
+# mutmut buduje mutants/ od zera (job PR mutuje i tak tylko zmienione funkcje, ale
+# zbiera statystyki calego zestawu - dluzej, bez falszywej zieleni), a pelny przebieg
+# i zapadka mierza aktualny stan. Zmiana samego src/** przy tych samych testach jest
+# obsluzona przyrostowo przez hashe AST.
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 jobs:
   mutation:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -29,30 +58,30 @@ jobs:
 
       - run: pip install -e ".[dev]"
 
-      - name: przebieg mutacyjny i zapadka
+      # Tylko odczyt: cache zapisuje mutation-main. Restore po checkoucie, wiec zrodla maja
+      # nowszy mtime niz kopie w mutants/ (mutmut generuje je od nowa, hashe decyduja o wynikach).
+      # Bez golego prefiksu `mutmut-v1-`: kopia testow w mutants/ tylko przybywa, wiec cache
+      # z innymi testami zachowalby test usuniety w PR i falszywie zabijal mutanty. Przy
+      # zmianie testow cache nie wraca i mutants/ powstaje od zera.
+      - uses: actions/cache/restore@v4
+        with:
+          path: mutants
+          key: mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-${{ hashFiles('src/**') }}
+          restore-keys: |
+            mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-
+
+      - name: mutanty zmienionych funkcji
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          command -v mutmut || { echo "narzedzie mutacyjne nie zainstalowane na runnerze - krok mutacji pominiety (instalacja to setup wlasciciela projektu, patrz strona wiki toolchain)"; exit 0; }
-          git fetch origin ${{ github.base_ref }}
-          # mutmut exits non-zero when tests fail to start ("failed to collect stats");
-          # a stale results cache must not hide that, so the exit code is the gate.
-          if ! mutmut run; then
-            echo "::error::mutmut run zakonczyl sie bledem - testy nie wystartowaly w mutants/ (blad zbierania statystyk), sprawdz log mutmut run. Baseline NIE zapisany."
-            exit 1
-          fi
-          mutmut results --all true > mutants/mutmut-results.txt
-          python3 cicd/mutation_report.py --report mutants/mutmut-results.txt --format mutmut > mutation-summary.json
-          # Zero killed out of many mutants means the tests never ran (e.g. import error
-          # inside mutants/), not a weak suite - such a run must not become the baseline.
-          if python3 -c "import json,sys; d=json.load(open('mutation-summary.json')); sys.exit(0 if d['total'] and not d['killed'] else 1)"; then
-            echo "::error::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ (sprawdz log mutmut run). Baseline NIE zapisany."
-            exit 1
-          fi
-          # Survivors among mutants of functions changed in this PR go to the job summary
-          # and the artifact. Exit 1 = survivors listed (a trend, the step stays green);
-          # exit 0 = clean; anything else = tool failure, which is missing evidence, not
-          # success. Hence `|| kod=$?` instead of swallowing the exit code: it must reach the case below.
+          # Brak mutmuta to brak pomiaru, wiec czerwony krok, nie pominiecie.
+          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono, check nie moze przejsc"; exit 1; }
+          git fetch origin "$BASE_REF"
+          mkdir -p mutants
+          # Kod wyjscia narzedzia: 0 = czysto, 1 = przezywajace mutanty, inny = blad narzedzia.
+          # Przechwytujemy go do zmiennej, zeby trafil do `case` ponizej, a nie zostal polkniety.
           kod=0
-          python3 tools/mutanty_zmian.py --baza origin/${{ github.base_ref }} > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
+          python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
           {
             echo "## Mutanty zmienionych funkcji"
             echo
@@ -61,7 +90,7 @@ jobs:
                 echo "czysto - brak przezywajacych mutantow albo brak zmienionych funkcji"
                 ;;
               1)
-                echo "Przezywajace mutanty zmienionych funkcji (trend, nie bramka - nie oblewaja builda):"
+                echo "Przezywajace mutanty zmienionych funkcji (bramka - krok jest czerwony):"
                 echo
                 echo '```'
                 cat mutants/mutanty-zmian.txt
@@ -76,11 +105,85 @@ jobs:
                 ;;
             esac
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$kod" -gt 1 ]; then
-            echo "::error::mutanty_zmian.py zakonczyl sie bledem (kod $kod): $(tr '\n' ' ' < mutants/mutanty-zmian.err) Baseline NIE zapisany."
+          case "$kod" in
+            0)
+              ;;
+            1)
+              echo "::error::przezywajace mutanty zmienionych funkcji - lista w podsumowaniu zadania i w artefakcie mutation-report"
+              exit 1
+              ;;
+            *)
+              echo "::error::mutanty_zmian.py zakonczyl sie bledem (kod $kod): $(tr '\n' ' ' < mutants/mutanty-zmian.err)"
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: |
+            mutants/mutanty-zmian.txt
+            mutants/mutanty-zmian.err
+
+  mutation-main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    # Dwa pelne przebiegi naraz tylko walcza o CPU i cache; nie przerywamy trwajacego,
+    # bo jego wynik trafia do baseline.
+    concurrency:
+      group: mutation-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      # Odczyt i zapis: jedyny job, ktory zapisuje cache mutmuta. Przywraca tylko cache z tymi
+      # samymi testami i konfiguracja (jeden restore-key z hashem tests/** i pyproject.toml):
+      # zmiana testow nie kasuje werdyktow mutmuta, wiec stary cache zafalszowalby pelny przebieg.
+      - uses: actions/cache@v4
+        with:
+          path: mutants
+          key: mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-${{ hashFiles('src/**') }}
+          restore-keys: |
+            mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-
+
+      - name: pelny przebieg mutacyjny i zapadka
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # Brak mutmuta to brak pomiaru, wiec czerwony krok, nie pominiecie.
+          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono. Baseline NIE zapisany."; exit 1; }
+          # mutmut exits non-zero when tests fail to start ("failed to collect stats");
+          # a stale results cache must not hide that, so the exit code is the gate.
+          if ! mutmut run; then
+            echo "::error::mutmut run zakonczyl sie bledem - testy nie wystartowaly w mutants/ (blad zbierania statystyk), sprawdz log mutmut run. Baseline NIE zapisany."
             exit 1
           fi
-          python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit ${{ github.event.pull_request.head.sha }} || true
+          mutmut results --all true > mutants/mutmut-results.txt
+          python3 cicd/mutation_report.py --report mutants/mutmut-results.txt --format mutmut > mutation-summary.json
+          # Zero killed out of many mutants means the tests never ran (e.g. import error
+          # inside mutants/), not a weak suite - such a run must not become the baseline.
+          if python3 -c "import json,sys; d=json.load(open('mutation-summary.json')); sys.exit(0 if d['total'] and not d['killed'] else 1)"; then
+            echo "::error::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ (sprawdz log mutmut run). Baseline NIE zapisany."
+            exit 1
+          fi
+          # Zapadka zwraca 0 dla kazdego porownania (takze spadku); kod niezerowy to wylacznie
+          # blad wejscia (zly JSON, blad zapisu, brak --commit). Ukrycie go dalo by zielony job
+          # i cicho martwa zapadke po zepsutym baseline.
+          if ! python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit "$COMMIT_SHA"; then
+            echo "::error::zapadka baseline zakonczyla sie bledem wejscia (zly baseline albo summary, blad zapisu) - zapadka nie dziala, napraw cicd/mutation-baseline.json"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -88,6 +191,5 @@ jobs:
           name: mutation-report
           path: |
             mutants/mutmut-results.txt
-            mutants/mutanty-zmian.txt
             mutation-summary.json
             cicd/mutation-baseline.json

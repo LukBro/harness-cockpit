@@ -32,7 +32,8 @@ pytestmark = [
     ),
 ]
 
-TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja", "blokada_logowania"}
+TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja", "blokada_logowania",
+                 "definicja"}
 TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole"}
 
 
@@ -399,3 +400,63 @@ def test_zdarzenie_zapisane_przez_model_bez_pomiaru_dlugosci_ma_dlugosc_nieznana
         ).one()[0]
 
     assert _z_polaczeniem(zapytaj) is None
+
+
+# --- HAR-67: katalog skilli i workflow w bazie (tabela `definicja`) ---
+
+
+def _wstaw_runnera(c) -> None:
+    _wstaw_zespol(c)
+    c.execute(
+        text(
+            "INSERT INTO runner (id, tenant_id, name, version, token_hash) "
+            "VALUES ('rn1', 't1', 'runner', '', 'h')"
+        )
+    )
+
+
+def _wstaw_definicje(c, id_wiersza: str, *, klucz: str = "x") -> None:
+    c.execute(
+        text(
+            "INSERT INTO definicja (id, tenant_id, runner_id, projekt, rodzaj, klucz, nazwa, "
+            "sciezka, odswiezono_at) "
+            "VALUES (:id, 't1', 'rn1', '/p', 'skill', :klucz, 'Nazwa', 'a/SKILL.md', now())"
+        ),
+        {"id": id_wiersza, "klucz": klucz},
+    )
+
+
+def test_cofniecie_do_migracji_0007_usuwa_tylko_tabele_katalogu_definicji(cfg):
+    command.upgrade(cfg, "head")
+    tabele, _ = _tabele_i_typy_w_public()
+    assert "definicja" in tabele  # kontrast: przed cofnieciem tabela jest
+
+    command.downgrade(cfg, "0007")
+
+    tabele, _ = _tabele_i_typy_w_public()
+    assert "definicja" not in tabele
+    assert (TABELE_MODELU - {"definicja"}) <= tabele
+
+
+def test_ta_sama_definicja_tego_samego_runnera_i_projektu_nie_moze_wystapic_dwa_razy(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_runnera(c)
+        _wstaw_definicje(c, "d1")
+        _wstaw_definicje(c, "d2")  # ten sam klucz, rodzaj, projekt, runner, zespol
+
+    with pytest.raises(IntegrityError, match="uq_definicja_klucz"):
+        _z_polaczeniem(zapytaj)
+
+
+def test_definicja_o_innym_kluczu_mieszka_obok_pierwszej(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_runnera(c)
+        _wstaw_definicje(c, "d1", klucz="x")
+        _wstaw_definicje(c, "d2", klucz="y")
+        return c.execute(text("SELECT count(*) FROM definicja")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == 2

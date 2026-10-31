@@ -28,7 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import dostep, pliki_runnera
+from cockpit.services import dostep, katalog, pliki_runnera
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import NieZnaleziono
@@ -327,6 +327,24 @@ async def zapisz_plik(
     dostep.wymagaj(k, Uprawnienie.edycja_definicji)  # przed zapytaniem: viewer nie budzi runnera
     return await pliki_runnera.zapisz(
         s, k.tenant_id, body.sciezka, body.tresc, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.get("/api/katalog")
+async def odczytaj_katalog(
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await katalog.katalog(s, k.tenant_id)
+
+
+@app.post("/api/katalog/odswiez")
+async def odswiez_katalog(
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)   # odswiezenie nie zmienia plikow uzytkownika
+    return await katalog.odswiez_katalog(s, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)
 
 
 STATIC = Path(__file__).resolve().parent.parent / "static"

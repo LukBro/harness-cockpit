@@ -56,12 +56,18 @@ def _jest_sekretem(nazwa: str) -> bool:
 
 
 class Zakres:
-    def __init__(self, korzenie) -> None:
+    def __init__(self, korzenie, projekty=()) -> None:
         self._korzenie = tuple(Path(k).resolve() for k in korzenie)
+        self._projekty = tuple(Path(k).resolve() for k in projekty)
 
     @property
     def korzenie(self) -> tuple[Path, ...]:
         return self._korzenie
+
+    @property
+    def projekty(self) -> tuple[Path, ...]:
+        """Korzenie projektow z `runner.json`, bez rejestru domowego (HAR-67)."""
+        return self._projekty
 
     @classmethod
     def z_konfiguracji(cls, plik: Path | str | None = None) -> Zakres:
@@ -82,9 +88,10 @@ class Zakres:
             korzen = cls._korzen_projektu(wpis)
             if korzen is not None:
                 korzenie.append(korzen)
+        projekty = list(korzenie)
         dom = Path.home()
         korzenie += [dom / podkatalog for baza, podkatalog, _ in ZRODLA if baza == "dom"]
-        return cls(korzenie)
+        return cls(korzenie, projekty)
 
     @staticmethod
     def _korzen_projektu(wpis) -> Path | None:
