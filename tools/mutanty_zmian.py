@@ -2,8 +2,13 @@
 
 Mapuje diff wzgledem bazy na wzorce mutantow mutmuta (tylko zmienione funkcje i
 metody), uruchamia na nich mutmuta i wypisuje przezywajace mutanty.
-Kody wyjscia: 0 - czysto (albo brak zmienionych funkcji), 1 - sa survivory,
-2 - blad narzedzia. Skrypt niczego nie usuwa ani nie czysci cache `mutants/`.
+Kody wyjscia: 0 - wszystkie mutanty zmienionych funkcji zabite (albo brak zmienionych
+funkcji) i brak zmian poza zasiegiem mutmuta, 1 - sa survivory, 2 - blad narzedzia,
+3 - zmiany poza zasiegiem mutmuta (lista plik:linia; to nie jest "czysto": dopisz reczny
+mutant i test). Poza zasiegiem: pliki `.py` pod `src/` spoza `source_paths` oraz linie
+kodu poza funkcjami i metodami w `source_paths` (bez pustych linii, komentarzy,
+docstringow i importow). Priorytet kodow: 2 > 1 > 3 > 0.
+Skrypt niczego nie usuwa ani nie czysci cache `mutants/`.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ from pathlib import Path
 
 ZNAK = "ǁ"  # separator klasy i metody w nazwach mutantow mutmuta
 STATUSY_SURVIVORA = {"survived", "no tests"}
+NAGLOWEK_BEZ_MUTANTOW = "bez mutantów — sprawdź ręcznie"
 NAGLOWEK_HUNKA = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -117,6 +123,84 @@ def wzorce(zmiany: dict[str, set[int]], source_paths: list[str], korzen: Path) -
     return sorted(wynik)
 
 
+def _mutowana(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    # mutmut 3.8.0 pomija funkcje z dekoratorem, chyba ze jest nim goly staticmethod/classmethod
+    # (mutmut/mutation/file_mutation.py, "ignore decorated functions").
+    if not wezel.decorator_list:
+        return True
+    dekorator = wezel.decorator_list[0]
+    return (
+        len(wezel.decorator_list) == 1
+        and isinstance(dekorator, ast.Name)
+        and dekorator.id in {"staticmethod", "classmethod"}
+    )
+
+
+def linie_bez_mutantow(zrodlo: str, linie: set[int], *, w_zrodlach: bool) -> list[int]:
+    """Zmienione linie kodu, dla ktorych mutmut nie ma mutantow (posortowane)."""
+    try:
+        drzewo = ast.parse(zrodlo)
+    except (SyntaxError, ValueError) as blad:
+        raise BladNarzedzia(f"nie da sie sparsowac: {blad}") from blad
+    funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)
+    pominiete: list[tuple[int, int]] = []
+
+    for wezel in ast.walk(drzewo):
+        if isinstance(wezel, (ast.Import, ast.ImportFrom)):
+            pominiete.append((wezel.lineno, wezel.end_lineno or wezel.lineno))
+        if isinstance(wezel, (ast.Module, ast.ClassDef, *funkcje)) and wezel.body:
+            pierwsza = wezel.body[0]
+            if (
+                isinstance(pierwsza, ast.Expr)
+                and isinstance(pierwsza.value, ast.Constant)
+                and isinstance(pierwsza.value.value, str)
+            ):
+                pominiete.append((pierwsza.lineno, pierwsza.end_lineno or pierwsza.lineno))
+    if w_zrodlach:
+        for wezel in drzewo.body:
+            if isinstance(wezel, funkcje) and _mutowana(wezel):
+                pominiete.append(_zakres(wezel))
+            elif isinstance(wezel, ast.ClassDef):
+                pominiete.extend(
+                    _zakres(m) for m in wezel.body if isinstance(m, funkcje) and _mutowana(m)
+                )
+
+    fizyczne = zrodlo.splitlines()
+    wynik: list[int] = []
+    for numer in sorted(linie):
+        if not 1 <= numer <= len(fizyczne):
+            continue
+        tekst = fizyczne[numer - 1].strip()
+        if not tekst or tekst.startswith("#"):
+            continue
+        if any(start <= numer <= koniec for start, koniec in pominiete):
+            continue
+        wynik.append(numer)
+    return wynik
+
+
+def bez_mutantow(zmiany: dict[str, set[int]], source_paths: list[str], korzen: Path) -> list[str]:
+    """Wpisy `plik:linia` dla zmian pod `src/`, ktorych mutmut nie mutuje."""
+    wpisy: list[tuple[str, int]] = []
+    for sciezka, linie in zmiany.items():
+        if not sciezka.endswith(".py") or not sciezka.startswith("src/"):
+            continue
+        try:
+            zrodlo = (korzen / sciezka).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeDecodeError) as blad:
+            raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
+        try:
+            numery = linie_bez_mutantow(
+                zrodlo, linie, w_zrodlach=_w_zrodlach(sciezka, source_paths)
+            )
+        except BladNarzedzia as blad:
+            raise BladNarzedzia(f"{sciezka}: {blad}") from blad
+        wpisy.extend((sciezka, numer) for numer in numery)
+    return [f"{plik}:{numer}" for plik, numer in sorted(wpisy)]
+
+
 def source_paths_z_pyproject(pyproject: Path) -> list[str]:
     """Czyta `[tool.mutmut] source_paths` z pyproject.toml."""
     try:
@@ -196,12 +280,13 @@ def _przebieg(baza: str, korzen: Path) -> int:
             "--dst-prefix=b/",
             sha,
             "--",
+            "src/",
             *source_paths,
         ]
     )
     if roznica.returncode != 0:
         raise BladNarzedzia(f"git diff nie powiodl sie: {roznica.stderr.strip()}")
-    nowe = uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", *source_paths])
+    nowe = uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", "src/", *source_paths])
     if nowe.returncode != 0:
         raise BladNarzedzia(f"git ls-files nie powiodl sie: {nowe.stderr.strip()}")
 
@@ -209,16 +294,18 @@ def _przebieg(baza: str, korzen: Path) -> int:
     for sciezka, linie in _nowe_pliki(nowe.stdout, korzen).items():
         zmiany.setdefault(sciezka, set()).update(linie)
 
+    poza_zasiegiem = bez_mutantow(zmiany, source_paths, korzen)
     lista = wzorce(zmiany, source_paths, korzen)
     if not lista:
-        print("brak zmienionych funkcji - nie ma czego mutowac")
-        return 0
+        if not poza_zasiegiem:
+            print("brak zmienionych funkcji - nie ma czego mutowac", file=sys.stderr)
+        return _zakoncz([], poza_zasiegiem)
 
     bieg = uruchom([sys.executable, "-m", "mutmut", "run", *lista])
     if bieg.returncode != 0:
         if "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
-            print("mutmut nie wygenerowal mutantow dla zmienionych funkcji")
-            return 0
+            print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
+            return _zakoncz([], poza_zasiegiem)
         raise BladNarzedzia(f"mutmut run zakonczyl sie bledem:\n{_koncowka(bieg)}")
 
     wyniki = uruchom([sys.executable, "-m", "mutmut", "results"])
@@ -226,19 +313,36 @@ def _przebieg(baza: str, korzen: Path) -> int:
         raise BladNarzedzia(f"mutmut results zakonczyl sie bledem:\n{_koncowka(wyniki)}")
 
     survivory = przezywajace(wyniki.stdout, lista)
-    if not survivory:
+    if not survivory and not poza_zasiegiem:
         print("brak przezywajacych mutantow w zmienionych funkcjach", file=sys.stderr)
-        return 0
-    for klucz in survivory:
-        print(klucz)
-    print(
-        "Przezywajace mutanty: `python -m mutmut show <klucz>` pokazuje mutacje.\n"
-        "Uwaga: skrypt nie czysci cache `mutants/`; po zmianie samych testow wynik moze pochodzic "
-        "ze starego przebiegu - uruchom skrypt w swiezym klonie repozytorium w nowym katalogu "
-        "tymczasowym (z dokopiowanymi niescommitowanymi zmianami), nie usuwaj `mutants/` w sesji agenta.",
-        file=sys.stderr,
-    )
-    return 1
+    return _zakoncz(survivory, poza_zasiegiem)
+
+
+def _zakoncz(survivory: list[str], poza_zasiegiem: list[str]) -> int:
+    """Wspolne zakonczenie: wypisuje wyniki i zwraca kod (1 > 3 > 0)."""
+    if survivory:
+        for klucz in survivory:
+            print(klucz)
+        if poza_zasiegiem:
+            print("\n".join([NAGLOWEK_BEZ_MUTANTOW, *poza_zasiegiem]), file=sys.stderr)
+        print(
+            "Przezywajace mutanty: `python -m mutmut show <klucz>` pokazuje mutacje.\n"
+            "Uwaga: skrypt nie czysci cache `mutants/`; po zmianie samych testow wynik moze "
+            "pochodzic ze starego przebiegu - uruchom skrypt w swiezym klonie repozytorium w "
+            "nowym katalogu tymczasowym (z dokopiowanymi niescommitowanymi zmianami), nie "
+            "usuwaj `mutants/` w sesji agenta.",
+            file=sys.stderr,
+        )
+        return 1
+    if poza_zasiegiem:
+        print("\n".join([NAGLOWEK_BEZ_MUTANTOW, *poza_zasiegiem]))
+        print(
+            "Mutmut tych zmian nie mutuje: dopisz reczny mutant i test - "
+            ".claude/rules/test-odroznia-regule.md",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
