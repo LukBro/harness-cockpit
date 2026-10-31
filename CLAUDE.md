@@ -12,7 +12,7 @@ warunkiem korzystania — nie jest też zakazany.
 
 ## Niezmienniki — NEVER
 
-Lista jest bytem w kodzie, nie zbiorem zdań. Walidator sprawdza każdy punkt.
+Lista jest bytem w kodzie, nie zbiorem zdań. Każdy punkt ma sprawdzenie w `SPRAWDZENIA`; na ścieżce wykonania egzekwowane są tylko te z `EGZEKWOWANE` (oba w `src/cockpit/services/walidacja.py`).
 
 - `role_binding` — rola ustawia tier i prawo zapisu razem; nigdy osobno
 - `reviewer_readonly` — recenzent NIGDY nie dostaje prawa zapisu, w żadnym backendzie
@@ -40,6 +40,32 @@ Skill ma jedną z czterech ról (`Rola` w `src/cockpit/services/invariants.py`):
 Jedynym źródłem tieru i prawa zapisu jest `profil_roli(rola)` w `invariants.py`.
 Model ustawia się w profilu backendu u runnera (BRO-98), nie w workflow.
 
+## Pierwszeństwo warstw — MUST / NEVER
+
+Przy sprzeczności instrukcji wygrywa warstwa wyżej na liście (BRO-96):
+
+1. niezmienniki silnika — sekcja „Niezmienniki — NEVER” i `Niezmiennik` w `src/cockpit/services/invariants.py`
+2. `.cockpit/project.yaml` repozytorium, na którym działa run
+3. `CLAUDE.md` katalogu — najbliższy katalogowi, którego dotyczy krok
+4. `CLAUDE.md` korzenia
+5. `SKILL.md` kroku
+6. `.ai/lessons.md`
+
+- MUST: przy sprzeczności stosuj warstwę wyższą.
+  WHY: pomiar BRO-126 na `palserwis` — 25 konfliktów, bo nikt nie zapisał, która warstwa wygrywa.
+- NEVER: `.ai/lessons.md` nie nadpisuje poziomów 1–4; lekcja sprzeczna z nimi jest do poprawki, nie do wykonania.
+- Kolejność jest na razie regułą tekstu; wymuszenie w kodzie to HAR-87.
+
+## Instrukcje poza korzeniem — MUST / NEVER
+
+- MUST: instrukcja potrzebna krokowi leży w korzeniu repozytorium albo brief skilla
+  wymienia ją jako ścieżkę.
+  WHY: instrukcje w podkatalogach nie docierają do kontekstu agenta automatycznie —
+  agent, który ich nie przeczyta, działa tak, jakby ich nie było.
+- MUST: przed pierwszą zmianą przeczytaj `.ai/qa/AGENTS.md` (konwencje testów)
+  i `.ai/lessons.md` (pułapki z zakresem: krok, ścieżki).
+- MAY: decyzje z uzasadnieniem czytaj w `.ai/specs/`, gdy krok ich dotyczy.
+
 ## Granice — MUST / NEVER
 
 - MUST: prompt agenta niesie **ścieżkę** do pliku skilla, nigdy jego treść.
@@ -66,6 +92,16 @@ Model ustawia się w profilu backendu u runnera (BRO-98), nie w workflow.
   sesji głównej, więc reguła musi żyć tutaj.
 - NEVER: `--amend` ani przepisywanie commita, który jest już wypchnięty, bez
   pytania.
+
+## Deliverable — MUST / NEVER
+
+Deliverable runu to zmiany w kopii roboczej repozytorium plus artefakty w katalogu runu.
+
+- MUST: run zakończony sukcesem ma stan „do odbioru” (`RunStatus.to_accept`).
+  NEVER: nie nazywaj go „gotowym”.
+  WHY: o przyjęciu wyniku decyduje człowiek, nie silnik (stan z BRO-108).
+- MUST: zmiany zostają niezacommitowane — spójnie z `no_git_write`.
+- MUST: `collect` i `integrate` to akcje człowieka po odbiorze, nie kroki runu.
 
 ## Decyzje implementacyjne
 
