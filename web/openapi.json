@@ -1,0 +1,2206 @@
+{
+  "components": {
+    "schemas": {
+      "BackendIn": {
+        "properties": {
+          "auth": {
+            "enum": [
+              "subscription",
+              "api_key"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "nazwa": {
+            "title": "Nazwa",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nazwa",
+          "auth"
+        ],
+        "title": "BackendIn",
+        "type": "object"
+      },
+      "BackendRunnera": {
+        "properties": {
+          "auth": {
+            "enum": [
+              "subscription",
+              "api_key"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "nazwa": {
+            "title": "Nazwa",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nazwa",
+          "auth"
+        ],
+        "title": "BackendRunnera",
+        "type": "object"
+      },
+      "Blad": {
+        "description": "Ciało każdej odpowiedzi błędu. `detail` to napis albo — przy 422 z walidacji — lista.",
+        "properties": {
+          "aktywny_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aktywny Run Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "Blad",
+        "type": "object"
+      },
+      "DaneLogowania": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "haslo": {
+            "format": "password",
+            "maxLength": 256,
+            "title": "Haslo",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "haslo"
+        ],
+        "title": "DaneLogowania",
+        "type": "object"
+      },
+      "DaneRejestracji": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "haslo": {
+            "format": "password",
+            "maxLength": 256,
+            "title": "Haslo",
+            "type": "string",
+            "writeOnly": true
+          },
+          "nazwa_zespolu": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nazwa Zespolu"
+          }
+        },
+        "required": [
+          "email",
+          "haslo"
+        ],
+        "title": "DaneRejestracji",
+        "type": "object"
+      },
+      "DefinicjaKatalogu": {
+        "properties": {
+          "klucz": {
+            "title": "Klucz",
+            "type": "string"
+          },
+          "nazwa": {
+            "title": "Nazwa",
+            "type": "string"
+          },
+          "odswiezono_at": {
+            "title": "Odswiezono At",
+            "type": "string"
+          },
+          "projekt": {
+            "title": "Projekt",
+            "type": "string"
+          },
+          "rodzaj": {
+            "title": "Rodzaj",
+            "type": "string"
+          },
+          "rola": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rola"
+          },
+          "runner_id": {
+            "title": "Runner Id",
+            "type": "string"
+          },
+          "sciezka": {
+            "title": "Sciezka",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runner_id",
+          "projekt",
+          "rodzaj",
+          "klucz",
+          "nazwa",
+          "rola",
+          "sciezka",
+          "odswiezono_at"
+        ],
+        "title": "DefinicjaKatalogu",
+        "type": "object"
+      },
+      "EventIn": {
+        "properties": {
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_type": {
+            "default": "",
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "cost_source": {
+            "default": "unavailable",
+            "title": "Cost Source",
+            "type": "string"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "event_id": {
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "step_id": {
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "text_full_len": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Full Len"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "wyslane_output": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wyslane Output"
+          }
+        },
+        "required": [
+          "run_id",
+          "event_id",
+          "step_id",
+          "kind"
+        ],
+        "title": "EventIn",
+        "type": "object"
+      },
+      "Katalog": {
+        "properties": {
+          "definicje": {
+            "items": {
+              "$ref": "#/components/schemas/DefinicjaKatalogu"
+            },
+            "title": "Definicje",
+            "type": "array"
+          },
+          "odswiezono_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Odswiezono At"
+          }
+        },
+        "required": [
+          "odswiezono_at",
+          "definicje"
+        ],
+        "title": "Katalog",
+        "type": "object"
+      },
+      "KatalogOdswiezony": {
+        "properties": {
+          "definicje": {
+            "items": {
+              "$ref": "#/components/schemas/DefinicjaKatalogu"
+            },
+            "title": "Definicje",
+            "type": "array"
+          },
+          "odswiezono_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Odswiezono At"
+          },
+          "pominiete": {
+            "title": "Pominiete",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "odswiezono_at",
+          "definicje",
+          "pominiete"
+        ],
+        "title": "KatalogOdswiezony",
+        "type": "object"
+      },
+      "ListaPlikow": {
+        "properties": {
+          "obcieto": {
+            "title": "Obcieto",
+            "type": "boolean"
+          },
+          "pliki": {
+            "items": {
+              "$ref": "#/components/schemas/WpisPliku"
+            },
+            "title": "Pliki",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pliki",
+          "obcieto"
+        ],
+        "title": "ListaPlikow",
+        "type": "object"
+      },
+      "OdpowiedzRunneraIn": {
+        "properties": {
+          "blad": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blad"
+          },
+          "kod": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kod"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "req_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Req Id",
+            "type": "string"
+          },
+          "wynik": {
+            "title": "Wynik"
+          }
+        },
+        "required": [
+          "req_id",
+          "ok"
+        ],
+        "title": "OdpowiedzRunneraIn",
+        "type": "object"
+      },
+      "PlikIn": {
+        "properties": {
+          "sciezka": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Sciezka",
+            "type": "string"
+          },
+          "tresc": {
+            "maxLength": 3145728,
+            "title": "Tresc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sciezka",
+          "tresc"
+        ],
+        "title": "PlikIn",
+        "type": "object"
+      },
+      "PlikOdczytany": {
+        "properties": {
+          "rozmiar": {
+            "title": "Rozmiar",
+            "type": "integer"
+          },
+          "sciezka": {
+            "title": "Sciezka",
+            "type": "string"
+          },
+          "tresc": {
+            "title": "Tresc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sciezka",
+          "tresc",
+          "rozmiar"
+        ],
+        "title": "PlikOdczytany",
+        "type": "object"
+      },
+      "PlikZapisany": {
+        "properties": {
+          "rozmiar": {
+            "title": "Rozmiar",
+            "type": "integer"
+          },
+          "sciezka": {
+            "title": "Sciezka",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sciezka",
+          "rozmiar"
+        ],
+        "title": "PlikZapisany",
+        "type": "object"
+      },
+      "Profil": {
+        "properties": {
+          "csrf": {
+            "title": "Csrf",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "rola": {
+            "title": "Rola",
+            "type": "string"
+          },
+          "zespol": {
+            "title": "Zespol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "zespol",
+          "rola",
+          "csrf"
+        ],
+        "title": "Profil",
+        "type": "object"
+      },
+      "RunCreate": {
+        "properties": {
+          "command": {
+            "default": [
+              "echo",
+              "szkielet dziala"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Command",
+            "type": "array"
+          },
+          "potwierdz_rownolegly": {
+            "default": false,
+            "title": "Potwierdz Rownolegly",
+            "type": "boolean"
+          },
+          "ticket_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Id"
+          },
+          "workflow": {
+            "default": "szkielet",
+            "title": "Workflow",
+            "type": "string"
+          }
+        },
+        "title": "RunCreate",
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "waiting",
+          "to_accept",
+          "failed",
+          "skipped",
+          "aborted"
+        ],
+        "title": "RunStatus",
+        "type": "string"
+      },
+      "RunSzczegoly": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ZdarzenieRunu"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "runner_kind": {
+            "$ref": "#/components/schemas/RunnerKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "workflow": {
+            "title": "Workflow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workflow",
+          "status",
+          "runner_kind",
+          "reason",
+          "events"
+        ],
+        "title": "RunSzczegoly",
+        "type": "object"
+      },
+      "RunUtworzony": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "RunUtworzony",
+        "type": "object"
+      },
+      "RunnerKind": {
+        "enum": [
+          "local",
+          "remote",
+          "platform"
+        ],
+        "title": "RunnerKind",
+        "type": "string"
+      },
+      "RunnerRegister": {
+        "properties": {
+          "backends": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BackendIn"
+            },
+            "title": "Backends",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "default": "",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RunnerRegister",
+        "type": "object"
+      },
+      "RunnerZameldowany": {
+        "properties": {
+          "heartbeat_co_s": {
+            "title": "Heartbeat Co S",
+            "type": "integer"
+          },
+          "runner_id": {
+            "title": "Runner Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runner_id",
+          "tenant_id",
+          "heartbeat_co_s"
+        ],
+        "title": "RunnerZameldowany",
+        "type": "object"
+      },
+      "RunnerZespolu": {
+        "properties": {
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/BackendRunnera"
+            },
+            "title": "Backends",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "online": {
+            "title": "Online",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "backends",
+          "online",
+          "last_seen_at"
+        ],
+        "title": "RunnerZespolu",
+        "type": "object"
+      },
+      "TokenCsrf": {
+        "properties": {
+          "csrf": {
+            "title": "Csrf",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrf"
+        ],
+        "title": "TokenCsrf",
+        "type": "object"
+      },
+      "WpisPliku": {
+        "properties": {
+          "katalog": {
+            "title": "Katalog",
+            "type": "boolean"
+          },
+          "sciezka": {
+            "title": "Sciezka",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sciezka",
+          "katalog"
+        ],
+        "title": "WpisPliku",
+        "type": "object"
+      },
+      "ZdarzeniePrzyjete": {
+        "properties": {
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq"
+        ],
+        "title": "ZdarzeniePrzyjete",
+        "type": "object"
+      },
+      "ZdarzenieRunu": {
+        "properties": {
+          "agent_type": {
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "text_full_len": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Full Len"
+          },
+          "text_truncated": {
+            "title": "Text Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "seq",
+          "kind",
+          "text",
+          "step_id",
+          "agent_type",
+          "text_truncated",
+          "text_full_len"
+        ],
+        "title": "ZdarzenieRunu",
+        "type": "object"
+      },
+      "Zdrowie": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "Zdrowie",
+        "type": "object"
+      },
+      "ZmianaHasla": {
+        "properties": {
+          "nowe": {
+            "format": "password",
+            "maxLength": 256,
+            "title": "Nowe",
+            "type": "string",
+            "writeOnly": true
+          },
+          "stare": {
+            "format": "password",
+            "maxLength": 256,
+            "title": "Stare",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "stare",
+          "nowe"
+        ],
+        "title": "ZmianaHasla",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Harness Cockpit",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/events": {
+      "post": {
+        "operationId": "ingest_event_api_events_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZdarzeniePrzyjete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Ingest Event"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Zdrowie"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/katalog": {
+      "get": {
+        "operationId": "odczytaj_katalog_api_katalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Katalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Odczytaj Katalog"
+      }
+    },
+    "/api/katalog/odswiez": {
+      "post": {
+        "operationId": "odswiez_katalog_api_katalog_odswiez_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KatalogOdswiezony"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Odswiez Katalog"
+      }
+    },
+    "/api/konto/haslo": {
+      "post": {
+        "operationId": "zmiana_hasla_api_konto_haslo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZmianaHasla"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Zmiana Hasla"
+      }
+    },
+    "/api/konto/ja": {
+      "get": {
+        "operationId": "ja_api_konto_ja_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profil"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Ja"
+      }
+    },
+    "/api/konto/logowanie": {
+      "post": {
+        "operationId": "logowanie_api_konto_logowanie_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DaneLogowania"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenCsrf"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zbyt wiele prób"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Logowanie"
+      }
+    },
+    "/api/konto/rejestracja": {
+      "post": {
+        "operationId": "rejestracja_api_konto_rejestracja_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DaneRejestracji"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenCsrf"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Rejestracja"
+      }
+    },
+    "/api/konto/wyloguj": {
+      "post": {
+        "operationId": "wyloguj_api_konto_wyloguj_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Wyloguj"
+      }
+    },
+    "/api/konto/wyloguj-wszedzie": {
+      "post": {
+        "operationId": "wyloguj_wszedzie_api_konto_wyloguj_wszedzie_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Wyloguj Wszedzie"
+      }
+    },
+    "/api/pliki": {
+      "get": {
+        "operationId": "czytaj_plik_api_pliki_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sciezka",
+            "required": true,
+            "schema": {
+              "maxLength": 4096,
+              "title": "Sciezka",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlikOdczytany"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Czytaj Plik"
+      },
+      "put": {
+        "operationId": "zapisz_plik_api_pliki_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlikIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlikZapisany"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Zapisz Plik"
+      }
+    },
+    "/api/pliki/lista": {
+      "get": {
+        "operationId": "listuj_pliki_api_pliki_lista_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sciezka",
+            "required": true,
+            "schema": {
+              "maxLength": 4096,
+              "title": "Sciezka",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wzorzec",
+            "required": false,
+            "schema": {
+              "default": "*",
+              "maxLength": 512,
+              "title": "Wzorzec",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListaPlikow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Listuj Pliki"
+      }
+    },
+    "/api/runners": {
+      "get": {
+        "operationId": "odczytaj_runnery_api_runners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunnerZespolu"
+                  },
+                  "title": "Response Odczytaj Runnery Api Runners Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Odczytaj Runnery"
+      }
+    },
+    "/api/runners/heartbeat": {
+      "post": {
+        "operationId": "runner_heartbeat_api_runners_heartbeat_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Zdrowie"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Runner Heartbeat"
+      }
+    },
+    "/api/runners/odpowiedzi": {
+      "post": {
+        "description": "Odpowiedz runnera na zapytanie z `req_id`; cudze albo nieznane zapytanie to 404.",
+        "operationId": "runner_odpowiedz_api_runners_odpowiedzi_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OdpowiedzRunneraIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Runner Odpowiedz"
+      }
+    },
+    "/api/runners/register": {
+      "post": {
+        "operationId": "register_runner_api_runners_register_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunnerRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerZameldowany"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Register Runner"
+      }
+    },
+    "/api/runners/stream": {
+      "get": {
+        "description": "SSE w dol: polecenia dla runnera. Odpowiedzi wracaja POST-em.",
+        "operationId": "runner_stream_api_runners_stream_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Runner Stream"
+      }
+    },
+    "/api/runs": {
+      "post": {
+        "operationId": "create_run_api_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunUtworzony"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Create Run"
+      }
+    },
+    "/api/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSzczegoly"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Get Run"
+      }
+    },
+    "/api/runs/{run_id}/stream": {
+      "get": {
+        "operationId": "run_stream_api_runs__run_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Run Stream"
+      }
+    }
+  }
+}

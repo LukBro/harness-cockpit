@@ -63,10 +63,58 @@ def _repo_z_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+POWLOKI = {"bash", "sh", "zsh", "dash", "ksh"}
+
+
+def _bez_heredoc(komenda: str) -> str:
+    """Usuwa tresc heredoc (dane, nie polecenia). Gdy w linii wystepuje powloka
+    (`bash <<EOF`), tresc jest poleceniami i zostaje do oceny. Heredoc bez
+    zamkniecia to odmowa."""
+    linie, wynik, i = komenda.split("\n"), [], 0
+    while i < len(linie):
+        linia = linie[i]
+        ograniczniki = [m.group(2) for m in HEREDOC.finditer(linia)]
+        i += 1
+        if not ograniczniki:
+            wynik.append(linia)
+            continue
+        do_powloki = any(Path(t).name in POWLOKI for t in linia.split())
+        wynik.append(HEREDOC.sub("", linia))
+        for ogr in ograniczniki:
+            cialo = []
+            while i < len(linie) and linie[i].strip() != ogr:
+                cialo.append(linie[i])
+                i += 1
+            if i >= len(linie):
+                raise Odmowa(f"heredoc bez zamkniecia ({ogr})")
+            i += 1
+            if do_powloki:
+                wynik.extend(cialo)
+    return "\n".join(wynik)
+
+
+def _bez_przekierowan(slowa: list[str]) -> list[str]:
+    """Argumenty polecenia bez przekierowan: operator (`>`, `2>&`, `>>`), jego cel
+    i numer deskryptora tuz przed nim (`2>&1` -> nic)."""
+    wynik, pomin = [], False
+    for t in slowa:
+        if pomin:
+            pomin = False
+            continue
+        if t and set(t) <= set("<>&") and ("<" in t or ">" in t):
+            if wynik and wynik[-1].isdigit():
+                wynik.pop()
+            pomin = True
+            continue
+        wynik.append(t)
+    return wynik
+
+
 def _segmenty(komenda: str) -> list[list[str]]:
     """Dzieli komende na proste polecenia po `;`, `&&`, `||`, `|`, `&` i nowej linii -
     tylko POZA cudzyslowami (`jq '... | ...'`, `git commit -m "a; b"` to jedno polecenie)."""
-    lekser = shlex.shlex(komenda, posix=True, punctuation_chars=";&|\n")
+    lekser = shlex.shlex(_bez_heredoc(komenda), posix=True, punctuation_chars=";&|\n<>")
     lekser.whitespace = " \t\r"
     lekser.whitespace_split = True
     try:
@@ -101,6 +149,7 @@ def _podkomenda_git(slowa: list[str]) -> tuple[int, list[str]]:
 
 
 def _git_push(slowa: list[str], cwd: str, git=_git) -> None:
+    slowa = _bez_przekierowan(slowa)
     i, globalne = _podkomenda_git(slowa)
     katalog = cwd
     j = 0
@@ -158,6 +207,7 @@ def _gh_merge(slowa: list[str], srodowisko) -> None:
 
 
 def _gh(slowa: list[str], srodowisko=os.environ) -> None:
+    slowa = _bez_przekierowan(slowa)
     for j, a in enumerate(slowa):
         if a in ("-R", "--repo") and j + 1 < len(slowa) and slowa[j + 1] != REPO:
             raise Odmowa(f"gh tylko dla {REPO}, nie {slowa[j + 1]}")
@@ -166,7 +216,7 @@ def _gh(slowa: list[str], srodowisko=os.environ) -> None:
     polecenie = [a for a in slowa[1:] if not a.startswith("-")]
     if not polecenie:
         return
-    if polecenie[0] in GH_ZAKAZANE:
+    if polecenie[0] in GH_ZAKAZANE and polecenie[:2] != ["auth", "status"]:
         raise Odmowa(f"gh {polecenie[0]} jest zabronione w sesjach agentow")
     if polecenie[0] == "pr" and len(polecenie) > 1 and polecenie[1] == "merge":
         _gh_merge(slowa, srodowisko)

@@ -22,6 +22,7 @@ from cockpit.services.errors import (
     BlednySkill,
     BrakDostepu,
     NaruszonyNiezmiennik,
+    NieprawidloweObecneHaslo,
     NieZnaleziono,
     PlikPozaZakresem,
     RunnerOffline,
@@ -126,9 +127,10 @@ def test_nowy_rodzaj_bledu_bez_kodu_http_oblewa_kontrole(nowy_rodzaj_bledu):
          "sciezka poza zakresem runnera"),
         (lambda: RunnerOffline("runner offline — tryb tylko do odczytu"), 409,
          "runner offline — tryb tylko do odczytu"),
+        (lambda: NieprawidloweObecneHaslo("nieprawidłowe hasło"), 422, "nieprawidłowe hasło"),
     ],
     ids=["brak_dostepu", "nie_znaleziono", "stan_niemozliwy", "naruszony_niezmiennik", "bledny_skill",
-         "plik_poza_zakresem", "runner_offline"],
+         "plik_poza_zakresem", "runner_offline", "nieprawidlowe_obecne_haslo"],
 )
 async def test_kazdy_rodzaj_bledu_dziedziny_daje_swoj_kod_http_i_komunikat(
     fabryka, oczekiwany_kod, komunikat
@@ -143,6 +145,13 @@ def test_plik_poza_zakresem_i_runner_offline_maja_wlasne_wpisy_w_tabeli_z_wartos
     """Same podklasy dziedziczylyby 403/409 po rodzicach przez MRO; wpis ma byc jawny (HAR-55)."""
     assert KODY_BLEDOW[PlikPozaZakresem] == 403
     assert KODY_BLEDOW[RunnerOffline] == 409
+
+
+def test_nieprawidlowe_obecne_haslo_ma_wlasny_wpis_422_a_brak_dostepu_zostaje_przy_401():
+    """Wpis jawny: klasa dziedziczy wprost z BladDziedziny, bez wpisu nie ma kodu (HAR-145)."""
+    assert NieprawidloweObecneHaslo in KODY_BLEDOW
+    assert KODY_BLEDOW[NieprawidloweObecneHaslo] == 422
+    assert KODY_BLEDOW[BrakDostepu] == 401
 
 
 def test_plik_poza_zakresem_jest_zabronionym_a_runner_offline_stanem_niemozliwym():

@@ -36,6 +36,21 @@ from cockpit.settings import settings
 
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
+from .schematy import (
+    Katalog,
+    KatalogOdswiezony,
+    ListaPlikow,
+    PlikOdczytany,
+    PlikZapisany,
+    RunnerZameldowany,
+    RunnerZespolu,
+    RunSzczegoly,
+    RunUtworzony,
+    ZdarzeniePrzyjete,
+    ZdarzenieRunu,
+    Zdrowie,
+    odpowiedzi_bledow,
+)
 from .zaleznosci import kontekst_sesji, runner_z_tokenu, trasa_publiczna
 
 logger = logging.getLogger(__name__)
@@ -124,37 +139,38 @@ class OdpowiedzRunneraIn(BaseModel):
     kod: str | None = Field(default=None, max_length=64)
 
 
-@app.get("/api/health", dependencies=[Depends(trasa_publiczna)])
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/api/health", dependencies=[Depends(trasa_publiczna)], response_model=Zdrowie,
+         responses=odpowiedzi_bledow())
+async def health() -> Zdrowie:
+    return Zdrowie(status="ok")
 
 
-@app.post("/api/runners/register")
+@app.post("/api/runners/register", response_model=RunnerZameldowany,
+          responses=odpowiedzi_bledow(401, 422))
 async def register_runner(
     body: RunnerRegister,
     r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
-) -> dict[str, str | int]:
+) -> RunnerZameldowany:
     r = await uslugi.zamelduj_runnera(
         s, r, body.name, body.version, [b.model_dump() for b in body.backends]
     )
-    return {
-        "runner_id": r.id,
-        "tenant_id": r.tenant_id,
-        "heartbeat_co_s": settings.heartbeat_co_s,
-    }
+    return RunnerZameldowany(
+        runner_id=r.id, tenant_id=r.tenant_id, heartbeat_co_s=settings.heartbeat_co_s)
 
 
-@app.post("/api/runners/heartbeat")
+@app.post("/api/runners/heartbeat", response_model=Zdrowie,
+          responses=odpowiedzi_bledow(401, 422))
 async def runner_heartbeat(
     r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
-) -> dict[str, str]:
+) -> Zdrowie:
     await uslugi.odnotuj_heartbeat(s, r)
-    return {"status": "ok"}
+    return Zdrowie(status="ok")
 
 
-@app.post("/api/runners/odpowiedzi", status_code=204)
+@app.post("/api/runners/odpowiedzi", status_code=204, response_model=None,
+          responses=odpowiedzi_bledow(401, 404, 422))
 async def runner_odpowiedz(
     body: OdpowiedzRunneraIn,
     r=Depends(runner_z_tokenu),
@@ -170,7 +186,8 @@ async def runner_odpowiedz(
     return Response(status_code=204)
 
 
-@app.get("/api/runners/stream")
+@app.get("/api/runners/stream", response_model=None,
+         responses=odpowiedzi_bledow(401, 422))
 async def runner_stream(
     request: Request,
     r=Depends(runner_z_tokenu),
@@ -205,12 +222,13 @@ async def runner_stream(
     return EventSourceResponse(gen())
 
 
-@app.post("/api/runs")
+@app.post("/api/runs", response_model=RunUtworzony,
+          responses=odpowiedzi_bledow(401, 403, 409, 422))
 async def create_run(
     body: RunCreate,
     k: Kontekst = Depends(kontekst_sesji),
     s: AsyncSession = Depends(get_session),
-) -> dict[str, str]:
+) -> RunUtworzony:
     dostep.wymagaj(k, Uprawnienie.uruchamianie)
     run = await uslugi.utworz_run(
         s, k.tenant_id, body.workflow, polaczone=bus.connected_runner_ids(),
@@ -220,15 +238,16 @@ async def create_run(
         run.runner_id,
         {"type": "run_step", "run_id": run.id, "step_id": "s0", "command": body.command},
     )
-    return {"run_id": run.id}
+    return RunUtworzony(run_id=run.id)
 
 
-@app.post("/api/events")
+@app.post("/api/events", response_model=ZdarzeniePrzyjete,
+          responses=odpowiedzi_bledow(401, 404, 409, 422))
 async def ingest_event(
     body: EventIn,
     r=Depends(runner_z_tokenu),
     s: AsyncSession = Depends(get_session),
-) -> dict[str, int]:
+) -> ZdarzeniePrzyjete:
     run = await uslugi.run_runnera(s, body.run_id, r)
     ev, nowe = await uslugi.zapisz_zdarzenie(
         s, run, event_id=body.event_id, kind=body.kind, step_id=body.step_id,
@@ -242,30 +261,32 @@ async def ingest_event(
                                          "step_id": ev.step_id,
                                          "text_truncated": ev.text_truncated,
                                          "text_full_len": ev.text_full_len})
-    return {"seq": ev.seq}
+    return ZdarzeniePrzyjete(seq=ev.seq)
 
 
-@app.get("/api/runs/{run_id}")
+@app.get("/api/runs/{run_id}", response_model=RunSzczegoly,
+         responses=odpowiedzi_bledow(401, 404, 422))
 async def get_run(
     run_id: str,
     k: Kontekst = Depends(kontekst_sesji),
     s: AsyncSession = Depends(get_session),
-) -> dict:
+) -> RunSzczegoly:
     run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
     rows = await uslugi.zdarzenia_runu(s, run)
-    return {
-        "id": run.id,
-        "workflow": run.workflow,
-        "status": run.status.value,
-        "runner_kind": run.runner_kind.value,
-        "reason": run.reason,
-        "events": [{"seq": e.seq, "kind": e.kind, "text": e.text, "step_id": e.step_id,
-                    "agent_type": e.agent_type, "text_truncated": e.text_truncated,
-                    "text_full_len": e.text_full_len} for e in rows],
-    }
+    return RunSzczegoly(
+        id=run.id,
+        workflow=run.workflow,
+        status=run.status,
+        runner_kind=run.runner_kind,
+        reason=run.reason,
+        events=[ZdarzenieRunu(
+            seq=e.seq, kind=e.kind, text=e.text, step_id=e.step_id, agent_type=e.agent_type,
+            text_truncated=e.text_truncated, text_full_len=e.text_full_len) for e in rows],
+    )
 
 
-@app.get("/api/runs/{run_id}/stream")
+@app.get("/api/runs/{run_id}/stream", response_model=None,
+         responses=odpowiedzi_bledow(401, 404, 422))
 async def run_stream(
     run_id: str,
     request: Request,
@@ -297,7 +318,8 @@ class PlikIn(BaseModel):
     tresc: str = Field(max_length=3 * 1024 * 1024)
 
 
-@app.get("/api/pliki")
+@app.get("/api/pliki", response_model=PlikOdczytany,
+         responses=odpowiedzi_bledow(401, 403, 409, 422))
 async def czytaj_plik(
     sciezka: str = Query(max_length=4096),
     k: Kontekst = Depends(kontekst_sesji),
@@ -307,7 +329,8 @@ async def czytaj_plik(
         s, k.tenant_id, sciezka, bus.connected_runner_ids(), bus.zapytaj)
 
 
-@app.get("/api/pliki/lista")
+@app.get("/api/pliki/lista", response_model=ListaPlikow,
+         responses=odpowiedzi_bledow(401, 403, 409, 422))
 async def listuj_pliki(
     sciezka: str = Query(max_length=4096),
     wzorzec: str = Query(default="*", max_length=512),
@@ -318,7 +341,8 @@ async def listuj_pliki(
         s, k.tenant_id, sciezka, wzorzec, bus.connected_runner_ids(), bus.zapytaj)
 
 
-@app.put("/api/pliki")
+@app.put("/api/pliki", response_model=PlikZapisany,
+         responses=odpowiedzi_bledow(401, 403, 409, 422))
 async def zapisz_plik(
     body: PlikIn,
     k: Kontekst = Depends(kontekst_sesji),
@@ -329,7 +353,20 @@ async def zapisz_plik(
         s, k.tenant_id, body.sciezka, body.tresc, bus.connected_runner_ids(), bus.zapytaj)
 
 
-@app.get("/api/katalog")
+@app.get("/api/runners", response_model=list[RunnerZespolu],
+         responses=odpowiedzi_bledow(401))
+async def odczytaj_runnery(
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await uslugi.runnery_zespolu(
+        s, k.tenant_id, bus.connected_runner_ids(), datetime.now(timezone.utc),
+    )
+
+
+@app.get("/api/katalog", response_model=Katalog,
+         responses=odpowiedzi_bledow(401))
 async def odczytaj_katalog(
     k: Kontekst = Depends(kontekst_sesji),
     s: AsyncSession = Depends(get_session),
@@ -338,7 +375,8 @@ async def odczytaj_katalog(
     return await katalog.katalog(s, k.tenant_id)
 
 
-@app.post("/api/katalog/odswiez")
+@app.post("/api/katalog/odswiez", response_model=KatalogOdswiezony,
+          responses=odpowiedzi_bledow(401, 403, 409))
 async def odswiez_katalog(
     k: Kontekst = Depends(kontekst_sesji),
     s: AsyncSession = Depends(get_session),

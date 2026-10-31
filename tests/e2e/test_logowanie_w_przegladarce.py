@@ -219,6 +219,26 @@ def test_zle_obecne_haslo_przy_zmianie_pokazuje_blad_ale_nie_konczy_sesji(
     strona.get_by_role("button", name="Zmień hasło", exact=True).click()
 
     expect(strona.get_by_role("alert")).to_contain_text("nieprawidłowe hasło")
+    expect(strona.get_by_label("Obecne hasło")).to_be_visible()   # formularz zostaje na ekranie
     _widok_zalogowanego_widoczny(strona)
     strona.reload()
     _widok_zalogowanego_widoczny(strona)
+
+
+def test_wygasla_sesja_w_formularzu_zmiany_hasla_wraca_do_logowania_zamiast_bledu_formularza(
+    adres_kokpitu, dane_wlasciciela, otworz_kontekst
+):
+    email, haslo = dane_wlasciciela
+    pierwsza = otworz_kontekst().new_page()
+    druga = otworz_kontekst().new_page()
+    _zaloguj(pierwsza, adres_kokpitu, email, haslo)
+    _zaloguj(druga, adres_kokpitu, email, haslo)
+    _zmien_haslo(pierwsza, haslo, NOWE_HASLO)   # unieważnia sesję drugiej karty
+
+    # bez przeladowania: poprawne obecne hasło, ale serwer odpowie 401 (sesja nie istnieje)
+    druga.get_by_label("Obecne hasło").fill(haslo)
+    druga.get_by_label("Nowe hasło").fill(NOWE_HASLO + "-inne")
+    druga.get_by_role("button", name="Zmień hasło", exact=True).click()
+
+    _ekran_logowania_widoczny(druga)
+    expect(druga.get_by_label("Obecne hasło")).to_have_count(0)

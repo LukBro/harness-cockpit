@@ -139,3 +139,18 @@ HAR-141, uwagi bez odjęcia w HAR-34, HAR-36, HAR-38. Nowe kształty:
 - **Gałąź sprzątania w `finally`** ma test poza ścieżką `stop()`, który ją wyzwala (HAR-49).
 - **Równoważność mutanta** uzasadniasz wskazaniem, że żadne wejście nie odróżnia wersji;
   „test przechodzi” albo „to tylko kosmetyka” nie jest uzasadnieniem (HAR-52).
+
+## Egzekucja ręczna tam, gdzie mutmut nie sięga (retro M1.5)
+
+Źródło: „korekta WRACA” w 7 ticketach M1.5 (HAR-49, 59, 61, 62, 65, 142, 143) mimo
+sekcji Regresja z M1.1–M1.4. Kolejny akapit nie pomoże — potrzebny dowód w raporcie.
+
+Gdy zmiana obejmuje miejsce, którego mutmut nie mutuje — front (`web/`), testy e2e,
+krotki w `except`, elementy stałych zbiorów i wyrażeń regularnych, hooki pytesta
+(`tryfirst`, `skipif`), pliki spoza `source_paths` (kod 3 z `tools/mutanty_zmian.py`,
+HAR-144) — raport test-writera zawiera tabelę **ręcznych mutantów**:
+`element | mutacja | test, który oblewa`. Po jednym wierszu na każdy zmieniony element.
+
+- Brak tabeli przy zmianie poza zasięgiem mutmuta = **-25**.
+- Wiersz z testem, który po mutacji nadal przechodzi (krytyk sprawdza co najmniej jeden
+  wiersz, wprowadzając mutację lokalnie) = **-25**.

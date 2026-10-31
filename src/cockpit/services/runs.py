@@ -142,6 +142,33 @@ def runner_online(
     return teraz - widziany < timedelta(seconds=settings.runner_offline_after_s)
 
 
+async def runnery_zespolu(
+    s: AsyncSession, tenant_id: str, polaczone: Collection[str],
+    teraz: datetime | None = None,
+) -> list[dict]:
+    """Runnery zespolu ze stanem online (regula `runner_online`), wersja i backendami (HAR-68)."""
+    teraz = teraz or datetime.now(timezone.utc)   # jeden czas dla calej listy
+    runnery = (await s.execute(
+        select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.name, Runner.id)
+    )).scalars().all()
+    lista = []
+    for runner in runnery:
+        widziany = runner.last_seen_at
+        if widziany is not None:
+            if widziany.tzinfo is None:   # SQLite oddaje daty bez strefy; zapisujemy UTC
+                widziany = widziany.replace(tzinfo=timezone.utc)
+            widziany = widziany.astimezone(timezone.utc).isoformat()
+        lista.append({
+            "id": runner.id,
+            "name": runner.name,
+            "version": runner.version,
+            "backends": [dict(b) for b in runner.backends],
+            "online": runner_online(runner, polaczone, teraz),
+            "last_seen_at": widziany,
+        })
+    return lista
+
+
 async def utworz_run(
     s: AsyncSession,
     tenant_id: str,
