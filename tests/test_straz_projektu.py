@@ -384,3 +384,60 @@ def test_srednik_wewnatrz_cudzyslowu_nie_ukrywa_pushu_po_nim():
 
 def test_niezamkniety_cudzyslow_dalej_jest_odmowa():
     assert "nieczytelna" in _odmowa(_bash('git commit -m "bez konca'))
+
+
+# --- przekierowania i heredoc (bledy z 30/31.10: odmowy HAR-149 i HAR-145) -------------------
+
+@pytest.mark.parametrize("komenda", [
+    "git push -u origin worktree-HAR-7 2>&1",
+    "git push -u origin worktree-HAR-7 2>&1 | tail -3",
+    "git push -u origin worktree-HAR-7 > /tmp/wynik.txt 2>&1",
+    "git push -u origin worktree-HAR-7 &> /tmp/wynik.txt",
+])
+def test_push_z_przekierowaniem_wyjscia_przechodzi(komenda):
+    assert _zgoda(_bash(komenda))
+
+
+def test_push_na_main_z_przekierowaniem_dalej_jest_odrzucony():
+    assert "main" in _odmowa(_bash("git push origin main 2>/dev/null"))
+
+
+def test_przekierowanie_nie_dzieli_komendy_na_dwie():
+    assert _zgoda(_bash("pytest -q > wynik.txt 2>&1")) is None
+
+
+def test_przekierowanie_do_ustawien_dalej_jest_odrzucone():
+    assert "czlowiek" in _odmowa(_bash("echo x > .claude/settings.json 2>&1"))
+
+
+def test_gh_z_przekierowaniem_przechodzi():
+    assert _zgoda(_bash("gh pr create --repo LukBro/harness-cockpit --base main 2>&1"))
+
+
+def test_heredoc_z_danymi_nie_jest_oceniany_jako_polecenia():
+    komenda = ("cat > /tmp/komentarz.md <<'EOF'\n"
+               "Tresc z apostrofem ' oraz | ; i nawet git push origin main\n"
+               "EOF")
+    assert _zgoda(_bash(komenda)) is None
+
+
+def test_heredoc_do_powloki_jest_oceniany_jako_polecenia():
+    assert "main" in _odmowa(_bash("bash <<'EOF'\ngit push origin main\nEOF"))
+
+
+def test_polecenie_po_heredoc_jest_oceniane():
+    komenda = "cat > /tmp/x <<'EOF'\ndane\nEOF\ngit push origin main"
+    assert "main" in _odmowa(_bash(komenda))
+
+
+def test_sprawdzenie_logowania_gh_przechodzi():
+    assert _zgoda(_bash("gh auth status 2>&1 | head -3")) is None
+
+
+@pytest.mark.parametrize("polecenie", ["auth token", "auth login", "auth logout", "auth refresh"])
+def test_zmiana_logowania_gh_dalej_jest_odrzucona(polecenie):
+    assert "zabronione" in _odmowa(_bash(f"gh {polecenie}"))
+
+
+def test_heredoc_bez_zamkniecia_to_odmowa():
+    assert "heredoc" in _odmowa(_bash("cat > /tmp/x <<EOF\nbez konca"))
