@@ -900,14 +900,19 @@ def _subskrybenci(run_id: str) -> list:
 
 
 async def _run_zespolu(run_id: str):
-    """Istniejacy run zespolu "Browarek" i kontekst jego wlasciciela (strumien wymaga sesji, HAR-57)."""
-    from cockpit.db.models import Membership, Run
+    """Istniejacy run zespolu "Browarek", kontekst jego wlasciciela i identyfikator jego prawdziwej,
+    aktywnej sesji (strumien wymaga sesji, HAR-57; kontroluje ja w trakcie, HAR-70)."""
+    from cockpit.db.models import Membership, Run, User
+    from cockpit.services import sesje
     from cockpit.services.dostep import Kontekst
     async with db_session.SessionLocal() as s:
         m = (await s.execute(select(Membership))).scalars().one()
         s.add(Run(id=run_id, tenant_id=m.tenant_id))
         await s.commit()
-        return Kontekst(user_id=m.user_id, tenant_id=m.tenant_id, rola=m.rola)
+        user = (await s.execute(select(User).where(User.id == m.user_id))).scalar_one()
+        kontekst = Kontekst(user_id=m.user_id, tenant_id=m.tenant_id, rola=m.rola)
+        identyfikator, _ = await sesje.utworz(s, user)
+        return kontekst, identyfikator
 
 
 async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(
@@ -920,9 +925,10 @@ async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(
 
     subskrypcje_runow.append("r-porzucony")
 
-    kontekst = await _run_zespolu("r-porzucony")
+    kontekst, identyfikator = await _run_zespolu("r-porzucony")
     async with db_session.SessionLocal() as s:
-        odpowiedz = await run_stream("r-porzucony", SimpleNamespace(), kontekst, s)
+        odpowiedz = await run_stream(
+            "r-porzucony", SimpleNamespace(), k=kontekst, identyfikator=identyfikator, s=s)
     # Porzucamy odpowiedz tak, jak zerwane polaczenie: cialo nigdy nie ruszylo.
     await odpowiedz.body_iterator.aclose()
 
@@ -941,10 +947,11 @@ async def test_strumien_runu_dostaje_zdarzenia_w_trakcie_a_po_zamknieciu_nie_ma_
     async def nie_rozlaczony() -> bool:
         return False
 
-    kontekst = await _run_zespolu("r-czynny")
+    kontekst, identyfikator = await _run_zespolu("r-czynny")
     async with db_session.SessionLocal() as s:
         odpowiedz = await run_stream(
-            "r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony), kontekst, s)
+            "r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony),
+            k=kontekst, identyfikator=identyfikator, s=s)
     strumien = odpowiedz.body_iterator
     pierwsze = asyncio.ensure_future(strumien.__anext__())
     try:
