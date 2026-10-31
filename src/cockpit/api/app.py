@@ -28,10 +28,10 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import dostep, katalog, pliki_runnera
+from cockpit.services import dostep, katalog, pliki_runnera, sesje
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
-from cockpit.services.errors import NieZnaleziono
+from cockpit.services.errors import BrakDostepu, NieZnaleziono
 from cockpit.settings import settings
 
 from . import bus, konta
@@ -51,7 +51,7 @@ from .schematy import (
     Zdrowie,
     odpowiedzi_bledow,
 )
-from .zaleznosci import kontekst_sesji, runner_z_tokenu, trasa_publiczna
+from .zaleznosci import identyfikator_sesji, kontekst_sesji, runner_z_tokenu, trasa_publiczna
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +291,7 @@ async def run_stream(
     run_id: str,
     request: Request,
     k: Kontekst = Depends(kontekst_sesji),
+    identyfikator: str = Depends(identyfikator_sesji),
     s: AsyncSession = Depends(get_session),
 ) -> EventSourceResponse:
     # cudzy lub nieznany run to 404 przed otwarciem strumienia
@@ -304,7 +305,23 @@ async def run_stream(
             while True:
                 if await request.is_disconnected():
                     break
-                ev = await q.get()
+                try:
+                    # Limit czytany przy kazdym obrocie: cisza w szynie nie moze odroczyc kontroli sesji.
+                    ev = await asyncio.wait_for(q.get(), settings.sesja_kontrola_s)
+                except TimeoutError:
+                    ev = None
+                # Kontrola przed wyslaniem: zdarzenie po uniewaznieniu sesji nie trafia do klienta.
+                try:
+                    async with db_session.SessionLocal() as s2:
+                        await sesje.rozstrzygnij(s2, identyfikator)
+                except BrakDostepu:
+                    yield {
+                        "event": "sesja_wygasla",
+                        "data": json.dumps({"komunikat": sesje.KOMUNIKAT_SESJI}),
+                    }
+                    break
+                if ev is None:
+                    continue
                 yield {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
         finally:
             if q is not None:

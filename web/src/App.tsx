@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchZSesja, Konto, odswiezSesje, PanelKonta, ustawPowrotDoLogowania } from "./Konto";
+import { fetchZSesja, Konto, odswiezSesje, PanelKonta, ustawPowrotDoLogowania, ustawToken } from "./Konto";
 
 type Zdarzenie = {
   seq: number;
@@ -34,6 +34,7 @@ const KOMUNIKAT_BLAD_RUNNEROW = "Nie udało się odświeżyć listy runnerów. P
 
 const KOMUNIKAT_OFFLINE = "Runner jest offline. Uruchom runnera na swojej maszynie.";
 const KOMUNIKAT_SIEC = "Brak połączenia z kokpitem.";
+const KOMUNIKAT_SESJA_WYGASLA = "Sesja wygasła, zaloguj się";
 const KOMUNIKAT_STRUMIEN = "Brak połączenia ze strumieniem zdarzeń. Ponawiam; historia poniżej może być niepełna.";
 
 // Scalanie po seq: historia z GET i strumień zbiegają się bez duplikatów.
@@ -52,6 +53,7 @@ function runZAdresu(): string | null {
 // Stan "ladowanie" nie pokazuje nic, zeby nie mignal zly ekran przed odpowiedzia "ja".
 export function App() {
   const [stan, setStan] = useState<"ladowanie" | "gosc" | "blad" | { email: string }>("ladowanie");
+  const [komunikatLogowania, setKomunikatLogowania] = useState<string | null>(null);
 
   useEffect(() => {
     ustawPowrotDoLogowania(() => setStan("gosc"));
@@ -70,7 +72,15 @@ export function App() {
     };
   }, []);
 
+  // Sesja wygasla w trakcie strumienia runu: czysty token CSRF i ekran logowania z komunikatem.
+  function poWygasnieciuSesji() {
+    ustawToken(null);
+    setKomunikatLogowania(KOMUNIKAT_SESJA_WYGASLA);
+    setStan("gosc");
+  }
+
   function poZalogowaniu() {
+    setKomunikatLogowania(null);
     setStan("ladowanie");
     odswiezSesje().then(
       (ja) => setStan(ja ? { email: ja.email } : "gosc"),
@@ -86,17 +96,28 @@ export function App() {
       </main>
     );
   }
-  if (stan === "gosc") return <Konto onZalogowano={poZalogowaniu} />;
+  if (stan === "gosc") {
+    return (
+      <>
+        {komunikatLogowania && (
+          <p role="alert" style={{ color: "#A5201A", fontFamily: "system-ui", maxWidth: 720, margin: "40px auto 0" }}>
+            {komunikatLogowania}
+          </p>
+        )}
+        <Konto onZalogowano={poZalogowaniu} />
+      </>
+    );
+  }
   return (
     <>
       <PanelKonta email={stan.email} />
-      <WidokRunu />
+      <WidokRunu poWygasnieciuSesji={poWygasnieciuSesji} />
       <PanelRunnerow />
     </>
   );
 }
 
-function WidokRunu() {
+function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
   const [runId, setRunId] = useState<string | null>(runZAdresu);
   const [zdarzenia, setZdarzenia] = useState<Zdarzenie[]>([]);
   const [status, setStatus] = useState<string | null>(null);
@@ -153,6 +174,13 @@ function WidokRunu() {
     es.onerror = () => {
       if (!anulowano) setBladStrumienia(KOMUNIKAT_STRUMIEN);
     };
+    // Serwer zamyka strumien po tym zdarzeniu; close() przed onerror, zeby nie bylo ponawiania.
+    // Dane zdarzenia nie sa potrzebne (stały tekst UI), wiec nie ma parsowania.
+    es.addEventListener("sesja_wygasla", () => {
+      es.close();
+      if (anulowano) return;
+      poWygasnieciuSesji();
+    });
     es.addEventListener("run", (e) => {
       if (anulowano) return;
       const z: Zdarzenie = JSON.parse((e as MessageEvent).data);

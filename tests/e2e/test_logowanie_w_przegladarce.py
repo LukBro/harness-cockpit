@@ -6,6 +6,7 @@ widok runu), sygnalem "ekran logowania" - naglowek "Logowanie". Testy nie klikaj
 """
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -242,3 +243,107 @@ def test_wygasla_sesja_w_formularzu_zmiany_hasla_wraca_do_logowania_zamiast_bled
 
     _ekran_logowania_widoczny(druga)
     expect(druga.get_by_label("Obecne hasło")).to_have_count(0)
+
+
+# --- strumien runu a wygasla sesja (HAR-70) ---------------------------------------------------
+
+
+def _zaloz_run_zespolu(url_bazy: str) -> str:
+    """Run zespolu wlasciciela zalozony prosto w bazie (widok runu otwiera jego strumien)."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from cockpit.db.models import Run, RunStatus, Tenant
+
+    async def zaloz() -> str:
+        engine = create_async_engine(url_bazy)
+        try:
+            async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+                tenant_id = (await s.execute(select(Tenant.id))).scalar_one()
+                run = Run(tenant_id=tenant_id, status=RunStatus.running)
+                s.add(run)
+                await s.commit()
+                return run.id
+        finally:
+            await engine.dispose()
+
+    # sync API playwrighta trzyma petle w watku testu: asyncio.run osobno
+    with ThreadPoolExecutor(max_workers=1) as pula:
+        return pula.submit(lambda: asyncio.run(zaloz())).result(timeout=30)
+
+
+def _wygas_sesje_przy_otwartym_widoku_runu(
+    adres_kokpitu: str, czysta_baza: str, email: str, haslo: str, otworz_kontekst
+) -> tuple[Page, list[str]]:
+    """Karta z otwartym widokiem runu, której sesja wygasa przez wylogowanie z drugiej karty.
+
+    Wraca po pojawieniu sie alertu i ekranu logowania; druga lista to zadania o strumien runu."""
+    run_id = _zaloz_run_zespolu(czysta_baza)
+    sciezka_strumienia = f"/api/runs/{run_id}/stream"
+    zadania_strumienia: list[str] = []
+    pierwsza = otworz_kontekst().new_page()
+    pierwsza.on(
+        "request",
+        lambda r: zadania_strumienia.append(r.url) if r.url.endswith(sciezka_strumienia) else None,
+    )
+    # WHY: odcinamy druga droga do ekranu logowania. Panel runnerow odpytuje /api/runners co 5 s;
+    # po uniewaznieniu sesji dostalby 401 i sam przeniosl do logowania (z alertem, bo komunikat
+    # jest juz ustawiony). Z pusta lista 200 jedyna droga to zdarzenie `sesja_wygasla` strumienia.
+    pierwsza.route(
+        re.compile(r"/api/runners(\?.*)?$"),
+        lambda route: route.fulfill(status=200, json=[]),
+    )
+    pierwsza.goto(f"{adres_kokpitu}/?run={run_id}")
+    pierwsza.get_by_label("E-mail").fill(email)
+    pierwsza.get_by_label("Hasło", exact=True).fill(haslo)
+    pierwsza.get_by_role("button", name="Zaloguj", exact=True).click()
+    _widok_zalogowanego_widoczny(pierwsza)
+    for _ in range(100):   # strumien otwiera sie po wejsciu w widok runu
+        if zadania_strumienia:
+            break
+        pierwsza.wait_for_timeout(100)
+    assert zadania_strumienia, "widok runu nie otworzyl strumienia"
+
+    druga = otworz_kontekst().new_page()
+    _zaloguj(druga, adres_kokpitu, email, haslo)
+    druga.get_by_role("button", name="Wyloguj ze wszystkich urządzeń", exact=True).click()
+
+    expect(pierwsza.get_by_role("alert")).to_have_text("Sesja wygasła, zaloguj się")
+    _ekran_logowania_widoczny(pierwsza)
+    return pierwsza, zadania_strumienia
+
+
+@pytest.mark.parametrize("dodatkowe_env_kokpitu", [{"COCKPIT_SESJA_KONTROLA_S": "1"}])
+def test_wygasla_sesja_przy_otwartym_widoku_runu_pokazuje_komunikat_logowania_i_nie_ponawia_strumienia(
+    adres_kokpitu, czysta_baza, dane_wlasciciela, otworz_kontekst
+):
+    email, haslo = dane_wlasciciela
+    pierwsza, zadania_strumienia = _wygas_sesje_przy_otwartym_widoku_runu(
+        adres_kokpitu, czysta_baza, email, haslo, otworz_kontekst)
+    liczba_po_alercie = len(zadania_strumienia)
+    pierwsza.wait_for_timeout(3500)   # kilka cykli kontroli i czas na ponowienie EventSource
+    assert len(zadania_strumienia) == liczba_po_alercie, "strumien zostal otwarty ponownie"
+
+
+@pytest.mark.parametrize("dodatkowe_env_kokpitu", [{"COCKPIT_SESJA_KONTROLA_S": "1"}])
+def test_komunikat_o_wygaslej_sesji_znika_po_ponownym_zalogowaniu_i_nie_wraca_po_zwyklym_wylogowaniu(
+    adres_kokpitu, czysta_baza, dane_wlasciciela, otworz_kontekst
+):
+    email, haslo = dane_wlasciciela
+    strona, _ = _wygas_sesje_przy_otwartym_widoku_runu(
+        adres_kokpitu, czysta_baza, email, haslo, otworz_kontekst)
+
+    # ta sama karta, bez przeladowania: zalogowanie z formularza pod komunikatem
+    strona.get_by_label("E-mail").fill(email)
+    strona.get_by_label("Hasło", exact=True).fill(haslo)
+    strona.get_by_role("button", name="Zaloguj", exact=True).click()
+    _widok_zalogowanego_widoczny(strona)
+
+    _wyloguj(strona)   # zwykle wylogowanie: ekran logowania bez starego komunikatu
+
+    _ekran_logowania_widoczny(strona)
+    expect(strona.get_by_text("Sesja wygasła, zaloguj się")).to_have_count(0)
+    expect(strona.get_by_role("alert")).to_have_count(0)
