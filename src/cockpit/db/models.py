@@ -182,3 +182,26 @@ class BlokadaLogowania(Base):
     zablokowane_do: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+
+
+class Definicja(Base):
+    """Katalog skilli i workflow odswiezany przez runnera (HAR-67): tylko metadane.
+
+    Tresc briefu nie trafia do bazy (BRO-86). Wiersze runnera sa wymieniane hurtem przy odswiezeniu.
+    """
+    __tablename__ = "definicja"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "runner_id", "projekt", "rodzaj", "klucz",
+                         name="uq_definicja_klucz"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
+    runner_id: Mapped[str] = mapped_column(ForeignKey("runner.id"))
+    projekt: Mapped[str] = mapped_column(String(1024))
+    rodzaj: Mapped[str] = mapped_column(String(20))       # "skill" | "workflow"
+    klucz: Mapped[str] = mapped_column(String(200))
+    nazwa: Mapped[str] = mapped_column(String(200))
+    rola: Mapped[str | None] = mapped_column(String(20), default=None)   # tylko skill
+    sciezka: Mapped[str] = mapped_column(String(1024))
+    odswiezono_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
