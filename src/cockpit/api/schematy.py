@@ -55,6 +55,13 @@ class RunSzczegoly(BaseModel):
     events: list[ZdarzenieRunu]
 
 
+class RunNaLiscie(BaseModel):
+    id: str
+    workflow: str
+    status: RunStatus
+    created_at: str
+
+
 class PlikOdczytany(BaseModel):
     sciezka: str
     tresc: str
