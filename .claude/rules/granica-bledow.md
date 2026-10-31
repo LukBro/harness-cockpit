@@ -54,3 +54,21 @@ istnieje i nadal jest łamana, w nowych kształtach:
   `DataError` i klient dostaje 500 zamiast 422 (HAR-39).
 - **Błąd strumienia runnera** (`HTTPStatusError`, `TransportError`) kończy proces
   komunikatem dziedziny, nie tracebackiem (HAR-26).
+
+## Regresja (retro M1.5)
+
+Źródło: HAR-55, HAR-63, HAR-64, HAR-66 (cztery tickety, -10 do -25). Dane z granicy
+(plik, JSON od dostawcy, zdarzenie od runnera) bez kontroli kształtu:
+
+- **Typ i zamknięta lista na wejściu** — wartość z zewnątrz, od której zależy wynik
+  (`wynik`, `kind`, `issues`, `comments`), jest sprawdzana co do typu i zamkniętej listy.
+  Nieznana wartość to błąd dziedziny, nigdy domyślna gałąź „sukces” albo „pusto”
+  (`{}` z API to nie „brak ticketów”; HAR-63, HAR-64).
+- **Funkcje, które połykają błędy** — `Path.glob`/`rglob` i `os.walk` bez `onerror`
+  pomijają `OSError` po cichu: brak dowodu wychodzi jako pusty wynik (HAR-55). Wynik
+  pusty z nieczytelnego katalogu to błąd, nie „nic nie ma”.
+- **Długość względem kolumny także od runnera** — wartość zapisywana do `String(n)` przez
+  bufor runnera jest walidowana przed wysłaniem; inaczej 500 po stronie kokpitu i
+  bezkońcowe ponawianie z bufora (HAR-66, wcześniej HAR-39 dla API).
+- **Segment URL z danych** (klucz ticketu, nazwa repo) przechodzi przez `quote(…, safe="")`
+  (HAR-63).
