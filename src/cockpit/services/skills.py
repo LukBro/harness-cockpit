@@ -113,15 +113,55 @@ def _rozbierz(plik: Path) -> tuple[bytes, CommentedMap, str]:
     except UnicodeDecodeError as e:
         raise BlednySkill(f"SKILL.md nie jest w UTF-8: {plik}") from e
     fm, brief = _podziel(tekst, plik)
+    return surowy, _mapa_frontmattera(fm, plik), brief
+
+
+def _mapa_frontmattera(fm: str, opis: object) -> CommentedMap:
+    """Mapa z tekstu frontmattera; BlednySkill, gdy to nie poprawna mapa YAML."""
     try:
         mapa = _yaml().load(fm)
-    except YAMLError as e:
-        raise BlednySkill(f"niepoprawny frontmatter w {plik}: {e}") from e
+    except (YAMLError, RecursionError, ValueError, TypeError, OverflowError) as e:
+        # ValueError/OverflowError: konstrukcja wartosci (np. data 2024-02-30), nie skladnia
+        raise BlednySkill(f"niepoprawny frontmatter w {opis}: {e}") from e
     if mapa is None:
         mapa = CommentedMap()
     if not isinstance(mapa, CommentedMap):
-        raise BlednySkill(f"frontmatter w {plik} nie jest mapa")
-    return surowy, mapa, brief
+        raise BlednySkill(f"frontmatter w {opis} nie jest mapa")
+    return mapa
+
+
+def _pola_skilla(mapa: CommentedMap, katalog: str, *, scisle: bool, opis: object) -> dict | None:
+    """Wspolna walidacja pol frontmattera. None: zrodlo niescisle, a brak `role` - to nie skill
+    kokpitu. Reszta bledow to BlednySkill."""
+    dane: dict[str, Any] = {k: mapa[k] for k in _POLA if k in mapa}
+    if not scisle:
+        if "role" not in dane:
+            return None
+        dane.setdefault("id", katalog)
+        dane.setdefault("name", katalog)
+    for pole in ("id", "name", "role"):
+        if pole not in dane:
+            raise BlednySkill(f"brak pola '{pole}' w {opis}")
+    dozwolone = ", ".join(r.value for r in Rola)
+    if str(dane["role"]) not in {r.value for r in Rola}:
+        raise BlednySkill(f"nieznana rola '{dane['role']}' w {opis} (dozwolone: {dozwolone})")
+    if str(dane["id"]) != katalog:
+        raise BlednySkill(f"id '{dane['id']}' rozni sie od nazwy katalogu '{katalog}' w {opis}")
+    return dane
+
+
+def metadane_skilla(frontmatter: str, katalog: str, *, scisle: bool) -> tuple[str, str, str] | None:
+    """(id, name, role) z samego frontmattera - bez briefu (HAR-67, BRO-86).
+
+    None: zrodlo niescisle i brak `role` (nie skill kokpitu). BlednySkill: skill zepsuty."""
+    opis = f"'{katalog}'"
+    dane = _pola_skilla(_mapa_frontmattera(frontmatter, opis), katalog, scisle=scisle, opis=opis)
+    if dane is None:
+        return None
+    id_skilla, nazwa, rola = dane["id"], dane["name"], dane["role"]
+    if not isinstance(id_skilla, str) or not isinstance(nazwa, str):
+        raise BlednySkill(f"id i name skilla {opis} musza byc napisami")
+    return id_skilla, nazwa, str(rola)
 
 
 def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
@@ -135,22 +175,9 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
         return Pominiety(plik=plik, powod=f"{e} - to nie skill kokpitu")
 
     katalog = plik.parent
-    dane: dict[str, Any] = {k: mapa[k] for k in _POLA if k in mapa}
-    if not scisle:
-        if "role" not in dane:
-            return Pominiety(plik=plik, powod="brak pola role - to nie skill kokpitu")
-        dane.setdefault("id", katalog.name)
-        dane.setdefault("name", katalog.name)
-    for pole in ("id", "name", "role"):
-        if pole not in dane:
-            raise BlednySkill(f"brak pola '{pole}' w {plik}")
-    dozwolone = ", ".join(r.value for r in Rola)
-    if str(dane["role"]) not in {r.value for r in Rola}:
-        raise BlednySkill(f"nieznana rola '{dane['role']}' w {plik} (dozwolone: {dozwolone})")
-    if str(dane["id"]) != katalog.name:
-        raise BlednySkill(
-            f"id '{dane['id']}' rozni sie od nazwy katalogu '{katalog.name}' w {plik}"
-        )
+    dane = _pola_skilla(mapa, katalog.name, scisle=scisle, opis=plik)
+    if dane is None:
+        return Pominiety(plik=plik, powod="brak pola role - to nie skill kokpitu")
     try:
         skill = Skill(
             **{
