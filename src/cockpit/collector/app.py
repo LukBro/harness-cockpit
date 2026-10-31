@@ -51,7 +51,10 @@ def runs() -> list[dict[str, Any]]:
             "session_id": sid,
             "events": len(events),
             "last_ts": last.get("ts"),
-            "finished": any(e.get("event") in ("SessionEnd", "Stop") for e in events[-3:]),
+            # Caly log, nie ogon: znacznik nie moze znikac po kolejnych zdarzeniach.
+            "finished": any(e.get("event") in ("SessionEnd", "Stop") for e in events),
+            # Tylko porazka jest dowodem; brak dowodu sukcesu to None, nie "success".
+            "outcome": "failed" if any(e.get("event") == "phase_failed" for e in events) else None,
         })
     return out
 

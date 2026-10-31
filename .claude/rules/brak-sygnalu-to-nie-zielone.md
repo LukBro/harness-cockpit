@@ -34,4 +34,5 @@ i nikt go nie ogląda.
 - Kryterium o wypchnięciu zmian sprawdzane przez `git reflog` HEAD zamiast
   `git reflog show origin/<branch>` = **-25**.
 - Brak ostrzeżenia, pominięta bramka albo pusty plik dowodu raportowane jako bramka
-  aktywna lub zielone = **-25** (zob. [falszywie-zielone](falszywie-zielone.md)).
+  aktywna lub zielone — odjęcie z [falszywie-zielone](falszywie-zielone.md) (**-25**),
+  nie sumuje się z tą regułą: jedna wada = jedno odjęcie (retro M1.5, HAR-54).

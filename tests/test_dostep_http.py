@@ -129,6 +129,12 @@ async def test_bez_sesji_trasy_runow_dostaja_401_takze_na_localhoscie(swiat, tra
     assert await _liczba_runow(swiat) == przed
 
 
+async def test_bez_sesji_lista_runnerow_dostaje_401_takze_na_localhoscie(swiat):
+    klient = swiat.nowy_klient()
+    assert klient.base_url.host == "127.0.0.1"
+    assert (await klient.get("/api/runners")).status_code == 401
+
+
 async def test_token_runnera_nie_zastepuje_sesji_przy_uruchamianiu_runu(swiat):
     przed = await _liczba_runow(swiat)
     odp = await swiat.nowy_klient().post(
@@ -165,6 +171,15 @@ async def test_strumien_cudzego_runu_nie_zostawia_subskrypcji(swiat):
     klient = await _zalogowany(swiat, swiat.wlasciciel_a)
     assert await _odczyt(klient, "GET", f"/api/runs/{swiat.run_b}/stream") == 404
     assert bus._run_subscribers.get(swiat.run_b, []) == []
+
+
+async def test_lista_runnerow_zawiera_tylko_runnery_zespolu_z_sesji(swiat):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await klient.get("/api/runners")
+
+    assert odp.status_code == 200
+    assert [r["id"] for r in odp.json()] == [swiat.runner_a]
 
 
 # --- zespol runu pochodzi z sesji -------------------------------------------------------------
@@ -328,6 +343,7 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("POST", "/api/runners/heartbeat"): {"runner_z_tokenu"},
         ("POST", "/api/runners/odpowiedzi"): {"runner_z_tokenu"},
         ("GET", "/api/runners/stream"): {"runner_z_tokenu"},
+        ("GET", "/api/runners"): {"kontekst_sesji"},
         ("POST", "/api/runs"): {"kontekst_sesji"},
         ("GET", "/api/runs/{run_id}"): {"kontekst_sesji"},
         ("GET", "/api/runs/{run_id}/stream"): {"kontekst_sesji"},
@@ -351,6 +367,7 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("POST", "/api/runners/heartbeat"),
         ("POST", "/api/runners/odpowiedzi"),
         ("GET", "/api/runners/stream"),
+        ("GET", "/api/runners"),
         ("POST", "/api/runs"),
         ("POST", "/api/events"),
         ("GET", "/api/runs/{run_id}"),
