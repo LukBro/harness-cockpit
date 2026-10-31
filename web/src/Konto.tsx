@@ -60,12 +60,7 @@ async function bladCsrf(r: Response): Promise<boolean> {
   }
 }
 
-// wylogujPo401=false: 401 z "zle haslo" to blad formularza, nie koniec sesji.
-export async function fetchZSesja(
-  url: string,
-  init: RequestInit = {},
-  wylogujPo401 = true,
-): Promise<Response> {
+export async function fetchZSesja(url: string, init: RequestInit = {}): Promise<Response> {
   const zmienia = (init.method ?? "GET").toUpperCase() !== "GET";
   const wyslij = () => {
     const headers = new Headers(init.headers);
@@ -78,7 +73,7 @@ export async function fetchZSesja(
     if ((await odswiezSesje()) === null) return r;
     r = await wyslij();
   }
-  if (r.status === 401 && wylogujPo401) sesjaWygasla();
+  if (r.status === 401) sesjaWygasla();
   return r;
 }
 
@@ -212,17 +207,14 @@ export function PanelKonta({ email }: { email: string }) {
     setBlad(null);
     setZmieniono(false);
     try {
-      const r = await fetchZSesja(
-        "/api/konto/haslo",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stare, nowe }),
-        },
-        false,
-      );
+      const r = await fetchZSesja("/api/konto/haslo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stare, nowe }),
+      });
       if (r.status !== 204) {
-        setBlad(await komunikatBledu(r));
+        // 401 wywolalo juz powrot do logowania; 422 (np. zle haslo) to blad formularza.
+        if (r.status !== 401) setBlad(await komunikatBledu(r));
         return;
       }
       setStare("");
