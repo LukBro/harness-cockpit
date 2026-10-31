@@ -12,7 +12,7 @@ warunkiem korzystania — nie jest też zakazany.
 
 ## Niezmienniki — NEVER
 
-Lista jest bytem w kodzie, nie zbiorem zdań. Walidator sprawdza każdy punkt.
+Lista jest bytem w kodzie, nie zbiorem zdań. Każdy punkt ma sprawdzenie w `SPRAWDZENIA`; na ścieżce wykonania egzekwowane są tylko te z `EGZEKWOWANE` (oba w `src/cockpit/services/walidacja.py`).
 
 - `role_binding` — rola ustawia tier i prawo zapisu razem; nigdy osobno
 - `reviewer_readonly` — recenzent NIGDY nie dostaje prawa zapisu, w żadnym backendzie

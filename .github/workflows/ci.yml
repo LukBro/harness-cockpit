@@ -1,8 +1,10 @@
 name: CI
 
-# Niezmienniki i granica warstw musza byc wymuszane mechanicznie, nie
-# przez dobra wole agenta piszacego kod. To jedyne miejsce, ktore to robi
-# przed wejsciem zmiany do main.
+# CI sprawdza przed wejsciem zmiany do main: testy pytest (w tym testy
+# rejestru EGZEKWOWANE), granice warstw (tools/check_layers.py), lint ruff,
+# zgodnosc schematu OpenAPI, build frontu oraz testy z PostgreSQL i e2e.
+# CI nie wymusza niezmiennikow w czasie dzialania; ktore sa egzekwowane
+# na sciezce wykonania, mowi EGZEKWOWANE w services/walidacja.py.
 
 on:
   push:
