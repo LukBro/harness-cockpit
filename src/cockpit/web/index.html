@@ -36,6 +36,7 @@
          background:var(--line); margin-right:9px; vertical-align:middle; }
   .running .dot { background:var(--run); animation:p 1s infinite alternate; }
   .done .dot { background:var(--ok); }
+  .failed .dot { background:var(--fail); }
   @keyframes p { to { opacity:.25 } }
   @media (prefers-reduced-motion: reduce) { .running .dot { animation:none } }
   .dur { font:12px var(--mono); color:var(--muted); text-align:right; width:6em; }
@@ -92,9 +93,15 @@ function handle(e) {
   document.getElementById("empty").style.display = "none";
   if (e.event === "phase_start") {
     const r = rows.get(e.phase); if (!r) return;
+    if (r.failed) return;   // porazka jest ostateczna: kolejne zdarzenia fazy jej nie cofaja
     r.start = e.ts; r.tr.className = "running";
+  } else if (e.event === "phase_failed") {
+    const r = rows.get(e.phase); if (!r) return;
+    r.failed = true; r.tr.className = "failed";
+    if (r.start) r.dur.textContent = fmt((e.ts - r.start) * 1000);
   } else if (e.event === "phase_end") {
     const r = rows.get(e.phase); if (!r) return;
+    if (r.failed) return;   // faza po porazce nigdy nie robi sie zielona
     r.tr.className = "done";
     if (r.start) r.dur.textContent = fmt((e.ts - r.start) * 1000);
   } else if (e.event === "SubagentStart") {
@@ -130,7 +137,7 @@ async function refresh() {
   const sel = document.getElementById("runs");
   const keep = sel.value;
   sel.innerHTML = list.map(r =>
-    `<option value="${r.session_id}">${r.session_id.slice(0, 12)} — ${r.events} zdarzeń${r.finished ? " ✓" : ""}</option>`
+    `<option value="${r.session_id}">${r.session_id.slice(0, 12)} — ${r.events} zdarzeń${r.outcome === "failed" ? " ✗" : (r.finished ? " ✓" : "")}</option>`
   ).join("");
   if (!list.length) { document.getElementById("state").textContent = "brak runów"; return; }
   sel.value = keep && list.some(r => r.session_id === keep) ? keep : list[0].session_id;
