@@ -18,6 +18,20 @@ type Run = {
   events: Zdarzenie[];
 };
 
+type Backend = { nazwa: string; auth: string };
+type Runner = {
+  id: string;
+  name: string;
+  version: string;
+  backends: Backend[];
+  online: boolean;
+  last_seen_at: string | null;
+};
+
+const ODSWIEZANIE_RUNNEROW_MS = 5000;
+const KOMUNIKAT_BRAK_RUNNEROW = "Brak runnerów. Zainstaluj i uruchom cockpit-runner z tokenem zespołu.";
+const KOMUNIKAT_BLAD_RUNNEROW = "Nie udało się odświeżyć listy runnerów. Ponawiam; pokazana lista może być nieaktualna.";
+
 const KOMUNIKAT_OFFLINE = "Runner jest offline. Uruchom runnera na swojej maszynie.";
 const KOMUNIKAT_SIEC = "Brak połączenia z kokpitem.";
 const KOMUNIKAT_STRUMIEN = "Brak połączenia ze strumieniem zdarzeń. Ponawiam; historia poniżej może być niepełna.";
@@ -77,6 +91,7 @@ export function App() {
     <>
       <PanelKonta email={stan.email} />
       <WidokRunu />
+      <PanelRunnerow />
     </>
   );
 }
@@ -218,5 +233,73 @@ function WidokRunu() {
         ))}
       </ul>
     </main>
+  );
+}
+
+// Lista runnerow zespolu. Przy chwilowym bledzie zostaje ostatnia znana lista
+// (z komunikatem), bo znikajaca lista wygladalaby jak "wszystkie runnery padly".
+function PanelRunnerow() {
+  const [runnery, setRunnery] = useState<Runner[] | null>(null);
+  const [blad, setBlad] = useState<string | null>(null);
+
+  useEffect(() => {
+    let anulowano = false;
+
+    async function pobierz() {
+      try {
+        const r = await fetchZSesja("/api/runners");
+        if (anulowano) return;
+        if (!r.ok) {
+          setBlad(KOMUNIKAT_BLAD_RUNNEROW);
+          return;
+        }
+        const lista: Runner[] = await r.json();
+        if (anulowano) return;
+        setRunnery(lista);
+        setBlad(null);
+      } catch {
+        if (!anulowano) setBlad(KOMUNIKAT_BLAD_RUNNEROW);
+      }
+    }
+
+    void pobierz();
+    const timer = setInterval(() => void pobierz(), ODSWIEZANIE_RUNNEROW_MS);
+    return () => {
+      anulowano = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <section aria-label="Runnery" style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto" }}>
+      <h2 style={{ fontSize: 16 }}>Runnery</h2>
+      {blad && <p style={{ color: "#A5201A" }}>{blad}</p>}
+      {runnery === null && !blad && <p style={{ color: "#58616D" }}>Ładowanie…</p>}
+      {runnery !== null && runnery.length === 0 && <p style={{ color: "#58616D" }}>{KOMUNIKAT_BRAK_RUNNEROW}</p>}
+      {runnery !== null && runnery.length > 0 && (
+        <table style={{ borderCollapse: "collapse", width: "100%", textAlign: "left" }}>
+          <thead>
+            <tr>
+              <th>Nazwa</th>
+              <th>Wersja</th>
+              <th>Backendy</th>
+              <th>Stan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runnery.map((r) => (
+              <tr key={r.id}>
+                <td>{r.name}</td>
+                <td>{r.version}</td>
+                <td>{r.backends.length === 0 ? "brak" : r.backends.map((b) => `${b.nazwa} (${b.auth})`).join(", ")}</td>
+                <td>
+                  <span style={{ color: r.online ? "#1B7F3B" : "#58616D" }}>{r.online ? "online" : "offline"}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }

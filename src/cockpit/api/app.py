@@ -329,6 +329,17 @@ async def zapisz_plik(
         s, k.tenant_id, body.sciezka, body.tresc, bus.connected_runner_ids(), bus.zapytaj)
 
 
+@app.get("/api/runners")
+async def odczytaj_runnery(
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await uslugi.runnery_zespolu(
+        s, k.tenant_id, bus.connected_runner_ids(), datetime.now(timezone.utc),
+    )
+
+
 @app.get("/api/katalog")
 async def odczytaj_katalog(
     k: Kontekst = Depends(kontekst_sesji),
