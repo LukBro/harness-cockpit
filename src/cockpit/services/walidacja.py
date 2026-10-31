@@ -3,6 +3,12 @@
 Bez bazy i bez I/O poza migawka katalogu. Funkcje zwracaja Naruszenie albo liste
 Naruszen; rzucanie wyjatku (NaruszonyNiezmiennik) to decyzja wywolujacego.
 Model workflow powstaje w BRO-102 - stale kluczy ponizej moga sie zmienic.
+
+Egzekwowane na sciezce wykonania sa wylacznie sprawdzenia wskazane w EGZEKWOWANE.
+Pozostale istnieja, ale nie sa podlaczone do punktow wejscia (cockpit.__main__,
+runner.__main__): waliduj_workflow (walidator workflow poza zakresem M1.0, BRO-99)
+oraz runner/krok.py i runner/worktree.py, ktore wolaja sprawdzenia, ale nie sa
+osiagalne z runner.__main__.
 """
 from __future__ import annotations
 
@@ -257,4 +263,10 @@ SPRAWDZENIA: Mapping[Niezmiennik, tuple[Callable[..., Any], ...]] = MappingProxy
     Niezmiennik.run_dir_outside_repo: (sprawdz_katalog_runu,),
     Niezmiennik.measured_or_null: (sprawdz_pomiar,),
     Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku),
+})
+
+# Punkty wywolania "modul:funkcja" osiagalne z cockpit.__main__ i runner.__main__.
+# Test w tests/test_warstwy.py pilnuje, ze punkt faktycznie wola sprawdzenie.
+EGZEKWOWANE: Mapping[Niezmiennik, tuple[str, ...]] = MappingProxyType({
+    Niezmiennik.measured_or_null: ("cockpit.services.runs:zapisz_zdarzenie",),
 })
