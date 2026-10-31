@@ -152,7 +152,13 @@ def token_runnera(czysta_baza, tmp_path, dane_wlasciciela) -> str:
 
 
 @pytest.fixture
-def adres_kokpitu(czysta_baza, token_runnera, tmp_path):
+def dodatkowe_env_kokpitu() -> dict[str, str]:
+    """Dodatkowe zmienne srodowiska procesu kokpitu; test nadpisuje je przez parametryzacje (HAR-70)."""
+    return {}
+
+
+@pytest.fixture
+def adres_kokpitu(czysta_baza, token_runnera, tmp_path, dodatkowe_env_kokpitu):
     port = _wolny_port()
     adres = f"http://127.0.0.1:{port}"
     log = tmp_path / "kokpit.log"
@@ -161,7 +167,7 @@ def adres_kokpitu(czysta_baza, token_runnera, tmp_path):
          "--host", "127.0.0.1", "--port", str(port)],
         # kokpit w e2e stoi na http: ciasteczko z flaga Secure nie wrociloby do serwera
         _srodowisko(tmp_path, COCKPIT_DATABASE_URL=czysta_baza,
-                    COCKPIT_CIASTECZKO_SECURE="0"), tmp_path, log,
+                    COCKPIT_CIASTECZKO_SECURE="0", **dodatkowe_env_kokpitu), tmp_path, log,
     )
     try:
         koniec = time.monotonic() + LIMIT_STARTU_S
