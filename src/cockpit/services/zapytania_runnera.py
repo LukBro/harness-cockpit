@@ -24,6 +24,15 @@ async def zapytaj_runnera_zespolu(
     s: AsyncSession, tenant_id: str, typ: str, dane: dict[str, Any],
     polaczone: frozenset[str], wyslij: Wyslij,
 ) -> Any:
+    _, wynik = await zapytaj_runnera_online(s, tenant_id, typ, dane, polaczone, wyslij)
+    return wynik
+
+
+async def zapytaj_runnera_online(
+    s: AsyncSession, tenant_id: str, typ: str, dane: dict[str, Any],
+    polaczone: frozenset[str], wyslij: Wyslij,
+) -> tuple[str, Any]:
+    """(runner_id, wynik) pierwszego runnera zespolu, ktory jest online (HAR-67)."""
     runnery = (await s.execute(
         select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
     )).scalars().all()
@@ -41,4 +50,4 @@ async def zapytaj_runnera_zespolu(
         if cialo.get("kod") == "poza_zakresem":
             raise PlikPozaZakresem(cialo.get("blad") or "sciezka poza zakresem runnera")
         raise StanNiemozliwy(cialo.get("blad") or "runner zglosil blad")
-    return cialo.get("wynik")
+    return runner.id, cialo.get("wynik")
