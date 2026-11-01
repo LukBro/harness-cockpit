@@ -20,7 +20,8 @@ BLEDNA_DATA_OD = "bledna_data_od"
 BLEDNY_NAGLOWEK = "bledny_naglowek"
 
 _NAGLOWEK = re.compile(r"^## L-(\d{3})\b")
-_DATA = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
+# Cyfry spoza ASCII przechodza `\d`, ale odrzuca je `date.fromisoformat` w `_data_poprawna`.
+_DATA = re.compile(r"\d{4}-\d{2}-\d{2}")
 _SEPARATOR = "·"
 
 
