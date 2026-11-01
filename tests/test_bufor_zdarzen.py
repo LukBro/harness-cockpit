@@ -1109,3 +1109,10 @@ async def test_zdarzenia_z_bufora_po_restarcie_runnera_trafiaja_do_bazy_bez_dupl
     assert kokpit.sciezki[0] == "/api/runners/register"
     assert kokpit.sciezki[-1] == "/api/runners/stream"
     assert Bufor().niepotwierdzone() == []
+
+
+def test_runner_zachowuje_token_podany_przy_tworzeniu_i_wysyla_go_w_naglowku():
+    runner = RunnerKlienta("http://kokpit.test", "tok-abc-123", bufor=Bufor())
+
+    assert runner.token == "tok-abc-123"
+    assert runner._headers == {"Authorization": "Bearer tok-abc-123"}
