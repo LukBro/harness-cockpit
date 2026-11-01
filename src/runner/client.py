@@ -9,6 +9,7 @@ import asyncio
 import importlib.metadata
 import json
 import os
+import re
 import shutil
 import signal
 import sys
@@ -55,6 +56,25 @@ def wersja_runnera() -> str:
         return "0+nieznana"     # pakiet niezainstalowany - nie udajemy realnej wersji
 
 
+_ZMIENNA_PROB = "COCKPIT_MAX_PROB_ZDARZENIA"
+_DOMYSLNE_MAKS_PROB = 10
+_CYFRY_ASCII = re.compile(r"[0-9]+")
+
+
+def maks_prob_bledu_serwera() -> int:
+    """Ile odpowiedzi 500 na to samo zdarzenie, zanim runner uzna je za utracone.
+    Czytane przy kazdym wywolaniu; pusta albo niepoprawna wartosc to blad, nie domyslna."""
+    surowa = os.environ.get(_ZMIENNA_PROB)
+    if surowa is None:
+        return _DOMYSLNE_MAKS_PROB
+    if not _CYFRY_ASCII.fullmatch(surowa) or int(surowa) < 1:
+        raise ValueError(f"{_ZMIENNA_PROB} musi byc dodatnia liczba calkowita (cyfry ASCII)")
+    return int(surowa)
+
+
+_limit_prob_z_srodowiska = maks_prob_bledu_serwera   # parametr Runner.__init__ przesłania nazwę
+
+
 class Runner:
     def __init__(
         self,
@@ -64,6 +84,7 @@ class Runner:
         transport: httpx.AsyncBaseTransport | None = None,
         bufor: Bufor | None = None,
         odczekaj: Callable[[float], Awaitable[None]] | None = None,
+        maks_prob_bledu_serwera: int | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
@@ -79,6 +100,10 @@ class Runner:
         self._zadanie: asyncio.Task | None = None
         self._bufor = bufor if bufor is not None else Bufor()
         self._odczekaj = odczekaj if odczekaj is not None else self._czekaj
+        self._maks_prob_bledu_serwera = (
+            maks_prob_bledu_serwera if maks_prob_bledu_serwera is not None
+            else _limit_prob_z_srodowiska()
+        )
         self._proba_laczenia = 0
         self._zapytania: set[asyncio.Task] = set()
 
@@ -117,6 +142,7 @@ class Runner:
         wstrzymuje kolejke do jego powrotu. `wyniki` dostaje event_id -> True dla zdarzen przyjetych (2xx)."""
         for wpis in self._bufor.niepotwierdzone():
             proba = 0
+            bledy_serwera = 0
             while True:
                 try:
                     r = await client.post(
@@ -133,6 +159,21 @@ class Runner:
                         break
                     if kod == 401:
                         raise TokenOdrzucony()      # zdarzenie zostaje w buforze
+                    if kod == 500:
+                        # WHY: 500 to blad wewnetrzny - tak konczy sie DataError trwale
+                        # odrzucanego zdarzenia. 502/503/504 i TransportError to
+                        # niedostepnosc kokpitu: ich nie limitujemy, zeby restart kokpitu
+                        # nie gubil zdarzen.
+                        bledy_serwera += 1
+                        if bledy_serwera >= self._maks_prob_bledu_serwera:
+                            print(
+                                f"zdarzenie utracone: kind={wpis.get('kind')} "
+                                f"run_id={wpis['run_id']} http=500 "
+                                f"po {bledy_serwera} probach",
+                                file=sys.stderr,
+                            )
+                            self._bufor.potwierdz(wpis["run_id"], wpis["event_id"])
+                            break
                     if kod < 500:
                         # ponowienie nic nie zmieni (4xx, takze nieobslugiwane 3xx)
                         print(
