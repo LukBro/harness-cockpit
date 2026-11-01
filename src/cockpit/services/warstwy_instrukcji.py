@@ -51,7 +51,7 @@ def pierwszenstwo(warstwa: WarstwaInstrukcji) -> int:
 
 def rozstrzygnij(a: WarstwaInstrukcji, b: WarstwaInstrukcji) -> WarstwaInstrukcji:
     """Warstwa, ktora wygrywa przy sprzecznosci: ta o mniejszym numerze."""
-    return a if pierwszenstwo(a) <= pierwszenstwo(b) else b
+    return min(a, b, key=pierwszenstwo)
 
 
 def lekcja_moze_nadpisac(warstwa: WarstwaInstrukcji) -> bool:
@@ -60,18 +60,15 @@ def lekcja_moze_nadpisac(warstwa: WarstwaInstrukcji) -> bool:
 
 def warstwy_z_claude_md(tekst: str) -> list[WarstwaInstrukcji]:
     """Warstwy z listy numerowanej sekcji "Pierwszenstwo warstw", w kolejnosci tekstu."""
-    sekcja: list[str] = []
-    w_sekcji = False
-    for linia in tekst.splitlines():
-        if linia.startswith("## Pierwszeństwo warstw"):
-            w_sekcji = True
-        elif linia.startswith("## "):
-            if w_sekcji:
-                break
-        elif w_sekcji:
-            sekcja.append(linia)
-    if not w_sekcji:
+    linie = tekst.splitlines()
+    naglowki = [i for i, linia in enumerate(linie) if linia.startswith("## Pierwszeństwo warstw")]
+    if not naglowki:
         raise ValueError("CLAUDE.md nie ma sekcji „Pierwszeństwo warstw”")
+    sekcja: list[str] = []
+    for linia in linie[naglowki[0] + 1:]:
+        if linia.startswith("## "):
+            break
+        sekcja.append(linia)
 
     wynik: list[WarstwaInstrukcji] = []
     for linia in sekcja:

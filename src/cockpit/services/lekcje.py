@@ -77,10 +77,10 @@ def _data_poprawna(tekst: str) -> bool:
 
 def _dlugosc_plotka(linia: str) -> tuple[str, int] | None:
     """Znak i dlugosc plotka, gdy linia zaczyna sie od co najmniej 3 ``` albo ~~~."""
-    if not linia.startswith(("```", "~~~")):
-        return None
-    znak = linia[0]
-    return znak, len(linia) - len(linia.lstrip(znak))
+    for znak in "`~":
+        if linia.startswith(znak * 3):
+            return znak, len(linia) - len(linia.lstrip(znak))
+    return None
 
 
 def _zamyka_blok(linia: str, otwarcie: tuple[str, int]) -> bool:
@@ -91,8 +91,9 @@ def _zamyka_blok(linia: str, otwarcie: tuple[str, int]) -> bool:
 
 
 def waliduj_lekcje(tekst: str) -> list[ProblemLekcji]:
-    # Wpis: [numer albo None, wiersz naglowka, None albo (wiersz, tresc) zakresu, bledny naglowek].
-    wpisy: list[list] = []
+    # Wpis: [numer, wiersz naglowka, None albo (wiersz, tresc) zakresu, bledny naglowek];
+    # None - naglowek sekcji, ktora nie jest lekcja (konczy poprzedni wpis).
+    wpisy: list[list | None] = []
     otwarcie: tuple[str, int] | None = None
     for numer_wiersza, linia in enumerate(tekst.splitlines(), start=1):
         if otwarcie is not None:
@@ -108,14 +109,15 @@ def waliduj_lekcje(tekst: str) -> list[ProblemLekcji]:
         elif linia.startswith("## L-"):
             wpisy.append([linia[3:].split()[0], numer_wiersza, None, True])
         elif linia.startswith("## "):
-            wpisy.append([None, numer_wiersza, None, False])
-        elif linia.startswith("zakres:") and wpisy and wpisy[-1][2] is None:
+            wpisy.append(None)
+        elif linia.startswith("zakres:") and wpisy and wpisy[-1] is not None and wpisy[-1][2] is None:
             wpisy[-1][2] = (numer_wiersza, linia[len("zakres:"):])
 
     problemy: list[ProblemLekcji] = []
-    for wpis, wiersz_naglowka, zakres, bledny in wpisy:
-        if wpis is None:
+    for pozycja in wpisy:
+        if pozycja is None:
             continue
+        wpis, wiersz_naglowka, zakres, bledny = pozycja
         if bledny:
             problemy.append(
                 ProblemLekcji(
@@ -141,7 +143,7 @@ def wczytaj_lekcje(plik: Path) -> list[ProblemLekcji]:
     except OSError as exc:
         raise BlednyPlikLekcji(f"nie można odczytać pliku lekcji {plik}: {exc}") from exc
     try:
-        tekst = surowe.decode("utf-8")
+        tekst = surowe.decode()  # domyslnie UTF-8, scisle
     except UnicodeDecodeError as exc:
         raise BlednyPlikLekcji(f"plik lekcji {plik} nie jest w UTF-8") from exc
     return waliduj_lekcje(tekst)

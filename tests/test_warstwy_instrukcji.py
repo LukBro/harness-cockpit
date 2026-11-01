@@ -273,6 +273,11 @@ def test_warstwa_ma_stala_wartosc_tekstowa(warstwa, wartosc):
     assert str(warstwa) == wartosc
 
 
+def test_pierwsza_pozycja_tuz_pod_naglowkiem_sekcji_jest_odczytana():
+    tekst = "## Pierwszeństwo warstw\n" + "\n".join(_pozycje(*OD_NAJWYZSZEJ)) + "\n"
+    assert warstwy_z_claude_md(tekst) == list(OD_NAJWYZSZEJ)
+
+
 def test_sekcja_pierwszenstwa_na_koncu_pliku_bez_nastepnego_naglowka_jest_odczytana():
     tekst = "## Pierwszeństwo warstw\n\n" + "\n".join(_pozycje(*OD_NAJWYZSZEJ)) + "\n"
     assert warstwy_z_claude_md(tekst) == list(OD_NAJWYZSZEJ)

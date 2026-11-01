@@ -253,6 +253,12 @@ def test_dwa_backticki_nie_otwieraja_bloku():
     assert waliduj_lekcje(tekst) == [_brak_zakresu_l001(2)]
 
 
+@pytest.mark.parametrize("linia", ["XXX", "***", "---", "'''"])
+def test_trzy_takie_same_znaki_inne_niz_backtick_i_tylda_nie_otwieraja_bloku(linia):
+    tekst = f"{linia}\n## L-001 — a\nobjaw: x\n"
+    assert waliduj_lekcje(tekst) == [_brak_zakresu_l001(2)]
+
+
 def test_dwie_tyldy_nie_otwieraja_bloku():
     tekst = "~~\n## L-001 — a\nobjaw: x\n"
     assert waliduj_lekcje(tekst) == [_brak_zakresu_l001(2)]
