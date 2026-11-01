@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import runs as uslugi_runow
 from cockpit.services import sesje
@@ -30,6 +31,25 @@ async def kontekst_sesji(
     request: Request,
     identyfikator: str = Depends(identyfikator_sesji),
     s: AsyncSession = Depends(get_session),
+) -> Kontekst:
+    return await _rozstrzygnij_kontekst(request, identyfikator, s)
+
+
+async def kontekst_sesji_strumienia(
+    request: Request,
+    identyfikator: str = Depends(identyfikator_sesji),
+) -> Kontekst:
+    """To samo co `kontekst_sesji`, ale na krotkiej, wlasnej sesji bazy.
+
+    Dla strumieni SSE: polaczenie wraca do puli, zanim strumien sie otworzy,
+    zamiast byc trzymane przez zaleznosc do konca odpowiedzi (HAR-147).
+    """
+    async with db_session.SessionLocal() as s:
+        return await _rozstrzygnij_kontekst(request, identyfikator, s)
+
+
+async def _rozstrzygnij_kontekst(
+    request: Request, identyfikator: str, s: AsyncSession
 ) -> Kontekst:
     kontekst = await sesje.rozstrzygnij(s, identyfikator)
     if request.method not in METODY_BEZPIECZNE:
