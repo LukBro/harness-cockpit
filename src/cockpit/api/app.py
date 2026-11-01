@@ -52,7 +52,13 @@ from .schematy import (
     Zdrowie,
     odpowiedzi_bledow,
 )
-from .zaleznosci import identyfikator_sesji, kontekst_sesji, runner_z_tokenu, trasa_publiczna
+from .zaleznosci import (
+    identyfikator_sesji,
+    kontekst_sesji,
+    kontekst_sesji_strumienia,
+    runner_z_tokenu,
+    trasa_publiczna,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,12 +297,13 @@ async def get_run(
 async def run_stream(
     run_id: str,
     request: Request,
-    k: Kontekst = Depends(kontekst_sesji),
+    k: Kontekst = Depends(kontekst_sesji_strumienia),
     identyfikator: str = Depends(identyfikator_sesji),
-    s: AsyncSession = Depends(get_session),
 ) -> EventSourceResponse:
-    # cudzy lub nieznany run to 404 przed otwarciem strumienia
-    await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+    # cudzy lub nieznany run to 404 przed otwarciem strumienia; sesja bazy
+    # tylko na to sprawdzenie, zamknieta przed zwroceniem strumienia (HAR-147)
+    async with db_session.SessionLocal() as s:
+        await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
 
     async def gen():
         q = None

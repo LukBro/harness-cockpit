@@ -926,9 +926,8 @@ async def test_strumien_runu_porzucony_przed_startem_nie_zostawia_subskrypcji(
     subskrypcje_runow.append("r-porzucony")
 
     kontekst, identyfikator = await _run_zespolu("r-porzucony")
-    async with db_session.SessionLocal() as s:
-        odpowiedz = await run_stream(
-            "r-porzucony", SimpleNamespace(), k=kontekst, identyfikator=identyfikator, s=s)
+    odpowiedz = await run_stream(
+        "r-porzucony", SimpleNamespace(), k=kontekst, identyfikator=identyfikator)
     # Porzucamy odpowiedz tak, jak zerwane polaczenie: cialo nigdy nie ruszylo.
     await odpowiedz.body_iterator.aclose()
 
@@ -948,10 +947,9 @@ async def test_strumien_runu_dostaje_zdarzenia_w_trakcie_a_po_zamknieciu_nie_ma_
         return False
 
     kontekst, identyfikator = await _run_zespolu("r-czynny")
-    async with db_session.SessionLocal() as s:
-        odpowiedz = await run_stream(
-            "r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony),
-            k=kontekst, identyfikator=identyfikator, s=s)
+    odpowiedz = await run_stream(
+        "r-czynny", SimpleNamespace(is_disconnected=nie_rozlaczony),
+        k=kontekst, identyfikator=identyfikator)
     strumien = odpowiedz.body_iterator
     pierwsze = asyncio.ensure_future(strumien.__anext__())
     try:
