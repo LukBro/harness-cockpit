@@ -128,6 +128,8 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
   // Blad samego uruchomienia (np. runner offline); nie nalezy do zadnego runu.
   const [bladUruchomienia, setBladUruchomienia] = useState<string | null>(null);
   const [uruchamiam, setUruchamiam] = useState(false);
+  const [ticket, setTicket] = useState("");
+  const [ostrzezenie, setOstrzezenie] = useState<{ aktywnyRunId: string } | null>(null);
 
   useEffect(() => {
     // Nowy runId (lub brak): nic z poprzedniego runu nie moze zostac na ekranie.
@@ -193,9 +195,10 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
     };
   }, [runId]);
 
-  async function uruchom() {
+  async function wyslijStart(potwierdz: boolean) {
     setUruchamiam(true);
     setBladUruchomienia(null);
+    setOstrzezenie(null);
     // Kazda porazka ma ten sam skutek: zadnego "starego" runu na ekranie ani w adresie.
     // runId=null domyka stary strumien w cleanupie efektu.
     const porzucRun = () => {
@@ -206,9 +209,24 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
       const r = await fetchZSesja("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workflow: "szkielet" }),
+        // Pusty ticket: klucz pomijamy, bo API odrzuca pusty napis (min_length=1).
+        body: JSON.stringify({
+          workflow: "szkielet",
+          ...(ticket.trim() ? { ticket_id: ticket.trim() } : {}),
+          ...(potwierdz ? { potwierdz_rownolegly: true } : {}),
+        }),
       });
       if (r.status === 409) {
+        // Pole aktywny_run_id odroznia ostrzezenie o rownoleglym runie od "runner offline".
+        // Nieczytelne ciało traktujemy jak offline. Biezacego widoku nie zrywamy: decyzja jest u człowieka.
+        const aktywny = await r.json().then(
+          (j) => (typeof j?.aktywny_run_id === "string" ? (j.aktywny_run_id as string) : null),
+          () => null,
+        );
+        if (aktywny !== null) {
+          setOstrzezenie({ aktywnyRunId: aktywny });
+          return;
+        }
         // Stan pusty zamiast bledu: mow, co zrobic (BRO-123).
         porzucRun();
         setBladUruchomienia(KOMUNIKAT_OFFLINE);
@@ -233,9 +251,35 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
   return (
     <main style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto" }}>
       <h1 style={{ fontSize: 20 }}>Harness Cockpit</h1>
-      <button onClick={uruchom} disabled={uruchamiam}>
+      <label>
+        Ticket{" "}
+        <input
+          type="text"
+          value={ticket}
+          onChange={(e) => {
+            setTicket(e.target.value);
+            // Ostrzezenie dotyczylo starej wartosci pola.
+            setOstrzezenie(null);
+          }}
+        />
+      </label>{" "}
+      <button onClick={() => void wyslijStart(false)} disabled={uruchamiam}>
         {uruchamiam ? "Uruchamiam…" : "Uruchom"}
       </button>
+      {ostrzezenie && (
+        <div role="alert" style={{ color: "#8A5A00" }}>
+          <p>
+            Na tym tickecie trwa już run{" "}
+            <a href={`?run=${encodeURIComponent(ostrzezenie.aktywnyRunId)}`}>{ostrzezenie.aktywnyRunId}</a>. Uruchomić drugi?
+          </p>
+          <button onClick={() => void wyslijStart(true)} disabled={uruchamiam}>
+            Uruchom mimo to
+          </button>{" "}
+          <button onClick={() => setOstrzezenie(null)} disabled={uruchamiam}>
+            Anuluj
+          </button>
+        </div>
+      )}
       {bladUruchomienia && <p style={{ color: "#A5201A" }}>{bladUruchomienia}</p>}
       {blad && <p style={{ color: "#A5201A" }}>{blad}</p>}
       {bladStrumienia && <p style={{ color: "#A5201A" }}>{bladStrumienia}</p>}
