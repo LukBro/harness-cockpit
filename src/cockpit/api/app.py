@@ -44,6 +44,7 @@ from .schematy import (
     PlikZapisany,
     RunnerZameldowany,
     RunnerZespolu,
+    RunNaLiscie,
     RunSzczegoly,
     RunUtworzony,
     ZdarzeniePrzyjete,
@@ -380,6 +381,16 @@ async def odczytaj_runnery(
     return await uslugi.runnery_zespolu(
         s, k.tenant_id, bus.connected_runner_ids(), datetime.now(timezone.utc),
     )
+
+
+@app.get("/api/runs", response_model=list[RunNaLiscie],
+         responses=odpowiedzi_bledow(401))
+async def lista_runow(
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await uslugi.runy_zespolu(s, k.tenant_id)
 
 
 @app.get("/api/katalog", response_model=Katalog,

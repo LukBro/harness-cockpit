@@ -558,6 +558,33 @@
         "title": "RunCreate",
         "type": "object"
       },
+      "RunNaLiscie": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "workflow": {
+            "title": "Workflow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workflow",
+          "status",
+          "created_at"
+        ],
+        "title": "RunNaLiscie",
+        "type": "object"
+      },
       "RunStatus": {
         "enum": [
           "pending",
@@ -1989,6 +2016,46 @@
       }
     },
     "/api/runs": {
+      "get": {
+        "operationId": "lista_runow_api_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunNaLiscie"
+                  },
+                  "title": "Response Lista Runow Api Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Lista Runow"
+      },
       "post": {
         "operationId": "create_run_api_runs_post",
         "requestBody": {

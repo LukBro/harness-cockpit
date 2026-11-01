@@ -25,6 +25,7 @@ from .walidacja import sprawdz_pomiar
 
 POWOD_RUNNER_OFFLINE = "runner offline"  # (HAR-37)
 KIND_PRZERWANIA = "run_aborted"
+LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
 _PROBY_SEQ = 5  # ile razy powtarzamy wyliczenie seq po kolizji (HAR-25)
@@ -477,3 +478,25 @@ async def polecenie_aktualne(
         )
     ).scalar_one_or_none()
     return status == RunStatus.running
+
+
+async def runy_zespolu(
+    s: AsyncSession, tenant_id: str, limit: int = LIMIT_LISTY_RUNOW,
+) -> list[dict]:
+    """Runy zespolu od najnowszego, bez zdarzen (HAR-72)."""
+    runy = (await s.execute(
+        select(Run).where(Run.tenant_id == tenant_id)
+        .order_by(Run.created_at.desc(), Run.id.desc()).limit(limit)
+    )).scalars().all()
+    lista = []
+    for run in runy:
+        utworzony = run.created_at
+        if utworzony.tzinfo is None:   # SQLite oddaje daty bez strefy; zapisujemy UTC
+            utworzony = utworzony.replace(tzinfo=timezone.utc)
+        lista.append({
+            "id": run.id,
+            "workflow": run.workflow,
+            "status": run.status,
+            "created_at": utworzony.astimezone(timezone.utc).isoformat(),
+        })
+    return lista
