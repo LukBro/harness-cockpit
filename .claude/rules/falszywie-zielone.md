@@ -30,3 +30,20 @@ zmian zgłaszałby „brak zmienionych funkcji” na maszynie z `diff.noprefix` 
 - Ścieżka kończąca się sukcesem bez dowodu, że coś zostało sprawdzone = **-25**.
 - Każda gałąź „brak dowodu → błąd” ma test, w którym tylko ona decyduje o wyniku
   (zob. [test-odroznia-regule](test-odroznia-regule.md)).
+
+## Regresja (retro M1.6)
+
+Źródło: HAR-149 (-25 `|| true` na zapadce, -15 fallback cache), HAR-144 (-25 zasięg mutmuta).
+
+- **`|| true` na wywołaniu, którego niezerowy kod oznacza błąd wejścia** — zepsute wejście
+  przechodzi na zielono; nazwana przyczyna musi dotyczyć konkretnego kodu, nie całego
+  wywołania (HAR-149, `mutation.yml` zapadka).
+- **Cache przywracany po samym prefiksie klucza** (`restore-keys`) przywraca stan z innymi
+  testami albo z plikami usuniętymi w PR — wynik bramki pochodzi wtedy ze starego stanu.
+  Klucz obejmuje wszystko, od czego zależy werdykt (testy, konfiguracja) (HAR-149).
+- **Model zasięgu zewnętrznego narzędzia** liczony według składni, a nie według faktycznych
+  reguł pomijania w zainstalowanej wersji (mutmut 3.8.0: dekoratory, `__new__`,
+  `# pragma: no mutate`) — kod, którego narzędzie nie sprawdza, idzie do „sprawdź ręcznie”,
+  nigdy do kodu 0 (HAR-144).
+
+Co sprawdzić w review: każdy z powyższych kształtów = **-25**.
