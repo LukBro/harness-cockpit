@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from cockpit.services.errors import (
     BladDziedziny,
+    BlednyPlikLekcji,
     BlednySkill,
     BrakDostepu,
     NaruszonyNiezmiennik,
@@ -40,6 +41,7 @@ KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     StanNiemozliwy: 409,
     NaruszonyNiezmiennik: 422,
     BlednySkill: 422,
+    BlednyPlikLekcji: 422,
     NiespojneDane: 422,
     NieprawidloweObecneHaslo: 422,
     ZbytWieleProb: 429,

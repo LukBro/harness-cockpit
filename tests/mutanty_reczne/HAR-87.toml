@@ -1,0 +1,65 @@
+# Tabela recznych mutantow HAR-87: stale, wyrazenia regularne, dataclass i kod bledu w
+# lekcje.py, warstwy_instrukcji.py i api/bledy.py - poza zasiegiem mutmuta (kod 3).
+
+# Zly plik lekcji to 422, nie 500.
+[[mutant]]
+plik = "src/cockpit/api/bledy.py"
+szukaj = "BlednyPlikLekcji: 422,"
+zamien = "BlednyPlikLekcji: 500,"
+test = "tests/test_lekcje.py::test_zly_plik_lekcji_to_blad_dziedziny_z_kodem_http_422"
+
+# Granica slowa po numerze: L-0001 to bledny naglowek, nie wpis L-000.
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '(\d{3})\b")'
+zamien = '(\d{3})")'
+test = "tests/test_lekcje.py::test_naglowek_lekcji_z_czterema_cyframi_to_bledny_naglowek"
+
+# Separator pol zakresu to kropka srodkowa.
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '_SEPARATOR = "·"'
+zamien = '_SEPARATOR = "|"'
+test = "tests/test_lekcje.py::test_wpis_poprawny_nie_daje_problemow"
+
+# Kod problemu jest stala wartoscia kontraktu.
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = 'BRAK_KROKU = "brak_kroku"'
+zamien = 'BRAK_KROKU = "brak_krok"'
+test = "tests/test_lekcje.py::test_zakres_bez_kroku_daje_brak_kroku"
+
+# Problem lekcji jest niezmienny.
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '@dataclass(frozen=True)'
+zamien = '@dataclass'
+test = "tests/test_lekcje.py::test_problem_lekcji_jest_niezmienny"
+
+# Kolejnosc pierwszenstwa to kolejnosc definicji enuma.
+[[mutant]]
+plik = "src/cockpit/services/warstwy_instrukcji.py"
+szukaj = '= tuple(WarstwaInstrukcji)'
+zamien = '= tuple(reversed(WarstwaInstrukcji))'
+test = "tests/test_warstwy_instrukcji.py::test_lista_od_najwyzszej_to_wszystkie_warstwy_w_kolejnosci_definicji"
+
+# Opis warstwy musi odpowiadac pozycji listy w CLAUDE.md.
+[[mutant]]
+plik = "src/cockpit/services/warstwy_instrukcji.py"
+szukaj = '"`SKILL.md` kroku"'
+zamien = '"`SKILL.md`"'
+test = "tests/test_warstwy_instrukcji.py::test_opis_w_claude_md_ma_wpis_dla_kazdej_warstwy_z_dokladna_wartoscia"
+
+# Pozycja listy wymaga spacji po numerze.
+[[mutant]]
+plik = "src/cockpit/services/warstwy_instrukcji.py"
+szukaj = 'r"^(\d+)\. (.*)$"'
+zamien = 'r"^(\d+)\.\s*(.*)$"'
+test = "tests/test_warstwy_instrukcji.py::test_wiersz_bez_spacji_po_numerze_nie_jest_pozycja_listy"
+
+# Lekcja nie moze nadpisac skilla: lekcje to najnizsza warstwa.
+[[mutant]]
+plik = "src/cockpit/services/warstwy_instrukcji.py"
+szukaj = "    skill_md = \"skill_md\"\n    lekcje = \"lekcje\""
+zamien = "    lekcje = \"lekcje\"\n    skill_md = \"skill_md\""
+test = "tests/test_warstwy_instrukcji.py::test_skill_md_wygrywa_z_lekcja"
