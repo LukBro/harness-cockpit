@@ -80,6 +80,7 @@ source_paths = [
 # wiec wpis jest katalogiem; katalog kopiuje copytree, ktore je tworzy.
 # web/: test kontraktu API (HAR-69) czyta web/openapi.json z repozytorium; wpis jest
 # katalogiem z tego samego powodu (kopia pojedynczego pliku nie tworzy mutants/web/).
+# .cockpit/workflows/: test workflow budowy czyta budowa.yaml repozytorium (HAR-88).
 also_copy = [
   "src/cockpit/__init__.py",
   "src/cockpit/__main__.py",
@@ -95,6 +96,7 @@ also_copy = [
   ".claude/hooks/",
   "deploy/",
   ".cockpit/skills/",
+  ".cockpit/workflows/",
   "web/",
   # CLAUDE.md i .ai/: testy warstw instrukcji i walidatora lekcji czytaja prawdziwe
   # pliki (HAR-87); .ai/ jako katalog z tego samego powodu co web/.
