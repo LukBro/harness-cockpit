@@ -15,6 +15,13 @@ szukaj = '"-o", "addopts=", test]'
 zamien = 'test]'
 test = "tests/test_mutanty_reczne.py::test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_nadal_sie_uruchamia"
 
+# Bez bajtkodu: stary `.pyc` z przebiegu bazowego nie moze ukryc mutacji tej samej dlugosci.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = ', "PYTHONDONTWRITEBYTECODE": "1"}'
+zamien = '}'
+test = "tests/test_mutanty_reczne.py::test_mutacja_zapisana_w_tej_samej_sekundzie_co_oryginal_nie_uruchamia_starego_bajtkodu"
+
 # `-z` w ls-files: nazwy ze spacja i polskimi znakami nie moga byc cytowane przez gita.
 [[mutant]]
 plik = "tools/mutanty_reczne.py"

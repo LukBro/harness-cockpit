@@ -143,7 +143,9 @@ def uruchom_test(kopia: Path, test: str, limit: float) -> int:
     stare = os.environ.get("PYTHONPATH")
     # Kopia na poczatku, zeby instalacja editable nie wskazywala na oryginal.
     sciezki = os.pathsep.join([str(kopia / "src"), *([stare] if stare else [])])
-    srodowisko = {**os.environ, "PYTHONPATH": sciezki}
+    # Bez bajtkodu: mutacja tej samej dlugosci zapisana w tej samej sekundzie co oryginal
+    # wygladalaby dla Pythona na niezmieniona i test uruchomilby `.pyc` sprzed mutacji.
+    srodowisko = {**os.environ, "PYTHONPATH": sciezki, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
         proces = subprocess.Popen(
             polecenie,

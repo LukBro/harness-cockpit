@@ -895,6 +895,28 @@ def test_tabela_podana_jako_sciezka_wzgledna_jest_liczona_od_korzenia_z_opcji_ko
     assert mutanty_reczne.main([TABELA_W_REPO, "--korzen", str(repo)]) == 0
 
 
+def test_mutacja_zapisana_w_tej_samej_sekundzie_co_oryginal_nie_uruchamia_starego_bajtkodu(
+    tmp_path, monkeypatch
+):
+    # Mutacja `+` -> `-` nie zmienia rozmiaru pliku; gdy zapis wypada w tej samej sekundzie co
+    # mtime oryginalu (copy2 go zachowuje), `.pyc` z przebiegu bazowego wyglada na aktualny
+    # i test uruchamia kod sprzed mutacji (czerwone CI HAR-150). Zapis z zachowanym mtime
+    # odtwarza ten przypadek deterministycznie.
+    # Zmienna odziedziczona po wolajacym (np. sam `mutanty_reczne` w CI) ukrylaby brak poprawki.
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    repo = _repo(tmp_path, TABELA_ZABITY)
+    zastosuj = mutanty_reczne.zastosuj_mutacje
+
+    def zastosuj_z_tym_samym_mtime(kopia, mutant):
+        stat = (kopia / mutant.plik).stat()
+        zastosuj(kopia, mutant)
+        os.utime(kopia / mutant.plik, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+    monkeypatch.setattr(mutanty_reczne, "zastosuj_mutacje", zastosuj_z_tym_samym_mtime)
+
+    assert _uruchom(repo, TABELA_W_REPO) == 0
+
+
 def test_bez_opcji_korzen_korzeniem_jest_biezacy_katalog(tmp_path, monkeypatch):
     repo = _repo(tmp_path, TABELA_DO_PODSTAWKI)
     _podstawka_testu(monkeypatch)
