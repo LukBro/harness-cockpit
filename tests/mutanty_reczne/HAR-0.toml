@@ -1,0 +1,88 @@
+# Tabela recznych mutantow HAR-150: tools/mutanty_reczne.py i krok `mutanty reczne` w
+# .github/workflows/mutation.yml. Wykonywana w CI na tym PR (diff dotyka tools/ i .github/).
+
+# Ocena kodu pytesta: kod 0 to przezyty mutant, nie blad.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod == 0:"
+zamien = "if kod == 3:"
+test = "tests/test_mutanty_reczne.py::test_test_ktory_przeszedl_po_mutacji_oznacza_przezywajacego_mutanta"
+
+# `-o addopts=`: marker wykluczony w konfiguracji projektu nie moze wyciac wybranego testu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '"-o", "addopts=", test]'
+zamien = 'test]'
+test = "tests/test_mutanty_reczne.py::test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_nadal_sie_uruchamia"
+
+# `-z` w ls-files: nazwy ze spacja i polskimi znakami nie moga byc cytowane przez gita.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '"-z", "--cached"'
+zamien = '"--cached"'
+test = "tests/test_mutanty_reczne.py::test_kopia_repo_zachowuje_pliki_ze_spacja_i_polskimi_znakami_w_nazwie"
+
+# Kopia przed oryginalem w PYTHONPATH: test importuje kod z kopii z mutacja.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '[str(kopia / "src"), *([stare] if stare else [])]'
+zamien = '[*([stare] if stare else []), str(kopia / "src")]'
+test = "tests/test_mutanty_reczne.py::test_test_importuje_kod_z_kopii_a_nie_z_oryginalu_nawet_gdy_oryginal_jest_w_pythonpath"
+
+# Licznik wystapien: zero wystapien `szukaj` to blad, nie cicho nic niezmieniajaca mutacja.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if ile != 1:"
+zamien = "if ile > 1:"
+test = "tests/test_mutanty_reczne.py::test_mutacja_bez_wystapienia_szukaj_konczy_sie_bledem_i_nie_zmienia_pliku"
+
+# Przebieg bazowy: test czerwony bez mutacji nie moze "zabijac" mutantow.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if uruchom_test(kopia, mutant.test, limit) != 0:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_test_czerwony_juz_bez_mutacji_konczy_sie_kodem_2_zamiast_falszywie_zabitym_mutantem"
+
+# Kod wyjscia bledu narzedzia to 2.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return 2"
+zamien = "return 1"
+test = "tests/test_mutanty_reczne.py::test_szukaj_nieobecne_w_pliku_konczy_sie_kodem_2_z_komunikatem_na_stderr"
+
+# Kotwica `^`: web/tools/cicd liczy sie tylko na poczatku sciezki.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "grep -qE '^(web|tools|cicd)/'"
+zamien = "grep -qE '(web|tools|cicd)/'"
+test = "tests/test_workflow_mutacje.py::test_katalog_web_tools_cicd_liczy_sie_tylko_na_poczatku_sciezki_i_jako_caly_katalog"
+
+# `--diff-filter=d`: tabela usunieta w PR nie jest dowodem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--no-renames --diff-filter=d "origin/$BASE_REF...HEAD"'
+zamien = '--no-renames "origin/$BASE_REF...HEAD"'
+test = "tests/test_workflow_mutacje.py::test_tabele_sa_wybierane_zapytaniem_gita_ograniczonym_do_katalogu_tabel_bez_usunietych"
+
+# `exit 1` przy braku dowodu: zmiana poza zasiegiem bez tabeli oblewa krok.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''test-odroznia-regule.md"
+              exit 1'''
+zamien = '''test-odroznia-regule.md"
+              exit 0'''
+test = "tests/test_workflow_mutacje.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_oblewa_krok_z_brakiem_dowodu"
+
+# Zapis kodu mutantow zmian do pliku: z niego korzysta krok `mutanty reczne`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "$kod" > mutants/mutanty-zmian.kod'
+zamien = 'echo "$kod" > /dev/null'
+test = "tests/test_workflow_mutacje.py::test_krok_zmienionych_funkcji_zapisuje_kod_narzedzia_do_pliku_takze_gdy_krok_jest_czerwony"
+
+# Kod 3 narzedzia mutantow zmian to zmiana poza zasiegiem mutmuta.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'if [ "$kod_zmian" = "3" ]; then'
+zamien = 'if [ "$kod_zmian" = "4" ]; then'
+test = "tests/test_workflow_mutacje.py::test_kod_3_narzedzia_mutantow_zmian_bez_tabeli_oblewa_krok_z_brakiem_dowodu"

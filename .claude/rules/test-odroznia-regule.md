@@ -151,6 +151,27 @@ krotki w `except`, elementy stałych zbiorów i wyrażeń regularnych, hooki pyt
 HAR-144) — raport test-writera zawiera tabelę **ręcznych mutantów**:
 `element | mutacja | test, który oblewa`. Po jednym wierszu na każdy zmieniony element.
 
+Źródło: HAR-150. Tabela jest wykonywalna: żyje jako `tests/mutanty_reczne/<ticket>.toml`,
+a wiersz to wpis `[[mutant]]` z polami `plik` (ścieżka względna od korzenia repo), `szukaj`
+(musi wystąpić w pliku dokładnie raz), `zamien` (różne od `szukaj`) i `test` (node id pytesta):
+
+```toml
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "if kod == 1:"
+zamien = "if kod != 1:"
+test = "tests/test_runs.py::test_run_zakonczony_sukcesem_ma_stan_do_odbioru_nie_gotowe"
+```
+
+`python tools/mutanty_reczne.py tests/mutanty_reczne/<ticket>.toml` nakłada każdą mutację w
+nowej kopii repozytorium w katalogu tymczasowym i sprawdza, że wskazany test oblewa (test
+musi najpierw przejść na kopii bez mutacji). Kod wyjścia **0** — wszystkie mutanty zabite,
+**1** — są przeżywające (stdout: `plik: szukaj → zamien`), **2** — błąd narzędzia: zła
+tabela, `szukaj` nie raz, test czerwony bez mutacji, kod pytesta inny niż 0/1, przekroczony
+limit czasu. W CI krok `mutanty ręczne` w jobie `mutation` wykonuje tabele zmienione w PR;
+zmiana w `web/`, `tools/` lub `cicd/` albo kod 3 z `tools/mutanty_zmian.py` bez zmienionej
+tabeli to czerwony krok z komunikatem „brak dowodu”.
+
 - Brak tabeli przy zmianie poza zasięgiem mutmuta = **-25**.
 - Wiersz z testem, który po mutacji nadal przechodzi (krytyk sprawdza co najmniej jeden
   wiersz, wprowadzając mutację lokalnie) = **-25**.
