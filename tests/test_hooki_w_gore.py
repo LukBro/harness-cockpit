@@ -437,3 +437,154 @@ async def test_przekazuj_wywoluje_wysylke_z_polami_zwroconymi_przez_do_wysylki()
 
     assert wyslane == [do_wysylki(ev, "run-1", "krok-1")]
     assert wyslane[0]["run_id"] == "run-1"
+
+
+# --- 8. HAR-146: zdarzenie, którego kokpit nigdy nie przyjmie, nie wchodzi do bufora ---------
+
+WARTOSC_ZNACZNIK = 987654        # liczba w polu tekstowym; jej cyfr nie ma być w komunikacie
+POLA_TEKSTOWE = ["event", "agent_id", "agent_type", "tool", "phase"]
+
+
+def _zdarzenie_z_event_o_dlugosci(n: int) -> dict:
+    return _ev(event="E" * n)
+
+
+@pytest.mark.parametrize("pole", POLA_TEKSTOWE)
+def test_pole_zdarzenia_hooka_z_liczba_zamiast_napisu_jest_odrzucone_z_nazwa_pola_bez_wartosci(pole):
+    from runner.hooks import BladZdarzeniaHooka
+
+    with pytest.raises(BladZdarzeniaHooka) as wyjatek:
+        do_wysylki(_ev(**{pole: WARTOSC_ZNACZNIK}), "r", "k")
+
+    assert wyjatek.value.pole == pole
+    assert pole in str(wyjatek.value)
+    assert str(WARTOSC_ZNACZNIK) not in str(wyjatek.value)
+
+
+def test_blad_zdarzenia_hooka_jest_bledem_dziedziny():
+    from cockpit.services.errors import BladDziedziny
+    from runner.hooks import BladZdarzeniaHooka
+
+    assert issubclass(BladZdarzeniaHooka, BladDziedziny)
+
+
+@pytest.mark.parametrize("wartosc", [True, False], ids=repr)
+def test_wartosc_logiczna_w_polu_agenta_nie_jest_napisem_i_jest_odrzucona(wartosc):
+    from runner.hooks import BladZdarzeniaHooka
+
+    with pytest.raises(BladZdarzeniaHooka) as wyjatek:
+        do_wysylki(_ev(agent_type=wartosc), "r", "k")
+
+    assert wyjatek.value.pole == "agent_type"
+
+
+@pytest.mark.parametrize("pole", ["agent_id", "agent_type", "tool", "phase"])
+@pytest.mark.parametrize("wartosc", [[], ["a"], {}, {"a": 1}], ids=repr)
+def test_lista_albo_slownik_w_polu_tekstowym_zdarzenia_jest_odrzucona(pole, wartosc):
+    from runner.hooks import BladZdarzeniaHooka
+
+    with pytest.raises(BladZdarzeniaHooka) as wyjatek:
+        do_wysylki(_ev(**{pole: wartosc}), "r", "k")
+
+    assert wyjatek.value.pole == pole
+
+
+@pytest.mark.parametrize("pole", ["tool", "phase"])
+def test_logiczne_true_w_narzedziu_albo_fazie_jest_odrzucone_zamiast_trafic_do_tekstu(pole):
+    from runner.hooks import BladZdarzeniaHooka
+
+    with pytest.raises(BladZdarzeniaHooka) as wyjatek:
+        do_wysylki(_ev(**{pole: True}), "r", "k")
+
+    assert wyjatek.value.pole == pole
+
+
+def test_zdarzenie_bez_nazwy_zdarzenia_to_blad_zdarzenia_z_polem_event_a_nie_keyerror():
+    from runner.hooks import BladZdarzeniaHooka
+
+    ev = _ev()
+    del ev["event"]
+
+    with pytest.raises(BladZdarzeniaHooka) as wyjatek:
+        do_wysylki(ev, "r", "k")
+
+    assert wyjatek.value.pole == "event"
+
+
+def test_brak_narzedzia_i_fazy_czyli_none_zostaje_dozwolony_i_daje_pusty_tekst():
+    wynik = do_wysylki(_ev(tool=None, phase=None), "r", "k")
+
+    assert wynik["text"] == ""
+
+
+def test_kind_dokladnie_o_dlugosci_kolumny_czyli_piecdziesiat_znakow_przechodzi():
+    wynik = do_wysylki(_zdarzenie_z_event_o_dlugosci(45), "r", "k")
+
+    assert wynik["kind"] == "hook:" + "E" * 45
+    assert len(wynik["kind"]) == 50
+
+
+def test_kind_dluzszy_niz_kolumna_czyli_piecdziesiat_jeden_znakow_jest_odrzucony_z_polem_kind():
+    from runner.hooks import BladZdarzeniaHooka
+
+    with pytest.raises(BladZdarzeniaHooka) as wyjatek:
+        do_wysylki(_zdarzenie_z_event_o_dlugosci(46), "r", "k")
+
+    assert wyjatek.value.pole == "kind"
+    assert "kind" in str(wyjatek.value)
+    assert "E" * 46 not in str(wyjatek.value)
+
+
+def test_limity_dlugosci_w_hookach_sa_rowne_dlugosciom_kolumn_modelu_zdarzenia():
+    from runner import hooks
+
+    kolumny = Event.__table__.columns
+    assert hooks._MAKS_KIND == kolumny["kind"].type.length
+    assert hooks._MAKS_ID_AGENTA == kolumny["agent_id"].type.length
+    assert hooks._MAKS_ID_AGENTA == kolumny["agent_type"].type.length
+
+
+async def test_zdarzenie_z_polem_liczbowym_nie_trafia_do_wysylki_a_nastepne_poprawne_tak(capsys):
+    czytnik = _falszywy_czytnik(
+        _ev(event="PostToolUse", phase=WARTOSC_ZNACZNIK),
+        _ev(event="Stop", tool="NarzedzieB"))
+    wyslane: list[dict] = []
+
+    async def wyslij(**kw):
+        wyslane.append(kw)
+
+    zadanie = asyncio.create_task(przekazuj(czytnik, wyslij))
+    try:
+        await asyncio.wait_for(czytnik.kolejka.join(), LIMIT_S)   # task_done także dla odrzuconego
+        assert not zadanie.done()                                 # pętla żyje
+    finally:
+        zadanie.cancel()
+        await asyncio.wait({zadanie})
+
+    assert [w["text"] for w in wyslane] == ["NarzedzieB"]
+    stderr = capsys.readouterr().err
+    assert "BladZdarzeniaHooka" in stderr
+    assert "phase" in stderr
+    assert str(WARTOSC_ZNACZNIK) not in stderr
+
+
+async def test_zdarzenie_z_kind_dluzszym_niz_kolumna_nie_trafia_do_bufora_ani_do_kokpitu(
+    swiat, tmp_path, capsys,
+):
+    czytnik = _czytnik(tmp_path, swiat.run_id)
+    czytnik.kolejka.put_nowait(
+        _ev(event="E" * 46, run_id="x", step_id="y"))      # kind = 51 znaków
+    czytnik.kolejka.put_nowait(_ev(event="Stop", run_id="x", step_id="y"))
+    transport = NagrywajacyKokpit()
+
+    await _przeslij(czytnik, _runner(transport))
+
+    assert transport.proby == 1                             # do kokpitu wyszło tylko poprawne
+    assert not any("E" * 46 in c for c in transport.ciala)
+    assert Bufor().niepotwierdzone() == []
+    zapisane = await _zdarzenia_w_bazie()
+    assert [e.kind for e in zapisane] == ["hook:Stop"]
+    stderr = capsys.readouterr().err
+    assert "BladZdarzeniaHooka" in stderr
+    assert "kind" in stderr
+    assert "E" * 46 not in stderr

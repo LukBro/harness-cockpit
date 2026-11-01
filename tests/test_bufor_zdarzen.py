@@ -451,9 +451,13 @@ class Odczekania:
             await self.runner.stop()
 
 
-def _runner(transport=None, zatrzymaj_po: int | None = None) -> tuple[RunnerKlienta, Odczekania]:
+def _runner(
+    transport=None, zatrzymaj_po: int | None = None, maks_prob: int | None = None,
+) -> tuple[RunnerKlienta, Odczekania]:
     odczekania = Odczekania(zatrzymaj_po)
-    runner = RunnerKlienta(BAZA, TOKEN, transport=transport, odczekaj=odczekania)
+    # parametr przekazujemy tylko, gdy test go ustawia: reszta testow sprawdza wartosc domyslna
+    dodatkowe = {} if maks_prob is None else {"maks_prob_bledu_serwera": maks_prob}
+    runner = RunnerKlienta(BAZA, TOKEN, transport=transport, odczekaj=odczekania, **dodatkowe)
     odczekania.runner = runner
     return runner, odczekania
 
@@ -592,6 +596,222 @@ async def test_zatrzymanie_runnera_w_trakcie_odczekiwania_konczy_wysylke_a_zdarz
     assert len(zdarzenia) == 1                   # po zatrzymaniu nie ma kolejnej próby
     assert odczekania.argumenty == [1.0]
     assert [z["event_id"] for z in Bufor().niepotwierdzone()] == ["e1"]
+
+
+# --- HAR-146: zdarzenie, ktorego kokpit nigdy nie przyjmie, nie blokuje kolejki ----------
+
+ZMIENNA_PROB = "COCKPIT_MAX_PROB_ZDARZENIA"
+LOG_UTRATY_3 = "zdarzenie utracone: kind=output run_id=run-1 http=500 po 3 probach"
+
+
+async def test_zdarzenie_ktore_kokpit_odrzuca_bledem_500_przy_kazdej_probie_jest_utracone_po_limicie_prob(
+    capsys, monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 500)
+    runner, odczekania = _runner(transport, maks_prob=3)
+
+    przyjete = await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert przyjete is False
+    assert [z["event_id"] for z in zdarzenia] == ["e1", "e1", "e1"]
+    assert Bufor().niepotwierdzone() == []
+    wpisy = capsys.readouterr().err.splitlines()
+    assert wpisy[-1] == LOG_UTRATY_3
+    assert len([w for w in wpisy if w.startswith("kokpit niedostepny")]) == 2
+    assert len(wpisy) == 3
+
+
+async def test_po_ostatniej_dopuszczonej_probie_runner_nie_czeka_przed_utrata_zdarzenia(
+    monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, _, _ = _kokpit_zdarzen(500, 500, 500)
+    runner, odczekania = _runner(transport, maks_prob=3)
+
+    await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert odczekania.argumenty == [1.0, 2.0]            # miedzy probami, nie po ostatniej
+
+
+async def test_wpis_o_utraconym_po_limicie_zdarzeniu_nie_ujawnia_tokenu_ani_tresci(
+    capsys, monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, _, _ = _kokpit_zdarzen(500, 500)
+    runner, _ = _runner(transport, maks_prob=2)
+
+    await _wyslij(runner, transport, event_id="e1", **{**POLE, "text": "tajna-tresc-zdarzenia"})
+
+    err = capsys.readouterr().err
+    assert "zdarzenie utracone" in err
+    assert TOKEN not in err
+    assert "tajna-tresc-zdarzenia" not in err
+
+
+async def test_zdarzenie_przyjete_przy_ostatniej_dopuszczonej_probie_nie_jest_utracone(
+    capsys, monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 200)
+    runner, odczekania = _runner(transport, maks_prob=3)
+
+    przyjete = await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert przyjete is True
+    assert len(zdarzenia) == 3
+    assert odczekania.argumenty == [1.0, 2.0]
+    assert Bufor().niepotwierdzone() == []
+    assert "zdarzenie utracone" not in capsys.readouterr().err
+
+
+async def test_zdarzenie_utracone_po_limicie_prob_nie_blokuje_nastepnego_wyslanego_osobno(
+    monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 500, 200)
+    runner, _ = _runner(transport, maks_prob=3)
+
+    pierwsze = await _wyslij(runner, transport, event_id="e1", **POLE)
+    drugie = await _wyslij(runner, transport, event_id="e2", **POLE)
+
+    assert (pierwsze, drugie) == (False, True)
+    assert [z["event_id"] for z in zdarzenia] == ["e1", "e1", "e1", "e2"]
+    assert Bufor().niepotwierdzone() == []
+
+
+async def test_zdarzenie_utracone_z_zaleglosci_nie_blokuje_dosylania_nastepnych_w_buforze(
+    monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    Bufor().dopisz(_zd("run-1", "stare-1"))
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 500, 200)
+    runner, _ = _runner(transport, maks_prob=3)
+
+    przyjete = await _wyslij(runner, transport, event_id="nowe", **POLE)
+
+    assert przyjete is True
+    assert [z["event_id"] for z in zdarzenia] == ["stare-1"] * 3 + ["nowe"]
+    assert Bufor().niepotwierdzone() == []
+
+
+async def test_licznik_prob_bledu_serwera_liczy_od_zera_dla_kazdego_zdarzenia(monkeypatch):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    Bufor().dopisz(_zd("run-1", "stare-1"))
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 500, 500, 500, 200)
+    runner, odczekania = _runner(transport, maks_prob=3)
+
+    przyjete = await _wyslij(runner, transport, event_id="nowe", **POLE)
+
+    assert przyjete is True                       # "nowe": dwa 500 i 200, nie liczy 500 poprzednika
+    assert [z["event_id"] for z in zdarzenia] == ["stare-1"] * 3 + ["nowe"] * 3
+    assert odczekania.argumenty == [1.0, 2.0, 1.0, 2.0]
+    assert Bufor().niepotwierdzone() == []
+
+
+async def test_niedostepnosc_kokpitu_503_i_zerwane_polaczenia_nie_wyczerpuja_limitu_prob(
+    capsys, monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, zdarzenia, _ = _kokpit_zdarzen(
+        500, 503, httpx.ConnectError("nie ma kokpitu"), 503, 200)
+    runner, odczekania = _runner(transport, maks_prob=2)
+
+    przyjete = await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert przyjete is True
+    assert len(zdarzenia) == 5
+    assert len(odczekania.argumenty) == 4
+    assert Bufor().niepotwierdzone() == []
+    assert "zdarzenie utracone" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("kod", [502, 503, 504])
+async def test_brama_i_niedostepnosc_5xx_inne_niz_500_sa_ponawiane_bez_limitu(kod, monkeypatch):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, zdarzenia, _ = _kokpit_zdarzen(*[kod] * 5, 200)
+    runner, _ = _runner(transport, maks_prob=2)
+
+    przyjete = await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert przyjete is True
+    assert len(zdarzenia) == 6
+
+
+async def test_limit_prob_zdarzenia_mozna_ustawic_zmienna_srodowiskowa(capsys, monkeypatch):
+    monkeypatch.setenv(ZMIENNA_PROB, "2")
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 500)
+    runner, _ = _runner(transport)
+
+    przyjete = await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert przyjete is False
+    assert len(zdarzenia) == 2
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        "zdarzenie utracone: kind=output run_id=run-1 http=500 po 2 probach")
+
+
+async def test_limit_prob_podany_runnerowi_ma_pierwszenstwo_przed_zmienna_srodowiskowa(monkeypatch):
+    monkeypatch.setenv(ZMIENNA_PROB, "5")
+    transport, zdarzenia, _ = _kokpit_zdarzen(500, 500, 500)
+    runner, _ = _runner(transport, maks_prob=2)
+
+    przyjete = await _wyslij(runner, transport, event_id="e1", **POLE)
+
+    assert przyjete is False
+    assert len(zdarzenia) == 2
+
+
+async def test_domyslnie_zdarzenie_jest_ponawiane_dziewiec_razy_a_po_dziesiatym_bledzie_500_utracone(
+    capsys, monkeypatch,
+):
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+    transport, zdarzenia, _ = _kokpit_zdarzen(*[500] * 9, 200)
+    runner, _ = _runner(transport)
+    assert await _wyslij(runner, transport, event_id="e1", **POLE) is True
+    assert len(zdarzenia) == 10
+    capsys.readouterr()
+
+    transport, zdarzenia, _ = _kokpit_zdarzen(*[500] * 10, 200)
+    runner, odczekania = _runner(transport)
+    assert await _wyslij(runner, transport, event_id="e2", **POLE) is False
+
+    assert len(zdarzenia) == 10
+    assert len(odczekania.argumenty) == 9
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        "zdarzenie utracone: kind=output run_id=run-1 http=500 po 10 probach")
+    assert Bufor().niepotwierdzone() == []
+
+
+def test_limit_prob_zdarzenia_bez_zmiennej_srodowiskowej_to_dziesiec(monkeypatch):
+    from runner.client import maks_prob_bledu_serwera
+
+    monkeypatch.delenv(ZMIENNA_PROB, raising=False)
+
+    assert maks_prob_bledu_serwera() == 10
+
+
+def test_limit_prob_zdarzenia_ze_zmiennej_srodowiskowej_jest_czytany_przy_kazdym_wywolaniu(
+    monkeypatch,
+):
+    from runner.client import maks_prob_bledu_serwera
+
+    monkeypatch.setenv(ZMIENNA_PROB, "7")
+    assert maks_prob_bledu_serwera() == 7
+    monkeypatch.setenv(ZMIENNA_PROB, "1")
+    assert maks_prob_bledu_serwera() == 1
+
+
+@pytest.mark.parametrize("wartosc", ["0", "abc", "٣", "", "-1", "2.5", " 3"])
+def test_limit_prob_zdarzenia_inny_niz_dodatnia_liczba_cyfr_ascii_to_blad_z_nazwa_zmiennej(
+    monkeypatch, wartosc,
+):
+    from runner.client import maks_prob_bledu_serwera
+
+    monkeypatch.setenv(ZMIENNA_PROB, wartosc)
+
+    with pytest.raises(ValueError, match=ZMIENNA_PROB):
+        maks_prob_bledu_serwera()
 
 
 # --- odpowiedzi 4xx --------------------------------------------------------------
@@ -889,3 +1109,10 @@ async def test_zdarzenia_z_bufora_po_restarcie_runnera_trafiaja_do_bazy_bez_dupl
     assert kokpit.sciezki[0] == "/api/runners/register"
     assert kokpit.sciezki[-1] == "/api/runners/stream"
     assert Bufor().niepotwierdzone() == []
+
+
+def test_runner_zachowuje_token_podany_przy_tworzeniu_i_wysyla_go_w_naglowku():
+    runner = RunnerKlienta("http://kokpit.test", "tok-abc-123", bufor=Bufor())
+
+    assert runner.token == "tok-abc-123"
+    assert runner._headers == {"Authorization": "Bearer tok-abc-123"}
