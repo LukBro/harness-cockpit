@@ -1,0 +1,14 @@
+# Pierwszy workflow repozytorium: skille budowy wołane krokami, nie intuicją modelu
+# (BRO-95). Po planie bramka zatwierdzenia przez człowieka, bo w nowym repozytorium
+# człowiek w pętli jest najcenniejszy (BRO-96). Krok lekcji jest opcjonalny; silnik
+# (BRO-75) jeszcze nie nadaje `optional` skutku.
+name: budowa
+steps:
+  plan: {skill: plan}
+  tdd-task: {skill: tdd-task, needs: [plan], approval: true}
+  e2e-scenario: {skill: e2e-scenario, needs: [tdd-task]}
+  contract-check: {skill: contract-check, needs: [e2e-scenario]}
+  review-unknown: {skill: review-unknown, needs: [e2e-scenario]}
+  explain-change: {skill: explain-change, needs: [e2e-scenario]}
+  smoke: {skill: smoke, needs: [contract-check, review-unknown, explain-change]}
+  capture-lesson: {skill: capture-lesson, needs: [smoke], optional: true}
