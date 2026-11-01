@@ -96,4 +96,8 @@ also_copy = [
   "deploy/",
   ".cockpit/skills/",
   "web/",
+  # CLAUDE.md i .ai/: testy warstw instrukcji i walidatora lekcji czytaja prawdziwe
+  # pliki (HAR-87); .ai/ jako katalog z tego samego powodu co web/.
+  "CLAUDE.md",
+  ".ai/",
 ]

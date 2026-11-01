@@ -33,6 +33,10 @@ class BlednySkill(BladDziedziny):
     """SKILL.md nie da sie wczytac: nieznana rola, brak pola, id inne niz katalog (HAR-5)."""
 
 
+class BlednyPlikLekcji(BladDziedziny):
+    """Plik `.ai/lessons.md` nie da sie odczytac: brak pliku, prawa, nie UTF-8 (HAR-87)."""
+
+
 class StanNiemozliwy(BladDziedziny):
     """Np. runner offline przy probie uruchomienia."""
 
