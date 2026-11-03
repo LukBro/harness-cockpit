@@ -8,7 +8,7 @@
 
 # Przycisk startu runu nazywa sie "Uruchom": test e2e klika go po nazwie.
 [[mutant]]
-plik = "web/src/App.tsx"
+plik = "web/src/WidokRunu.tsx"
 szukaj = '"Uruchamiam…" : "Uruchom"'
 zamien = '"Uruchamiam…" : "Start"'
 test = "tests/e2e/test_szkielet_w_przegladarce.py::test_klikniecie_uruchom_pokazuje_wynik_procesu"

@@ -47,14 +47,14 @@ test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_runner_offline_pokazuje_pa
 
 # "Uruchom" wylaczony przy runnerze offline.
 [[mutant]]
-plik = "web/src/App.tsx"
+plik = "web/src/WidokRunu.tsx"
 szukaj = "wyslijStart(false)} disabled={uruchamiam || offline}"
 zamien = "wyslijStart(false)} disabled={uruchamiam}"
 test = "tests/e2e/test_szkielet_w_przegladarce.py::test_zatrzymany_runner_wylacza_uruchom_z_podpowiedzia_i_nie_tworzy_runu"
 
 # "Uruchom mimo to" wylaczony przy runnerze offline.
 [[mutant]]
-plik = "web/src/App.tsx"
+plik = "web/src/WidokRunu.tsx"
 szukaj = "wyslijStart(true)} disabled={uruchamiam || offline}"
 zamien = "wyslijStart(true)} disabled={uruchamiam}"
 test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_ostrzezenie_o_aktywnym_runie_ma_wylaczone_uruchom_mimo_to_gdy_runner_przejdzie_w_offline"
@@ -138,7 +138,7 @@ test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_blad_pobrania_katalogu_pok
 
 # Podpowiedz offline tylko przy runnerze offline: online bez tooltipu i opisu.
 [[mutant]]
-plik = "web/src/App.tsx"
+plik = "web/src/WidokRunu.tsx"
 szukaj = 'return offline ? { "aria-describedby": PODPOWIEDZ_OFFLINE_ID, title: PODPOWIEDZ_OFFLINE } : {};'
 zamien = 'return { "aria-describedby": PODPOWIEDZ_OFFLINE_ID, title: PODPOWIEDZ_OFFLINE };'
 test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_runner_online_ma_aktywne_przyciski_i_nie_pokazuje_paska_trybu_tylko_do_odczytu"
