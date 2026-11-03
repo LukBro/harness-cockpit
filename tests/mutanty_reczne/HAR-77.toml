@@ -1,0 +1,151 @@
+# Tabela recznych mutantow HAR-77: tryb tylko do odczytu przy runnerze offline (web/src/App.tsx).
+# Testy sa e2e: wymagaja zbudowanego frontu (npm run build w web/) i PostgreSQL
+# (COCKPIT_TEST_DATABASE_URL). Kazdy wiersz sprawdzony lokalnie: swiezy klon, mutacja, build,
+# wskazany test oblal.
+
+# Blad pobrania stanu runnera (HTTP != 2xx) to "nieznany", nie "offline": bez paska i blokady.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = """
+        if (!r.ok) {
+          setStan("nieznany");
+          return;
+        }
+"""
+zamien = """
+        if (!r.ok) {
+          return;
+        }
+"""
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_blad_pobrania_stanu_runnera_odpowiedz_500_zdejmuje_tryb_offline_bez_przeladowania"
+
+# Zerwane polaczenie przy sondzie stanu runnera to tez "nieznany".
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = """
+      } catch {
+        if (!anulowano) setStan("nieznany");
+      }"""
+zamien = """
+      } catch {
+      }"""
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_blad_pobrania_stanu_runnera_zerwane_polaczenie_zdejmuje_tryb_offline_bez_przeladowania"
+
+# Jeden runner online wystarcza, zeby nie byc w trybie tylko do odczytu.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "lista.some((x) => x.online)"
+zamien = "lista.every((x) => x.online)"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_jeden_runner_online_wsrod_offline_wystarcza_by_nie_byc_w_trybie_tylko_do_odczytu"
+
+# Pasek to informacja, nie blad: kolor informacyjny, nie #A5201A.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = 'color: "#58616D", background: "#EEF1F4"'
+zamien = 'color: "#A5201A", background: "#EEF1F4"'
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_runner_offline_pokazuje_pasek_trybu_tylko_do_odczytu_jako_informacje"
+
+# "Uruchom" wylaczony przy runnerze offline.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "wyslijStart(false)} disabled={uruchamiam || offline}"
+zamien = "wyslijStart(false)} disabled={uruchamiam}"
+test = "tests/e2e/test_szkielet_w_przegladarce.py::test_zatrzymany_runner_wylacza_uruchom_z_podpowiedzia_i_nie_tworzy_runu"
+
+# "Uruchom mimo to" wylaczony przy runnerze offline.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "wyslijStart(true)} disabled={uruchamiam || offline}"
+zamien = "wyslijStart(true)} disabled={uruchamiam}"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_ostrzezenie_o_aktywnym_runie_ma_wylaczone_uruchom_mimo_to_gdy_runner_przejdzie_w_offline"
+
+# "Odswiez" wylaczony przy runnerze offline.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "disabled={odswiezam || offline}"
+zamien = "disabled={odswiezam}"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_runner_offline_wylacza_odswiez_i_uruchom_z_wyjasnieniem"
+
+# Blad GET /api/katalog (HTTP != 2xx z czytelnym JSON) to komunikat, nie katalog z obiektu bledu.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = """
+        if (!r.ok) throw new Error(String(r.status));
+"""
+zamien = """
+        /* usuniete */
+"""
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_blad_pobrania_katalogu_pokazuje_komunikat_zamiast_listy"
+
+# Zerwane polaczenie przy odswiezaniu katalogu daje komunikat.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = """
+    } catch {
+      setBladOdswiezenia(true);
+    } finally {"""
+zamien = """
+    } catch {
+    } finally {"""
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_zerwane_polaczenie_przy_odswiezaniu_katalogu_pokazuje_komunikat_i_zostawia_liste"
+
+# Nowe odswiezenie zdejmuje komunikat poprzedniego bledu.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = """
+    setOdswiezam(true);
+    setBladOdswiezenia(false);
+"""
+zamien = """
+    setOdswiezam(true);
+"""
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_udane_odswiezenie_po_bledzie_zdejmuje_komunikat_bledu_i_podmienia_liste"
+
+# Przed pierwsza odpowiedzia o runnerach stan jest "nieznany": bez paska i blokady.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = 'useState<StanRunnera>("nieznany")'
+zamien = 'useState<StanRunnera>("offline")'
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_przed_pierwsza_odpowiedzia_o_stanie_runnera_widok_nie_jest_w_trybie_tylko_do_odczytu"
+
+# Przed odpowiedzia o katalogu nie ma komunikatu bledu pobrania.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "const [blad, setBlad] = useState(false);"
+zamien = "const [blad, setBlad] = useState(true);"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_przed_pierwsza_odpowiedzia_o_katalogu_widok_mowi_ladowanie_bez_bledow_i_tabeli"
+
+# Przed pierwszym odswiezeniem nie ma komunikatu bledu odswiezenia.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "const [bladOdswiezenia, setBladOdswiezenia] = useState(false);"
+zamien = "const [bladOdswiezenia, setBladOdswiezenia] = useState(true);"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_przed_pierwsza_odpowiedzia_o_katalogu_widok_mowi_ladowanie_bez_bledow_i_tabeli"
+
+# Przed pierwszym odswiezeniem przycisk "Odswiez" nie jest w stanie "Odswiezam...".
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "const [odswiezam, setOdswiezam] = useState(false);"
+zamien = "const [odswiezam, setOdswiezam] = useState(true);"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_przed_pierwsza_odpowiedzia_o_katalogu_widok_mowi_ladowanie_bez_bledow_i_tabeli"
+
+# Blad pobrania katalogu konczy "Ladowanie...": nie wisi obok komunikatu bledu.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = "{!blad && katalog === null &&"
+zamien = "{katalog === null &&"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_blad_pobrania_katalogu_pokazuje_komunikat_zamiast_listy"
+
+# Podpowiedz offline tylko przy runnerze offline: online bez tooltipu i opisu.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = 'return offline ? { "aria-describedby": PODPOWIEDZ_OFFLINE_ID, title: PODPOWIEDZ_OFFLINE } : {};'
+zamien = 'return { "aria-describedby": PODPOWIEDZ_OFFLINE_ID, title: PODPOWIEDZ_OFFLINE };'
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_runner_online_ma_aktywne_przyciski_i_nie_pokazuje_paska_trybu_tylko_do_odczytu"
+
+# Rola workflow (null) pokazana jako kreska.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = 'd.rola ?? "—"'
+zamien = "d.rola"
+test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_runner_offline_pokazuje_zasiany_katalog_z_rodzajem_nazwa_i_rola"

@@ -28,7 +28,18 @@ type Runner = {
   last_seen_at: string | null;
 };
 
+type Definicja = { runner_id: string; projekt: string; rodzaj: "skill" | "workflow"; klucz: string; nazwa: string; rola: string | null };
+type Katalog = { odswiezono_at: string | null; definicje: Definicja[] };
+// "nieznany": brak odpowiedzi albo blad pobrania. Nie blokujemy akcji, bo backend i tak broni sie 409.
+type StanRunnera = "nieznany" | "online" | "offline";
+
 const ODSWIEZANIE_RUNNEROW_MS = 5000;
+const KOMUNIKAT_TRYB_ODCZYTU = "Runner offline — tryb tylko do odczytu";
+const PODPOWIEDZ_OFFLINE_ID = "podpowiedz-runner-offline";
+const PODPOWIEDZ_OFFLINE = "Wymaga runnera online. Uruchom runnera na swojej maszynie.";
+const KOMUNIKAT_KATALOG_PUSTY = "Katalog jeszcze nie odświeżony";
+const KOMUNIKAT_BLAD_KATALOGU = "Nie udało się pobrać katalogu.";
+const KOMUNIKAT_BLAD_ODSWIEZENIA_KATALOGU = "Nie udało się odświeżyć katalogu.";
 const KOMUNIKAT_BRAK_RUNNEROW = "Brak runnerów. Zainstaluj i uruchom cockpit-runner z tokenem zespołu.";
 const KOMUNIKAT_BLAD_RUNNEROW = "Nie udało się odświeżyć listy runnerów. Ponawiam; pokazana lista może być nieaktualna.";
 
@@ -43,6 +54,47 @@ function scal(stare: Zdarzenie[], nowe: Zdarzenie[]): Zdarzenie[] {
   for (const z of stare) mapa.set(z.seq, z);
   for (const z of nowe) mapa.set(z.seq, z);
   return [...mapa.values()].sort((a, b) => a.seq - b.seq);
+}
+
+// UTC zamiast strefy przegladarki: ten sam stan katalogu pokazuje ten sam napis wszystkim.
+function dataStanu(iso: string): string {
+  const d = new Date(iso);
+  const dwie = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${dwie(d.getUTCMonth() + 1)}-${dwie(d.getUTCDate())} ${dwie(d.getUTCHours())}:${dwie(d.getUTCMinutes())} UTC`;
+}
+
+// Wlasny polling, niezalezny od PanelRunnerow: ten panel zostaje nietkniety.
+function useStanRunnera(): StanRunnera {
+  const [stan, setStan] = useState<StanRunnera>("nieznany");
+
+  useEffect(() => {
+    let anulowano = false;
+
+    async function pobierz() {
+      try {
+        const r = await fetchZSesja("/api/runners");
+        if (anulowano) return;
+        if (!r.ok) {
+          setStan("nieznany");
+          return;
+        }
+        const lista: Runner[] = await r.json();
+        if (anulowano) return;
+        setStan(lista.some((x) => x.online) ? "online" : "offline");
+      } catch {
+        if (!anulowano) setStan("nieznany");
+      }
+    }
+
+    void pobierz();
+    const timer = setInterval(() => void pobierz(), ODSWIEZANIE_RUNNEROW_MS);
+    return () => {
+      anulowano = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  return stan;
 }
 
 function runZAdresu(): string | null {
@@ -108,16 +160,50 @@ export function App() {
       </>
     );
   }
+  return <WidokZalogowany email={stan.email} poWygasnieciuSesji={poWygasnieciuSesji} />;
+}
+
+// Osobny komponent, bo hook stanu runnera nie moze stac za wczesnymi return w App.
+function WidokZalogowany({ email, poWygasnieciuSesji }: { email: string; poWygasnieciuSesji: () => void }) {
+  const stanRunnera = useStanRunnera();
   return (
     <>
-      <PanelKonta email={stan.email} />
-      <WidokRunu poWygasnieciuSesji={poWygasnieciuSesji} />
+      <PanelKonta email={email} />
+      {stanRunnera === "offline" && <PasekTrybuOdczytu />}
+      <WidokRunu poWygasnieciuSesji={poWygasnieciuSesji} stanRunnera={stanRunnera} />
+      <Definicje stanRunnera={stanRunnera} />
       <PanelRunnerow />
     </>
   );
 }
 
-function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
+// Informacja, nie awaria: neutralny kolor i role="status", nigdy alert.
+function PasekTrybuOdczytu() {
+  return (
+    <div style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto 0" }}>
+      <p role="status" style={{ color: "#58616D", background: "#EEF1F4", padding: "8px 12px", margin: 0 }}>
+        {KOMUNIKAT_TRYB_ODCZYTU}
+      </p>
+      <p id={PODPOWIEDZ_OFFLINE_ID} style={{ color: "#58616D", margin: "8px 0 0" }}>
+        {PODPOWIEDZ_OFFLINE}
+      </p>
+    </div>
+  );
+}
+
+// Atrybuty wspolne dla przyciskow wymagajacych runnera.
+function opisOffline(offline: boolean) {
+  return offline ? { "aria-describedby": PODPOWIEDZ_OFFLINE_ID, title: PODPOWIEDZ_OFFLINE } : {};
+}
+
+function WidokRunu({
+  poWygasnieciuSesji,
+  stanRunnera,
+}: {
+  poWygasnieciuSesji: () => void;
+  stanRunnera: StanRunnera;
+}) {
+  const offline = stanRunnera === "offline";
   const [runId, setRunId] = useState<string | null>(runZAdresu);
   const [zdarzenia, setZdarzenia] = useState<Zdarzenie[]>([]);
   const [status, setStatus] = useState<string | null>(null);
@@ -263,7 +349,7 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
           }}
         />
       </label>{" "}
-      <button onClick={() => void wyslijStart(false)} disabled={uruchamiam}>
+      <button onClick={() => void wyslijStart(false)} disabled={uruchamiam || offline} {...opisOffline(offline)}>
         {uruchamiam ? "Uruchamiam…" : "Uruchom"}
       </button>
       {ostrzezenie && (
@@ -272,7 +358,7 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
             Na tym tickecie trwa już run{" "}
             <a href={`?run=${encodeURIComponent(ostrzezenie.aktywnyRunId)}`}>{ostrzezenie.aktywnyRunId}</a>. Uruchomić drugi?
           </p>
-          <button onClick={() => void wyslijStart(true)} disabled={uruchamiam}>
+          <button onClick={() => void wyslijStart(true)} disabled={uruchamiam || offline} {...opisOffline(offline)}>
             Uruchom mimo to
           </button>{" "}
           <button onClick={() => setOstrzezenie(null)} disabled={uruchamiam}>
@@ -305,6 +391,89 @@ function WidokRunu({ poWygasnieciuSesji }: { poWygasnieciuSesji: () => void }) {
         ))}
       </ul>
     </main>
+  );
+}
+
+// Katalog z cache w bazie: czytelny bez runnera. Odswiezenie wymaga runnera, bo dysk jest po jego stronie.
+function Definicje({ stanRunnera }: { stanRunnera: StanRunnera }) {
+  const offline = stanRunnera === "offline";
+  const [katalog, setKatalog] = useState<Katalog | null>(null);
+  const [blad, setBlad] = useState(false);
+  const [bladOdswiezenia, setBladOdswiezenia] = useState(false);
+  const [odswiezam, setOdswiezam] = useState(false);
+
+  useEffect(() => {
+    let anulowano = false;
+    fetchZSesja("/api/katalog")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        const k: Katalog = await r.json();
+        if (!anulowano) setKatalog(k);
+      })
+      .catch(() => {
+        if (!anulowano) setBlad(true);
+      });
+    return () => {
+      anulowano = true;
+    };
+  }, []);
+
+  async function odswiez() {
+    setOdswiezam(true);
+    setBladOdswiezenia(false);
+    try {
+      const r = await fetchZSesja("/api/katalog/odswiez", { method: "POST" });
+      if (!r.ok) {
+        setBladOdswiezenia(true);
+        return;
+      }
+      const k: Katalog = await r.json();
+      setKatalog(k);
+    } catch {
+      setBladOdswiezenia(true);
+    } finally {
+      setOdswiezam(false);
+    }
+  }
+
+  return (
+    <section aria-label="Definicje" style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto" }}>
+      <h2 style={{ fontSize: 16 }}>Definicje</h2>
+      <button onClick={() => void odswiez()} disabled={odswiezam || offline} {...opisOffline(offline)}>
+        {odswiezam ? "Odświeżam…" : "Odśwież"}
+      </button>
+      {bladOdswiezenia && (
+        <p role="status" style={{ color: "#58616D" }}>
+          {KOMUNIKAT_BLAD_ODSWIEZENIA_KATALOGU}
+        </p>
+      )}
+      {blad && <p style={{ color: "#A5201A" }}>{KOMUNIKAT_BLAD_KATALOGU}</p>}
+      {!blad && katalog === null && <p style={{ color: "#58616D" }}>Ładowanie…</p>}
+      {katalog !== null && katalog.odswiezono_at === null && <p style={{ color: "#58616D" }}>{KOMUNIKAT_KATALOG_PUSTY}</p>}
+      {katalog !== null && katalog.odswiezono_at !== null && (
+        <>
+          <p style={{ color: "#58616D" }}>stan z {dataStanu(katalog.odswiezono_at)}</p>
+          <table style={{ borderCollapse: "collapse", width: "100%", textAlign: "left" }}>
+            <thead>
+              <tr>
+                <th>Rodzaj</th>
+                <th>Nazwa</th>
+                <th>Rola</th>
+              </tr>
+            </thead>
+            <tbody>
+              {katalog.definicje.map((d) => (
+                <tr key={`${d.runner_id}:${d.projekt}:${d.rodzaj}:${d.klucz}`}>
+                  <td>{d.rodzaj}</td>
+                  <td>{d.nazwa}</td>
+                  <td>{d.rola ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
   );
 }
 
