@@ -451,7 +451,23 @@ async def test_polecenie_spoza_listy_bez_identyfikatorow_kroku_nie_trafia_do_kok
         assert atrapa.kind_i_tekst("run-ok", "s1")[-1] == ("step_finished", "kod wyjscia 0")
         assert uruchomione == [ARGV_SZKIELET]
         assert not nasluch.done()
-        assert capsys.readouterr().err.count(KOMUNIKAT_BEZ_ID) == 1
+        assert capsys.readouterr().err.splitlines().count(KOMUNIKAT_BEZ_ID) == 1  # cala linia
+
+
+async def test_runner_otwiera_strumien_polecen_metoda_get(monkeypatch):
+    metody: list[str] = []
+    prawdziwy_stream = httpx.AsyncClient.stream
+
+    def stream_z_rejestrem(self, method, url, **kw):
+        metody.append(method)
+        return prawdziwy_stream(self, method, url, **kw)
+
+    monkeypatch.setattr(httpx.AsyncClient, "stream", stream_z_rejestrem)
+    polecenia = [_krok("run-ok", "s1", operacja="szkielet")]
+    async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, _, _n):
+        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+
+        assert metody == ["GET"]
 
 
 async def test_brak_miejsca_przy_zapisie_odmowy_konczy_krok_przerwaniem_z_powodem_i_strumien_zyje(

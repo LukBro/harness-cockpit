@@ -434,7 +434,6 @@ class Runner:
                 client, run_id=run_id, step_id=step_id,
                 kind="step_failed", text=POWOD_SPOZA_LISTY)
         except BrakMiejsca:
-            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
             await self._wyslij_bezposrednio(
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",
                 text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
