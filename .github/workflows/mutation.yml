@@ -84,6 +84,8 @@ jobs:
           # Przechwytujemy go do zmiennej, zeby trafil do `case` ponizej, a nie zostal polkniety.
           kod=0
           python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
+          # Krok `mutanty reczne` czyta ten kod: bez pliku nie wiadomo, czy mutmut pokryl zmiane.
+          echo "$kod" > mutants/mutanty-zmian.kod
           {
             echo "## Mutanty zmienionych funkcji"
             echo
@@ -132,6 +134,77 @@ jobs:
               ;;
           esac
 
+      # HAR-150: zmiany, ktorych mutmut nie mutuje (web/, tools/, cicd/ albo kod 3 narzedzia
+      # mutantow zmian), wymagaja tabeli tests/mutanty_reczne/<ticket>.toml zmienionej w PR.
+      # Brak tabeli to brak dowodu, wiec czerwony krok. Tabela zmieniona w PR jest wykonywana
+      # niezaleznie od zasiegu: jej czerwony wynik nie moze zostac zignorowany.
+      - name: mutanty ręczne
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
+            exit 1
+          fi
+          kod_zmian="$(cat mutants/mutanty-zmian.kod)"
+          zmiany="$(git diff --name-only --no-renames "origin/$BASE_REF...HEAD")"
+          # Tylko istniejace pliki: tabela usunieta w PR nie jest dowodem.
+          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          poza_zasiegiem=0
+          if [ "$kod_zmian" = "3" ]; then
+            poza_zasiegiem=1
+          fi
+          if printf '%s\n' "$zmiany" | grep -qE '^(web|tools|cicd)/'; then
+            poza_zasiegiem=1
+          fi
+          if [ -z "$tabele" ]; then
+            if [ "$poza_zasiegiem" = "1" ]; then
+              {
+                echo "## Mutanty ręczne"
+                echo
+                echo "brak dowodu: zmiana poza zasięgiem mutmuta bez tabeli tests/mutanty_reczne/<ticket>.toml"
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::brak dowodu: zmiana poza zasiegiem mutmuta (web/, tools/, cicd/ albo kod 3) wymaga tabeli tests/mutanty_reczne/<ticket>.toml - .claude/rules/test-odroznia-regule.md"
+              exit 1
+            fi
+            {
+              echo "## Mutanty ręczne"
+              echo
+              echo "nie dotyczy - zmiany w zasięgu mutmuta"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
+          kod=0
+          python3 tools/mutanty_reczne.py $tabele > mutants/mutanty-reczne.txt 2> mutants/mutanty-reczne.err || kod=$?
+          {
+            echo "## Mutanty ręczne"
+            echo
+            case "$kod" in
+              0)
+                echo "wszystkie ręczne mutanty zabite"
+                ;;
+              1)
+                echo "Przeżywające ręczne mutanty (krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/mutanty-reczne.txt
+                echo '```'
+                ;;
+              *)
+                echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/mutanty-reczne.err
+                echo '```'
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$kod" != "0" ]; then
+            echo "::error::mutanty_reczne.py zakonczyl sie kodem $kod: $(tr '\n' ' ' < mutants/mutanty-reczne.err)"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -139,6 +212,8 @@ jobs:
           path: |
             mutants/mutanty-zmian.txt
             mutants/mutanty-zmian.err
+            mutants/mutanty-reczne.txt
+            mutants/mutanty-reczne.err
 
   mutation-main:
     if: github.event_name == 'push'

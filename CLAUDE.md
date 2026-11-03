@@ -54,7 +54,8 @@ Przy sprzeczności instrukcji wygrywa warstwa wyżej na liście (BRO-96):
 - MUST: przy sprzeczności stosuj warstwę wyższą.
   WHY: pomiar BRO-126 na `palserwis` — 25 konfliktów, bo nikt nie zapisał, która warstwa wygrywa.
 - NEVER: `.ai/lessons.md` nie nadpisuje poziomów 1–4; lekcja sprzeczna z nimi jest do poprawki, nie do wykonania.
-- Kolejność jest na razie regułą tekstu; wymuszenie w kodzie to HAR-87.
+- Kolejność jest bytem w kodzie (`WarstwaInstrukcji` w `src/cockpit/services/warstwy_instrukcji.py`),
+  a test porównuje ją z powyższą listą. Walidator lekcji to `tools/check_lessons.py` (krok CI).
 
 ## Instrukcje poza korzeniem — MUST / NEVER
 
