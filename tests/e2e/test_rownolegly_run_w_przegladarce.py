@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse
@@ -181,6 +182,19 @@ def test_odpowiedz_409_bez_czytelnej_tresci_daje_komunikat_offline(
             route.continue_()
 
     page.route("**/api/runs", _podstaw_409)
+    # HAR-77: bez runnera online przycisk "Uruchom" jest wyłączony, więc przeglądarka dostaje
+    # odpowiedź z runnerem online (rozłączył się dopiero po ostatnim pollingu).
+    page.route("**/api/runners", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps([{
+            "id": "runner-podstawiony", "name": "runner-podstawiony", "version": "0",
+            "backends": [], "online": True, "last_seen_at": "2026-10-30T12:05:00+00:00",
+        }]),
+    ))
+    page.reload()
+    expect(page.get_by_role("button", name="Uruchom", exact=True)).to_be_enabled(
+        timeout=LIMIT_UI_MS
+    )
 
     _uruchom_na_tickecie(page)
 
