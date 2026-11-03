@@ -313,3 +313,26 @@ def test_lista_nieudanych_krokow_decyduje_tylko_przy_zakonczeniu_runu(obecny, ki
 def test_nieznany_rodzaj_zdarzenia_nie_zmienia_statusu(obecny, kind):
     from cockpit.services.runs import nastepny_status
     assert nastepny_status(obecny, kind) == obecny
+
+
+@pytest.mark.parametrize("kind", ["step_started", "step_finished", "step_failed", "output"])
+async def test_zdarzenie_inne_niz_koniec_runu_nie_wylicza_nieudanych_krokow(
+    klient, monkeypatch, kind,
+):
+    """Lista nieudanych krokow liczy sie tylko przy `run_finished` (jedno zapytanie
+    mniej na kazde zdarzenie); prawdziwa funkcja jest wolana, spy tylko zlicza wywolania."""
+    from cockpit.services import runs
+
+    wywolania: list[str] = []
+    prawdziwa = runs.nieudane_kroki
+
+    async def spy(s, run):
+        wywolania.append(run.id)
+        return await prawdziwa(s, run)
+
+    monkeypatch.setattr(runs, "nieudane_kroki", spy)
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, kind)
+    assert wywolania == []
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert wywolania == [run_id]
