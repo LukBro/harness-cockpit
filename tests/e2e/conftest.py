@@ -36,6 +36,18 @@ KORZEN = Path(__file__).resolve().parents[2]
 URL_BAZY = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
 INDEX_FRONTU = KORZEN / "src" / "cockpit" / "static" / "index.html"
 LIMIT_STARTU_S = 20
+# Runner e2e = produkcyjny `python -m runner`, ale lista operacji w jego procesie dostaje
+# dodatkowo operacje testowa "czekaj" (HAR-159). Produkcyjna lista jej nie ma: kokpit
+# nie moze kazac runnerowi wykonac niczego spoza lokalnej listy.
+# `runner` stoi na poczatku skryptu: `ps -o args=` na CI obcina argumenty do 80 znakow,
+# a test_token_runnera_nie_jest_widoczny_w_argumentach_procesu szuka w nich "runner".
+START_RUNNERA_Z_OPERACJA_TESTOWA = [
+    sys.executable, "-c",
+    "import runner.client as c, runpy, types; "
+    "c.OPERACJE_RUNU = types.MappingProxyType("
+    "{**c.OPERACJE_RUNU, 'czekaj': ('sleep', '30')}); "
+    "runpy.run_module('runner', run_name='__main__', alter_sys=True)",
+]
 
 
 def _srodowisko(tmp_path: Path, **dodatkowe: str) -> dict[str, str]:
@@ -204,7 +216,7 @@ def runner_online(adres_kokpitu, token_runnera, tmp_path):
     """Runner polaczony z kokpitem; token tylko w zmiennej srodowiskowej."""
     log = tmp_path / "runner.log"
     proc = _uruchom_w_grupie(
-        [sys.executable, "-m", "runner"],
+        START_RUNNERA_Z_OPERACJA_TESTOWA,
         _srodowisko(tmp_path, COCKPIT_RUNNER_TOKEN=token_runnera,
                     COCKPIT_URL=adres_kokpitu),
         tmp_path, log,

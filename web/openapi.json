@@ -519,17 +519,14 @@
         "type": "object"
       },
       "RunCreate": {
+        "additionalProperties": false,
         "properties": {
-          "command": {
-            "default": [
-              "echo",
-              "szkielet dziala"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "title": "Command",
-            "type": "array"
+          "operacja": {
+            "default": "szkielet",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "title": "Operacja",
+            "type": "string"
           },
           "potwierdz_rownolegly": {
             "default": false,
