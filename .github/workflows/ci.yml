@@ -1,7 +1,8 @@
 name: CI
 
 # CI sprawdza przed wejsciem zmiany do main: testy pytest (w tym testy
-# rejestru EGZEKWOWANE), granice warstw (tools/check_layers.py), lint ruff,
+# rejestru EGZEKWOWANE), granice warstw (tools/check_layers.py), zakres
+# wpisow lekcji (tools/check_lessons.py), lint ruff,
 # zgodnosc schematu OpenAPI, build frontu oraz testy z PostgreSQL i e2e.
 # CI nie wymusza niezmiennikow w czasie dzialania; ktore sa egzekwowane
 # na sciezce wykonania, mowi EGZEKWOWANE w services/walidacja.py.
@@ -38,6 +39,9 @@ jobs:
 
       - name: Granica warstw - api nie dotyka bazy
         run: python tools/check_layers.py
+
+      - name: Lekcje - każdy wpis .ai/lessons.md ma zakres
+        run: python tools/check_lessons.py
 
       - name: Lint - ruff (E4, E7, E9, F)
         run: ruff check .

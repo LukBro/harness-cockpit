@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from ruamel.yaml import YAML
 
 from procesy import uruchom_proces_sync, zakoncz_proces_sync
@@ -597,3 +598,422 @@ def test_zadanie_pull_requestu_nigdzie_nie_ukrywa_bledu_komendy():
 def test_zadanie_po_scaleniu_nigdzie_nie_ukrywa_bledu_komendy_takze_w_zapadce():
     for linia in _linie_skryptow(ZADANIE_MAIN):
         assert not UKRYCIE_BLEDU.search(linia), linia
+
+
+# =============================================================================
+# HAR-150: kod mutantow zmian trafia do pliku, krok `mutanty ręczne` wymaga tabeli
+# =============================================================================
+
+KROK_RECZNE = "mutanty ręczne"
+KOD_ZMIAN_PLIK = "mutants/mutanty-zmian.kod"
+TABELA_A = "tests/mutanty_reczne/HAR-1.toml"
+TABELA_B = "tests/mutanty_reczne/HAR-2.toml"
+# Atrapa git: zapisuje argumenty; `diff` z `--diff-filter=d` zwraca tylko tabele, drugi `diff`
+# wszystkie zmienione pliki (tabele tez). Reszta polecen (np. fetch) konczy sie sukcesem.
+ATRAPA_GIT_ZMIANY = """#!/bin/sh
+echo "$*" >> "$ATRAPA_LOG_GIT"
+case "$1" in
+  diff)
+    case "$*" in
+      *--diff-filter=d*)
+        [ -n "$ATRAPA_TABELE" ] && printf '%s\\n' "$ATRAPA_TABELE"
+        exit 0
+        ;;
+      *)
+        [ -n "$ATRAPA_ZMIANY" ] && printf '%s\\n' "$ATRAPA_ZMIANY"
+        exit 0
+        ;;
+    esac
+    ;;
+esac
+exit 0
+"""
+# Atrapa tools/mutanty_reczne.py: dopisuje argv wywolania do pliku, wypisuje i konczy sie zadanym kodem.
+ATRAPA_MUTANTY_RECZNE = """import os
+import sys
+
+with open(os.environ["ATRAPA_ARGV_RECZNE"], "a", encoding="utf-8") as plik:
+    plik.write(" ".join(sys.argv[1:]) + "\\n")
+sys.stdout.write(os.environ["ATRAPA_STDOUT_RECZNE"])
+sys.stderr.write(os.environ["ATRAPA_STDERR_RECZNE"])
+sys.exit(int(os.environ["ATRAPA_KOD_RECZNE"]))
+"""
+
+
+class PrzebiegRecznych:
+    def __init__(self, tmp_path: Path, praca: Path):
+        self.praca = praca
+        self.kod = -1
+        self.wyjscie = ""
+        self.argv_plik = tmp_path / "argv-reczne.txt"
+        self.log_git_plik = tmp_path / "log-git.txt"
+        self.podsumowanie_plik = tmp_path / "podsumowanie.md"
+
+    @property
+    def wywolania_skryptu(self) -> list[str]:
+        if not self.argv_plik.exists():
+            return []
+        return self.argv_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def wywolania_git(self) -> list[str]:
+        if not self.log_git_plik.exists():
+            return []
+        return self.log_git_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def podsumowanie(self) -> str:
+        if not self.podsumowanie_plik.exists():
+            return ""
+        return self.podsumowanie_plik.read_text(encoding="utf-8")
+
+
+def uruchom_krok_recznych(
+    tmp_path: Path,
+    *,
+    zmiany: tuple[str, ...] = (),
+    tabele: tuple[str, ...] = (),
+    usuniete_tabele: tuple[str, ...] = (),
+    kod_zmian: int | None = 0,
+    kod_recznych: int = 0,
+    stdout_recznych: str = "",
+    stderr_recznych: str = "",
+    base_ref: str | None = None,
+) -> PrzebiegRecznych:
+    """Uruchamia `run` kroku `mutanty ręczne` z atrapami git i tools/mutanty_reczne.py.
+
+    `kod_zmian=None` to brak pliku `mutants/mutanty-zmian.kod`. Lista zmian z gita to `zmiany`,
+    `tabele` i `usuniete_tabele`; wywolanie z `--diff-filter=d` zwraca wylacznie `tabele`.
+    """
+    praca = tmp_path / "praca"
+    (praca / "tools").mkdir(parents=True)
+    (praca / "mutants").mkdir()
+    _atrapa(praca / "tools", "mutanty_reczne.py", ATRAPA_MUTANTY_RECZNE)
+    if kod_zmian is not None:
+        (praca / KOD_ZMIAN_PLIK).write_text(f"{kod_zmian}\n", encoding="utf-8")
+
+    narzedzia = tmp_path / "narzedzia"
+    narzedzia.mkdir()
+    (narzedzia / "python3").symlink_to(sys.executable)
+    atrapy = tmp_path / "atrapy"
+    atrapy.mkdir()
+    _atrapa(atrapy, "git", ATRAPA_GIT_ZMIANY)
+
+    przebieg = PrzebiegRecznych(tmp_path, praca)
+    krok = _krok(ZADANIE_PR, KROK_RECZNE)
+    skrypt_krok = krok["run"]
+    assert "${{" not in skrypt_krok, "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(skrypt_krok, encoding="utf-8")
+
+    srodowisko = {
+        "PATH": f"{atrapy}:{narzedzia}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_LOG_GIT": str(przebieg.log_git_plik),
+        "ATRAPA_ZMIANY": "\n".join([*zmiany, *tabele, *usuniete_tabele]),
+        "ATRAPA_TABELE": "\n".join(tabele),
+        "ATRAPA_ARGV_RECZNE": str(przebieg.argv_plik),
+        "ATRAPA_KOD_RECZNE": str(kod_recznych),
+        "ATRAPA_STDOUT_RECZNE": stdout_recznych,
+        "ATRAPA_STDERR_RECZNE": stderr_recznych,
+        "GITHUB_STEP_SUMMARY": str(przebieg.podsumowanie_plik),
+        **_srodowisko_kroku(krok),
+    }
+    if base_ref is not None:
+        srodowisko["BASE_REF"] = base_ref
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+# --- struktura kroku ----------------------------------------------------------
+
+
+def test_krok_mutanty_reczne_stoi_w_zadaniu_pull_requestu_zaraz_po_kroku_zmienionych_funkcji():
+    nazwy = [k.get("name") for k in _zadanie(ZADANIE_PR)["steps"]]
+
+    assert nazwy.index(KROK_RECZNE) == nazwy.index(KROK_PR) + 1
+
+
+def test_krok_mutanty_reczne_dostaje_galaz_docelowa_ze_zmiennej_srodowiska():
+    krok = _krok(ZADANIE_PR, KROK_RECZNE)
+
+    assert krok["env"]["BASE_REF"] == "${{ github.base_ref }}"
+
+
+def test_zaden_krok_run_zadania_pull_requestu_nie_uzywa_wyrazen_github_actions_w_skrypcie():
+    for skrypt in _skrypty(ZADANIE_PR):
+        assert "${{" not in skrypt
+
+
+def test_zadanie_pull_requestu_publikuje_wynik_recznych_mutantow_nawet_po_czerwonym_kroku():
+    artefakt = _artefakt(ZADANIE_PR, "mutation-report")
+    sciezki = artefakt["with"]["path"].splitlines()
+
+    assert artefakt["if"] == "always()"
+    assert "mutants/mutanty-reczne.txt" in sciezki
+    assert "mutants/mutanty-reczne.err" in sciezki
+
+
+def test_krok_mutanty_reczne_pisze_podsumowanie_do_pliku_zadania():
+    assert "$GITHUB_STEP_SUMMARY" in _krok(ZADANIE_PR, KROK_RECZNE)["run"]
+
+
+# --- zapis kodu narzedzia mutantow zmian ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kod",
+    [
+        pytest.param(0, id="czysto"),
+        pytest.param(1, id="przezywajace_czerwony_krok"),
+        pytest.param(2, id="blad_narzedzia_czerwony_krok"),
+        pytest.param(3, id="poza_zasiegiem_mutmuta"),
+        pytest.param(4, id="nieoczekiwany_kod"),
+    ],
+)
+def test_krok_zmienionych_funkcji_zapisuje_kod_narzedzia_do_pliku_takze_gdy_krok_jest_czerwony(
+    tmp_path, kod
+):
+    przebieg = _krok_pr(tmp_path, kod_zmian=kod, stderr_zmian="komunikat")
+
+    plik = przebieg.praca / KOD_ZMIAN_PLIK
+    assert plik.exists(), przebieg.wyjscie
+    assert plik.read_text(encoding="utf-8").strip() == str(kod)
+
+
+# --- krok `mutanty ręczne`: wymaga tabeli poza zasiegiem mutmuta ---------------
+
+
+@pytest.mark.parametrize(
+    "zmieniony",
+    [
+        pytest.param("web/src/App.tsx", id="web"),
+        pytest.param("tools/x.py", id="tools"),
+        pytest.param("cicd/x.py", id="cicd"),
+    ],
+)
+def test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_oblewa_krok_z_brakiem_dowodu(
+    tmp_path, zmieniony
+):
+    przebieg = uruchom_krok_recznych(tmp_path, zmiany=(zmieniony,), kod_zmian=0)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "brak dowodu" in przebieg.wyjscie
+    assert "::error::" in przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_zmiana_frontu_wsrod_zmian_w_src_bez_tabeli_tez_oblewa_krok(tmp_path):
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("src/cockpit/services/runs.py", "web/src/App.tsx"), kod_zmian=0
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "brak dowodu" in przebieg.wyjscie
+
+
+def test_kod_3_narzedzia_mutantow_zmian_bez_tabeli_oblewa_krok_z_brakiem_dowodu(tmp_path):
+    przebieg = uruchom_krok_recznych(tmp_path, zmiany=("src/cockpit/db/models.py",), kod_zmian=3)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "brak dowodu" in przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_zmiana_w_zasiegu_mutmuta_bez_tabeli_jest_zielona_i_nie_wola_skryptu_recznych_mutantow(
+    tmp_path,
+):
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("src/cockpit/services/runs.py",), kod_zmian=0
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert "brak dowodu" not in przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_brak_zmian_w_diffie_i_kod_0_jest_zielony_bez_wolania_skryptu(tmp_path):
+    przebieg = uruchom_krok_recznych(tmp_path, zmiany=(), kod_zmian=0)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+@pytest.mark.parametrize(
+    "zmieniony",
+    [
+        pytest.param("docs/web/x.md", id="web_nie_na_poczatku"),
+        pytest.param("docs/tools/x.md", id="tools_nie_na_poczatku"),
+        pytest.param("docs/cicd/x.md", id="cicd_nie_na_poczatku"),
+        pytest.param("webapp/x.ts", id="web_bez_ukosnika"),
+        pytest.param("tools_stare/x.py", id="tools_bez_ukosnika"),
+        pytest.param("cicd-stare/x.yml", id="cicd_bez_ukosnika"),
+    ],
+)
+def test_katalog_web_tools_cicd_liczy_sie_tylko_na_poczatku_sciezki_i_jako_caly_katalog(
+    tmp_path, zmieniony
+):
+    przebieg = uruchom_krok_recznych(tmp_path, zmiany=(zmieniony,), kod_zmian=0)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert "brak dowodu" not in przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+@pytest.mark.parametrize(
+    ("zmiany", "kod_zmian"),
+    [
+        pytest.param(("web/src/App.tsx",), 0, id="front_poza_zasiegiem"),
+        pytest.param(("src/cockpit/services/runs.py",), 0, id="src_w_zasiegu"),
+        pytest.param(("src/cockpit/db/models.py",), 3, id="kod_3_narzedzia"),
+    ],
+)
+def test_zmieniona_tabela_i_zabite_mutanty_daja_zielony_krok_i_skrypt_dostaje_sciezke_tabeli(
+    tmp_path, zmiany, kod_zmian
+):
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=zmiany, tabele=(TABELA_A,), kod_zmian=kod_zmian, kod_recznych=0
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert "brak dowodu" not in przebieg.wyjscie
+    assert [linia.split() for linia in przebieg.wywolania_skryptu] == [[TABELA_A]]
+
+
+def test_skrypt_recznych_mutantow_dostaje_wszystkie_zmienione_tabele(tmp_path):
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("web/src/App.tsx",), tabele=(TABELA_A, TABELA_B)
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert len(przebieg.wywolania_skryptu) == 1
+    assert set(przebieg.wywolania_skryptu[0].split()) == {TABELA_A, TABELA_B}
+
+
+@pytest.mark.parametrize(
+    "kod_recznych",
+    [pytest.param(1, id="przezyli"), pytest.param(2, id="blad_narzedzia")],
+)
+def test_niezerowy_kod_skryptu_recznych_mutantow_oblewa_krok(tmp_path, kod_recznych):
+    przebieg = uruchom_krok_recznych(
+        tmp_path,
+        zmiany=("web/src/App.tsx",),
+        tabele=(TABELA_A,),
+        kod_recznych=kod_recznych,
+        stderr_recznych="blad: cos poszlo nie tak",
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "::error::" in przebieg.wyjscie
+    assert len(przebieg.wywolania_skryptu) == 1
+
+
+def test_niezerowy_kod_skryptu_oblewa_krok_takze_gdy_zmiana_jest_w_zasiegu_mutmuta(tmp_path):
+    # Tabela jest dowodem niezaleznie od zasiegu: jej czerwony wynik nie moze byc ignorowany.
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("src/cockpit/services/runs.py",), tabele=(TABELA_A,), kod_recznych=1
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+
+
+def test_przezywajacy_reczny_mutant_jest_wypisany_w_podsumowaniu_zadania(tmp_path):
+    wiersz = "src/modul.py: return a + b → return b + a"
+
+    przebieg = uruchom_krok_recznych(
+        tmp_path,
+        zmiany=("web/src/App.tsx",),
+        tabele=(TABELA_A,),
+        kod_recznych=1,
+        stdout_recznych=wiersz + "\n",
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert wiersz in przebieg.podsumowanie
+
+
+def test_blad_skryptu_recznych_mutantow_pokazuje_komunikat_z_stderr(tmp_path):
+    komunikat = "blad: szukaj wystepuje 2 razy"
+
+    przebieg = uruchom_krok_recznych(
+        tmp_path,
+        zmiany=("web/src/App.tsx",),
+        tabele=(TABELA_A,),
+        kod_recznych=2,
+        stderr_recznych=komunikat,
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert komunikat in przebieg.wyjscie + przebieg.podsumowanie
+
+
+@pytest.mark.parametrize(
+    ("zmiany", "tabele"),
+    [
+        pytest.param(("web/src/App.tsx",), (TABELA_A,), id="tabela_i_front"),
+        pytest.param(("src/cockpit/services/runs.py",), (), id="sam_src"),
+        pytest.param(("src/cockpit/services/runs.py",), (TABELA_A,), id="tabela_i_src"),
+    ],
+)
+def test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_z_brakiem_dowodu(
+    tmp_path, zmiany, tabele
+):
+    # Bez pliku nie wiadomo, czy mutmut pokryl zmiane; brak sygnalu to nie zielone.
+    przebieg = uruchom_krok_recznych(tmp_path, zmiany=zmiany, tabele=tabele, kod_zmian=None)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "brak dowodu" in przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_tabela_usunieta_w_pr_nie_jest_dowodem_dla_zmiany_frontu(tmp_path):
+    # Diff z --diff-filter=d nie zwraca usunietej tabeli, wiec front zostaje bez dowodu.
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("web/src/App.tsx",), usuniete_tabele=(TABELA_A,), kod_zmian=0
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "brak dowodu" in przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_usunieta_tabela_nie_trafia_do_skryptu_gdy_zmiana_jest_w_zasiegu_mutmuta(tmp_path):
+    przebieg = uruchom_krok_recznych(
+        tmp_path,
+        zmiany=("src/cockpit/services/runs.py",),
+        usuniete_tabele=(TABELA_A,),
+        kod_zmian=0,
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_lista_zmian_pochodzi_z_roznicy_wzgledem_galezi_docelowej_bez_wykrywania_przemianowan(
+    tmp_path,
+):
+    # Galaz inna niz domyslna `main`: tylko krok czytajacy BASE_REF poda ja gitowi.
+    inna_galaz = "release-7"
+    assert inna_galaz != GALAZ_DOCELOWA
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("web/src/App.tsx",), tabele=(TABELA_A,), base_ref=inna_galaz
+    )
+
+    diffy = [w for w in przebieg.wywolania_git if w.startswith("diff")]
+    assert len(diffy) >= 2, przebieg.wywolania_git
+    for wywolanie in diffy:
+        assert f"origin/{inna_galaz}...HEAD" in wywolanie
+        assert "--name-only" in wywolanie
+        assert "--no-renames" in wywolanie
+
+
+def test_tabele_sa_wybierane_zapytaniem_gita_ograniczonym_do_katalogu_tabel_bez_usunietych(
+    tmp_path,
+):
+    przebieg = uruchom_krok_recznych(
+        tmp_path, zmiany=("web/src/App.tsx",), tabele=(TABELA_A,)
+    )
+
+    zapytania_o_tabele = [w for w in przebieg.wywolania_git if "--diff-filter=d" in w]
+    assert len(zapytania_o_tabele) == 1, przebieg.wywolania_git
+    assert "tests/mutanty_reczne/*.toml" in zapytania_o_tabele[0]

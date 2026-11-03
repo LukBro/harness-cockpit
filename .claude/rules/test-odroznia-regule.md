@@ -151,6 +151,60 @@ krotki w `except`, elementy stałych zbiorów i wyrażeń regularnych, hooki pyt
 HAR-144) — raport test-writera zawiera tabelę **ręcznych mutantów**:
 `element | mutacja | test, który oblewa`. Po jednym wierszu na każdy zmieniony element.
 
+Źródło: HAR-150. Tabela jest wykonywalna: żyje jako `tests/mutanty_reczne/<ticket>.toml`,
+a wiersz to wpis `[[mutant]]` z polami `plik` (ścieżka względna od korzenia repo), `szukaj`
+(musi wystąpić w pliku dokładnie raz), `zamien` (różne od `szukaj`) i `test` (node id pytesta):
+
+```toml
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "if kod == 1:"
+zamien = "if kod != 1:"
+test = "tests/test_runs.py::test_run_zakonczony_sukcesem_ma_stan_do_odbioru_nie_gotowe"
+```
+
+`python tools/mutanty_reczne.py tests/mutanty_reczne/<ticket>.toml` nakłada każdą mutację w
+nowej kopii repozytorium w katalogu tymczasowym i sprawdza, że wskazany test oblewa (test
+musi najpierw przejść na kopii bez mutacji). Kod wyjścia **0** — wszystkie mutanty zabite,
+**1** — są przeżywające (stdout: `plik: szukaj → zamien`), **2** — błąd narzędzia: zła
+tabela, `szukaj` nie raz, test czerwony bez mutacji, kod pytesta inny niż 0/1, przekroczony
+limit czasu. W CI krok `mutanty ręczne` w jobie `mutation` wykonuje tabele zmienione w PR;
+zmiana w `web/`, `tools/` lub `cicd/` albo kod 3 z `tools/mutanty_zmian.py` bez zmienionej
+tabeli to czerwony krok z komunikatem „brak dowodu”.
+
 - Brak tabeli przy zmianie poza zasięgiem mutmuta = **-25**.
 - Wiersz z testem, który po mutacji nadal przechodzi (krytyk sprawdza co najmniej jeden
   wiersz, wprowadzając mutację lokalnie) = **-25**.
+
+## Regresja (retro M1.6)
+
+Źródło: 9 z 15 ticketów M1.6 z kodem dostało -25 albo -20 z tej reguły (HAR-15, 20, 28, 67,
+68, 70, 71, 74, 144); „korekta WRACA” wprost w HAR-28, HAR-71, HAR-74. Tabela ręcznych
+mutantów z M1.5 istnieje, a brakujące wiersze znajduje dopiero krytyk. Nowe kształty:
+
+- **Strażnik przed istniejącą gałęzią i wartość zastępcza** — krótkie wartościowanie
+  (`rejected and …`), `isinstance(…, str)`, `and wezel.body`, `mapa.get(k, set())`,
+  przepakowanie wyjątku z kontekstem: test na wejściu, na którym bez strażnika leci wyjątek
+  biblioteki albo inny komunikat, także na pustym wejściu, gdzie dotąd działała starsza
+  gałąź (HAR-20, HAR-28, HAR-144).
+- **Element krotki `except` i blokada wiersza** — każdy typ w krotce ma wejście, które
+  wyzwala tylko ten typ; `with_for_update()` ma test, który oblewa po jej usunięciu (na
+  SQLite: kompilacja przechwyconego zapytania dialektem PostgreSQL) (HAR-67).
+- **Front: każdy element diffu `web/` ma test e2e** — przekształcenie wejścia (`trim`: osobno
+  każde wystąpienie, w warunku i w wartości), gałąź tłumacząca nieczytelną odpowiedź
+  serwera, czyszczenie stanu przy zmianie pola, na początku akcji i po ponownym
+  zalogowaniu. Test sprawdza skutek w następnym przejściu stanu. „Projekt nie ma testów
+  frontu” nie zwalnia — `tests/e2e/` istnieje (HAR-70, HAR-71).
+- **Test z limitem czasu w nazwie** zaczyna mierzyć przed zdarzeniem i zależy od mechanizmu,
+  który limit realizuje (odświeżanie, push), nie od pobrania przy wejściu na stronę (HAR-68).
+- **Dopasowanie jednoznaczne** — asercja na treści (brief, komunikat) sprawdza zdanie, które
+  istnieje tylko w regule; pomocnik testu zawężający do zakresu ma test z elementem spoza
+  zakresu, który dałby inny wynik bez zawężenia (HAR-15, HAR-74).
+- **Strefa czasowa** — gałąź naive→UTC ma test ze strefą procesu inną niż UTC
+  (`TZ` + `time.tzset`), bo CI biegnie w UTC i tam mutant przeżywa (HAR-68).
+
+Tekst reguły znów nie wystarczył — egzekucja tabeli ręcznych mutantów jako krok CI to
+osobny ticket z retro M1.6.
+
+Co sprawdzić w review: element z listy bez testu, który oblewa po jego usunięciu = **-25**;
+test z limitem czasu niezależny od mechanizmu limitu = **-20**.

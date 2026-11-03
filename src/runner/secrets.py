@@ -15,12 +15,18 @@ CONFIG = Path(
 
 
 def get_token(name: str) -> str | None:
+    # import lokalny: maskowanie importuje mask() stad (cykl na poziomie modulu)
+    from runner.maskowanie import zarejestruj_sekret
+
     env = os.environ.get(f"COCKPIT_{name.upper()}_TOKEN")
     if env:
+        zarejestruj_sekret(env)
         return env
     if not CONFIG.is_file():
         return None
-    return json.loads(CONFIG.read_text()).get(name)
+    wartosc = json.loads(CONFIG.read_text()).get(name)
+    zarejestruj_sekret(wartosc)
+    return wartosc
 
 
 def set_token(name: str, value: str) -> None:

@@ -222,24 +222,56 @@ class CzytnikHookow:
 # DataError po stronie bazy (500), a zdarzenie przepadloby mimo dosylki.
 _MAKS_ID_AGENTA = 100
 
+# WHY 50: kolumna Event.kind to String(50); dluzszy kind to DataError (500) po stronie
+# kokpitu, a bufor ponawialby go bez konca. Runner nie importuje cockpit.db - spojnosc
+# pilnuje test.
+_MAKS_KIND = 50
+
+
+class BladZdarzeniaHooka(BladDziedziny):
+    """Zdarzenie hooka, ktorego kokpit nigdy nie przyjmie (zly typ pola, za dlugi kind)."""
+
+    def __init__(self, pole: str) -> None:
+        # tylko nazwa pola: wartosc moze niesc dane z payloadu
+        super().__init__(f"zdarzenie hooka: niedozwolone pole {pole}")
+        self.pole = pole
+
+
+def _napis_lub_brak(ev: dict, pole: str) -> str | None:
+    wartosc = ev.get(pole)
+    if wartosc is not None and not isinstance(wartosc, str):
+        raise BladZdarzeniaHooka(pole)
+    return wartosc
+
 
 def do_wysylki(ev: dict, run_id: str, step_id: str) -> dict:
     """Zdarzenie hooka -> pola wysylane w gore: same metadane, nigdy tresc.
 
     Wynik budowany jawnie z bialej listy kluczy (nie `{**ev}`): `extra`, `tool_input`,
     `tool_response` i reszta tresci nie maja jak wyjsc. Brak pomiaru to `None`, nie 0.
+    Zdarzenie, ktore kokpit odrzuci zawsze, to `BladZdarzeniaHooka` - nie trafia do bufora.
     """
+    event = ev.get("event")
+    if not isinstance(event, str):
+        raise BladZdarzeniaHooka("event")
+    agent_id = _napis_lub_brak(ev, "agent_id")
+    agent_type = _napis_lub_brak(ev, "agent_type")
+    tool = _napis_lub_brak(ev, "tool")
+    phase = _napis_lub_brak(ev, "phase")
+    kind = "hook:" + event
+    if len(kind) > _MAKS_KIND:
+        raise BladZdarzeniaHooka("kind")
     ms = ev.get("ms")
     return {
-        "kind": "hook:" + ev["event"],
+        "kind": kind,
         "run_id": run_id,
         "step_id": step_id,
         # None -> "": EventIn.agent_id to str, null daje 422 i zdarzenie przepada
-        "agent_id": (ev.get("agent_id") or "")[:_MAKS_ID_AGENTA],
-        "agent_type": (ev.get("agent_type") or "")[:_MAKS_ID_AGENTA],
+        "agent_id": (agent_id or "")[:_MAKS_ID_AGENTA],
+        "agent_type": (agent_type or "")[:_MAKS_ID_AGENTA],
         # measured_or_null: bool jest podklasa int, ale to nie jest pomiar
         "duration_ms": ms if isinstance(ms, int) and not isinstance(ms, bool) else None,
-        "text": ev.get("tool") or ev.get("phase") or "",
+        "text": tool or phase or "",
     }
 
 
@@ -253,6 +285,13 @@ async def przekazuj(czytnik: CzytnikHookow, wyslij) -> None:
         ev = await czytnik.kolejka.get()
         try:
             await wyslij(**do_wysylki(ev, czytnik.run_id, czytnik.step_id))
+        except BladZdarzeniaHooka as e:
+            # tylko klasa i nazwa pola: wartosc z payloadu nie trafia do logu
+            print(
+                f"hooki: zdarzenie kroku {czytnik.step_id} odrzucone: "
+                f"{type(e).__name__} (pole {e.pole})",
+                file=sys.stderr,
+            )
         except BladBufora as e:
             # tylko nazwa klasy: tresc wyjatku albo zdarzenia nie trafia do logu
             print(
