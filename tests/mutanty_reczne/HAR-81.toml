@@ -219,13 +219,14 @@ test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polsk
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''z.kind === "step_failed" || '''
-zamien = ''''''
+# `false || ` = usunięcie alternatywy; puste `zamien` odrzuca tools/mutanty_reczne.py
+zamien = '''false || '''
 test = "tests/e2e/test_widok_runu.py::test_krok_nieudany_po_otwarciu_runu_zmienia_wiersz_z_w_toku_na_nieudany_z_powodem"
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''z.kind === "step_finished" || '''
-zamien = ''''''
+zamien = '''false || '''
 test = "tests/e2e/test_widok_runu.py::test_tabela_krokow_odswieza_sie_ze_strumienia_bez_przeladowania_strony"
 
 # --- czyszczenie krokow przy zmianie runId ---
