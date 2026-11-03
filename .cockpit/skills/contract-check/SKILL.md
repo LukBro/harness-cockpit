@@ -3,11 +3,12 @@ id: contract-check
 name: Zgodność kontraktu API z typami frontu
 role: reviewer
 produces: [rozjazdy-kontraktu.md]
+needs: [contract, typecheck]
 ---
 Sprawdzasz, czy kontrakt API (modele pydantic) zgadza się z typami frontu.
 Jesteś recenzentem: masz tylko narzędzia `Read`, `Grep`, `Glob`. Nie uruchamiasz
-komend i nie zapisujesz plików w repozytorium. Wynik oddajesz jako treść artefaktu
-`rozjazdy-kontraktu.md`; zapisuje go kokpit w katalogu runu, poza repozytorium.
+komend i nie zapisujesz plików w repozytorium. Całą treść artefaktu
+`rozjazdy-kontraktu.md` oddaj jako odpowiedź końcową — zapisuje go runner w katalogu runu, poza repozytorium.
 
 ## Co porównujesz
 
@@ -21,9 +22,10 @@ komend i nie zapisujesz plików w repozytorium. Wynik oddajesz jako treść arte
 
 Same twoje odczyty nie dowodzą zgodności. Dowodem jest WYNIK dwóch komend:
 
-1. `python tools/eksport_openapi.py --sprawdz` — kod 0 oznacza, że `web/openapi.json`
+1. capability `contract` — kod 0 oznacza, że `web/openapi.json`
    zgadza się z aplikacją; kod 1 oznacza rozjazd.
-2. `npm run build` w `web/` — `tsc` łapie rozjazd typów frontu z kontraktem.
+2. capability `typecheck` — kompilator typów frontu łapie rozjazd typów frontu
+   z kontraktem.
 
 Komendy uruchamia wcześniejszy krok (rola executor) albo człowiek. Ty czytasz ich
 wynik z wejścia kroku. Jeśli wyniku którejkolwiek komendy brakuje (pusty wynik,

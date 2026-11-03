@@ -1065,3 +1065,959 @@ def test_skrypt_uruchomiony_jako_program_konczy_sie_kodem_0_gdy_mutanty_zabite(t
 
     assert kod == 0
     assert wyjscie == ""
+
+
+# =============================================================================
+# HAR-156: front i Postgres dla mutantow sprawdzanych testami e2e;
+# test pominiety albo bez raportu nigdy nie jest "przeszedl" ani "zabil mutanta"
+# =============================================================================
+
+TEST_POMIJANY = "tests/test_pomijany.py::test_pomijany"
+TEST_SKIP_PO_MUTACJI = "tests/test_skip_po_mutacji.py::test_warunkowy"
+TEST_STATIC = "tests/test_static.py::test_static"
+TEST_E2E = "tests/e2e/test_dodawanie_e2e.py::test_dodawanie_e2e"
+PLIK_WEB = "web/src/x.txt"
+
+TEST_POMIJANY_TRESC = """\
+import pytest
+
+
+def test_pomijany():
+    pytest.skip("brak bazy")
+"""
+# Skip tylko gdy mutacja zepsula dodawanie; z COCKPIT_WYMAGAJ_BAZY=1 skip jest porazka
+# (tak jak w fixture `czysta_baza` projektu), wiec to zmienna robi z pominiecia "zabitego".
+TEST_SKIP_PO_MUTACJI_TRESC = """\
+import os
+
+import pytest
+from modul import dodaj
+
+
+def test_warunkowy():
+    if dodaj(2, 3) != 5:
+        if os.environ.get("COCKPIT_WYMAGAJ_BAZY") == "1":
+            pytest.fail("wymagana baza")
+        pytest.skip("brak bazy")
+"""
+# Czyta to, co atrapa `npm run build` skopiowala z web/src/x.txt do src/cockpit/static/x.txt.
+TEST_STATIC_TRESC = """\
+from pathlib import Path
+
+
+def test_static():
+    assert Path("src/cockpit/static/x.txt").read_text(encoding="utf-8").strip() == "A"
+"""
+TEST_E2E_TRESC = """\
+from pathlib import Path
+
+from modul import dodaj
+
+
+def test_dodawanie_e2e():
+    assert Path("src/cockpit/static/index.html").is_file()
+    assert dodaj(2, 3) == 5
+"""
+
+POMIJANY_I_MODUL = {PLIK_MODULU: MODUL, "tests/test_pomijany.py": TEST_POMIJANY_TRESC}
+SKIP_PO_MUTACJI_I_MODUL = {
+    PLIK_MODULU: MODUL,
+    "tests/test_skip_po_mutacji.py": TEST_SKIP_PO_MUTACJI_TRESC,
+}
+FRONT_I_MODUL = {
+    PLIK_MODULU: MODUL,
+    PLIK_WEB: "A\n",
+    "tests/test_static.py": TEST_STATIC_TRESC,
+    "tests/e2e/test_dodawanie_e2e.py": TEST_E2E_TRESC,
+}
+
+
+def _repo_z_plikami(tmp_path: Path, pliki: dict[str, str], tabela: str) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "tests" / "mutanty_reczne").mkdir(parents=True)
+    (repo / "pyproject.toml").write_text(PYPROJECT_MINI, encoding="utf-8")
+    for sciezka, tresc in pliki.items():
+        plik = repo / sciezka
+        plik.parent.mkdir(parents=True, exist_ok=True)
+        plik.write_text(tresc, encoding="utf-8")
+    (repo / TABELA_W_REPO).write_text(tabela, encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "start")
+    return repo
+
+
+# --- atrapa npm: skrypt sh na poczatku PATH ----------------------------------
+
+ATRAPA_NPM = """#!/bin/sh
+echo "$(pwd -P)|$*" >> "$ATRAPA_LOG_NPM"
+case "$1" in
+  ci)
+    mkdir -p node_modules
+    exit "${ATRAPA_KOD_CI:-0}"
+    ;;
+  run)
+    if [ -n "$ATRAPA_USPIJ" ]; then
+      sleep "$ATRAPA_USPIJ" &
+      echo "$!" > "$ATRAPA_PID_NPM"
+      wait
+    fi
+    [ -n "$ATRAPA_WYJSCIE_BUILD" ] && echo "$ATRAPA_WYJSCIE_BUILD"
+    [ -n "$ATRAPA_BLAD_BUILD" ] && echo "$ATRAPA_BLAD_BUILD" >&2
+    [ -n "$ATRAPA_BAJTY_BUILD" ] && printf 'a\\377b\\n'
+    [ -n "$ATRAPA_ZABIJ_BUILD" ] && kill -KILL $$
+    if [ -n "$ATRAPA_PADNIJ_NA" ] && grep -q "$ATRAPA_PADNIJ_NA" src/x.txt 2>/dev/null; then
+      exit 7
+    fi
+    if [ "${ATRAPA_KOD_BUILD:-0}" != "0" ]; then
+      exit "$ATRAPA_KOD_BUILD"
+    fi
+    if [ "${ATRAPA_INDEKS:-1}" = "1" ]; then
+      mkdir -p ../src/cockpit/static
+      [ -f src/x.txt ] && cp src/x.txt ../src/cockpit/static/x.txt
+      echo ok > ../src/cockpit/static/index.html
+    fi
+    exit 0
+    ;;
+esac
+exit 0
+"""
+
+
+class AtrapaNpm:
+    def __init__(self, tmp_path: Path, monkeypatch):
+        self.log = tmp_path / "log-npm.txt"
+        self.pid = tmp_path / "pid-npm.txt"
+        katalog = tmp_path / "atrapa-npm"
+        katalog.mkdir()
+        plik = katalog / "npm"
+        plik.write_text(ATRAPA_NPM, encoding="utf-8")
+        plik.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{katalog}{os.pathsep}{os.environ['PATH']}")
+        monkeypatch.setenv("ATRAPA_LOG_NPM", str(self.log))
+        monkeypatch.setenv("ATRAPA_PID_NPM", str(self.pid))
+        self._monkeypatch = monkeypatch
+
+    def ustaw(self, **zmienne: str) -> None:
+        for nazwa, wartosc in zmienne.items():
+            self._monkeypatch.setenv(nazwa, wartosc)
+
+    @property
+    def wywolania(self) -> list[tuple[Path, str]]:
+        if not self.log.exists():
+            return []
+        wynik = []
+        for linia in self.log.read_text(encoding="utf-8").splitlines():
+            katalog, _, argumenty = linia.partition("|")
+            wynik.append((Path(katalog), argumenty))
+        return wynik
+
+    @property
+    def polecenia(self) -> list[str]:
+        return [argumenty for _, argumenty in self.wywolania]
+
+
+@pytest.fixture
+def npm(tmp_path, monkeypatch):
+    return AtrapaNpm(tmp_path, monkeypatch)
+
+
+def _kopia_z_webem(tmp_path: Path) -> Path:
+    kopia = tmp_path / "kopia-frontu"
+    (kopia / "web" / "src").mkdir(parents=True)
+    return kopia
+
+
+# --- skip, zero testow i brak raportu to kod 2 (main na prawdziwym pytescie) ---
+
+
+def test_test_pominiety_juz_w_przebiegu_bez_mutacji_to_kod_2_z_brakiem_dowodu_a_nie_przezywajacy_mutant(
+    tmp_path, capsys
+):
+    repo = _repo_z_plikami(tmp_path, POMIJANY_I_MODUL, _mutant(SZUKAJ, ZABIJA, test=TEST_POMIJANY))
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2  # bez kontroli raportu: pominiecie to kod pytesta 0, czyli "przezyl" (kod 1)
+    assert zrzut.out == ""
+    assert "pominięty" in zrzut.err
+    assert "brak dowodu" in zrzut.err
+    assert TEST_POMIJANY in zrzut.err
+
+
+def test_test_pominiety_dopiero_po_mutacji_to_kod_2_a_nie_zabity_ani_przezywajacy_mutant(
+    tmp_path, capsys
+):
+    repo = _repo_z_plikami(
+        tmp_path,
+        SKIP_PO_MUTACJI_I_MODUL,
+        _mutant(SZUKAJ, ZABIJA, test=TEST_SKIP_PO_MUTACJI),
+    )
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2  # przebieg bazowy jest czysty, wiec tylko raport drugiego przebiegu to wykrywa
+    assert zrzut.out == ""
+    assert "pominięty" in zrzut.err
+
+
+def test_zmienna_wymagaj_bazy_z_procesu_wolajacego_nie_zamienia_skipa_w_zabitego_mutanta(
+    tmp_path, monkeypatch, capsys
+):
+    # Z COCKPIT_WYMAGAJ_BAZY=1 skip testu staje sie porazka (kod 1 = "zabity", kod wyjscia 0).
+    monkeypatch.setenv("COCKPIT_WYMAGAJ_BAZY", "1")
+    repo = _repo_z_plikami(
+        tmp_path,
+        SKIP_PO_MUTACJI_I_MODUL,
+        _mutant(SZUKAJ, ZABIJA, test=TEST_SKIP_PO_MUTACJI),
+    )
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 2
+    assert "pominięty" in capsys.readouterr().err
+
+
+def test_uruchomienie_testu_nie_usuwa_zmiennej_wymagaj_bazy_ze_srodowiska_wolajacego(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("COCKPIT_WYMAGAJ_BAZY", "1")
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": "def test_ok():\n    assert True\n"})
+
+    mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_ok", 60)
+
+    assert os.environ["COCKPIT_WYMAGAJ_BAZY"] == "1"
+
+
+def test_zmienna_wymagaj_bazy_nie_trafia_do_procesu_pytesta(tmp_path, monkeypatch):
+    # Test sam sprawdza swoje srodowisko: ze zmienna w procesie pytesta bylby czerwony (kod 1).
+    monkeypatch.setenv("COCKPIT_WYMAGAJ_BAZY", "1")
+    kopia = _kopia_testowa(
+        tmp_path / "kopia",
+        {
+            "test_a.py": (
+                "import os\n\n\ndef test_bez_zmiennej():\n"
+                "    assert 'COCKPIT_WYMAGAJ_BAZY' not in os.environ\n"
+            )
+        },
+    )
+
+    assert mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_bez_zmiennej", 60) == 0
+
+
+# --- uruchom_test: raport JUnit ---------------------------------------------
+
+
+def _podstawka_raportu(monkeypatch) -> list[tuple[Path, str]]:
+    wywolania: list[tuple[Path, str]] = []
+    monkeypatch.setattr(
+        mutanty_reczne, "sprawdz_raport_junit", lambda sciezka, test: wywolania.append((sciezka, test))
+    )
+    return wywolania
+
+
+def test_raport_junit_ma_stala_nazwe_i_jest_zapisywany_w_kopii_przez_uruchom_test(tmp_path):
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": "def test_ok():\n    assert True\n"})
+
+    mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_ok", 60)
+
+    assert mutanty_reczne.RAPORT_JUNIT == ".mutanty-reczne-junit.xml"
+    assert (kopia / ".mutanty-reczne-junit.xml").is_file()
+
+
+def test_test_zielony_jest_sprawdzany_raportem_junit_z_kopii(tmp_path, monkeypatch):
+    wywolania = _podstawka_raportu(monkeypatch)
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": "def test_ok():\n    assert True\n"})
+
+    kod = mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_ok", 60)
+
+    assert kod == 0
+    assert wywolania == [(kopia / mutanty_reczne.RAPORT_JUNIT, "tests/test_a.py::test_ok")]
+
+
+def test_test_czerwony_tez_jest_sprawdzany_raportem_junit(tmp_path, monkeypatch):
+    wywolania = _podstawka_raportu(monkeypatch)
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": "def test_zle():\n    assert False\n"})
+
+    kod = mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_zle", 60)
+
+    assert kod == 1
+    assert len(wywolania) == 1
+
+
+def test_zly_node_id_nie_jest_sprawdzany_raportem_bo_kod_pytesta_4_ocenia_wolajacy(
+    tmp_path, monkeypatch
+):
+    wywolania = _podstawka_raportu(monkeypatch)
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": "def test_ok():\n    assert True\n"})
+
+    kod = mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_nie_ma", 60)
+
+    assert kod == 4
+    assert wywolania == []
+
+
+def test_test_pominiety_w_kopii_konczy_uruchomienie_bledem_narzedzia_z_node_id(tmp_path):
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": TEST_POMIJANY_TRESC})
+
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_pomijany", 60)
+
+    assert "pominięty" in str(wyjatek.value)
+    assert "tests/test_a.py::test_pomijany" in str(wyjatek.value)
+
+
+def test_raport_z_pierwszego_przebiegu_nie_jest_czytany_w_drugim_przebiegu_w_tej_samej_kopii(
+    tmp_path,
+):
+    # Drugi test konczy proces pytesta kodem 0 bez zapisu raportu. Gdyby stary raport zostawal,
+    # ten przebieg uchodzilby za udany na podstawie raportu pierwszego.
+    kopia = _kopia_testowa(
+        tmp_path / "kopia",
+        {
+            "test_a.py": (
+                "import os\n\n\ndef test_ok():\n    assert True\n\n\n"
+                "def test_umiera_bez_raportu():\n    os._exit(0)\n"
+            )
+        },
+    )
+    assert mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_ok", 60) == 0
+    assert (kopia / mutanty_reczne.RAPORT_JUNIT).is_file()
+
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_umiera_bez_raportu", 60)
+
+
+def test_stary_raport_ktorego_nie_da_sie_usunac_konczy_uruchomienie_testu_bledem_narzedzia(tmp_path):
+    # Katalog pod nazwa raportu: `unlink` rzuca OSError (EISDIR albo EPERM zaleznie od systemu).
+    kopia = _kopia_testowa(tmp_path / "kopia", {"test_a.py": "def test_ok():\n    assert True\n"})
+    raport = kopia / mutanty_reczne.RAPORT_JUNIT
+    raport.mkdir()
+    (raport / "cos.txt").write_text("x", encoding="utf-8")
+
+    with pytest.raises(BladNarzedzia, match="usunac starego raportu"):
+        mutanty_reczne.uruchom_test(kopia, "tests/test_a.py::test_ok", 60)
+
+
+# --- sprawdz_raport_junit: jednostkowo ----------------------------------------
+
+
+def _raport(tmp_path: Path, tresc: str) -> Path:
+    sciezka = tmp_path / "raport.xml"
+    sciezka.write_text(tresc, encoding="utf-8")
+    return sciezka
+
+
+RAPORT_POPRAWNY = '<testsuites><testsuite tests="1" skipped="0" failures="0"/></testsuites>'
+NODE_ID = "tests/test_a.py::test_x"
+
+
+def test_raport_z_jednym_uruchomionym_testem_bez_pominiec_jest_dowodem(tmp_path):
+    mutanty_reczne.sprawdz_raport_junit(_raport(tmp_path, RAPORT_POPRAWNY), NODE_ID)
+
+
+def test_brak_pliku_raportu_to_blad_narzedzia_z_brakiem_dowodu(tmp_path):
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.sprawdz_raport_junit(tmp_path / "nie-ma.xml", NODE_ID)
+
+
+def test_raport_bedacy_katalogiem_to_blad_narzedzia_z_brakiem_dowodu(tmp_path):
+    katalog = tmp_path / "raport.xml"
+    katalog.mkdir()
+
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.sprawdz_raport_junit(katalog, NODE_ID)
+
+
+def test_raport_xml_ktorego_nie_da_sie_sparsowac_to_blad_narzedzia_z_brakiem_dowodu(tmp_path):
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.sprawdz_raport_junit(_raport(tmp_path, "<testsuite tests="), NODE_ID)
+
+
+@pytest.mark.parametrize(
+    "tresc",
+    [
+        pytest.param('<testsuite tests="abc" skipped="0"/>', id="tests_nie_jest_liczba"),
+        pytest.param('<testsuite tests="1" skipped="x"/>', id="skipped_nie_jest_liczba"),
+    ],
+)
+def test_raport_z_atrybutem_nie_bedacym_liczba_to_blad_narzedzia_z_brakiem_dowodu(tmp_path, tresc):
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.sprawdz_raport_junit(_raport(tmp_path, tresc), NODE_ID)
+
+
+@pytest.mark.parametrize(
+    "tresc",
+    [
+        pytest.param('<testsuites><testsuite tests="0" skipped="0"/></testsuites>', id="testsuites"),
+        pytest.param('<testsuite tests="0" skipped="0"/>', id="sam_testsuite"),
+        pytest.param(
+            '<testsuites><testsuite tests="0" skipped="0"/><testsuite tests="0" skipped="0"/></testsuites>',
+            id="dwa_puste_suite",
+        ),
+    ],
+)
+def test_raport_bez_ani_jednego_uruchomionego_testu_to_blad_narzedzia_z_brakiem_dowodu(
+    tmp_path, tresc
+):
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.sprawdz_raport_junit(_raport(tmp_path, tresc), NODE_ID)
+
+
+def test_pominiecie_w_raporcie_to_blad_narzedzia_z_brakiem_dowodu_i_node_id_testu(tmp_path):
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_reczne.sprawdz_raport_junit(
+            _raport(tmp_path, '<testsuites><testsuite tests="1" skipped="1"/></testsuites>'),
+            NODE_ID,
+        )
+
+    assert "pominięty" in str(wyjatek.value)
+    assert "brak dowodu" in str(wyjatek.value)
+    assert NODE_ID in str(wyjatek.value)
+
+
+def test_pominiecie_w_sam_testsuite_bez_testsuites_to_blad_narzedzia(tmp_path):
+    with pytest.raises(BladNarzedzia, match="pominięty"):
+        mutanty_reczne.sprawdz_raport_junit(
+            _raport(tmp_path, '<testsuite tests="1" skipped="1"/>'), NODE_ID
+        )
+
+
+def test_sam_testsuite_bez_pominiec_jest_dowodem(tmp_path):
+    mutanty_reczne.sprawdz_raport_junit(
+        _raport(tmp_path, '<testsuite tests="1" skipped="0"/>'), NODE_ID
+    )
+
+
+def test_pominiecie_w_drugim_testsuite_tez_jest_bledem_bo_skipped_sumuje_sie_po_wszystkich(tmp_path):
+    with pytest.raises(BladNarzedzia, match="pominięty"):
+        mutanty_reczne.sprawdz_raport_junit(
+            _raport(
+                tmp_path,
+                '<testsuites><testsuite tests="1" skipped="0"/>'
+                '<testsuite tests="1" skipped="1"/></testsuites>',
+            ),
+            NODE_ID,
+        )
+
+
+def test_testy_uruchomione_w_drugim_testsuite_licza_sie_jako_dowod_bo_tests_sumuje_sie_po_wszystkich(
+    tmp_path,
+):
+    mutanty_reczne.sprawdz_raport_junit(
+        _raport(
+            tmp_path,
+            '<testsuites><testsuite tests="0" skipped="0"/>'
+            '<testsuite tests="1" skipped="0"/></testsuites>',
+        ),
+        NODE_ID,
+    )
+
+
+def test_raport_bez_licznika_tests_to_zero_uruchomionych_testow_a_wiec_brak_dowodu(tmp_path):
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.sprawdz_raport_junit(_raport(tmp_path, '<testsuite skipped="0"/>'), NODE_ID)
+
+
+def test_raport_bez_licznika_skipped_to_zero_pominiec_gdy_test_sie_uruchomil(tmp_path):
+    mutanty_reczne.sprawdz_raport_junit(_raport(tmp_path, '<testsuite tests="1"/>'), NODE_ID)
+
+
+# --- wymaga_frontu i pod_webem ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("plik", "test", "oczekiwane"),
+    [
+        pytest.param("web/src/App.tsx", "tests/test_x.py::t", True, id="plik_pod_web"),
+        pytest.param("tests/e2e/x.py", "tests/test_x.py::t", True, id="plik_pod_tests_e2e"),
+        pytest.param("tools/x.py", "tests/e2e/test_a.py::t", True, id="test_pod_tests_e2e"),
+        pytest.param("webx/a.ts", "tests/test_x.py::t", False, id="katalog_webx_to_nie_web"),
+        pytest.param("src/web/a.ts", "tests/test_x.py::t", False, id="web_nie_na_poczatku_sciezki"),
+        pytest.param("tests/e2e_x.py", "tests/test_x.py::t", False, id="plik_e2e_x_to_nie_katalog_e2e"),
+        pytest.param("tests/e2ex/t.py", "tests/test_x.py::t", False, id="katalog_e2ex_to_nie_e2e"),
+        pytest.param("tools/x.py", "tests/e2e_x/test_a.py::t", False, id="test_w_katalogu_e2e_x"),
+        pytest.param("tools/x.py", "tests/e2ex/test_a.py::t", False, id="test_w_katalogu_e2ex"),
+        pytest.param("tools/x.py", "tests/test_x.py::t", False, id="zwykly_plik_i_zwykly_test"),
+        pytest.param("tools/x.py", "x/tests/e2e/test_a.py::t", False, id="e2e_nie_na_poczatku_testu"),
+        pytest.param(
+            "tools/x.py", "tests/test_x.py::test_a[tests/e2e/x]", False, id="e2e_tylko_w_parametrze"
+        ),
+    ],
+)
+def test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e(
+    plik, test, oczekiwane
+):
+    mutant = Mutant(plik, "a", "b", test)
+
+    assert mutanty_reczne.wymaga_frontu(mutant) is oczekiwane
+
+
+def test_node_id_z_separatorem_tuz_po_katalogu_tests_e2e_tez_wymaga_frontu():
+    # Tylko odciecie czesci po `::` zostawia sciezke `tests/e2e`; bez niego drugim elementem
+    # jest `e2e::test_a`.
+    mutant = Mutant("tools/x.py", "a", "b", "tests/e2e::test_a")
+
+    assert mutanty_reczne.wymaga_frontu(mutant) is True
+
+
+@pytest.mark.parametrize(
+    ("plik", "oczekiwane"),
+    [
+        pytest.param("web/a", True, id="plik_w_web"),
+        pytest.param("web/src/x/y.ts", True, id="gleboko_w_web"),
+        pytest.param("tests/e2e/x.py", False, id="e2e_nie_przebudowuje_frontu"),
+        pytest.param("webx/a", False, id="webx"),
+        pytest.param("src/web/a", False, id="web_nie_na_poczatku"),
+    ],
+)
+def test_front_jest_przebudowywany_po_mutacji_tylko_dla_pliku_pod_web(plik, oczekiwane):
+    assert mutanty_reczne.pod_webem(plik) is oczekiwane
+
+
+# --- zbuduj_front z atrapa npm ----------------------------------------------------
+
+
+def test_front_bez_zainstalowanych_zaleznosci_najpierw_instaluje_je_przez_npm_ci_potem_buduje(
+    tmp_path, npm
+):
+    kopia = _kopia_z_webem(tmp_path)
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert npm.polecenia == ["ci", "run build"]
+
+
+def test_front_z_istniejacym_katalogiem_node_modules_jest_tylko_budowany_bez_npm_ci(tmp_path, npm):
+    kopia = _kopia_z_webem(tmp_path)
+    (kopia / "web" / "node_modules").mkdir()
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert npm.polecenia == ["run build"]
+
+
+def test_node_modules_bedacy_zwyklym_plikiem_nie_zwalnia_z_npm_ci(tmp_path, npm):
+    kopia = _kopia_z_webem(tmp_path)
+    (kopia / "web" / "node_modules").write_text("to nie katalog", encoding="utf-8")
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert npm.polecenia[0] == "ci"
+
+
+def test_drugie_budowanie_w_tej_samej_kopii_nie_instaluje_zaleznosci_ponownie(tmp_path, npm):
+    kopia = _kopia_z_webem(tmp_path)
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert npm.polecenia == ["ci", "run build", "run build"]
+
+
+def test_npm_ci_i_npm_run_build_biegna_w_katalogu_web_kopii(tmp_path, npm):
+    kopia = _kopia_z_webem(tmp_path)
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert [katalog for katalog, _ in npm.wywolania] == [(kopia / "web").resolve()] * 2
+
+
+def test_blad_npm_ci_konczy_sie_bledem_narzedzia_z_poleceniem_i_kodem_bez_budowania(tmp_path, npm):
+    npm.ustaw(ATRAPA_KOD_CI="47")
+    kopia = _kopia_z_webem(tmp_path)
+
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert "npm ci" in str(wyjatek.value)
+    assert "47" in str(wyjatek.value)
+    assert npm.polecenia == ["ci"]
+
+
+def test_blad_budowania_to_blad_narzedzia_z_kodem_poleceniem_i_koncowka_wyjscia(tmp_path, npm):
+    # Koncowka: dlugie wyjscie ma w komunikacie swoj koniec, a nie poczatek.
+    npm.ustaw(
+        ATRAPA_KOD_BUILD="41",
+        ATRAPA_WYJSCIE_BUILD="POCZATEK" + "x" * 6000 + "KONIEC-STDOUT",
+        ATRAPA_BLAD_BUILD="KONIEC-STDERR",
+    )
+    kopia = _kopia_z_webem(tmp_path)
+
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_reczne.zbuduj_front(kopia, 30)
+
+    komunikat = str(wyjatek.value)
+    assert "npm run build" in komunikat
+    assert "41" in komunikat
+    assert "KONIEC-STDOUT" in komunikat
+    assert "KONIEC-STDERR" in komunikat
+    assert "POCZATEK" not in komunikat
+
+
+def test_budowanie_z_kodem_0_bez_index_html_to_blad_narzedzia_z_brakiem_dowodu(tmp_path, npm):
+    npm.ustaw(ATRAPA_INDEKS="0")
+    kopia = _kopia_z_webem(tmp_path)
+
+    with pytest.raises(BladNarzedzia, match="brak dowodu"):
+        mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert not (kopia / "src" / "cockpit" / "static" / "index.html").exists()
+
+
+def test_udane_budowanie_zostawia_index_html_w_static_kopii(tmp_path, npm):
+    kopia = _kopia_z_webem(tmp_path)
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert (kopia / "src" / "cockpit" / "static" / "index.html").is_file()
+
+
+def test_brak_npm_w_path_to_blad_narzedzia_a_nie_oserror(tmp_path, monkeypatch):
+    pusty = tmp_path / "pusty-path"
+    pusty.mkdir()
+    monkeypatch.setenv("PATH", str(pusty))
+    kopia = _kopia_z_webem(tmp_path)
+
+    with pytest.raises(BladNarzedzia, match="npm"):
+        mutanty_reczne.zbuduj_front(kopia, 30)
+
+
+def test_przekroczony_limit_budowania_to_blad_narzedzia_a_proces_npm_ginie(tmp_path, npm):
+    npm.ustaw(ATRAPA_USPIJ="60")
+    kopia = _kopia_z_webem(tmp_path)
+    (kopia / "web" / "node_modules").mkdir()
+    pid = None
+    start = time.monotonic()
+    try:
+        with pytest.raises(BladNarzedzia, match="przekroczony"):
+            # Limit z zapasem na obciazona maszyne: potomek atrapy zapisuje PID zaraz po starcie,
+            # wiec przy kilku sekundach zawsze zdazy, a atrapa spi 60 s - bez zabicia grupy zyje dalej.
+            mutanty_reczne.zbuduj_front(kopia, 5)
+
+        assert time.monotonic() - start < 50
+        assert npm.pid.exists(), "atrapa npm nie zdazyla wystartowac potomka przed limitem"
+        pid = int(npm.pid.read_text(encoding="utf-8"))
+        koniec = time.monotonic() + 5
+        while czy_zyje(pid) and time.monotonic() < koniec:
+            time.sleep(0.1)
+        assert not czy_zyje(pid)
+    finally:
+        if pid is not None:
+            zabij_proces(pid)
+
+
+def test_npm_zabity_sygnalem_to_blad_narzedzia_z_kodem_sygnalu_a_nie_udane_budowanie(tmp_path, npm):
+    # Kod procesu zabitego sygnalem jest ujemny; `kod > 0` uznaloby go za sukces.
+    npm.ustaw(ATRAPA_ZABIJ_BUILD="1")
+    kopia = _kopia_z_webem(tmp_path)
+    (kopia / "web" / "node_modules").mkdir()
+
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert "npm run build" in str(wyjatek.value)
+    assert "-9" in str(wyjatek.value)
+
+
+def test_wyjscie_npm_w_zlym_utf8_nie_psuje_udanego_budowania(tmp_path, npm):
+    npm.ustaw(ATRAPA_BAJTY_BUILD="1")
+    kopia = _kopia_z_webem(tmp_path)
+    (kopia / "web" / "node_modules").mkdir()
+
+    mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert (kopia / "src" / "cockpit" / "static" / "index.html").is_file()
+
+
+def test_nieczytelny_katalog_node_modules_to_blad_narzedzia_a_nie_wyjatek_systemowy(
+    tmp_path, npm, monkeypatch
+):
+    kopia = _kopia_z_webem(tmp_path)
+
+    def zabroniony(self, *args, **kwargs):
+        raise PermissionError(13, "brak praw")
+
+    # Od Pythona 3.14 `is_dir` polyka bledy systemowe, wiec galaz da sie wyzwolic tylko tak.
+    with monkeypatch.context() as kontekst:
+        kontekst.setattr(Path, "is_dir", zabroniony)
+        with pytest.raises(BladNarzedzia, match="node_modules"):
+            mutanty_reczne.zbuduj_front(kopia, 30)
+
+    assert npm.polecenia == []
+
+
+def test_nieczytelny_index_html_po_budowaniu_to_blad_narzedzia_a_nie_wyjatek_systemowy(
+    tmp_path, npm, monkeypatch
+):
+    kopia = _kopia_z_webem(tmp_path)
+    (kopia / "web" / "node_modules").mkdir()
+
+    def zabroniony(self, *args, **kwargs):
+        raise PermissionError(13, "brak praw")
+
+    with monkeypatch.context() as kontekst:
+        kontekst.setattr(Path, "is_file", zabroniony)
+        with pytest.raises(BladNarzedzia, match="index.html"):
+            mutanty_reczne.zbuduj_front(kopia, 30)
+
+
+# --- kolejnosc budowania w przebiegu mutanta (main + atrapa npm + prawdziwy pytest) ---
+
+
+def test_mutant_w_web_zabija_test_tylko_dzieki_przebudowaniu_frontu_po_mutacji(tmp_path, npm):
+    # Test czyta static zbudowany z web/src/x.txt. Mutacja A -> B zmienia wynik testu wylacznie
+    # wtedy, gdy front zostal zbudowany drugi raz: po mutacji i przed drugim przebiegiem testu.
+    # Przebieg bazowy przechodzi tylko wtedy, gdy front zbudowano juz przed nim (inaczej kod 2).
+    tabela = _mutant("A", "B", test=TEST_STATIC, plik=PLIK_WEB)
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 0
+    assert npm.polecenia == ["ci", "run build", "run build"]
+
+
+def test_mutant_w_web_ktorego_test_nie_widzi_zmiany_przezywa_mimo_przebudowy(tmp_path, npm, capsys):
+    # Mutacja "A\n" -> "A\n\n": test robi strip(), wiec static sie nie zmienia. Przebudowa
+    # nie moze zrobic z niej zabitego mutanta.
+    tabela = _mutant("A\n", "A\n\n", test=TEST_STATIC, plik=PLIK_WEB)
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 1
+    assert capsys.readouterr().out.startswith(f"{PLIK_WEB}: ")
+    assert npm.polecenia == ["ci", "run build", "run build"]
+
+
+def test_blad_drugiego_budowania_po_mutacji_to_kod_2_a_nie_zabity_mutant(tmp_path, npm, capsys):
+    # Atrapa pada tylko gdy web/src/x.txt zawiera "B", czyli dopiero po mutacji.
+    npm.ustaw(ATRAPA_PADNIJ_NA="B")
+    tabela = _mutant("A", "B", test=TEST_STATIC, plik=PLIK_WEB)
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 2
+    assert capsys.readouterr().err.startswith("blad: ")
+
+
+def test_blad_pierwszego_budowania_to_kod_2_i_budowanie_nie_jest_ponawiane(tmp_path, npm, capsys):
+    npm.ustaw(ATRAPA_KOD_BUILD="1")
+    tabela = _mutant("A", "B", test=TEST_STATIC, plik=PLIK_WEB)
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 2
+    assert capsys.readouterr().err.startswith("blad: ")
+    assert npm.polecenia == ["ci", "run build"]
+
+
+def test_mutant_poza_web_z_testem_spoza_e2e_w_ogole_nie_wola_npm(tmp_path, npm):
+    repo = _repo(tmp_path, TABELA_ZABITY)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 0
+    assert npm.wywolania == []
+
+
+def test_mutant_z_testem_e2e_i_plikiem_spoza_web_buduje_front_raz_przed_baza_bez_przebudowy(
+    tmp_path, npm, capsys
+):
+    # Test e2e wymaga static/index.html juz w przebiegu bazowym; plik poza web/ nie zmienia
+    # frontu, wiec po mutacji nie ma ponownego budowania.
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, _mutant(SZUKAJ, ZABIJA, test=TEST_E2E))
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 0, capsys.readouterr().err
+    assert npm.polecenia == ["ci", "run build"]
+
+
+def test_mutant_w_web_z_testem_e2e_buduje_front_dwa_razy_a_npm_ci_tylko_raz(tmp_path, npm):
+    tabela = _mutant("A", "B", test=TEST_E2E, plik=PLIK_WEB)
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+
+    _uruchom(repo, TABELA_W_REPO)
+
+    assert npm.polecenia == ["ci", "run build", "run build"]
+
+
+def test_kazdy_mutant_frontu_buduje_w_nowej_kopii_wiec_npm_ci_idzie_osobno_dla_kazdego(tmp_path, npm):
+    tabela = _mutant("A", "B", test=TEST_STATIC, plik=PLIK_WEB) + _mutant(
+        "A", "C", test=TEST_STATIC, plik=PLIK_WEB
+    )
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+
+    assert _uruchom(repo, TABELA_W_REPO) == 0
+
+    assert npm.polecenia.count("ci") == 2
+    assert npm.polecenia.count("run build") == 4
+
+
+# --- --czy-front -------------------------------------------------------------------
+
+
+def _zakaz_uruchamiania(monkeypatch) -> None:
+    def zakazane(*args, **kwargs):
+        raise AssertionError("tryb --czy-front nie uruchamia testow ani budowania")
+
+    for nazwa in ("uruchom_test", "zbuduj_front", "_zabity"):
+        monkeypatch.setattr(mutanty_reczne, nazwa, zakazane, raising=False)
+
+
+TABELA_FRONT = _mutant("A", "B", test="tests/test_x.py::t", plik=PLIK_WEB)
+TABELA_FRONT_PRZEZ_TEST = _mutant(SZUKAJ, ZABIJA, test=TEST_E2E)
+TABELA_BEZ_FRONTU = _mutant(SZUKAJ, ZABIJA, test=TEST_DODAWANIE)
+
+
+@pytest.mark.parametrize(
+    ("tabela", "oczekiwane"),
+    [
+        pytest.param(TABELA_FRONT, "front=1\n", id="plik_w_web"),
+        pytest.param(TABELA_FRONT_PRZEZ_TEST, "front=1\n", id="test_e2e"),
+        pytest.param(TABELA_BEZ_FRONTU, "front=0\n", id="bez_frontu"),
+        pytest.param(TABELA_BEZ_FRONTU + TABELA_FRONT, "front=1\n", id="front_w_ostatnim_wpisie"),
+        pytest.param(TABELA_FRONT + TABELA_BEZ_FRONTU, "front=1\n", id="front_w_pierwszym_wpisie"),
+    ],
+)
+def test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0(
+    tmp_path, capsys, monkeypatch, tabela, oczekiwane
+):
+    repo = _repo(tmp_path, tabela)
+    _zakaz_uruchamiania(monkeypatch)
+
+    kod = _main([TABELA_W_REPO, "--korzen", str(repo), "--czy-front"])
+
+    zrzut = capsys.readouterr()
+    assert kod == 0
+    assert zrzut.out == oczekiwane
+    assert zrzut.err == ""
+
+
+def test_czy_front_sprawdza_wszystkie_podane_tabele(tmp_path, capsys, monkeypatch):
+    repo = _repo(tmp_path, TABELA_BEZ_FRONTU)
+    (repo / "tests" / "mutanty_reczne" / "HAR-1.toml").write_text(TABELA_FRONT, encoding="utf-8")
+    _zakaz_uruchamiania(monkeypatch)
+
+    kod = _main([TABELA_W_REPO, "tests/mutanty_reczne/HAR-1.toml", "--korzen", str(repo), "--czy-front"])
+
+    assert kod == 0
+    assert capsys.readouterr().out == "front=1\n"
+
+
+def test_czy_front_dla_zlej_tabeli_konczy_sie_kodem_2_bez_linii_front(tmp_path, capsys, monkeypatch):
+    repo = _repo(tmp_path, "mutant = []\n")
+    _zakaz_uruchamiania(monkeypatch)
+
+    kod = _main([TABELA_W_REPO, "--korzen", str(repo), "--czy-front"])
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert "front=" not in zrzut.out
+    assert zrzut.err.startswith("blad: ")
+
+
+def test_czy_front_dla_brakujacej_tabeli_konczy_sie_kodem_2(tmp_path, capsys, monkeypatch):
+    repo = _repo(tmp_path)
+    _zakaz_uruchamiania(monkeypatch)
+
+    assert _main(["tests/mutanty_reczne/nie-ma.toml", "--korzen", str(repo), "--czy-front"]) == 2
+    assert capsys.readouterr().out == ""
+
+
+def test_bez_opcji_czy_front_main_nie_wypisuje_linii_front(tmp_path, capsys):
+    repo = _repo(tmp_path, TABELA_ZABITY)
+
+    assert _uruchom(repo, TABELA_W_REPO) == 0
+    assert "front=" not in capsys.readouterr().out
+
+
+# --- --limit-budowy ---------------------------------------------------------------
+
+
+def _podstawka_budowania(monkeypatch) -> list[tuple[Path, float]]:
+    wywolania: list[tuple[Path, float]] = []
+    monkeypatch.setattr(
+        mutanty_reczne,
+        "zbuduj_front",
+        lambda kopia, limit: wywolania.append((kopia, limit)),
+        raising=False,
+    )
+    return wywolania
+
+
+TABELA_E2E_DO_PODSTAWKI = _mutant(SZUKAJ, "return a * b", test="tests/e2e/test_x.py::t")
+
+
+def test_domyslny_limit_budowania_to_900_sekund():
+    assert mutanty_reczne.LIMIT_BUDOWY == 900.0
+
+
+def test_bez_opcji_limit_budowy_front_dostaje_domyslny_limit_budowania(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, TABELA_E2E_DO_PODSTAWKI)
+    budowania = _podstawka_budowania(monkeypatch)
+    _podstawka_testu(monkeypatch)
+
+    assert mutanty_reczne.main([TABELA_W_REPO, "--korzen", str(repo)]) == 0
+
+    assert [limit for _, limit in budowania] == [900.0]
+
+
+def test_limit_budowy_z_wiersza_polecen_trafia_do_budowania_a_limit_testu_zostaje_osobny(
+    tmp_path, monkeypatch
+):
+    repo = _repo(tmp_path, TABELA_E2E_DO_PODSTAWKI)
+    budowania = _podstawka_budowania(monkeypatch)
+    testy = _podstawka_testu(monkeypatch)
+
+    kod = mutanty_reczne.main(
+        [TABELA_W_REPO, "--korzen", str(repo), "--limit", "7", "--limit-budowy", "12.5"]
+    )
+
+    assert kod == 0
+    assert [limit for _, limit in budowania] == [12.5]
+    assert {limit for _, _, limit in testy} == {7}
+
+
+def test_limit_budowy_trafia_tez_do_przebudowania_frontu_po_mutacji_w_web(tmp_path, monkeypatch):
+    # Mutant w web/ buduje front dwa razy: przed przebiegiem bazowym i po mutacji.
+    tabela = _mutant("A", "B", test=TEST_STATIC, plik=PLIK_WEB)
+    repo = _repo_z_plikami(tmp_path, FRONT_I_MODUL, tabela)
+    budowania = _podstawka_budowania(monkeypatch)
+    _podstawka_testu(monkeypatch)
+
+    mutanty_reczne.main(
+        [TABELA_W_REPO, "--korzen", str(repo), "--limit", "7", "--limit-budowy", "12.5"]
+    )
+
+    assert [limit for _, limit in budowania] == [12.5, 12.5]
+
+
+@pytest.mark.parametrize(
+    "limit",
+    [
+        pytest.param("0", id="zero"),
+        pytest.param("-1", id="ujemny"),
+        pytest.param("abc", id="nie_liczba"),
+        pytest.param("inf", id="nieskonczony"),
+        pytest.param("nan", id="nie_liczba_ieee"),
+    ],
+)
+def test_limit_budowy_niedodatni_albo_nie_liczba_jest_bledem_wiersza_polecen(
+    tmp_path, monkeypatch, limit
+):
+    repo = _repo(tmp_path, TABELA_E2E_DO_PODSTAWKI)
+    budowania = _podstawka_budowania(monkeypatch)
+    testy = _podstawka_testu(monkeypatch)
+
+    kod = _main([TABELA_W_REPO, "--korzen", str(repo), "--limit-budowy", limit])
+
+    assert kod == 2
+    assert budowania == []
+    assert testy == []

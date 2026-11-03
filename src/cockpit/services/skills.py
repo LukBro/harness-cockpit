@@ -19,7 +19,7 @@ from ruamel.yaml import YAML, YAMLError
 from ruamel.yaml.comments import CommentedMap
 
 from cockpit.services.errors import BlednySkill, NieZnaleziono
-from cockpit.services.invariants import Rola
+from cockpit.services.invariants import Rola, profil_roli
 
 # Zrodla od najwyzszego priorytetu (wygrywa pierwsze, w ktorym jest id).
 # (baza, podkatalog, scisle): scisle = model kokpitu; nie scisle = format innych narzedzi.
@@ -189,6 +189,12 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
         )
     except (ValidationError, TypeError) as e:
         raise BlednySkill(f"niepoprawny skill w {plik}: {e}") from e
+    # rola bez zapisu oddaje artefakt jako wynik agenta (HAR-160): wynik jest jeden
+    if not profil_roli(skill.role).zapis and len(skill.produces) > 1:
+        raise BlednySkill(
+            f"skill {skill.id}: rola {skill.role.value} oddaje jeden artefakt, "
+            f"produces ma {len(skill.produces)}: {', '.join(skill.produces)}"
+        )
     skill._surowy = surowy
     skill._mapa = mapa
     skill._migawka = skill._stan()

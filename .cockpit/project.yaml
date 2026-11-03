@@ -1,0 +1,12 @@
+# Skille deklaruja `needs:` z nazw capabilities ponizej; komendy zyja tylko tutaj.
+# Wartosci uruchamia sie bez powloki (shlex.split): bez `&&`, `|`, `cd`, `VAR=x`.
+stack: [python, fastapi, sqlalchemy, pytest, react, typescript, vite]
+capabilities:
+  test_narrow: pytest -q -n 4
+  test_full: tools/testy_pelne.sh
+  test_e2e: pytest -m e2e
+  lint: ruff check .
+  layers: python tools/check_layers.py
+  typecheck: npm --prefix web run build
+  contract: python tools/eksport_openapi.py --sprawdz
+  smoke: python tools/demo_szkielet.py

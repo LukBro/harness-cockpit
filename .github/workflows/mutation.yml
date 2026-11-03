@@ -70,6 +70,61 @@ jobs:
           restore-keys: |
             mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-
 
+      # HAR-156: reczny mutant w web/ albo sprawdzany testem e2e potrzebuje zbudowanego frontu,
+      # Chromium i prawdziwego Postgresa; wynik ma zalezec od kodu, nie od srodowiska. Krok
+      # wykrycia pyta o to tabele zmienione w PR (to samo zapytanie co w kroku `mutanty reczne`),
+      # a trzy kroki srodowiska wykonuja sie tylko dla front=1. PR bez takich wierszy nie
+      # instaluje Node, przegladarki ani bazy. Blad wykrycia (zla tabela) oblewa krok.
+      - name: front dla mutantów ręcznych
+        id: front
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF"
+          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0" >> "$GITHUB_OUTPUT"
+          else
+            # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
+            python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.front.outputs.front == '1'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: przeglądarka dla mutantów ręcznych
+        if: steps.front.outputs.front == '1'
+        run: |
+          playwright install --with-deps chromium
+
+      # Baza dla testow e2e: kontener z healthcheckiem, czekamy az bedzie zdrowy. Brak zdrowia
+      # to czerwony krok, a adres bazy trafia do wyjscia kroku dopiero po sukcesie. Adres idzie
+      # jako wyjscie kroku, nie do srodowiska calego joba: dostaje go tylko krok `mutanty reczne`.
+      # Srodowisko joba trafiloby tez do mutmuta i testy `baza` biegly pod nim rownolegle na
+      # wspolnej bazie, a wynik mutmuta zalezalby od tego, czy PR ma wiersze frontu.
+      - name: PostgreSQL dla mutantów ręcznych
+        id: postgres
+        if: steps.front.outputs.front == '1'
+        run: |
+          docker run -d --name postgres-mutanty -e POSTGRES_USER=cockpit -e POSTGRES_PASSWORD=cockpit -e POSTGRES_DB=cockpit_test -p 5432:5432 --health-cmd "pg_isready -U cockpit -d cockpit_test" --health-interval 5s --health-timeout 5s --health-retries 10 postgres:16
+          zdrowa=0
+          for proba in $(seq 1 60); do
+            if status="$(docker inspect -f '{{.State.Health.Status}}' postgres-mutanty)" && [ "$status" = "healthy" ]; then
+              zdrowa=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$zdrowa" != "1" ]; then
+            echo "::error::PostgreSQL nie stal sie zdrowy w 120 s - testy e2e nie maja bazy, nic nie zmierzono"
+            exit 1
+          fi
+          echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> "$GITHUB_OUTPUT"
+
       - name: mutanty zmienionych funkcji
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -138,9 +193,12 @@ jobs:
       # mutantow zmian), wymagaja tabeli tests/mutanty_reczne/<ticket>.toml zmienionej w PR.
       # Brak tabeli to brak dowodu, wiec czerwony krok. Tabela zmieniona w PR jest wykonywana
       # niezaleznie od zasiegu: jej czerwony wynik nie moze zostac zignorowany.
+      # Adres bazy testowej (HAR-156) tylko tutaj; gdy krok bazy byl pominiety, wartosc jest pusta
+      # i testy traktuja ja jak brak bazy.
       - name: mutanty ręczne
         env:
           BASE_REF: ${{ github.base_ref }}
+          COCKPIT_TEST_DATABASE_URL: ${{ steps.postgres.outputs.adres }}
         run: |
           if [ ! -f mutants/mutanty-zmian.kod ]; then
             echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
