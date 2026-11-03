@@ -6,6 +6,7 @@ consumes:
   - plan.md
 produces:
   - tdd.md
+needs: [test_narrow]
 ---
 # Zadanie metodą test-najpierw
 
@@ -22,9 +23,9 @@ Nie kopiuj treści tych plików do testów ani do `tdd.md`; stosuj je.
 ## Kroki
 
 1. Z `plan.md` wybierz zachowanie do zrealizowania i opisz je nazwą testu w języku dziedziny.
-2. Napisz test i uruchom go. Ma oblewać z właściwego powodu (brak zachowania, nie błąd importu ani literówka). Zachowaj wynik.
+2. Napisz test i uruchom go przez capability `test_narrow`. Ma oblewać z właściwego powodu (brak zachowania, nie błąd importu ani literówka). Zachowaj wynik.
 3. Napisz minimalną implementację, która spełnia ten test, bez dodatków spoza planu.
-4. Uruchom test ponownie, potem pozostałe testy zmienionego obszaru. Muszą przechodzić.
+4. Uruchom capability `test_narrow` ponownie, potem pozostałe testy zmienionego obszaru. Muszą przechodzić.
 5. Powtórz dla kolejnych zachowań z planu.
 
 ## Granice

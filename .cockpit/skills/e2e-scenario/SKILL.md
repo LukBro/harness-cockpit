@@ -6,6 +6,7 @@ consumes:
   - plan.md
 produces:
   - scenariusz-e2e.md
+needs: [test_e2e]
 ---
 # Scenariusz e2e zdaniami
 
@@ -18,7 +19,7 @@ Dla zmiany z `plan.md` napisz scenariusz end-to-end i test, który go odtwarza w
 3. Za wzorzec fixture'ów (serwer, baza, przeglądarka) weź `tests/e2e/conftest.py` i istniejące testy w tym katalogu.
 4. Nazwa testu opisuje zachowanie w języku dziedziny (zasady w `CLAUDE.md`, sekcja „Testy").
 5. Skutek sprawdzaj także w danych (baza, plik runu), nie tylko w stanie strony.
-6. Uruchom `pytest -m e2e`. Wymaga PostgreSQL i przeglądarki dla Playwrighta; jeśli ich brakuje, zapisz to jako błąd kroku, nie jako przejście.
+6. Uruchom capability `test_e2e`. Wymaga PostgreSQL i przeglądarki dla Playwrighta; jeśli ich brakuje, zapisz to jako błąd kroku, nie jako przejście.
 
 ## Granice
 
@@ -29,4 +30,4 @@ Dla zmiany z `plan.md` napisz scenariusz end-to-end i test, który go odtwarza w
 
 - zdania scenariusza w kolejności,
 - ścieżka pliku testu,
-- wynik uruchomienia `pytest -m e2e`: komenda, kod wyjścia, końcówka wyjścia.
+- wynik uruchomienia capability `test_e2e`: komenda, kod wyjścia, końcówka wyjścia.
