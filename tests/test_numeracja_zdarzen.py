@@ -230,7 +230,7 @@ async def test_po_wyczerpaniu_prob_kolizji_api_odpowiada_konfliktem_i_nie_zapisu
     await _post(swiat.klient, swiat.run_id)
     stan = kolizja(zajety=1)
 
-    r = await _post(swiat.klient, swiat.run_id, kind="step_failed")
+    r = await _post(swiat.klient, swiat.run_id, kind="run_finished")
 
     assert r.status_code == 409
     assert stan["wywolania"] == uslugi_runow._PROBY_SEQ
@@ -239,10 +239,10 @@ async def test_po_wyczerpaniu_prob_kolizji_api_odpowiada_konfliktem_i_nie_zapisu
 
 
 async def test_status_runu_po_ponowionej_probie_odpowiada_zdarzeniu_ktore_sie_zapisalo(swiat, kolizja):
-    await _post(swiat.klient, swiat.run_id)
+    await _post(swiat.klient, swiat.run_id, kind="step_failed")
     kolizja(zajety=1, ile_zajetych=1)
 
-    r = await _post(swiat.klient, swiat.run_id, kind="step_failed")
+    r = await _post(swiat.klient, swiat.run_id, kind="run_finished")
 
     assert r.status_code == 200
     assert await _numery_w_bazie(swiat.run_id) == [1, 2]
@@ -258,7 +258,7 @@ async def test_komunikat_niepelnego_strumienia_przezywa_ponowienie_po_kolizji(sw
 
     assert r.status_code == 200
     run = await _run_w_bazie(swiat.run_id)
-    assert run.status == RunStatus.to_accept
+    assert run.status == RunStatus.running    # sam koniec kroku nie konczy runu (HAR-78)
     assert run.reason == uslugi_runow.komunikat_niepelnego_strumienia(1, 2)
 
 

@@ -204,6 +204,19 @@
             "title": "Agent Type",
             "type": "string"
           },
+          "attempt": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
           "cost_source": {
             "default": "unavailable",
             "title": "Cost Source",
@@ -358,6 +371,53 @@
           "pominiete"
         ],
         "title": "KatalogOdswiezony",
+        "type": "object"
+      },
+      "KrokRunu": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "finished",
+              "failed",
+              "skipped",
+              "waiting"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "agent_id",
+          "attempt",
+          "status",
+          "reason"
+        ],
+        "title": "KrokRunu",
         "type": "object"
       },
       "ListaPlikow": {
@@ -628,6 +688,13 @@
           "status": {
             "$ref": "#/components/schemas/RunStatus"
           },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/KrokRunu"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
           "workflow": {
             "title": "Workflow",
             "type": "string"
@@ -639,7 +706,8 @@
           "status",
           "runner_kind",
           "reason",
-          "events"
+          "events",
+          "steps"
         ],
         "title": "RunSzczegoly",
         "type": "object"

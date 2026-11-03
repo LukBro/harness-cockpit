@@ -442,9 +442,13 @@ async def test_zdarzenie_konca_kroku_po_przerwaniu_trafia_do_logu_a_run_zostaje_
                                 headers=NAGLOWEK)
 
     assert r.status_code == 200
+    r = await swiat.klient.post("/api/events", json={"run_id": run_id, "kind": "run_finished",
+                                      "step_id": "s0", "event_id": str(uuid.uuid4())},
+                                headers=NAGLOWEK)
+    assert r.status_code == 200
     zdarzenia = await _zdarzenia(run_id)
-    assert len(zdarzenia) == przed + 1
-    assert zdarzenia[-1].kind == "step_finished"
+    assert len(zdarzenia) == przed + 2
+    assert [z.kind for z in zdarzenia[-2:]] == ["step_finished", "run_finished"]
     assert await _w_bazie(run_id) == (RunStatus.aborted, POWOD)
 
 
@@ -457,7 +461,12 @@ async def test_zdarzenie_porazki_kroku_po_przerwaniu_nie_zmienia_przerwanego_run
                                 headers=NAGLOWEK)
 
     assert r.status_code == 200
-    assert (await _zdarzenia(run_id))[-1].kind == "step_failed"
+    r = await swiat.klient.post("/api/events", json={"run_id": run_id, "kind": "run_finished",
+                                      "step_id": "s0", "event_id": str(uuid.uuid4())},
+                                headers=NAGLOWEK)
+    assert r.status_code == 200
+    assert [z.kind for z in (await _zdarzenia(run_id))[-2:]] == ["step_failed", "run_finished"]
+    # run_finished z nieudanym krokiem tez nie zmienia przerwanego runu ani jego powodu
     assert await _w_bazie(run_id) == (RunStatus.aborted, POWOD)
 
 
@@ -681,9 +690,14 @@ def test_interwal_sprawdzania_runnerow_zero_ze_zmiennej_srodowiskowej_jest_odrzu
 
 # --- maszyna przejsc: aborted jest koncowy ---------------------------------------
 
-@pytest.mark.parametrize("kind", ["step_finished", "step_failed"])
+@pytest.mark.parametrize("kind", ["step_finished", "step_failed", "run_finished"])
 def test_zdarzenie_runnera_nie_wyprowadza_runu_ze_stanu_przerwanego(kind):
     assert uslugi.nastepny_status(RunStatus.aborted, kind) == RunStatus.aborted
+
+
+@pytest.mark.parametrize("nieudane", [[], ["s0"]])
+def test_koniec_runu_nie_wyprowadza_runu_ze_stanu_przerwanego_niezaleznie_od_nieudanych(nieudane):
+    assert uslugi.nastepny_status(RunStatus.aborted, "run_finished", nieudane) == RunStatus.aborted
 
 
 # --- przerwanie dotyka tylko wlasciwego runu -------------------------------------
@@ -705,7 +719,7 @@ async def test_przerwanie_runu_na_runnerze_offline_nie_rusza_innego_runu_tego_sa
 # --- wyscig ze zdarzeniem konca kroku --------------------------------------------
 
 @pytest.mark.parametrize("wyprzedzony", ["run-a", "run-b"])
-async def test_run_wyprzedzony_przez_koniec_kroku_nie_zostaje_przerwany_a_drugi_zostaje(
+async def test_run_wyprzedzony_przez_koniec_runu_nie_zostaje_przerwany_a_drugi_zostaje(
     swiat, tmp_path, monkeypatch, wyprzedzony,
 ):
     """Miedzy odczytem a zapisem przerwania inna sesja ustawia `to_accept`. Raz

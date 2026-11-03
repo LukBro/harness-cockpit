@@ -183,7 +183,7 @@ async def test_dokladnie_wymagane_miejsce_wystarcza_krok_startuje(tmp_path, monk
     zdarzenia, znacznik = await _krok_ze_znacznikiem(tmp_path)
 
     assert znacznik.exists()
-    assert [z["kind"] for z in zdarzenia] == ["step_finished"]
+    assert [z["kind"] for z in zdarzenia] == ["step_finished", "run_finished"]
 
 
 async def test_o_jeden_megabajt_za_malo_miejsca_krok_nie_startuje(tmp_path, monkeypatch):
@@ -238,7 +238,7 @@ async def test_prog_ze_zmiennej_srodowiskowej_zmienia_wynik_dla_tego_samego_dysk
     zdarzenia, znacznik = await _krok_ze_znacznikiem(tmp_path)
 
     assert znacznik.exists()
-    assert [z["kind"] for z in zdarzenia] == ["step_finished"]
+    assert [z["kind"] for z in zdarzenia] == ["step_finished", "run_finished"]
 
 
 async def test_prog_ze_zmiennej_wyzszy_niz_domyslny_przerywa_krok_z_tym_progiem_w_komunikacie(
@@ -260,7 +260,7 @@ async def test_prog_zero_wylacza_sprawdzanie_nawet_gdy_dysk_jest_pelny(tmp_path,
     zdarzenia, znacznik = await _krok_ze_znacznikiem(tmp_path)
 
     assert znacznik.exists()
-    assert [z["kind"] for z in zdarzenia] == ["step_finished"]
+    assert [z["kind"] for z in zdarzenia] == ["step_finished", "run_finished"]
 
 
 def test_bez_zmiennej_prog_wynosi_200_megabajtow():
@@ -673,6 +673,7 @@ async def test_brak_miejsca_przy_potwierdzaniu_wyslanego_zdarzenia_tez_przerywa_
     assert zdarzenia[-1]["kind"] == "step_aborted"
     assert zdarzenia[-1]["text"] == KOMUNIKAT_ENOSPC
     assert all(z["kind"] != "step_finished" for z in zdarzenia)
+    assert all(z["kind"] != "run_finished" for z in zdarzenia)   # przerwanie nie konczy runu sukcesem
     assert sum(1 for z in zdarzenia if z["kind"] == "step_aborted") == 1
 
 
@@ -879,6 +880,7 @@ async def test_run_do_odbioru_przerwany_z_braku_miejsca_w_kolejnym_kroku_ma_stat
 ):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
     assert (await _stan_w_bazie(run_id))[0] == RunStatus.to_accept
 
     await _zdarzenie(klient, run_id, "step_aborted", text=TEKST)
@@ -899,6 +901,7 @@ async def test_run_przerwany_wczesniej_przez_kokpit_zachowuje_pierwotny_powod(kl
 async def test_run_nieudany_nie_zamienia_sie_w_przerwany_i_zachowuje_swoj_powod(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_failed", text="kod wyjscia 3")
+    await _zdarzenie(klient, run_id, "run_finished")
     przed = await _stan_w_bazie(run_id)
     assert przed[0] == RunStatus.failed
 
@@ -941,6 +944,7 @@ async def test_sukces_kroku_z_tekstem_nie_ustawia_powodu_runu(klient):
     run_id = await _nowy_run(klient)
 
     await _zdarzenie(klient, run_id, "step_finished", text=TEKST)
+    await _zdarzenie(klient, run_id, "run_finished")
 
     assert await _stan_w_bazie(run_id) == (RunStatus.to_accept, None)
 

@@ -34,6 +34,15 @@ class RunStatus(str, enum.Enum):
     aborted = "aborted"        # runner offline, brak miejsca (BRO-109)
 
 
+class StepStatus(str, enum.Enum):
+    """Stan jednej proby kroku, wyliczany ze zdarzen kroku (HAR-78)."""
+    running = "running"
+    finished = "finished"
+    failed = "failed"
+    skipped = "skipped"
+    waiting = "waiting"
+
+
 class RunnerKind(str, enum.Enum):
     local = "local"
     remote = "remote"
@@ -103,6 +112,8 @@ class Event(Base):
     step_id: Mapped[str] = mapped_column(String(100), default="")
     agent_id: Mapped[str] = mapped_column(String(100), default="")
     agent_type: Mapped[str] = mapped_column(String(100), default="")
+    # numer proby kroku; brak w zdarzeniu to None, nigdy 1 (measured_or_null)
+    attempt: Mapped[int | None] = mapped_column(Integer, default=None)
     kind: Mapped[str] = mapped_column(String(50))
     text: Mapped[str] = mapped_column(Text, default="")
     text_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -116,6 +127,24 @@ class Event(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="events")
+
+
+class StepRun(Base):
+    """Stan kroku w runie: jeden wiersz na (krok, agent, proba) (HAR-78)."""
+    __tablename__ = "step_run"
+    __table_args__ = (
+        UniqueConstraint("run_id", "step_id", "agent_id", "attempt", name="uq_step_run_klucz"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("run.id"), index=True)
+    step_id: Mapped[str] = mapped_column(String(100))
+    agent_id: Mapped[str] = mapped_column(String(100), default="")
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[StepStatus] = mapped_column(Enum(StepStatus))
+    reason: Mapped[str | None] = mapped_column(Text, default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
 class User(Base):

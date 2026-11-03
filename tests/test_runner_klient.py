@@ -74,7 +74,7 @@ async def test_komenda_z_niezerowym_kodem_wyjscia_konczy_krok_jako_nieudany():
     zadania = await _uruchom(["sh", "-c", "exit 3"])
     zdarzenia = _zdarzenia(zadania)
 
-    koncowe = zdarzenia[-1]
+    koncowe = zdarzenia[-2]       # ostatnie jest zdarzenie konca runu (HAR-78)
     assert koncowe["kind"] == "step_failed"
     assert koncowe["text"] == "kod wyjscia 3"
     assert koncowe["run_id"] == RUN_ID
@@ -86,7 +86,7 @@ async def test_komenda_z_kodem_zero_konczy_krok_jako_zakonczony():
     zadania = await _uruchom(["sh", "-c", "exit 0"])
     zdarzenia = _zdarzenia(zadania)
 
-    koncowe = zdarzenia[-1]
+    koncowe = zdarzenia[-2]       # ostatnie jest zdarzenie konca runu (HAR-78)
     assert koncowe["kind"] == "step_finished"
     assert koncowe["text"] == "kod wyjscia 0"
     assert koncowe["run_id"] == RUN_ID
@@ -94,13 +94,46 @@ async def test_komenda_z_kodem_zero_konczy_krok_jako_zakonczony():
     assert all(z["kind"] != "step_failed" for z in zdarzenia)
 
 
-async def test_nieudana_komenda_najpierw_zglasza_swoj_wynik_a_zdarzenie_koncowe_idzie_ostatnie():
+async def test_nieudana_komenda_najpierw_zglasza_swoj_wynik_a_potem_koniec_runu():
     zadania = await _uruchom(["sh", "-c", "echo blad; exit 2"])
     zdarzenia = _zdarzenia(zadania)
 
-    assert [z["kind"] for z in zdarzenia] == ["output", "step_failed"]
+    assert [z["kind"] for z in zdarzenia] == ["output", "step_failed", "run_finished"]
     assert zdarzenia[0]["text"] == "blad"
-    assert zdarzenia[-1]["text"] == "kod wyjscia 2"
+    assert zdarzenia[1]["text"] == "kod wyjscia 2"
+
+
+# --- HAR-78: koniec runu wysyla szkielet, nie kokpit ---
+
+@pytest.mark.parametrize("komenda,krok", [(["sh", "-c", "exit 0"], "step_finished"),
+                                          (["sh", "-c", "exit 3"], "step_failed")])
+async def test_po_zakonczeniu_kroku_runner_zglasza_koniec_runu_z_tym_samym_krokiem(komenda, krok):
+    zdarzenia = _zdarzenia(await _uruchom(komenda))
+
+    assert [z["kind"] for z in zdarzenia] == [krok, "run_finished"]
+    koniec = zdarzenia[-1]
+    assert koniec["run_id"] == RUN_ID
+    assert koniec["step_id"] == STEP_ID
+    assert koniec["text"] == ""
+    assert koniec["cost_usd"] is None
+    assert koniec["cost_source"] == "unavailable"
+    assert koniec["event_id"] != zdarzenia[0]["event_id"]
+
+
+async def test_koniec_runu_nie_niesie_liczby_wyslanych_output():
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "echo a; exit 1"]))
+
+    assert zdarzenia[-2]["wyslane_output"] == 1   # kontrast: krok niesie licznik
+    assert zdarzenia[-1]["kind"] == "run_finished"
+    assert zdarzenia[-1].get("wyslane_output") is None
+
+
+async def test_krok_przerwany_z_powodu_braku_miejsca_nie_zglasza_konca_runu(monkeypatch):
+    monkeypatch.setattr(Runner, "_powod_nie_startu", lambda self: "brak miejsca: test")
+    zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "exit 0"]))
+
+    assert [z["kind"] for z in zdarzenia] == ["step_aborted"]
+    assert zdarzenia[0]["text"] == "brak miejsca: test"
 
 
 async def test_zdarzenia_runnera_trafiaja_do_kokpitu_z_tokenem_runnera():
@@ -189,31 +222,82 @@ async def test_wysylka_zdarzenia_z_kodem_2xx_innym_niz_200_zwraca_sukces(capsys)
     assert capsys.readouterr().err == ""
 
 
-async def test_log_utraconego_zdarzenia_koncowego_podaje_jego_rodzaj(capsys):
+async def test_log_utraconego_zdarzenia_kroku_podaje_jego_rodzaj_i_brak_konca_runu(capsys):
     await _uruchom(["sh", "-c", "exit 3"], status=400)
 
     assert capsys.readouterr().err.splitlines() == [
-        f"zdarzenie utracone: kind=step_failed run_id={RUN_ID} http=400"]
+        f"zdarzenie utracone: kind=step_failed run_id={RUN_ID} http=400",
+        f"koniec runu niewyslany: run_id={RUN_ID} - "
+        "zdarzenie kroku step_failed nie zostalo przyjete"]
+
+
+async def _uruchom_z_odrzuconym_krokiem(
+    command: list[str], odrzucany: set[str], status: int, **runner_kw
+) -> list[str]:
+    """Kokpit odpowiada `status` na zdarzenia wskazanych rodzajow, a 200 na pozostale.
+    Zwraca rodzaje wszystkich wyslanych zdarzen w kolejnosci prob."""
+    rodzaje: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        kind = json.loads(request.content)["kind"]
+        rodzaje.append(kind)
+        return httpx.Response(status if kind in odrzucany else 200)
+
+    runner, _ = _runner()
+    runner._maks_prob_bledu_serwera = runner_kw.get("maks", runner._maks_prob_bledu_serwera)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await asyncio.wait_for(runner.run_command(client, RUN_ID, STEP_ID, command), 20)
+    return rodzaje
+
+
+@pytest.mark.parametrize("komenda,krok", [("exit 3", "step_failed"), ("true", "step_finished")])
+async def test_odrzucone_zdarzenie_kroku_nie_pozwala_zglosic_konca_runu(komenda, krok):
+    rodzaje = await _uruchom_z_odrzuconym_krokiem(
+        ["sh", "-c", komenda], {"step_failed", "step_finished"}, 400)
+
+    assert "run_finished" not in rodzaje
+    assert krok in rodzaje
+
+
+async def test_zdarzenie_kroku_odrzucane_bledem_serwera_do_limitu_prob_nie_pozwala_zglosic_konca_runu(
+    capsys,
+):
+    rodzaje = await _uruchom_z_odrzuconym_krokiem(
+        ["sh", "-c", "exit 3"], {"step_failed"}, 500, maks=3)
+
+    assert rodzaje.count("step_failed") == 3
+    assert "run_finished" not in rodzaje
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        f"koniec runu niewyslany: run_id={RUN_ID} - "
+        "zdarzenie kroku step_failed nie zostalo przyjete")
+
+
+async def test_przyjete_zdarzenie_kroku_pozwala_zglosic_koniec_runu_mimo_odrzuconego_output():
+    rodzaje = await _uruchom_z_odrzuconym_krokiem(
+        ["sh", "-c", "echo x"], {"output"}, 400)
+
+    assert rodzaje == ["output", "step_finished", "run_finished"]
 
 
 async def test_zdarzenie_koncowe_niesie_liczbe_linii_output_ktore_runner_wyslal():
     zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "echo a; echo b"]))
 
-    assert [z["kind"] for z in zdarzenia] == ["output", "output", "step_finished"]
-    assert zdarzenia[-1]["wyslane_output"] == 2
+    assert [z["kind"] for z in zdarzenia] == ["output", "output", "step_finished", "run_finished"]
+    assert zdarzenia[-2]["wyslane_output"] == 2
 
 
 async def test_zdarzenie_koncowe_liczy_tez_nieudane_proby_wyslania_output():
     zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "echo a; echo b; exit 1"], status=400))
 
-    assert zdarzenia[-1]["kind"] == "step_failed"
+    # kokpit odrzucil zdarzenie kroku, wiec konca runu nie ma: krok jest ostatni
+    assert [z["kind"] for z in zdarzenia] == ["output", "output", "step_failed"]
     assert zdarzenia[-1]["wyslane_output"] == 2
 
 
 async def test_komenda_bez_wyjscia_zglasza_zero_wyslanych_output():
     zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "exit 0"]))
 
-    assert zdarzenia[-1]["wyslane_output"] == 0
+    assert zdarzenia[-2]["wyslane_output"] == 0
 
 
 # --- HAR-26: strumien runnera, zamkniecie przez kokpit i odrzucony token ---
@@ -760,10 +844,10 @@ async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_
     await _nasluchuj(runner)
 
     zdarzenia = [json.loads(z.content) for z in zadania if z.url.path == "/api/events"]
-    assert [z["kind"] for z in zdarzenia] == ["output", "step_finished"]
+    assert [z["kind"] for z in zdarzenia] == ["output", "step_finished", "run_finished"]
     assert zdarzenia[0]["text"] == "hej"
     assert all(z["run_id"] == "run-1" and z["step_id"] == "s0" for z in zdarzenia)
-    assert len({z["event_id"] for z in zdarzenia}) == 2
+    assert len({z["event_id"] for z in zdarzenia}) == 3
 
 
 async def test_strumien_polecen_nie_ma_limitu_czasu_bo_trwa_godzinami(monkeypatch):
@@ -1023,13 +1107,13 @@ async def test_bajty_niepoprawne_w_utf8_nie_przerywaja_kroku_i_trafiaja_do_wyjsc
     zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "printf '\\377ok\\n'"]))
 
     assert [z["text"] for z in zdarzenia if z["kind"] == "output"] == ["\ufffdok"]
-    assert zdarzenia[-1]["kind"] == "step_finished"
+    assert zdarzenia[-2]["kind"] == "step_finished"
 
 
 async def test_czas_trwania_kroku_to_calkowite_milisekundy_zmierzone_na_zegarze_kroku():
     zdarzenia = _zdarzenia(await _uruchom(["sleep", "0.2"]))
 
-    ms = zdarzenia[-1]["duration_ms"]
+    ms = zdarzenia[-2]["duration_ms"]
     assert type(ms) is int
     assert 150 <= ms < 5000
 
@@ -1045,12 +1129,12 @@ async def test_czas_trwania_kroku_w_zdarzeniu_to_dokladna_roznica_zegara_w_milis
 
     zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "exit 0"]))
 
-    assert zdarzenia[-1]["duration_ms"] == 2500
+    assert zdarzenia[-2]["duration_ms"] == 2500
 
 
 async def test_koniec_kroku_bez_pomiaru_kosztu_ma_zrodlo_niedostepne_i_koszt_null_a_nie_zero():
     zdarzenia = _zdarzenia(await _uruchom(["sh", "-c", "exit 0"]))
 
-    koncowe = zdarzenia[-1]
+    koncowe = zdarzenia[-2]
     assert "cost_usd" in koncowe and koncowe["cost_usd"] is None
     assert koncowe["cost_source"] == "unavailable"

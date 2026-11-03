@@ -274,14 +274,29 @@ class Runner:
                 await self.send_event(client, run_id=run_id, step_id=step_id,
                                       kind="output", text=line)
             ok = proc.returncode == 0
-            await self.send_event(
+            kind_kroku = "step_finished" if ok else "step_failed"
+            krok_przyjety = await self.send_event(
                 client, run_id=run_id, step_id=step_id,
-                kind="step_finished" if ok else "step_failed",
+                kind=kind_kroku,
                 text=f"kod wyjscia {proc.returncode}",
                 duration_ms=ms,
                 cost_usd=None,                   # subskrypcja nie podaje ceny
                 cost_source="unavailable",
                 wyslane_output=wyslane_output,
+            )
+            if not krok_przyjety:
+                # WHY: kokpit wylicza status runu ze zdarzen krokow; bez przyjetego dowodu
+                # run_finished dalby "do odbioru" mimo nieudanego kroku (evidence_required).
+                print(
+                    f"koniec runu niewyslany: run_id={run_id} - "
+                    f"zdarzenie kroku {kind_kroku} nie zostalo przyjete",
+                    file=sys.stderr,
+                )
+                return
+            # koniec runu zglasza runner osobno; status runu wylicza z niego kokpit (HAR-78)
+            await self.send_event(
+                client, run_id=run_id, step_id=step_id, kind="run_finished", text="",
+                cost_usd=None, cost_source="unavailable",
             )
         except BrakMiejsca:
             # bez miejsca zaden krok nie zapisze zdarzen; nie stop(): nasluch i heartbeat zyja

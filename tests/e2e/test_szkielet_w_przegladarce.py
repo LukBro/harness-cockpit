@@ -1,12 +1,20 @@
 """Przelot szkieletu w prawdziwej przegladarce na PostgreSQL (HAR-3)."""
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import subprocess
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from playwright.sync_api import expect
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 pytestmark = [pytest.mark.e2e, pytest.mark.baza]
 
@@ -16,6 +24,7 @@ LIMIT_PRZYCISKU_MS = 5000
 LIMIT_POLLINGU_MS = 7000
 OKNO_NA_POST_MS = 1000
 PODPOWIEDZ_OFFLINE = "Wymaga runnera online. Uruchom runnera na swojej maszynie."
+ODSTEP_MIEDZY_ZDARZENIAMI_S = 1.5
 
 
 def _id_runu(page) -> str:
@@ -105,3 +114,80 @@ def test_token_runnera_nie_jest_widoczny_w_argumentach_procesu(runner_online, to
 
     assert "runner" in argumenty, "ps nie pokazal procesu runnera"
     assert token_runnera not in argumenty
+
+
+# --- HAR-78: status runu przychodzi ze zdarzenia konca runu, nie z konca kroku ---
+
+def _utworz_run_w_toku() -> str:
+    """Run `running` zespolu zasianego w bazie, przypisany do jego runnera; zadnego procesu
+    runnera nie trzeba, bo zdarzenia wysyla test (jak prawdziwy runner: Bearer + POST)."""
+    run_id = str(uuid.uuid4())
+
+    async def _wstaw():
+        engine = create_async_engine(os.environ["COCKPIT_TEST_DATABASE_URL"])
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("INSERT INTO run (id, tenant_id, runner_id, runner_kind, workflow, "
+                         "status, created_at) "
+                         "SELECT :id, tenant_id, id, 'local', 'szkielet', 'running', now() "
+                         "FROM runner LIMIT 1"),
+                    {"id": run_id},
+                )
+        finally:
+            await engine.dispose()
+
+    with ThreadPoolExecutor(max_workers=1) as pula:
+        pula.submit(lambda: asyncio.run(_wstaw())).result()
+    return run_id
+
+
+def _zdarzenie_runnera(adres, token, run_id, kind, tekst=""):
+    odpowiedz = httpx.post(
+        f"{adres}/api/events",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"run_id": run_id, "event_id": str(uuid.uuid4()), "step_id": "s0",
+              "kind": kind, "text": tekst},
+        timeout=5,
+    )
+    assert odpowiedz.status_code == 200, odpowiedz.text
+
+
+def test_status_do_odbioru_pojawia_sie_dopiero_po_zdarzeniu_konca_runu_przyslanym_pozniej(
+    zalogowana_strona, adres_kokpitu, token_runnera
+):
+    page = zalogowana_strona
+    run_id = _utworz_run_w_toku()
+    page.goto(f"{adres_kokpitu}/?run={run_id}")
+    expect(page.get_by_text("status: running")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    page.wait_for_timeout(OKNO_NA_POST_MS)    # strumien runu jest otwarty, zanim ruszą zdarzenia
+
+    _zdarzenie_runnera(adres_kokpitu, token_runnera, run_id, "step_finished", "kod wyjscia 0")
+    expect(page.locator("li", has_text="step_finished")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    time.sleep(ODSTEP_MIEDZY_ZDARZENIAMI_S)
+    # sam koniec kroku nie konczy runu
+    expect(page.get_by_text("status: running")).to_be_visible()
+
+    _zdarzenie_runnera(adres_kokpitu, token_runnera, run_id, "run_finished")
+
+    expect(page.get_by_text("status: to_accept")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+
+
+def test_porazka_kroku_pokazuje_status_nieudany_z_powodem_dopiero_po_zakonczeniu_runu(
+    zalogowana_strona, adres_kokpitu, token_runnera
+):
+    page = zalogowana_strona
+    run_id = _utworz_run_w_toku()
+    page.goto(f"{adres_kokpitu}/?run={run_id}")
+    expect(page.get_by_text("status: running")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    page.wait_for_timeout(OKNO_NA_POST_MS)
+
+    _zdarzenie_runnera(adres_kokpitu, token_runnera, run_id, "step_failed", "kod wyjscia 3")
+    expect(page.locator("li", has_text="step_failed")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    time.sleep(ODSTEP_MIEDZY_ZDARZENIAMI_S)
+    expect(page.get_by_text("status: running")).to_be_visible()
+
+    _zdarzenie_runnera(adres_kokpitu, token_runnera, run_id, "run_finished")
+
+    expect(page.get_by_text("status: failed")).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    expect(page.get_by_text("nieudane kroki: s0")).to_be_visible(timeout=LIMIT_WYNIKU_MS)

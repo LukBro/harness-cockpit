@@ -165,10 +165,11 @@ async def test_brak_pomiaru_kosztu_zapisuje_sie_jako_brak_nie_jako_zero(klient):
 async def test_run_zakonczony_sukcesem_ma_stan_do_odbioru_nie_gotowe(klient):
     """BRO-108: odbior jest czynnoscia czlowieka."""
     run_id = (await klient.post("/api/runs", json={})).json()["run_id"]
-    await klient.post("/api/events",
-                      json={"run_id": run_id, "kind": "step_finished", "step_id": "s0",
-                            "event_id": str(uuid.uuid4())},
-                      headers={"Authorization": "Bearer tajne"})
+    for rodzaj in ("step_finished", "run_finished"):
+        await klient.post("/api/events",
+                          json={"run_id": run_id, "kind": rodzaj, "step_id": "s0",
+                                "event_id": str(uuid.uuid4())},
+                          headers={"Authorization": "Bearer tajne"})
     assert (await klient.get(f"/api/runs/{run_id}")).json()["status"] == "to_accept"
 
 
