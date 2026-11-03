@@ -260,6 +260,26 @@ class Runner:
             return f"brak miejsca: {wolne} MB wolne, wymagane {prog} MB"
         return None
 
+    async def _zglos_koniec_runu(
+        self, client: httpx.AsyncClient, run_id: str, step_id: str,
+        kind_kroku: str, krok_przyjety: bool,
+    ) -> None:
+        """Koniec runu zglasza runner osobno, tylko po przyjetym zdarzeniu kroku (HAR-78).
+        BrakMiejsca z bufora przechodzi do wolajacego."""
+        if not krok_przyjety:
+            # WHY: kokpit wylicza status runu ze zdarzen krokow; bez przyjetego dowodu
+            # run_finished dalby "do odbioru" mimo nieudanego kroku (evidence_required).
+            print(
+                f"koniec runu niewyslany: run_id={run_id} - "
+                f"zdarzenie kroku {kind_kroku} nie zostalo przyjete",
+                file=sys.stderr,
+            )
+            return
+        await self.send_event(
+            client, run_id=run_id, step_id=step_id, kind="run_finished", text="",
+            cost_usd=None, cost_source="unavailable",
+        )
+
     async def run_command(
         self, client: httpx.AsyncClient, run_id: str, step_id: str, command: list[str]
     ) -> None:
@@ -296,15 +316,17 @@ class Runner:
                 await self.send_event(client, run_id=run_id, step_id=step_id,
                                       kind="output", text=line)
             ok = proc.returncode == 0
-            await self.send_event(
+            kind_kroku = "step_finished" if ok else "step_failed"
+            krok_przyjety = await self.send_event(
                 client, run_id=run_id, step_id=step_id,
-                kind="step_finished" if ok else "step_failed",
+                kind=kind_kroku,
                 text=f"kod wyjscia {proc.returncode}",
                 duration_ms=ms,
                 cost_usd=None,                   # subskrypcja nie podaje ceny
                 cost_source="unavailable",
                 wyslane_output=wyslane_output,
             )
+            await self._zglos_koniec_runu(client, run_id, step_id, kind_kroku, krok_przyjety)
         except BrakMiejsca:
             # bez miejsca zaden krok nie zapisze zdarzen; nie stop(): nasluch i heartbeat zyja
             await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
@@ -420,7 +442,7 @@ class Runner:
 
     async def _krok_z_polecenia(self, client: httpx.AsyncClient, cmd: dict) -> None:
         """Rozwiazuje nazwe operacji na argv z lokalnej listy; polecenia spoza listy
-        konczy `step_failed` bez startu procesu."""
+        konczy `step_failed` bez startu procesu, a po jego przyjeciu `run_finished`."""
         argv = argv_operacji(cmd)
         if argv is not None:
             await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
@@ -430,9 +452,12 @@ class Runner:
             print("polecenie bez run_id/step_id odrzucone: operacja spoza listy", file=sys.stderr)
             return
         try:
-            await self.send_event(
+            odmowa_przyjeta = await self.send_event(
                 client, run_id=run_id, step_id=step_id,
                 kind="step_failed", text=POWOD_SPOZA_LISTY)
+            # bez run_finished run z odmowa zostalby w kokpicie "w toku" na zawsze (HAR-78)
+            await self._zglos_koniec_runu(
+                client, run_id, step_id, "step_failed", odmowa_przyjeta)
         except BrakMiejsca:
             await self._wyslij_bezposrednio(
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",

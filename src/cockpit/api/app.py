@@ -28,7 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import dostep, katalog, pliki_runnera, sesje
+from cockpit.services import dostep, katalog, kroki, pliki_runnera, sesje
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import BrakDostepu, NieZnaleziono
@@ -39,6 +39,7 @@ from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
     Katalog,
     KatalogOdswiezony,
+    KrokRunu,
     ListaPlikow,
     PlikOdczytany,
     PlikZapisany,
@@ -138,6 +139,8 @@ class EventIn(BaseModel):
     wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
     # pelna dlugosc tekstu przed obcieciem przez runnera; le = int4 PostgreSQL (HAR-56)
     text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
+    attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -264,6 +267,7 @@ async def ingest_event(
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
         tokens=body.tokens, duration_ms=body.duration_ms,
         wyslane_output=body.wyslane_output, text_full_len=body.text_full_len,
+        attempt=body.attempt,
     )
     if nowe:
         await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
@@ -282,6 +286,7 @@ async def get_run(
 ) -> RunSzczegoly:
     run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
     rows = await uslugi.zdarzenia_runu(s, run)
+    wiersze_krokow = await kroki.kroki_runu(s, run)
     return RunSzczegoly(
         id=run.id,
         workflow=run.workflow,
@@ -291,6 +296,9 @@ async def get_run(
         events=[ZdarzenieRunu(
             seq=e.seq, kind=e.kind, text=e.text, step_id=e.step_id, agent_type=e.agent_type,
             text_truncated=e.text_truncated, text_full_len=e.text_full_len) for e in rows],
+        steps=[KrokRunu(
+            step_id=k.step_id, agent_id=k.agent_id, attempt=k.attempt, status=k.status.value,
+            reason=k.reason) for k in wiersze_krokow],
     )
 
 

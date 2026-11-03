@@ -154,8 +154,8 @@ async def test_ponowione_zdarzenie_nie_nadpisuje_tresci_zapisanej_za_pierwszym_r
     assert [e.text for e in await _zdarzenia_w_bazie(swiat.run_id)] == ["pierwsza tresc"]
 
 
-async def test_ponowiony_koniec_kroku_nie_zmienia_statusu_runu_ustawionego_po_pierwszym_zapisie(swiat):
-    tresc = _tresc(swiat.run_id, kind="step_finished")
+async def test_ponowiony_koniec_runu_nie_zmienia_statusu_runu_ustawionego_po_pierwszym_zapisie(swiat):
+    tresc = _tresc(swiat.run_id, kind="run_finished")
     await _post(swiat, tresc)
     assert (await _run_w_bazie(swiat.run_id)).status == RunStatus.to_accept
     await _ustaw_run(swiat.run_id, status=RunStatus.running)  # ponowne przetworzenie dalo by to_accept
@@ -166,8 +166,9 @@ async def test_ponowiony_koniec_kroku_nie_zmienia_statusu_runu_ustawionego_po_pi
     assert (await _run_w_bazie(swiat.run_id)).status == RunStatus.running
 
 
-async def test_ponowiona_porazka_kroku_nie_zmienia_statusu_runu_ustawionego_po_pierwszym_zapisie(swiat):
-    tresc = _tresc(swiat.run_id, kind="step_failed")
+async def test_ponowiony_koniec_runu_z_porazka_kroku_nie_zmienia_statusu_runu_po_pierwszym_zapisie(swiat):
+    await _post(swiat, _tresc(swiat.run_id, kind="step_failed"))
+    tresc = _tresc(swiat.run_id, kind="run_finished")
     await _post(swiat, tresc)
     assert (await _run_w_bazie(swiat.run_id)).status == RunStatus.failed
     await _ustaw_run(swiat.run_id, status=RunStatus.running)  # ponowne przetworzenie dalo by failed
@@ -371,17 +372,17 @@ async def test_kolizja_zdarzenia_przy_zapisie_nie_zmienia_statusu_runu(
         swiat, konkurent_przy_commicie):
     event_id = str(uuid.uuid4())
     konkurent = Event(tenant_id=swiat.browarek_id, run_id=swiat.run_id, seq=1, step_id="s0",
-                      kind="step_failed", event_id=event_id)
+                      kind="run_finished", event_id=event_id)
     konkurent_przy_commicie(
         _blad_sqlite("UNIQUE constraint failed: event.run_id, event.event_id"), konkurent)
 
     async with db_session.SessionLocal() as s:
         run = await s.get(Run, swiat.run_id)
         _ev, nowe = await uslugi_runow.zapisz_zdarzenie(
-            s, run, event_id=event_id, kind="step_failed", step_id="s0")
+            s, run, event_id=event_id, kind="run_finished", step_id="s0")
 
     assert nowe is False
-    # konkurent zapisal samo zdarzenie (bez zmiany runu): status z nieudanej proby nie zostaje
+    # konkurent zapisal samo zdarzenie (bez zmiany runu): status z przegranej proby nie zostaje
     assert (await _run_w_bazie(swiat.run_id)).status == RunStatus.running
 
 

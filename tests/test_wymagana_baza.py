@@ -378,10 +378,10 @@ def _oczekiwane_testy_bazy() -> dict[str, set[str]]:
         for n in _nazwy_testow("e2e/test_szkielet_w_przegladarce.py")
     }
     # Zabezpieczenie przed pustymi zbiorami (zepsuty wzorzec = test, ktory nic nie sprawdza).
-    assert len(migracje) == 21
+    assert len(migracje) == 26
     assert len(numeracja) == 3
     assert len(demo) == 4
-    assert len(e2e) == 5
+    assert len(e2e) == 7
     return {"migracje": migracje, "numeracja": numeracja, "demo": demo, "e2e": e2e}
 
 

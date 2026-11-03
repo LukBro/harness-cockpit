@@ -46,6 +46,15 @@ class ZdarzenieRunu(BaseModel):
     text_full_len: int | None   # brak pomiaru pełnej długości to null, nigdy 0
 
 
+class KrokRunu(BaseModel):
+    step_id: str
+    agent_id: str
+    attempt: int
+    # wartosci StepStatus; Literal, bo api/ importuje z modeli tylko RunStatus i RunnerKind
+    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None
+
+
 class RunSzczegoly(BaseModel):
     id: str
     workflow: str
@@ -53,6 +62,7 @@ class RunSzczegoly(BaseModel):
     runner_kind: RunnerKind
     reason: str | None
     events: list[ZdarzenieRunu]
+    steps: list[KrokRunu]
 
 
 class RunNaLiscie(BaseModel):

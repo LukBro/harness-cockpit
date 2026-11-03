@@ -339,7 +339,9 @@ POLA_MODELI = {
     "ZdarzenieRunu": {"seq": {INT}, "kind": {S}, "text": {S}, "step_id": {S}, "agent_type": {S},
                       "text_truncated": {B}, "text_full_len": {INT, N}},
     "RunSzczegoly": {"id": {S}, "workflow": {S}, "status": {S}, "runner_kind": {S},
-                     "reason": {S, N}, "events": {"array"}},
+                     "reason": {S, N}, "events": {"array"}, "steps": {"array"}},
+    "KrokRunu": {"step_id": {S}, "agent_id": {S}, "attempt": {INT}, "status": {S},
+                 "reason": {S, N}},
     "RunNaLiscie": {"id": {S}, "workflow": {S}, "status": {S}, "created_at": {S}},
     "PlikOdczytany": {"sciezka": {S}, "tresc": {S}, "rozmiar": {INT}},
     "WpisPliku": {"sciezka": {S}, "katalog": {B}},
@@ -379,6 +381,7 @@ def test_rodzaj_runnera_w_schemacie_to_zamknieta_lista_rodzajow(schemat):
 
 @pytest.mark.parametrize(("model", "pole", "element"), [
     ("RunSzczegoly", "events", "ZdarzenieRunu"),
+    ("RunSzczegoly", "steps", "KrokRunu"),
     ("ListaPlikow", "pliki", "WpisPliku"),
     ("RunnerZespolu", "backends", "BackendRunnera"),
     ("Katalog", "definicje", "DefinicjaKatalogu"),
@@ -476,7 +479,7 @@ async def test_szczegoly_runu_niosa_klucze_reason_i_text_full_len_takze_gdy_sa_p
 
     assert odp.status_code == 200
     tresc = odp.json()
-    assert set(tresc) == {"id", "workflow", "status", "runner_kind", "reason", "events"}
+    assert set(tresc) == {"id", "workflow", "status", "runner_kind", "reason", "events", "steps"}
     assert tresc["id"] == run_id
     assert tresc["status"] == RunStatus.running.value
     assert tresc["runner_kind"] in {k.value for k in RunnerKind}

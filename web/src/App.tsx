@@ -273,7 +273,7 @@ function WidokRunu({
       if (anulowano) return;
       const z: Zdarzenie = JSON.parse((e as MessageEvent).data);
       setZdarzenia((p) => scal(p, [z]));
-      if (z.kind === "step_finished" || z.kind === "step_failed") void dociagnij();
+      if (z.kind === "step_finished" || z.kind === "step_failed" || z.kind === "run_finished") void dociagnij();
     });
     return () => {
       anulowano = true;

@@ -88,16 +88,30 @@ async def _ustaw_status_w_bazie(run_id: str, status: RunStatus) -> None:
 
 # --- przez prawdziwe API: skutek czytany z bazy ---
 
-async def test_sukces_kroku_daje_run_do_odbioru(klient):
+async def test_sukces_kroku_i_zakonczenie_runu_daja_run_do_odbioru(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
     assert await _status_w_bazie(run_id) == RunStatus.to_accept
 
 
-async def test_porazka_kroku_daje_run_nieudany(klient):
+async def test_porazka_kroku_i_zakonczenie_runu_daja_run_nieudany(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_failed")
+    await _zdarzenie(klient, run_id, "run_finished")
     assert await _status_w_bazie(run_id) == RunStatus.failed
+
+
+async def test_sam_sukces_kroku_nie_konczy_runu(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.running
+
+
+async def test_sama_porazka_kroku_nie_konczy_runu(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_failed")
+    assert await _status_w_bazie(run_id) == RunStatus.running
 
 
 async def test_zwykle_zdarzenie_nie_zmienia_statusu_runu(klient):
@@ -117,6 +131,7 @@ async def test_status_nieudany_podany_w_ciele_sukcesu_kroku_nie_psuje_runu(klien
     run_id = await _nowy_run(klient)
     r = await _zdarzenie(klient, run_id, "step_finished", status="failed")
     assert r.status_code == 200
+    await _zdarzenie(klient, run_id, "run_finished", status="failed")
     assert await _status_w_bazie(run_id) == RunStatus.to_accept
 
 
@@ -124,6 +139,7 @@ async def test_status_do_odbioru_podany_w_ciele_porazki_kroku_nie_ratuje_runu(kl
     run_id = await _nowy_run(klient)
     r = await _zdarzenie(klient, run_id, "step_failed", status="to_accept")
     assert r.status_code == 200
+    await _zdarzenie(klient, run_id, "run_finished", status="to_accept")
     assert await _status_w_bazie(run_id) == RunStatus.failed
 
 
@@ -138,28 +154,35 @@ async def test_nieznany_status_w_ciele_zdarzenia_jest_pomijany_bez_bledu(klient)
 async def test_run_nieudany_zostaje_nieudany_po_sukcesie_kroku(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_failed")
-    await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s1")
+    await _zdarzenie(klient, run_id, "run_finished", step_id="s1")
     assert await _status_w_bazie(run_id) == RunStatus.failed
 
 
-async def test_porazka_po_sukcesie_daje_run_nieudany(klient):
+async def test_porazka_po_odbiorze_daje_run_nieudany_dopiero_po_zakonczeniu_runu(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
     assert await _status_w_bazie(run_id) == RunStatus.to_accept
-    await _zdarzenie(klient, run_id, "step_failed")
+    await _zdarzenie(klient, run_id, "step_failed", step_id="s1")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+    await _zdarzenie(klient, run_id, "run_finished", step_id="s1")
     assert await _status_w_bazie(run_id) == RunStatus.failed
 
 
 async def test_kolejny_sukces_kroku_zostawia_run_do_odbioru(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_finished")
-    await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s1")
     assert await _status_w_bazie(run_id) == RunStatus.to_accept
 
 
 async def test_zwykle_zdarzenie_nie_zmienia_runu_do_odbioru(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
     await _zdarzenie(klient, run_id, "output", status="running")
     assert await _status_w_bazie(run_id) == RunStatus.to_accept
 
@@ -167,6 +190,7 @@ async def test_zwykle_zdarzenie_nie_zmienia_runu_do_odbioru(klient):
 async def test_zwykle_zdarzenie_nie_zmienia_runu_nieudanego(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_failed")
+    await _zdarzenie(klient, run_id, "run_finished")
     await _zdarzenie(klient, run_id, "output", status="to_accept")
     assert await _status_w_bazie(run_id) == RunStatus.failed
 
@@ -174,7 +198,8 @@ async def test_zwykle_zdarzenie_nie_zmienia_runu_nieudanego(klient):
 async def test_status_w_ciele_nie_przestawia_runu_nieudanego_na_do_odbioru(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_failed")
-    r = await _zdarzenie(klient, run_id, "step_finished", status="to_accept")
+    await _zdarzenie(klient, run_id, "run_finished")
+    r = await _zdarzenie(klient, run_id, "step_finished", step_id="s1", status="to_accept")
     assert r.status_code == 200
     assert await _status_w_bazie(run_id) == RunStatus.failed
 
@@ -182,11 +207,12 @@ async def test_status_w_ciele_nie_przestawia_runu_nieudanego_na_do_odbioru(klien
 async def test_zdarzenie_na_runie_nieudanym_zapisuje_sie_mimo_braku_zmiany_statusu(klient):
     run_id = await _nowy_run(klient)
     await _zdarzenie(klient, run_id, "step_failed")
-    assert await _liczba_zdarzen_w_bazie(run_id) == 1
-    r = await _zdarzenie(klient, run_id, "step_finished")
-    assert r.status_code == 200
-    assert r.json()["seq"] == 2
+    await _zdarzenie(klient, run_id, "run_finished")
     assert await _liczba_zdarzen_w_bazie(run_id) == 2
+    r = await _zdarzenie(klient, run_id, "step_finished", step_id="s1")
+    assert r.status_code == 200
+    assert r.json()["seq"] == 3
+    assert await _liczba_zdarzen_w_bazie(run_id) == 3
     assert await _status_w_bazie(run_id) == RunStatus.failed
 
 
@@ -204,26 +230,41 @@ async def test_zdarzenia_runnera_nie_ruszaja_runu_czekajacego_pominietego_ani_pr
     assert await _liczba_zdarzen_w_bazie(run_id) == 1
 
 
+@pytest.mark.parametrize("stan", [RunStatus.pending, RunStatus.skipped, RunStatus.aborted])
+async def test_zakonczenie_runu_nie_rusza_runu_oczekujacego_pominietego_ani_przerwanego(
+    klient, stan,
+):
+    run_id = await _nowy_run(klient)
+    await _ustaw_status_w_bazie(run_id, stan)
+    r = await _zdarzenie(klient, run_id, "run_finished")
+    assert r.status_code == 200
+    assert await _status_w_bazie(run_id) == stan
+    assert await _liczba_zdarzen_w_bazie(run_id) == 1
+
+
+async def test_zakonczenie_runu_czekajacego_na_decyzje_daje_run_do_odbioru(klient):
+    run_id = await _nowy_run(klient)
+    await _ustaw_status_w_bazie(run_id, RunStatus.waiting)
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+
+
 # --- czysta maszyna przejsc ---
 
-_KINDY = ("step_finished", "step_failed", "output")
+_KINDY = ("step_started", "step_finished", "step_failed", "step_aborted", "step_skipped",
+          "step_waiting", "output", "run_finished")
 
-_PRZEJSCIA = [
-    # (obecny, kind, oczekiwany)
-    (RunStatus.running, "step_finished", RunStatus.to_accept),
-    (RunStatus.running, "step_failed", RunStatus.failed),
-    (RunStatus.running, "output", RunStatus.running),
-    (RunStatus.to_accept, "step_finished", RunStatus.to_accept),
-    (RunStatus.to_accept, "step_failed", RunStatus.failed),
-    (RunStatus.to_accept, "output", RunStatus.to_accept),
-    (RunStatus.failed, "step_finished", RunStatus.failed),
-    (RunStatus.failed, "step_failed", RunStatus.failed),
-    (RunStatus.failed, "output", RunStatus.failed),
-]
-_PRZEJSCIA += [(st, k, st)
-               for st in (RunStatus.pending, RunStatus.waiting,
-                          RunStatus.skipped, RunStatus.aborted)
-               for k in _KINDY]
+# Wyjatki od reguly "bez zmiany": (obecny, kind) -> oczekiwany, gdy brak nieudanych krokow.
+_ZMIANY = {
+    (RunStatus.running, "step_waiting"): RunStatus.waiting,
+    (RunStatus.waiting, "step_started"): RunStatus.running,
+    (RunStatus.running, "step_aborted"): RunStatus.aborted,
+    (RunStatus.to_accept, "step_aborted"): RunStatus.aborted,
+    (RunStatus.running, "run_finished"): RunStatus.to_accept,
+    (RunStatus.waiting, "run_finished"): RunStatus.to_accept,
+}
+
+_PRZEJSCIA = [(st, k, _ZMIANY.get((st, k), st)) for st in RunStatus for k in _KINDY]
 
 
 @pytest.mark.parametrize("obecny,kind,oczekiwany", _PRZEJSCIA)
@@ -236,10 +277,62 @@ def test_tabela_przejsc_obejmuje_kazdy_status_i_kazdy_rodzaj_zdarzenia():
     """Dodanie statusu bez decyzji o jego przejsciach ma oblac ten test."""
     pokryte = {(o, k) for o, k, _ in _PRZEJSCIA}
     assert pokryte == {(st, k) for st in RunStatus for k in _KINDY}
+    assert set(_ZMIANY) <= pokryte
 
 
-@pytest.mark.parametrize("kind", ["", "cost", "log", "STEP_FINISHED", "step_finished "])
+@pytest.mark.parametrize("obecny", [RunStatus.running, RunStatus.waiting, RunStatus.to_accept])
+def test_zakonczenie_runu_z_nieudanym_krokiem_daje_run_nieudany(obecny):
+    from cockpit.services.runs import nastepny_status
+    assert nastepny_status(obecny, "run_finished", ["build"]) == RunStatus.failed
+
+
+@pytest.mark.parametrize("obecny", [RunStatus.failed, RunStatus.aborted, RunStatus.pending,
+                                    RunStatus.skipped])
+def test_zakonczenie_runu_z_nieudanym_krokiem_nie_rusza_stanow_koncowych_ani_nieuruchomionych(
+    obecny,
+):
+    from cockpit.services.runs import nastepny_status
+    assert nastepny_status(obecny, "run_finished", ["build"]) == obecny
+
+
+def test_zakonczenie_runu_przyjmuje_nieudane_jako_krotke():
+    from cockpit.services.runs import nastepny_status
+    assert nastepny_status(RunStatus.running, "run_finished", ("a", "b")) == RunStatus.failed
+
+
+@pytest.mark.parametrize("kind", [k for k in _KINDY if k != "run_finished"])
+@pytest.mark.parametrize("obecny", [RunStatus.running, RunStatus.to_accept])
+def test_lista_nieudanych_krokow_decyduje_tylko_przy_zakonczeniu_runu(obecny, kind):
+    from cockpit.services.runs import nastepny_status
+    assert nastepny_status(obecny, kind, ["build"]) == nastepny_status(obecny, kind)
+
+
+@pytest.mark.parametrize("kind", ["", "cost", "log", "STEP_FINISHED", "step_finished ",
+                                  "RUN_FINISHED", "run_finished "])
 @pytest.mark.parametrize("obecny", [RunStatus.running, RunStatus.to_accept])
 def test_nieznany_rodzaj_zdarzenia_nie_zmienia_statusu(obecny, kind):
     from cockpit.services.runs import nastepny_status
     assert nastepny_status(obecny, kind) == obecny
+
+
+@pytest.mark.parametrize("kind", ["step_started", "step_finished", "step_failed", "output"])
+async def test_zdarzenie_inne_niz_koniec_runu_nie_wylicza_nieudanych_krokow(
+    klient, monkeypatch, kind,
+):
+    """Lista nieudanych krokow liczy sie tylko przy `run_finished` (jedno zapytanie
+    mniej na kazde zdarzenie); prawdziwa funkcja jest wolana, spy tylko zlicza wywolania."""
+    from cockpit.services import runs
+
+    wywolania: list[str] = []
+    prawdziwa = runs.nieudane_kroki
+
+    async def spy(s, run):
+        wywolania.append(run.id)
+        return await prawdziwa(s, run)
+
+    monkeypatch.setattr(runs, "nieudane_kroki", spy)
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, kind)
+    assert wywolania == []
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert wywolania == [run_id]

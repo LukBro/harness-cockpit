@@ -183,6 +183,7 @@ async def test_zgodna_liczba_nie_czysci_wczesniejszego_oznaczenia(swiat):
 
 async def test_oznaczenie_niepelnego_strumienia_nie_zmienia_statusu_runu(swiat):
     await _wyslij(swiat, "step_finished", wyslane_output=2)
+    await _wyslij(swiat, "run_finished")
 
     async with db_session.SessionLocal() as s:
         status = (await s.execute(

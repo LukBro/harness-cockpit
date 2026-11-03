@@ -20,6 +20,7 @@ from .errors import (
     BrakDostepu, NaruszonyNiezmiennik, NiespojneDane, NieZnaleziono, StanNiemozliwy,
     WymagaPotwierdzenia,
 )
+from .kroki import nieudane_kroki, zastosuj_zdarzenie_kroku
 from .walidacja import sprawdz_pomiar
 
 
@@ -242,25 +243,36 @@ async def run_runnera(s: AsyncSession, run_id: str, runner: Runner) -> Run:
     return run
 
 
-# Status runu wylicza kokpit ze zdarzenia; deklaracja runnera nie jest zrodlem prawdy.
-_STATUS_PO_ZDARZENIU = {
-    "step_finished": RunStatus.to_accept,
-    "step_failed": RunStatus.failed,
-    "step_aborted": RunStatus.aborted,     # runner przerywa krok sam, np. brak miejsca (HAR-47)
-}
-_PORAZKI = frozenset({RunStatus.failed, RunStatus.aborted})
-# `aborted` jest koncowy, bo nie ma go w zbiorze ruchomych (HAR-37).
-_STATUSY_RUCHOME_ZDARZENIAMI = {RunStatus.running, RunStatus.to_accept}
+# Status runu wylicza kokpit ze stanow krokow i ze zdarzenia `run_finished` (HAR-78);
+# deklaracja runnera nie jest zrodlem prawdy. Zdarzenia kroku same nie koncza runu.
+_KONIEC_RUNU = "run_finished"
+# `step_aborted` nie rusza runu `waiting` (HAR-47)
+_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})
+_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.running, RunStatus.waiting})
+_STATUSY_ROZSTRZYGANE_RUN_FINISHED = _STATUSY_Z_SUKCESEM_PO_RUN_FINISHED | {RunStatus.to_accept}
 
 
-def nastepny_status(obecny: RunStatus, kind: str) -> RunStatus:
-    docelowy = _STATUS_PO_ZDARZENIU.get(kind)
-    if docelowy is None or obecny not in _STATUSY_RUCHOME_ZDARZENIAMI:
-        return obecny
-    # pozniejsza porazka (failed albo aborted) przykrywa sukces, ale sukces nie cofa porazki
-    if obecny == RunStatus.to_accept and docelowy not in _PORAZKI:
-        return obecny
-    return docelowy
+def nastepny_status(
+    obecny: RunStatus, kind: str, nieudane: Sequence[str] = (),
+) -> RunStatus:
+    """Czysta maszyna przejsc runu; `failed`, `aborted`, `skipped`, `pending` sa koncowe."""
+    if kind == "step_waiting" and obecny == RunStatus.running:
+        return RunStatus.waiting
+    if kind == "step_started" and obecny == RunStatus.waiting:
+        return RunStatus.running
+    if kind == "step_aborted" and obecny in _STATUSY_PRZERYWANE_KROKIEM:
+        return RunStatus.aborted     # runner przerywa krok sam, np. brak miejsca (HAR-47)
+    if kind == _KONIEC_RUNU and obecny in _STATUSY_ROZSTRZYGANE_RUN_FINISHED:
+        # porazka kroku przykrywa sukces, ale sukces nie cofa porazki
+        if nieudane:
+            return RunStatus.failed
+        if obecny in _STATUSY_Z_SUKCESEM_PO_RUN_FINISHED:
+            return RunStatus.to_accept
+    return obecny
+
+
+def powod_nieudanych_krokow(nieudane: Sequence[str]) -> str:
+    return "nieudane kroki: " + ", ".join(nieudane)
 
 
 async def zapisz_zdarzenie(
@@ -279,6 +291,7 @@ async def zapisz_zdarzenie(
     duration_ms: int | None = None,
     wyslane_output: int | None = None,
     text_full_len: int | None = None,
+    attempt: int | None = None,
 ) -> tuple[Event, bool]:
     """Zapisuje zdarzenie od runnera; zwraca `(zdarzenie, nowe)`.
 
@@ -334,12 +347,20 @@ async def zapisz_zdarzenie(
         ev = Event(tenant_id=tenant_id, run_id=run_id, seq=seq, step_id=step_id,
                    event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=zapisany, cost_usd=cost_usd,
                    cost_source=cost_source, tokens=tokens, duration_ms=duration_ms,
-                   text_truncated=obciety, text_full_len=pelna)
-        s.add(ev)
-        run.status = nastepny_status(status_przed, kind)
-        if (kind == "step_aborted" and status_przed != RunStatus.aborted
-                and run.status == RunStatus.aborted):
-            run.reason = zapisany
+                   text_truncated=obciety, text_full_len=pelna, attempt=attempt)
+        # bez autoflush: zdarzenie i zmiany krokow ida do bazy w `commit`; zapytania widza
+        # wiersze krokow z wczesniejszych zdarzen, a w tej transakcji jest jedno zdarzenie.
+        with s.no_autoflush:
+            s.add(ev)
+            await zastosuj_zdarzenie_kroku(s, run, kind, step_id, agent_id, attempt, zapisany)
+            nieudane = await nieudane_kroki(s, run) if kind == _KONIEC_RUNU else []
+            run.status = nastepny_status(status_przed, kind, nieudane)
+            if (kind == "step_aborted" and status_przed != RunStatus.aborted
+                    and run.status == RunStatus.aborted):
+                run.reason = zapisany
+            if (kind == _KONIEC_RUNU and status_przed != RunStatus.failed
+                    and run.status == RunStatus.failed):
+                run.reason = powod_nieudanych_krokow(nieudane)
         try:
             await s.commit()
         except IntegrityError as e:

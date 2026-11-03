@@ -100,7 +100,9 @@ async def _liczba_zdarzen_w_bazie(run_id: str) -> int:
 async def test_runner_ktoremu_zlecono_run_dopisuje_zdarzenia_i_zmienia_status(swiat):
     r = await _zdarzenie(swiat.klient, swiat.run_id, "token-wlasciciela")
     assert r.status_code == 200
-    assert await _liczba_zdarzen_w_bazie(swiat.run_id) == 1
+    r = await _zdarzenie(swiat.klient, swiat.run_id, "token-wlasciciela", "run_finished")
+    assert r.status_code == 200
+    assert await _liczba_zdarzen_w_bazie(swiat.run_id) == 2
     assert await _status_w_bazie(swiat.run_id) == RunStatus.failed
 
 
@@ -114,7 +116,7 @@ async def test_runner_z_tego_samego_zespolu_nie_dopisuje_zdarzen_do_cudzego_runu
 
 async def test_runner_z_tego_samego_zespolu_nie_zmienia_statusu_cudzego_runu(swiat):
     await _zdarzenie(swiat.klient, swiat.run_id, "token-sasiada", "step_failed")
-    await _zdarzenie(swiat.klient, swiat.run_id, "token-sasiada", "step_finished")
+    await _zdarzenie(swiat.klient, swiat.run_id, "token-sasiada", "run_finished")
     assert await _status_w_bazie(swiat.run_id) == RunStatus.running
 
 

@@ -18,7 +18,9 @@ from sqlalchemy import Column, MetaData, String, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from cockpit.db.models import Base, Event, RolaWZespole, Run, RunnerKind, RunStatus
+from cockpit.db.models import (
+    Base, Event, RolaWZespole, Run, RunnerKind, RunStatus, StepRun, StepStatus,
+)
 
 KORZEN = Path(__file__).resolve().parent.parent
 URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
@@ -33,8 +35,8 @@ pytestmark = [
 ]
 
 TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja", "blokada_logowania",
-                 "definicja"}
-TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole"}
+                 "definicja", "step_run"}
+TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole", "stepstatus"}
 
 
 @pytest.fixture
@@ -114,6 +116,7 @@ def test_migracja_tworzy_ten_sam_schemat_co_model(cfg):
     assert _wartosci_enuma("runstatus") == {m.name for m in RunStatus}
     assert _wartosci_enuma("runnerkind") == {m.name for m in RunnerKind}
     assert _wartosci_enuma("rolawzespole") == {m.name for m in RolaWZespole}
+    assert _wartosci_enuma("stepstatus") == {m.name for m in StepStatus}
 
 
 def test_cofniecie_migracji_zostawia_pusta_baze_bez_typow(cfg):
@@ -429,13 +432,14 @@ def _wstaw_definicje(c, id_wiersza: str, *, klucz: str = "x") -> None:
 def test_cofniecie_do_migracji_0007_usuwa_tylko_tabele_katalogu_definicji(cfg):
     command.upgrade(cfg, "head")
     tabele, _ = _tabele_i_typy_w_public()
-    assert "definicja" in tabele  # kontrast: przed cofnieciem tabela jest
+    assert {"definicja", "step_run"} <= tabele  # kontrast: przed cofnieciem tabele sa
 
     command.downgrade(cfg, "0007")
 
     tabele, _ = _tabele_i_typy_w_public()
-    assert "definicja" not in tabele
-    assert (TABELE_MODELU - {"definicja"}) <= tabele
+    # znikaja tabele z migracji powyzej 0007 (katalog definicji, stan krokow) i nic wiecej
+    assert not ({"definicja", "step_run"} & tabele)
+    assert (TABELE_MODELU - {"definicja", "step_run"}) <= tabele
 
 
 def test_ta_sama_definicja_tego_samego_runnera_i_projektu_nie_moze_wystapic_dwa_razy(cfg):
@@ -460,3 +464,100 @@ def test_definicja_o_innym_kluczu_mieszka_obok_pierwszej(cfg):
         return c.execute(text("SELECT count(*) FROM definicja")).one()[0]
 
     assert _z_polaczeniem(zapytaj) == 2
+
+
+# --- HAR-78: stan krokow (tabela `step_run`, kolumna `event.attempt`) ---
+
+
+def _wstaw_run_do_krokow(c) -> None:
+    _wstaw_zespol(c)
+    c.execute(Run.__table__.insert().values(id="r1", tenant_id="t1"))
+
+
+def _wstaw_krok_bez_agenta_i_proby(c) -> None:
+    _wstaw_run_do_krokow(c)
+    c.execute(
+        StepRun.__table__.insert().values(
+            id="k1", tenant_id="t1", run_id="r1", step_id="s", status=StepStatus.running,
+        )
+    )
+
+
+def test_migracja_stanu_krokow_tworzy_tabele_kolumne_proby_i_unikalnosc_klucza(cfg):
+    command.upgrade(cfg, "0008")
+    tabele, _ = _tabele_i_typy_w_public()
+    assert "step_run" not in tabele  # kontrast: przed migracja tabeli nie ma
+    assert "attempt" not in _kolumny_tabeli("event")
+
+    command.upgrade(cfg, "0009")
+
+    tabele, typy = _tabele_i_typy_w_public()
+    assert "step_run" in tabele
+    assert "stepstatus" in typy
+    assert "attempt" in _kolumny_tabeli("event")
+    assert _wartosci_enuma("stepstatus") == {m.name for m in StepStatus}
+
+    def zapytaj(c):
+        _wstaw_run_do_krokow(c)
+        for _ in range(2):
+            c.execute(
+                StepRun.__table__.insert().values(
+                    tenant_id="t1", run_id="r1", step_id="s", agent_id="a", attempt=1,
+                    status=StepStatus.running,
+                )
+            )
+
+    with pytest.raises(IntegrityError, match="uq_step_run_klucz"):
+        _z_polaczeniem(zapytaj)
+
+
+def test_cofniecie_stanu_krokow_do_0008_usuwa_tabele_kolumne_i_typ(cfg):
+    command.upgrade(cfg, "head")
+    tabele, typy = _tabele_i_typy_w_public()
+    assert "step_run" in tabele and "stepstatus" in typy  # kontrast
+    assert "attempt" in _kolumny_tabeli("event")
+
+    command.downgrade(cfg, "0008")
+
+    tabele, typy = _tabele_i_typy_w_public()
+    assert "step_run" not in tabele
+    assert "stepstatus" not in typy
+    assert "attempt" not in _kolumny_tabeli("event")
+    # cofniecie tylko jednej migracji: reszta schematu zostaje
+    assert (TABELE_MODELU - {"step_run"}) <= tabele
+    assert (TYPY_ENUM - {"stepstatus"}) <= typy
+
+
+def test_migracja_nadaje_krokowi_bez_agenta_agenta_pustego_napisem(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_krok_bez_agenta_i_proby(c)
+        return c.execute(text("SELECT agent_id FROM step_run WHERE id = 'k1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == ""
+
+
+def test_migracja_nadaje_krokowi_bez_proby_probe_pierwsza(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_krok_bez_agenta_i_proby(c)
+        return c.execute(text("SELECT attempt FROM step_run WHERE id = 'k1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == 1
+
+
+def test_migracja_zostawia_zdarzeniu_bez_proby_probe_nieznana_a_nie_pierwsza(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run_do_krokow(c)
+        c.execute(
+            Event.__table__.insert().values(
+                id="e1", tenant_id="t1", run_id="r1", seq=1, kind="k"
+            )
+        )
+        return c.execute(text("SELECT attempt FROM event WHERE id = 'e1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is None

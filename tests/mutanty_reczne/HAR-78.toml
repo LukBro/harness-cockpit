@@ -1,0 +1,317 @@
+# Tabela recznych mutantow HAR-78: stan krokow ze zdarzen i status runu z krokow.
+# UWAGA: tabela powstala PRZED implementacja (TDD). Pola `szukaj` oparte sa na specyfikacji
+# (dokladne fragmenty zakladane), wiec Team Manager uzgadnia je z faktycznym kodem po
+# implementacji: kazdy `szukaj` ma wystapic w pliku dokladnie raz. Testy wskazane jako
+# `test` bez nawiasow kwadratowych uruchamiaja wszystkie warianty parametryzacji.
+# Kazdy wiersz dotyczy miejsca, ktorego mutmut nie mutuje (stale tabeli, argumenty Field,
+# default= w modelu, front).
+
+# --- MAPA_KROKOW: kazdy wpis ---
+
+[[mutant]]
+plik = "src/cockpit/services/kroki.py"
+szukaj = '"step_started": StepStatus.running,'
+zamien = '"step_started": StepStatus.waiting,'
+test = "tests/test_stan_krokow.py::test_zdarzenie_kroku_ustawia_jego_stan"
+
+[[mutant]]
+plik = "src/cockpit/services/kroki.py"
+szukaj = '"step_finished": StepStatus.finished,'
+zamien = '"step_finished": StepStatus.running,'
+test = "tests/test_stan_krokow.py::test_zdarzenie_kroku_ustawia_jego_stan"
+
+[[mutant]]
+plik = "src/cockpit/services/kroki.py"
+szukaj = '"step_failed": StepStatus.failed,'
+zamien = '"step_failed": StepStatus.finished,'
+test = "tests/test_stan_krokow.py::test_zdarzenie_kroku_ustawia_jego_stan"
+
+# step_aborted mapuje sie na krok nieudany (komentarz korekty HAR-78).
+[[mutant]]
+plik = "src/cockpit/services/kroki.py"
+szukaj = '"step_aborted": StepStatus.failed,'
+zamien = '"step_aborted": StepStatus.skipped,'
+test = "tests/test_stan_krokow.py::test_porazka_i_przerwanie_kroku_niosa_powod_z_tekstu_zdarzenia"
+
+[[mutant]]
+plik = "src/cockpit/services/kroki.py"
+szukaj = '"step_skipped": StepStatus.skipped,'
+zamien = '"step_skipped": StepStatus.finished,'
+test = "tests/test_stan_krokow.py::test_zdarzenie_kroku_ustawia_jego_stan"
+
+[[mutant]]
+plik = "src/cockpit/services/kroki.py"
+szukaj = '"step_waiting": StepStatus.waiting,'
+zamien = '"step_waiting": StepStatus.running,'
+test = "tests/test_stan_krokow.py::test_zdarzenie_kroku_ustawia_jego_stan"
+
+# --- EventIn.attempt: granice pola ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+test = "tests/test_stan_krokow.py::test_numer_proby_poza_zakresem_jest_odrzucony_i_nic_nie_zapisuje"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=2, le=2_147_483_647)"
+test = "tests/test_stan_krokow.py::test_numer_proby_pierwszy_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_648)"
+test = "tests/test_stan_krokow.py::test_numer_proby_poza_zakresem_jest_odrzucony_i_nic_nie_zapisuje"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_646)"
+test = "tests/test_stan_krokow.py::test_numer_proby_rowny_najwiekszej_liczbie_calkowitej_bazy_jest_przyjety"
+
+# Brak numeru proby w zdarzeniu to None (brak pomiaru), nie 1.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=1, ge=1, le=2_147_483_647)"
+test = "tests/test_stan_krokow.py::test_zdarzenie_bez_numeru_proby_zapisuje_brak_proby_a_nie_pierwsza"
+
+# --- model: wartosci domyslne i unikalnosc klucza kroku ---
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = '''    step_id: Mapped[str] = mapped_column(String(100))
+    agent_id: Mapped[str] = mapped_column(String(100), default="")'''
+zamien = '''    step_id: Mapped[str] = mapped_column(String(100))
+    agent_id: Mapped[str] = mapped_column(String(100), default="x")'''
+test = "tests/test_stan_krokow.py::test_krok_zapisany_przez_model_bez_agenta_ma_agenta_pustego_napisem"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "attempt: Mapped[int] = mapped_column(Integer, default=1)"
+zamien = "attempt: Mapped[int] = mapped_column(Integer, default=2)"
+test = "tests/test_stan_krokow.py::test_krok_zapisany_przez_model_bez_proby_ma_probe_pierwsza"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "attempt: Mapped[int | None] = mapped_column(Integer, default=None)"
+zamien = "attempt: Mapped[int | None] = mapped_column(Integer, default=1)"
+test = "tests/test_stan_krokow.py::test_zdarzenie_zapisane_przez_model_bez_proby_ma_probe_nieznana_a_nie_pierwsza"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = 'UniqueConstraint("run_id", "step_id", "agent_id", "attempt", name="uq_step_run_klucz")'
+zamien = 'UniqueConstraint("run_id", "step_id", "agent_id", name="uq_step_run_klucz")'
+test = "tests/test_stan_krokow.py::test_dwie_proby_tego_samego_kroku_maja_osobne_stany"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = 'UniqueConstraint("run_id", "step_id", "agent_id", "attempt", name="uq_step_run_klucz")'
+zamien = 'UniqueConstraint("run_id", "step_id", "attempt", name="uq_step_run_klucz")'
+test = "tests/test_stan_krokow.py::test_dwaj_agenci_tego_samego_kroku_maja_osobne_stany"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = 'UniqueConstraint("run_id", "step_id", "agent_id", "attempt", name="uq_step_run_klucz")'
+zamien = 'UniqueConstraint("run_id", "agent_id", "attempt", name="uq_step_run_klucz")'
+test = "tests/test_stan_krokow.py::test_dwa_kroki_tego_samego_runu_maja_osobne_stany"
+
+# --- front: dociaganie szczegolow runu po zdarzeniu konca runu ---
+
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = ' || z.kind === "run_finished"'
+zamien = ' || z.kind === "step_skipped"'
+test = "tests/e2e/test_szkielet_w_przegladarce.py::test_status_do_odbioru_pojawia_sie_dopiero_po_zdarzeniu_konca_runu_przyslanym_pozniej"
+
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = ' || z.kind === "run_finished"'
+zamien = ' || z.kind === "step_skipped"'
+test = "tests/e2e/test_szkielet_w_przegladarce.py::test_porazka_kroku_pokazuje_status_nieudany_z_powodem_dopiero_po_zakonczeniu_runu"
+
+# --- runs.py: stale zbiorow statusow (maszyna przejsc) ---
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '_KONIEC_RUNU = "run_finished"'
+zamien = '_KONIEC_RUNU = "run_zakonczony"'
+test = "tests/test_status_runu.py::test_maszyna_przejsc_statusu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})"
+zamien = "_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.to_accept})"
+test = "tests/test_status_runu.py::test_maszyna_przejsc_statusu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})"
+zamien = "_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running})"
+test = "tests/test_status_runu.py::test_maszyna_przejsc_statusu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})"
+zamien = "_STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.waiting, RunStatus.to_accept})"
+test = "tests/test_status_runu.py::test_maszyna_przejsc_statusu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.running, RunStatus.waiting})"
+zamien = "_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.waiting})"
+test = "tests/test_status_runu.py::test_maszyna_przejsc_statusu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.running, RunStatus.waiting})"
+zamien = "_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.running})"
+test = "tests/test_status_runu.py::test_maszyna_przejsc_statusu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED | {RunStatus.to_accept}"
+zamien = "_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED"
+test = "tests/test_status_runu.py::test_zakonczenie_runu_z_nieudanym_krokiem_daje_run_nieudany"
+
+# --- schematy.py: KrokRunu i steps ---
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+zamien = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane[KrokRunu]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+zamien = '''    status: Literal["running", "finished", "failed", "waiting"]
+    reason: str | None'''
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_pokazuja_krok_w_kazdym_ze_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+zamien = '''    status: Literal["finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_pokazuja_krok_w_kazdym_ze_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+zamien = '''    status: Literal["running", "failed", "skipped", "waiting"]
+    reason: str | None'''
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_pokazuja_krok_w_kazdym_ze_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+zamien = '''    status: Literal["running", "finished", "skipped", "waiting"]
+    reason: str | None'''
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_pokazuja_krok_w_kazdym_ze_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: Literal["running", "finished", "failed", "skipped", "waiting"]
+    reason: str | None'''
+zamien = '''    status: Literal["running", "finished", "failed", "skipped"]
+    reason: str | None'''
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_pokazuja_krok_w_kazdym_ze_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    steps: list[KrokRunu]"
+zamien = "    steps: list[KrokRunu] = []"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane[RunSzczegoly]"
+
+# --- app.py: proba w zapisie zdarzenia i mapowanie KrokRunu ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''        attempt=body.attempt,
+'''
+zamien = '''        attempt=None,
+'''
+test = "tests/test_stan_krokow.py::test_dwie_proby_tego_samego_kroku_maja_osobne_stany"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "step_id=k.step_id, agent_id=k.agent_id,"
+zamien = 'step_id="", agent_id=k.agent_id,'
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzadku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "step_id=k.step_id, agent_id=k.agent_id,"
+zamien = 'step_id=k.step_id, agent_id="",'
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzadku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt=k.attempt, status=k.status.value,"
+zamien = "attempt=1, status=k.status.value,"
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzadku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "attempt=k.attempt, status=k.status.value,"
+zamien = 'attempt=k.attempt, status="running",'
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzadku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "reason=k.reason) for k in wiersze_krokow],"
+zamien = "reason=None) for k in wiersze_krokow],"
+test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzadku"
+
+# --- models.py: StepStatus i StepRun ---
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = '''    skipped = "skipped"
+    waiting = "waiting"'''
+zamien = '''    skipped = "pominiety"
+    waiting = "waiting"'''
+test = "tests/test_stan_krokow.py::test_stany_kroku_to_dokladnie_pieciu_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = '''    running = "running"
+    finished = "finished"'''
+zamien = '''    running = "running"
+    finished = "zakonczony"'''
+test = "tests/test_stan_krokow.py::test_stany_kroku_to_dokladnie_pieciu_znanych_stanow"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = '''ForeignKey("tenant.id"), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("run.id"), index=True)
+    step_id'''
+zamien = '''ForeignKey("tenant.id"), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("run.id"))
+    step_id'''
+test = "tests/test_stan_krokow.py::test_wiersz_kroku_ma_indeksy_po_zespole_i_po_runie"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = '''ForeignKey("tenant.id"), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("run.id"), index=True)
+    step_id'''
+zamien = '''ForeignKey("tenant.id"))
+    run_id: Mapped[str] = mapped_column(ForeignKey("run.id"), index=True)
+    step_id'''
+test = "tests/test_stan_krokow.py::test_wiersz_kroku_ma_indeksy_po_zespole_i_po_runie"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "default=_now, onupdate=_now)"
+zamien = "default=_now)"
+test = "tests/test_stan_krokow.py::test_zmiana_stanu_kroku_odswieza_czas_ostatniej_zmiany_wiersza"
