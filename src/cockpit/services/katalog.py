@@ -46,10 +46,15 @@ def _lista_slownikow(wartosc: Any, pole: str) -> list[dict]:
 
 
 def _sprawdz_ksztalt(wynik: Any) -> list[dict]:
-    """Walidacja calej odpowiedzi PRZED zmiana w bazie: zly ksztalt to nigdy pusty katalog."""
+    """Walidacja calej odpowiedzi PRZED zmiana w bazie: zly ksztalt to nigdy pusty katalog.
+
+    Pusta lista projektow to tez zly ksztalt (baza bez zmian), nie katalog do skasowania.
+    """
     if not isinstance(wynik, dict):
         raise _zly_ksztalt("wynik nie jest slownikiem")
     projekty = _lista_slownikow(wynik.get("projekty"), "projekty")
+    if not projekty:
+        raise _zly_ksztalt("lista projektow jest pusta")
     widziane: set[str] = set()
     for p in projekty:
         nazwa = _napis(p.get("projekt"), "projekt")
