@@ -5,6 +5,7 @@ import sys
 
 from runner.bufor import BladBufora
 from runner.client import KokpitNiezgodny, Runner, TokenOdrzucony
+from runner.maskowanie import zainstaluj_maskowanie
 from runner.secrets import get_token
 
 
@@ -27,6 +28,7 @@ async def _uruchom(base: str, token: str) -> None:
 
 
 def main() -> None:
+    zainstaluj_maskowanie()
     token = get_token("runner")
     if not token:
         print("Brak tokenu. Wygeneruj go w Ustawieniach i zapisz:", file=sys.stderr)
