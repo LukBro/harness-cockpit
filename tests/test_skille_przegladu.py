@@ -70,13 +70,21 @@ def test_skill_przegladu_oddaje_wynik_jako_artefakt_runu(tmp_path, id):
 def test_skill_przegladu_nie_wymaga_wejsc_ani_poprzednikow(tmp_path, id):
     skill = skill_przegladu(tmp_path, id)
     assert skill.consumes == []
-    assert skill.needs == []
 
 
-def test_recenzent_kontraktu_wskazuje_eksport_openapi_i_build_frontu_jako_dowod(tmp_path):
+@pytest.mark.parametrize("id", ["explain-change", "review-unknown"])
+def test_skill_przegladu_bez_komend_nie_deklaruje_capability(tmp_path, id):
+    assert skill_przegladu(tmp_path, id).needs == []
+
+
+def test_recenzent_kontraktu_deklaruje_capability_kontraktu_i_typow(tmp_path):
+    assert skill_przegladu(tmp_path, "contract-check").needs == ["contract", "typecheck"]
+
+
+def test_recenzent_kontraktu_wskazuje_capability_kontraktu_i_typow_jako_dowod(tmp_path):
     brief = skill_przegladu(tmp_path, "contract-check").brief
-    assert "python tools/eksport_openapi.py --sprawdz" in brief
-    assert "npm run build" in brief
+    assert "capability `contract`" in brief
+    assert "capability `typecheck`" in brief
 
 
 def brief_znormalizowany(tmp_path: Path, id: str) -> str:

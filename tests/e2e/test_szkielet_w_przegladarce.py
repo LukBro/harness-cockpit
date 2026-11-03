@@ -1,6 +1,7 @@
 """Przelot szkieletu w prawdziwej przegladarce na PostgreSQL (HAR-3)."""
 from __future__ import annotations
 
+import json
 import subprocess
 from urllib.parse import parse_qs, urlparse
 
@@ -11,6 +12,10 @@ pytestmark = [pytest.mark.e2e, pytest.mark.baza]
 
 KOMUNIKAT_OFFLINE = "Runner jest offline. Uruchom runnera na swojej maszynie."
 LIMIT_WYNIKU_MS = 3000
+LIMIT_PRZYCISKU_MS = 5000
+LIMIT_POLLINGU_MS = 7000
+OKNO_NA_POST_MS = 1000
+PODPOWIEDZ_OFFLINE = "Wymaga runnera online. Uruchom runnera na swojej maszynie."
 
 
 def _id_runu(page) -> str:
@@ -46,19 +51,50 @@ def test_przeladowanie_strony_pokazuje_ten_sam_run_i_te_same_zdarzenia(
     assert _id_runu(page) == id_przed
 
 
-def test_zatrzymany_runner_daje_komunikat_offline_i_gotowy_przycisk(
+def test_odpowiedz_409_po_zatrzymaniu_runnera_daje_komunikat_offline_i_nie_tworzy_runu(
     zatrzymaj_runnera, zalogowana_strona, liczba_runow
 ):
     page = zalogowana_strona
     runow_przed_kliknieciem = zatrzymaj_runnera()
+    # HAR-77: przy runnerze offline przycisk jest wyłączony. Ścieżka 409 dotyczy runnera, który
+    # rozłączył się po ostatnim pollingu, więc przeglądarka dostaje "runner online", a backend
+    # (naprawdę zatrzymany) odpowiada 409.
+    page.route("**/api/runners", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps([{
+            "id": "runner-podstawiony", "name": "runner-podstawiony", "version": "0",
+            "backends": [], "online": True, "last_seen_at": "2026-10-30T12:05:00+00:00",
+        }]),
+    ))
+    page.reload()
+    przycisk = page.get_by_role("button", name="Uruchom", exact=True)
+    expect(przycisk).to_be_enabled(timeout=LIMIT_PRZYCISKU_MS)
 
-    page.get_by_role("button", name="Uruchom").click()
+    przycisk.click()
 
     expect(page.get_by_text(KOMUNIKAT_OFFLINE)).to_be_visible()
-    expect(page.get_by_role("button", name="Uruchom")).to_be_enabled()
+    expect(przycisk).to_be_enabled()
     assert liczba_runow() == runow_przed_kliknieciem, (
         "przy runnerze offline klikniecie nie moze zostawic runu w bazie"
     )
+
+
+def test_zatrzymany_runner_wylacza_uruchom_z_podpowiedzia_i_nie_tworzy_runu(
+    zatrzymaj_runnera, zalogowana_strona, liczba_runow
+):
+    page = zalogowana_strona
+    runow_przed = zatrzymaj_runnera()
+
+    # polling stanu runnera co 5 s + 2 s zapasu
+    przycisk = page.get_by_role("button", name="Uruchom", exact=True)
+    expect(przycisk).to_be_disabled(timeout=LIMIT_POLLINGU_MS)
+    expect(przycisk).to_have_accessible_description(PODPOWIEDZ_OFFLINE)
+    # Próba akcji: przeglądarka nie odpala handlera na wyłączonym przycisku, więc run nie powstaje.
+    # Przycisk bez `disabled` wyśle POST /api/runs. Czekamy na ewentualny POST przed odczytem bazy.
+    # WHY: asercja "nie powstało" bez próby akcji przechodzi zawsze.
+    przycisk.dispatch_event("click")
+    page.wait_for_timeout(OKNO_NA_POST_MS)
+    assert liczba_runow() == runow_przed, "wyłączony przycisk nie może zostawić runu w bazie"
 
 
 def test_token_runnera_nie_jest_widoczny_w_argumentach_procesu(runner_online, token_runnera):

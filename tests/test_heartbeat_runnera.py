@@ -609,8 +609,12 @@ async def test_krok_ignorujacy_sygnal_zakonczenia_ginie_po_czasie_na_zakonczenie
 
 
 async def test_krok_dostaje_szanse_na_sprzatanie_po_sygnale_zakonczenia_zanim_padnie_sigkill(
-    tmp_path,
+    tmp_path, monkeypatch,
 ):
+    # HAR-158: produkcyjne 5 s okresu laski nie jest pod kontrola testu - na przeciazonym
+    # runnerze CI sprzatanie (0.3 s) potrafilo sie nie zmiescic i krok dostawal SIGKILL.
+    # Okres laski z duzym zapasem sprawia, ze o wyniku decyduje mechanizm, nie czas.
+    monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 10)
     plik_pid, znacznik = tmp_path / "pid", tmp_path / "sprzatanie"
     # Krok to jeden proces Pythona, bez potomkow: sygnal dostaje tylko on, wiec nie ma
     # wyscigu miedzy obsluga sygnalu a smiercia dziecka (powloka bywala tu niedeterministyczna).
@@ -627,12 +631,19 @@ async def test_krok_dostaje_szanse_na_sprzatanie_po_sygnale_zakonczenia_zanim_pa
         "time.sleep(60)\n"
     )
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
-    async with _krok(runner, [sys.executable, "-c", program]):
+    async with _krok(runner, [sys.executable, "-c", program]) as (zadanie, proc):
         pid = await _pid_z_pliku(plik_pid)
 
-        await asyncio.wait_for(runner.stop(), 10)
+        # limit wiekszy niz okres laski: brak sygnalu konczy test asercja kodu wyjscia,
+        # a nie przekroczeniem czasu
+        await asyncio.wait_for(runner.stop(), 30)
 
         assert not czy_zyje(pid)
+        await asyncio.wait_for(zadanie, 10)
+    assert proc.returncode == 0, (
+        f"kod wyjscia kroku {proc.returncode}: -9 = SIGKILL przed koncem sprzatania "
+        "(takze bez SIGTERM), -15 = SIGTERM bez zainstalowanej obslugi sygnalu"
+    )
     assert znacznik.read_text().strip() == "uprzatniete"
 
 

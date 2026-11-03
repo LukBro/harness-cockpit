@@ -48,7 +48,10 @@ def _zmien_haslo(strona: Page, stare: str, nowe: str) -> None:
     strona.get_by_label("Obecne hasło").fill(stare)
     strona.get_by_label("Nowe hasło").fill(nowe)
     strona.get_by_role("button", name="Zmień hasło", exact=True).click()
-    expect(strona.get_by_role("status")).to_have_text("Hasło zmienione.")
+    # panel konta to <aside> (complementary); pasek trybu tylko do odczytu też ma role=status
+    expect(strona.get_by_role("complementary").get_by_role("status")).to_have_text(
+        "Hasło zmienione."
+    )
 
 
 def _ekran_logowania_widoczny(strona: Page) -> None:

@@ -381,7 +381,7 @@ def _oczekiwane_testy_bazy() -> dict[str, set[str]]:
     assert len(migracje) == 21
     assert len(numeracja) == 3
     assert len(demo) == 4
-    assert len(e2e) == 4
+    assert len(e2e) == 5
     return {"migracje": migracje, "numeracja": numeracja, "demo": demo, "e2e": e2e}
 
 

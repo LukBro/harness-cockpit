@@ -119,6 +119,38 @@ def test_skill_planu_jest_recenzentem_bez_prawa_zapisu_i_tworzy_plan_md(tmp_path
     assert "plan.md" in plan.produces
 
 
+def mutmut_kopiuje(also_copy: list[str], sciezka: str) -> bool:
+    """Czy mutmut skopiuje plik w podkatalogu: tylko gdy wpis jest katalogiem (z `/`)-przodkiem.
+
+    Wpis samego pliku w podkatalogu nie wystarcza: mutmut kopiuje go bez katalogow nadrzednych.
+    """
+    return any(wpis.endswith("/") and sciezka.startswith(wpis) for wpis in also_copy)
+
+
 def test_mutmut_kopiuje_workflow_bo_test_budowy_czyta_plik_z_repozytorium():
     konfiguracja = tomllib.loads((KORZEN_REPO / "pyproject.toml").read_text("utf-8"))
-    assert ".cockpit/workflows/" in konfiguracja["tool"]["mutmut"]["also_copy"]
+    assert mutmut_kopiuje(
+        konfiguracja["tool"]["mutmut"]["also_copy"], ".cockpit/workflows/budowa.yaml"
+    )
+
+
+def test_wpis_katalogu_nadrzednego_sprawia_ze_mutmut_kopiuje_plik():
+    assert mutmut_kopiuje([".cockpit/"], ".cockpit/workflows/budowa.yaml")
+
+
+def test_wpis_katalogu_workflow_sprawia_ze_mutmut_kopiuje_plik():
+    assert mutmut_kopiuje([".cockpit/workflows/"], ".cockpit/workflows/budowa.yaml")
+
+
+def test_wpis_samego_pliku_w_podkatalogu_nie_wystarcza_mutmutowi_do_kopii():
+    assert not mutmut_kopiuje(
+        [".cockpit/workflows/budowa.yaml"], ".cockpit/workflows/budowa.yaml"
+    )
+
+
+def test_wpis_katalogu_obcego_rodzenstwa_nie_pokrywa_pliku_workflow():
+    assert not mutmut_kopiuje([".cockpit/skills/"], ".cockpit/workflows/budowa.yaml")
+
+
+def test_wpis_bedacy_tylko_czescia_nazwy_katalogu_nie_pokrywa_pliku():
+    assert not mutmut_kopiuje([".cock/"], ".cockpit/workflows/budowa.yaml")

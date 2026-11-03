@@ -13,11 +13,11 @@ from cockpit.services.skills import Rejestr, rozstrzygnij_rejestr
 
 IDENTYFIKATORY = ["tdd-task", "e2e-scenario", "smoke"]
 
-# id -> (rola, consumes, produces)
+# id -> (rola, consumes, produces, needs)
 OCZEKIWANE = {
-    "tdd-task": (Rola.author, ["plan.md"], ["tdd.md"]),
-    "e2e-scenario": (Rola.author, ["plan.md"], ["scenariusz-e2e.md"]),
-    "smoke": (Rola.gatherer, [], ["smoke.md"]),
+    "tdd-task": (Rola.author, ["plan.md"], ["tdd.md"], ["test_narrow"]),
+    "e2e-scenario": (Rola.author, ["plan.md"], ["scenariusz-e2e.md"], ["test_e2e"]),
+    "smoke": (Rola.gatherer, [], ["smoke.md"], ["smoke"]),
 }
 
 
@@ -70,6 +70,11 @@ def test_skill_budowy_wytwarza_ustalone_artefakty(rejestr, id):
     assert rejestr.skille[id].produces == OCZEKIWANE[id][2]
 
 
+@pytest.mark.parametrize("id", IDENTYFIKATORY)
+def test_skill_budowy_deklaruje_potrzebne_capability_projektu(rejestr, id):
+    assert rejestr.skille[id].needs == OCZEKIWANE[id][3]
+
+
 @pytest.mark.parametrize("id", ["tdd-task", "e2e-scenario"])
 def test_skill_piszacy_testy_nie_jest_recenzentem_i_ma_prawo_zapisu(rejestr, id):
     rola = rejestr.skille[id].role
@@ -97,16 +102,22 @@ def test_tdd_task_nie_kopiuje_zdania_reguly_nazewnictwa(rejestr):
     assert "Nazwy w języku dziedziny, nie technologii" not in brief
 
 
-def test_e2e_scenario_kaze_uruchamiac_scenariusze_przez_pytest_m_e2e(rejestr):
-    assert "pytest -m e2e" in rejestr.skille["e2e-scenario"].brief
+def test_e2e_scenario_kaze_uruchamiac_scenariusze_przez_capability_test_e2e(rejestr):
+    assert "capability `test_e2e`" in rejestr.skille["e2e-scenario"].brief
 
 
 def test_e2e_scenario_wskazuje_playwrighta(rejestr):
     assert "Playwright" in rejestr.skille["e2e-scenario"].brief
 
 
-def test_smoke_wskazuje_skrypt_demo_szkieletu(rejestr):
-    assert "tools/demo_szkielet.py" in rejestr.skille["smoke"].brief
+def test_smoke_kaze_uruchomic_capability_smoke(rejestr):
+    assert "capability `smoke`" in rejestr.skille["smoke"].brief
+
+
+def test_smoke_nadal_wymaga_bazy_testowej_przez_zmienna_srodowiska(rejestr):
+    brief = rejestr.skille["smoke"].brief
+    assert "COCKPIT_DATABASE_URL" in brief
+    assert "bazy testowej" in brief
 
 
 def test_smoke_opisuje_wynik_tak_albo_nie(rejestr):

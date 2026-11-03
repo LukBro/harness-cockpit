@@ -12,6 +12,7 @@ Zmienne kroku (BASE_REF, COMMIT_SHA) test czyta z jego `env` w YAML i podstawia 
 """
 import json
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -41,6 +42,8 @@ SHA_SCALENIA = "merge9999"
 WYRAZENIA = {
     "${{ github.base_ref }}": GALAZ_DOCELOWA,
     "${{ github.sha }}": SHA_SCALENIA,
+    # Wyjscie `adres` kroku `id: postgres` (HAR-156): tak GitHub podstawia je w kroku `mutanty ręczne`.
+    "${{ steps.postgres.outputs.adres }}": "postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test",
 }
 # Wyjatek od zakazu ukrywania bledu: skladany, zeby ten plik nie zawieral literalnego wzorca.
 UKRYCIE_BLEDU = re.compile(r"\|\|\s*" + "tr" + "ue")
@@ -1017,3 +1020,553 @@ def test_tabele_sa_wybierane_zapytaniem_gita_ograniczonym_do_katalogu_tabel_bez_
     zapytania_o_tabele = [w for w in przebieg.wywolania_git if "--diff-filter=d" in w]
     assert len(zapytania_o_tabele) == 1, przebieg.wywolania_git
     assert "tests/mutanty_reczne/*.toml" in zapytania_o_tabele[0]
+
+
+# =============================================================================
+# HAR-156: front i PostgreSQL dla recznych mutantow sprawdzanych testami e2e
+# =============================================================================
+
+KROK_FRONT = "front dla mutantów ręcznych"
+KROK_PRZEGLADARKA = "przeglądarka dla mutantów ręcznych"
+KROK_POSTGRES = "PostgreSQL dla mutantów ręcznych"
+WARUNEK_FRONTU = "steps.front.outputs.front == '1'"
+URL_BAZY = "postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test"
+PLAYWRIGHT_INSTALL = "playwright install --with-deps chromium"
+
+
+def _kroki_pr() -> list[dict]:
+    return _zadanie(ZADANIE_PR)["steps"]
+
+
+def _indeks_kroku(predykat) -> int:
+    return next(i for i, krok in enumerate(_kroki_pr()) if predykat(krok))
+
+
+def _czy_nazwa(nazwa: str):
+    return lambda krok: krok.get("name") == nazwa
+
+
+def _czy_uses(prefiks: str):
+    return lambda krok: str(krok.get("uses", "")).startswith(prefiks)
+
+
+def _krok_setup_node() -> dict:
+    return _kroki_pr()[_indeks_kroku(_czy_uses("actions/setup-node"))]
+
+
+def _kroki_srodowiska() -> dict[str, dict]:
+    return {
+        "setup-node": _krok_setup_node(),
+        KROK_PRZEGLADARKA: _krok(ZADANIE_PR, KROK_PRZEGLADARKA),
+        KROK_POSTGRES: _krok(ZADANIE_PR, KROK_POSTGRES),
+    }
+
+
+# --- uklad kroków ------------------------------------------------------------------
+
+
+def test_kroki_frontu_i_srodowiska_stoja_po_przywroceniu_cache_i_przed_mutantami_zmienionych_funkcji():
+    cache = _indeks_kroku(_czy_uses("actions/cache/restore"))
+    front = _indeks_kroku(_czy_nazwa(KROK_FRONT))
+    node = _indeks_kroku(_czy_uses("actions/setup-node"))
+    przegladarka = _indeks_kroku(_czy_nazwa(KROK_PRZEGLADARKA))
+    postgres = _indeks_kroku(_czy_nazwa(KROK_POSTGRES))
+    zmienione = _indeks_kroku(_czy_nazwa(KROK_PR))
+
+    assert cache < front
+    assert front < node < zmienione
+    assert front < przegladarka < zmienione
+    assert front < postgres < zmienione
+
+
+def test_krok_wykrycia_frontu_stoi_przed_krokami_ktore_czytaja_jego_wynik():
+    front = _indeks_kroku(_czy_nazwa(KROK_FRONT))
+    zalezne = [
+        _indeks_kroku(_czy_uses("actions/setup-node")),
+        _indeks_kroku(_czy_nazwa(KROK_PRZEGLADARKA)),
+        _indeks_kroku(_czy_nazwa(KROK_POSTGRES)),
+    ]
+
+    assert all(front < i for i in zalezne)
+
+
+def test_krok_wykrycia_frontu_ma_id_front_i_galaz_docelowa_w_env_a_nie_warunek_if():
+    krok = _krok(ZADANIE_PR, KROK_FRONT)
+
+    assert krok["id"] == "front"
+    assert krok["env"]["BASE_REF"] == "${{ github.base_ref }}"
+    assert "if" not in krok
+
+
+@pytest.mark.parametrize("nazwa", ["setup-node", KROK_PRZEGLADARKA, KROK_POSTGRES])
+def test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1(nazwa):
+    assert _kroki_srodowiska()[nazwa]["if"] == WARUNEK_FRONTU
+
+
+def test_node_22_z_cache_npm_wedlug_lockfile_frontu():
+    parametry = _krok_setup_node()["with"]
+
+    assert str(parametry["node-version"]) == "22"
+    assert parametry["cache"] == "npm"
+    assert parametry["cache-dependency-path"] == "web/package-lock.json"
+
+
+def test_przegladarka_dla_mutantow_recznych_to_chromium_z_zaleznosciami_systemowymi():
+    linie = [linia.strip() for linia in _krok(ZADANIE_PR, KROK_PRZEGLADARKA)["run"].splitlines()]
+
+    assert PLAYWRIGHT_INSTALL in linie
+
+
+def test_kazdy_krok_zadania_instalujacy_node_playwrighta_albo_baze_ma_warunek_front_1():
+    # Dla PR bez wierszy web/e2e (front=0) zadne z tych polecen nie moze sie wykonac.
+    kroki_srodowiska = []
+    for krok in _kroki_pr():
+        tresc = krok.get("run", "")
+        if (
+            str(krok.get("uses", "")).startswith("actions/setup-node")
+            or "playwright install" in tresc
+            or "docker run" in tresc
+        ):
+            kroki_srodowiska.append(krok)
+            assert krok.get("if") == WARUNEK_FRONTU, krok.get("name", krok.get("uses"))
+
+    assert len(kroki_srodowiska) >= 3
+
+
+@pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES])
+def test_nowe_kroki_run_nie_uzywaja_wyrazen_github_actions_w_skrypcie(nazwa):
+    assert "${{" not in _krok(ZADANIE_PR, nazwa)["run"]
+
+
+@pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES])
+def test_nowe_kroki_run_nie_ukrywaja_bledu_komendy_i_nie_ciszy_kroku(nazwa):
+    krok = _krok(ZADANIE_PR, nazwa)
+
+    for linia in krok["run"].splitlines():
+        assert not UKRYCIE_BLEDU.search(linia), linia
+    assert krok.get("continue-on-error") not in (True, "true")
+
+
+# --- krok wykrycia frontu: uruchomiony powloka z atrapa git i skryptem ---------------
+
+
+class PrzebiegFrontu:
+    def __init__(self, tmp_path: Path):
+        self.kod = -1
+        self.wyjscie = ""
+        self.argv_plik = tmp_path / "argv-reczne.txt"
+        self.log_git_plik = tmp_path / "log-git.txt"
+        self.github_output_plik = tmp_path / "github-output.txt"
+
+    @property
+    def wywolania_skryptu(self) -> list[str]:
+        if not self.argv_plik.exists():
+            return []
+        return self.argv_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def wywolania_git(self) -> list[str]:
+        if not self.log_git_plik.exists():
+            return []
+        return self.log_git_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def github_output(self) -> str:
+        if not self.github_output_plik.exists():
+            return ""
+        return self.github_output_plik.read_text(encoding="utf-8")
+
+
+def uruchom_krok_frontu(
+    tmp_path: Path,
+    *,
+    tabele: tuple[str, ...] = (),
+    usuniete_tabele: tuple[str, ...] = (),
+    kod_skryptu: int = 0,
+    stdout_skryptu: str = "front=1\n",
+    stderr_skryptu: str = "",
+    base_ref: str | None = None,
+) -> PrzebiegFrontu:
+    """Uruchamia `run` kroku wykrycia frontu z atrapami git i tools/mutanty_reczne.py.
+
+    Katalog `mutants/` celowo nie istnieje: krok stoi przed krokiem `mutanty zmienionych funkcji`.
+    """
+    praca = tmp_path / "praca"
+    (praca / "tools").mkdir(parents=True)
+    _atrapa(praca / "tools", "mutanty_reczne.py", ATRAPA_MUTANTY_RECZNE)
+
+    narzedzia = tmp_path / "narzedzia"
+    narzedzia.mkdir()
+    (narzedzia / "python3").symlink_to(sys.executable)
+    atrapy = tmp_path / "atrapy"
+    atrapy.mkdir()
+    _atrapa(atrapy, "git", ATRAPA_GIT_ZMIANY)
+
+    przebieg = PrzebiegFrontu(tmp_path)
+    krok = _krok(ZADANIE_PR, KROK_FRONT)
+    skrypt_krok = krok["run"]
+    assert "${{" not in skrypt_krok, "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(skrypt_krok, encoding="utf-8")
+
+    srodowisko = {
+        "PATH": f"{atrapy}:{narzedzia}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_LOG_GIT": str(przebieg.log_git_plik),
+        "ATRAPA_ZMIANY": "\n".join([*tabele, *usuniete_tabele]),
+        "ATRAPA_TABELE": "\n".join(tabele),
+        "ATRAPA_ARGV_RECZNE": str(przebieg.argv_plik),
+        "ATRAPA_KOD_RECZNE": str(kod_skryptu),
+        "ATRAPA_STDOUT_RECZNE": stdout_skryptu,
+        "ATRAPA_STDERR_RECZNE": stderr_skryptu,
+        "GITHUB_OUTPUT": str(przebieg.github_output_plik),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "podsumowanie.md"),
+        **_srodowisko_kroku(krok),
+    }
+    if base_ref is not None:
+        srodowisko["BASE_REF"] = base_ref
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+def test_pr_bez_zmienionej_tabeli_ma_front_0_w_wyjsciu_kroku_i_nie_wola_skryptu(tmp_path):
+    przebieg = uruchom_krok_frontu(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.github_output.splitlines() == ["front=0"]
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_pr_z_usunieta_tabela_ma_front_0_bo_usunieta_tabela_nie_jest_dowodem(tmp_path):
+    przebieg = uruchom_krok_frontu(tmp_path, usuniete_tabele=(TABELA_A,))
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.github_output.splitlines() == ["front=0"]
+    assert przebieg.wywolania_skryptu == []
+
+
+@pytest.mark.parametrize("odpowiedz", ["front=1", "front=0"])
+def test_pr_ze_zmieniona_tabela_przekazuje_wyjscie_skryptu_do_github_output(tmp_path, odpowiedz):
+    # Wynik zalezy od skryptu, nie jest wpisany na stale w kroku.
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A,), stdout_skryptu=odpowiedz + "\n")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.github_output.splitlines() == [odpowiedz]
+
+
+def test_skrypt_wykrycia_dostaje_opcje_czy_front_i_sciezki_wszystkich_zmienionych_tabel(tmp_path):
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A, TABELA_B))
+
+    assert len(przebieg.wywolania_skryptu) == 1
+    argumenty = przebieg.wywolania_skryptu[0].split()
+    assert "--czy-front" in argumenty
+    assert {a for a in argumenty if a != "--czy-front"} == {TABELA_A, TABELA_B}
+
+
+def test_kod_2_skryptu_wykrycia_oblewa_krok_a_nie_zostawia_front_0(tmp_path):
+    przebieg = uruchom_krok_frontu(
+        tmp_path,
+        tabele=(TABELA_A,),
+        kod_skryptu=2,
+        stdout_skryptu="",
+        stderr_skryptu="blad: zla tabela",
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "front=0" not in przebieg.github_output
+
+
+def test_krok_wykrycia_pobiera_galaz_docelowa_pr_przed_porownaniem_z_nia(tmp_path):
+    inna_galaz = "release-7"
+    assert inna_galaz != GALAZ_DOCELOWA
+
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A,), base_ref=inna_galaz)
+
+    assert f"fetch origin {inna_galaz}" in przebieg.wywolania_git
+    diffy = [w for w in przebieg.wywolania_git if w.startswith("diff")]
+    assert diffy
+    for wywolanie in diffy:
+        assert f"origin/{inna_galaz}...HEAD" in wywolanie
+
+
+def test_tabele_do_wykrycia_frontu_sa_wybierane_tym_samym_zapytaniem_co_w_kroku_recznych_mutantow(
+    tmp_path,
+):
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A,))
+
+    zapytania = [w for w in przebieg.wywolania_git if "--diff-filter=d" in w]
+    assert len(zapytania) == 1, przebieg.wywolania_git
+    assert "--no-renames" in zapytania[0]
+    assert "tests/mutanty_reczne/*.toml" in zapytania[0]
+
+
+# --- krok PostgreSQL: atrapa docker --------------------------------------------------
+
+# Zdrowie bazy sprawdza sie albo `docker inspect` (status), albo `docker exec ... pg_isready`;
+# atrapa odpowiada spojnie na oba. Do `ATRAPA_PO_PROBACH` pierwszych sprawdzen baza nie jest zdrowa.
+ATRAPA_DOCKER = """#!/bin/sh
+echo "$*" >> "$ATRAPA_LOG_DOCKER"
+zdrowa() {
+  n=$(cat "$ATRAPA_LICZNIK" 2>/dev/null || echo 0)
+  n=$((n + 1))
+  echo "$n" > "$ATRAPA_LICZNIK"
+  [ "$n" -gt "$ATRAPA_PO_PROBACH" ]
+}
+case "$1" in
+  run)
+    exit "$ATRAPA_KOD_RUN"
+    ;;
+  inspect)
+    if zdrowa; then echo healthy; else echo starting; fi
+    exit "${ATRAPA_KOD_INSPECT:-0}"
+    ;;
+  exec)
+    zdrowa
+    exit $?
+    ;;
+esac
+exit 0
+"""
+ATRAPA_SLEEP = '#!/bin/sh\necho "$*" >> "$ATRAPA_LOG_SLEEP"\nexit 0\n'
+
+
+class PrzebiegPostgres:
+    def __init__(self, tmp_path: Path):
+        self.kod = -1
+        self.wyjscie = ""
+        self.log_docker_plik = tmp_path / "log-docker.txt"
+        self.github_env_plik = tmp_path / "github-env.txt"
+        self.github_output_plik = tmp_path / "github-output.txt"
+        self.log_sleep_plik = tmp_path / "log-sleep.txt"
+
+    @property
+    def przerwy_miedzy_probami(self) -> list[str]:
+        if not self.log_sleep_plik.exists():
+            return []
+        return self.log_sleep_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def wywolania_docker(self) -> list[str]:
+        if not self.log_docker_plik.exists():
+            return []
+        return self.log_docker_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def github_env(self) -> list[str]:
+        if not self.github_env_plik.exists():
+            return []
+        return self.github_env_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def github_output(self) -> list[str]:
+        if not self.github_output_plik.exists():
+            return []
+        return self.github_output_plik.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def sprawdzenia_zdrowia(self) -> list[str]:
+        return [w for w in self.wywolania_docker if w.split()[0] in ("inspect", "exec")]
+
+
+def uruchom_krok_postgres(
+    tmp_path: Path, *, zdrowa_po_probach: int = 0, kod_docker_run: int = 0, kod_docker_inspect: int = 0
+) -> PrzebiegPostgres:
+    """Uruchamia `run` kroku PostgreSQL z atrapa docker; `sleep` jest atrapa, zeby petla trwala sekundy."""
+    praca = tmp_path / "praca"
+    praca.mkdir()
+    atrapy = tmp_path / "atrapy"
+    atrapy.mkdir()
+    _atrapa(atrapy, "docker", ATRAPA_DOCKER)
+    _atrapa(atrapy, "sleep", ATRAPA_SLEEP)
+
+    przebieg = PrzebiegPostgres(tmp_path)
+    krok = _krok(ZADANIE_PR, KROK_POSTGRES)
+    skrypt_krok = krok["run"]
+    assert "${{" not in skrypt_krok, "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(skrypt_krok, encoding="utf-8")
+
+    srodowisko = {
+        "PATH": f"{atrapy}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_LOG_DOCKER": str(przebieg.log_docker_plik),
+        "ATRAPA_LOG_SLEEP": str(przebieg.log_sleep_plik),
+        "ATRAPA_LICZNIK": str(tmp_path / "licznik.txt"),
+        "ATRAPA_PO_PROBACH": str(zdrowa_po_probach),
+        "ATRAPA_KOD_RUN": str(kod_docker_run),
+        "ATRAPA_KOD_INSPECT": str(kod_docker_inspect),
+        "GITHUB_ENV": str(przebieg.github_env_plik),
+        "GITHUB_OUTPUT": str(przebieg.github_output_plik),
+        **_srodowisko_kroku(krok),
+    }
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+def _argumenty_docker_run(przebieg: PrzebiegPostgres) -> list[str]:
+    uruchomienia = [w for w in przebieg.wywolania_docker if w.split()[0] == "run"]
+    assert len(uruchomienia) == 1, przebieg.wywolania_docker
+    return uruchomienia[0].split()
+
+
+def _pary(argumenty: list[str]) -> set[tuple[str, str]]:
+    return set(zip(argumenty, argumenty[1:]))
+
+
+def test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.github_output == [f"adres={URL_BAZY}"]
+    # Adres w srodowisku calego joba trafilby tez do mutmuta (testy z baza pod mutmutem).
+    assert przebieg.github_env == []
+
+
+def test_krok_postgres_ma_id_postgres_z_ktorego_krok_recznych_mutantow_czyta_adres_bazy():
+    assert _krok(ZADANIE_PR, KROK_POSTGRES)["id"] == "postgres"
+
+
+def test_kontener_postgres_startuje_z_obrazem_uzytkownikiem_haslem_baza_i_portem_z_adresu(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    argumenty = _argumenty_docker_run(przebieg)
+    pary = _pary(argumenty)
+    assert "postgres:16" in argumenty
+    assert ("-e", "POSTGRES_USER=cockpit") in pary
+    assert ("-e", "POSTGRES_PASSWORD=cockpit") in pary
+    assert ("-e", "POSTGRES_DB=cockpit_test") in pary
+    assert ("-p", "5432:5432") in pary
+
+
+def test_kontener_postgres_startuje_w_tle_bo_krok_czeka_na_jego_zdrowie(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    # Token `-d` jest tez w polu `pg_isready -d`, wiec liczy sie tylko miejsce zaraz po `run`.
+    assert _argumenty_docker_run(przebieg)[1] in ("-d", "--detach")
+
+
+def test_kontener_postgres_ma_healthcheck_gdy_krok_czeka_na_status_zdrowia_z_docker_inspect(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    # Bez healthchecka `docker inspect` nie ma statusu zdrowia i petla nigdy sie nie konczy.
+    # Gdy krok sprawdza zdrowie przez `docker exec pg_isready`, healthcheck nie jest potrzebny.
+    if any(w.split()[0] == "inspect" for w in przebieg.sprawdzenia_zdrowia):
+        assert "--health-cmd" in _argumenty_docker_run(przebieg)
+
+
+def test_krok_pyta_o_zdrowie_tego_samego_kontenera_ktory_uruchomil(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    argumenty = _argumenty_docker_run(przebieg)
+    nazwa = argumenty[argumenty.index("--name") + 1]
+    assert przebieg.sprawdzenia_zdrowia
+    for sprawdzenie in przebieg.sprawdzenia_zdrowia:
+        assert nazwa in sprawdzenie.split(), sprawdzenie
+
+
+def test_krok_robi_przerwe_dodatniej_dlugosci_miedzy_sprawdzeniami_zdrowia_bazy(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path, zdrowa_po_probach=2)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert len(przebieg.przerwy_miedzy_probami) == 2
+    assert all(float(przerwa) > 0 for przerwa in przebieg.przerwy_miedzy_probami)
+
+
+def test_kontener_postgres_jest_uruchomiony_przed_sprawdzaniem_jego_zdrowia(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path)
+
+    assert przebieg.wywolania_docker[0].split()[0] == "run"
+    assert przebieg.sprawdzenia_zdrowia
+
+
+def test_krok_czeka_az_baza_bedzie_zdrowa_a_nie_sprawdza_jej_tylko_raz(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path, zdrowa_po_probach=3)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert len(przebieg.sprawdzenia_zdrowia) == 4
+    assert przebieg.github_output == [f"adres={URL_BAZY}"]
+
+
+def test_baza_ktora_nigdy_nie_staje_sie_zdrowa_oblewa_krok_z_komunikatem_bledu_i_bez_adresu(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path, zdrowa_po_probach=1_000_000)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "::error::" in przebieg.wyjscie
+    assert not any(linia.startswith("adres=") for linia in przebieg.github_output)
+    assert len(przebieg.sprawdzenia_zdrowia) > 1
+
+
+def test_nieudane_docker_run_oblewa_krok_a_adres_bazy_nie_trafia_do_wyjscia_kroku(tmp_path):
+    przebieg = uruchom_krok_postgres(tmp_path, kod_docker_run=125)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert not any(linia.startswith("adres=") for linia in przebieg.github_output)
+
+
+def test_docker_inspect_zakonczony_bledem_nie_daje_zdrowej_bazy_nawet_gdy_wypisal_healthy(tmp_path):
+    # Atrapa wypisuje `healthy`, ale konczy sie kodem 1: tylko `&&` w warunku odrzuca taki wynik.
+    przebieg = uruchom_krok_postgres(tmp_path, kod_docker_inspect=1)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "::error::" in przebieg.wyjscie
+    assert not any(linia.startswith("adres=") for linia in przebieg.github_output)
+    assert len(przebieg.sprawdzenia_zdrowia) > 1
+
+
+def test_krok_mutanty_reczne_dostaje_adres_bazy_z_wyjscia_kroku_postgres_obok_galezi_docelowej():
+    env = _krok(ZADANIE_PR, KROK_RECZNE)["env"]
+
+    assert env["COCKPIT_TEST_DATABASE_URL"] == "${{ steps.postgres.outputs.adres }}"
+    assert env["BASE_REF"] == "${{ github.base_ref }}"
+
+
+def test_adres_bazy_testowej_widzi_tylko_krok_mutanty_reczne_a_mutmut_go_nie_dostaje():
+    # Testy z baza pod mutmutem biegna rownolegle na wspolnej bazie: wynik zalezalby od srodowiska.
+    kroki_z_adresem = [
+        krok.get("name", krok.get("uses"))
+        for krok in _kroki_pr()
+        if "COCKPIT_TEST_DATABASE_URL" in (krok.get("env") or {})
+    ]
+
+    assert kroki_z_adresem == [KROK_RECZNE]
+    assert "COCKPIT_TEST_DATABASE_URL" not in (_krok(ZADANIE_PR, KROK_PR).get("env") or {})
+
+
+def test_zaden_krok_zadania_mutation_nie_pisze_do_srodowiska_calego_joba():
+    # Zmienna w $GITHUB_ENV widza wszystkie pozniejsze kroki, takze mutmut.
+    for krok in _kroki_pr():
+        assert "GITHUB_ENV" not in krok.get("run", ""), krok.get("name", krok.get("uses"))
+
+
+CI_WORKFLOW = KORZEN / ".github" / "workflows" / "ci.yml"
+
+
+def _ci_zadanie(nazwa: str) -> dict:
+    return YAML(typ="safe").load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"][nazwa]
+
+
+def _opcje_zdrowia(tokeny: list[str]) -> dict[str, str]:
+    return {t: tokeny[i + 1] for i, t in enumerate(tokeny[:-1]) if t.startswith("--health-")}
+
+
+def test_kontener_bazy_mutantow_recznych_ma_te_same_ustawienia_zdrowia_co_baza_testow_e2e_w_ci():
+    wzorzec = _opcje_zdrowia(shlex.split(_ci_zadanie("e2e")["services"]["postgres"]["options"]))
+    skrypt = _krok(ZADANIE_PR, KROK_POSTGRES)["run"]
+    linia = next(w for w in skrypt.splitlines() if w.lstrip().startswith("docker run"))
+
+    ustawienia = _opcje_zdrowia(shlex.split(linia))
+
+    assert set(wzorzec) == {"--health-cmd", "--health-interval", "--health-timeout", "--health-retries"}
+    assert ustawienia == wzorzec
+
+
+def test_instalacja_node_w_mutantach_recznych_ma_ta_sama_akcje_i_wersje_node_co_job_e2e_w_ci():
+    wzorzec = next(k for k in _ci_zadanie("e2e")["steps"] if str(k.get("uses", "")).startswith("actions/setup-node"))
+    krok = _krok_setup_node()
+
+    assert krok["uses"] == wzorzec["uses"]
+    assert str(krok["with"]["node-version"]) == str(wzorzec["with"]["node-version"])

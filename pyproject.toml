@@ -81,6 +81,8 @@ source_paths = [
 # web/: test kontraktu API (HAR-69) czyta web/openapi.json z repozytorium; wpis jest
 # katalogiem z tego samego powodu (kopia pojedynczego pliku nie tworzy mutants/web/).
 # .cockpit/workflows/: test workflow budowy czyta budowa.yaml repozytorium (HAR-88).
+# .cockpit/project.yaml czyta straznik skilli (HAR-163); wpis .cockpit/ obejmuje
+# skills/, workflows/ i project.yaml.
 also_copy = [
   "src/cockpit/__init__.py",
   "src/cockpit/__main__.py",
@@ -95,8 +97,7 @@ also_copy = [
   ".github/workflows/",
   ".claude/hooks/",
   "deploy/",
-  ".cockpit/skills/",
-  ".cockpit/workflows/",
+  ".cockpit/",
   "web/",
   # CLAUDE.md i .ai/: testy warstw instrukcji i walidatora lekcji czytaja prawdziwe
   # pliki (HAR-87); .ai/ jako katalog z tego samego powodu co web/.
