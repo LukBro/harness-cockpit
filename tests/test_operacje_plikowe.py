@@ -1783,6 +1783,48 @@ async def test_lista_nie_wchodzi_w_dowiazanie_do_katalogu_poza_projektem(projekt
     assert _sciezki(odp) == [str((projekt.korzen / "a" / "x.txt").resolve())]
 
 
+def _uloz_katalogi_sekretow(korzen: Path) -> None:
+    pliki = [".env.d/x.txt", ".cockpit/y.txt", "a/.env.d/z.txt", "klucz.KEY/k.txt",
+             "a/klucz.KEY/g.txt", "a/b.txt"]
+    for p in pliki:
+        cel = korzen / p
+        cel.parent.mkdir(parents=True, exist_ok=True)
+        cel.write_text("x", encoding="utf-8")
+
+
+def _z_katalogow_sekretow(lista: list[str]) -> set[str]:
+    return {w for w in lista if ".env.d" in w or "klucz.KEY" in w}
+
+
+async def _wzgledne(projekt, wzorzec: str) -> list[str]:
+    odp = await _wyk("list_files", sciezka=str(projekt.korzen), wzorzec=wzorzec)
+    return sorted(Path(s).relative_to(projekt.korzen.resolve()).as_posix() for s in _sciezki(odp))
+
+
+@pytest.mark.parametrize("wzorzec", ["**/*.txt", "*/*.txt"])
+async def test_listowanie_nie_zwraca_plikow_z_katalogow_o_nazwach_sekretow(projekt, wzorzec):
+    _uloz_katalogi_sekretow(projekt.korzen)
+
+    assert _z_katalogow_sekretow(await _wzgledne(projekt, wzorzec)) == set()
+
+
+@pytest.mark.parametrize("wzorzec", ["**/*.txt", "*/*.txt"])
+async def test_listowanie_zwraca_pliki_z_katalogu_z_kropka_ktory_nie_jest_sekretem(projekt, wzorzec):
+    _uloz_katalogi_sekretow(projekt.korzen)
+
+    assert ".cockpit/y.txt" in await _wzgledne(projekt, wzorzec)
+
+
+async def test_gwiazdka_rekurencyjna_i_pojedyncza_zgadzaja_sie_co_do_katalogow_sekretow(projekt):
+    _uloz_katalogi_sekretow(projekt.korzen)
+
+    gleboko = await _wzgledne(projekt, "**/*.txt")
+    plytko = await _wzgledne(projekt, "*/*.txt")
+
+    assert _z_katalogow_sekretow(gleboko) == _z_katalogow_sekretow(plytko) == set()
+    assert {".cockpit/y.txt", "a/b.txt"} <= set(gleboko)
+
+
 def _licz_scandir(monkeypatch) -> list[str]:
     """Rejestr katalogow, do ktorych runner wszedl (`os.scandir`)."""
     wejscia: list[str] = []

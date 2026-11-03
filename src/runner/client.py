@@ -294,9 +294,17 @@ class Runner:
     async def _odpowiedz_na_zapytanie(self, client: httpx.AsyncClient, cmd: dict) -> None:
         """Wykonuje operacje i odsyla wynik POST-em. Nigdy token, naglowki ani tresc odpowiedzi w logu."""
         wynik = await operacje.wykonaj(cmd)
+        url = f"{self.base_url}/api/runners/odpowiedzi"
         try:
-            r = await client.post(
-                f"{self.base_url}/api/runners/odpowiedzi", json=wynik, headers=self._headers)
+            try:
+                r = await client.post(url, json=wynik, headers=self._headers)
+            except (TypeError, ValueError) as e:
+                # httpx serializuje wynik przed wyslaniem; bez str(e) i reprezentacji
+                # wyniku: moga niesc sekret (HAR-148)
+                blad = {"req_id": cmd.get("req_id"), "ok": False,
+                        "blad": f"wynik operacji nie daje sie zapisac jako JSON ({type(e).__name__})",
+                        "kod": "blad_operacji"}
+                r = await client.post(url, json=blad, headers=self._headers)
         except httpx.TransportError as e:
             przyczyna = type(e).__name__
         else:

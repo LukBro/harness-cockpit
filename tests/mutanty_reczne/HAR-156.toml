@@ -1,0 +1,1059 @@
+# Tabela recznych mutantow HAR-156: front i PostgreSQL dla mutantow sprawdzanych testami
+# e2e (tools/mutanty_reczne.py i .github/workflows/mutation.yml) oraz zmiana we froncie.
+# Mutmut nie mutuje tools/ ani workflow, wiec ta tabela jest jedyna egzekucja tych regul.
+
+# ===========================================================================
+# web/src/App.tsx: kryterium 1 (CI buduje front i uruchamia e2e na PostgreSQL)
+# ===========================================================================
+
+# Przycisk startu runu nazywa sie "Uruchom": test e2e klika go po nazwie.
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = '"Uruchamiam…" : "Uruchom"'
+zamien = '"Uruchamiam…" : "Start"'
+test = "tests/e2e/test_szkielet_w_przegladarce.py::test_klikniecie_uruchom_pokazuje_wynik_procesu"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: raport JUnit (skip, zero testow i brak raportu to brak dowodu)
+# ===========================================================================
+
+# Jedno pominiecie wystarcza: granica to 1, nie 2.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if pominiete > 0:"
+zamien = "if pominiete > 1:"
+test = "tests/test_mutanty_reczne.py::test_pominiecie_w_raporcie_to_blad_narzedzia_z_brakiem_dowodu_i_node_id_testu"
+
+# Zero uruchomionych testow to brak dowodu (sprawdzenie tests == 0).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if uruchomione == 0:"
+zamien = "if uruchomione < 0:"
+test = "tests/test_mutanty_reczne.py::test_raport_bez_ani_jednego_uruchomionego_testu_to_blad_narzedzia_z_brakiem_dowodu"
+
+# Komunikat zera testow niesie "brak dowodu".
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nic nie uruchomiono wedlug raportu JUnit - brak dowodu"
+zamien = "nic nie uruchomiono wedlug raportu JUnit"
+test = "tests/test_mutanty_reczne.py::test_raport_bez_ani_jednego_uruchomionego_testu_to_blad_narzedzia_z_brakiem_dowodu"
+
+# Brak licznika tests w raporcie to zero testow, nie jeden.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 's.get("tests", "0")'
+zamien = 's.get("tests", "1")'
+test = "tests/test_mutanty_reczne.py::test_raport_bez_licznika_tests_to_zero_uruchomionych_testow_a_wiec_brak_dowodu"
+
+# Brak licznika skipped w raporcie to zero pominiec, nie jedno.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 's.get("skipped", "0")'
+zamien = 's.get("skipped", "1")'
+test = "tests/test_mutanty_reczne.py::test_raport_bez_licznika_skipped_to_zero_pominiec_gdy_test_sie_uruchomil"
+
+# Korzeniem raportu moze byc sam testsuite: liczba testow liczona tez z korzenia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'uruchomione = sum(int(s.get("tests", "0")) for s in korzen.iter("testsuite"))'
+zamien = 'uruchomione = sum(int(s.get("tests", "0")) for s in korzen.findall("testsuite"))'
+test = "tests/test_mutanty_reczne.py::test_sam_testsuite_bez_pominiec_jest_dowodem"
+
+# Korzeniem raportu moze byc sam testsuite: pominiecia liczone tez z korzenia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pominiete = sum(int(s.get("skipped", "0")) for s in korzen.iter("testsuite"))'
+zamien = 'pominiete = sum(int(s.get("skipped", "0")) for s in korzen.findall("testsuite"))'
+test = "tests/test_mutanty_reczne.py::test_pominiecie_w_sam_testsuite_bez_testsuites_to_blad_narzedzia"
+
+# Komunikat pominiecia zawiera slowo "pominięty".
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '{test}: test pominięty'
+zamien = '{test}: test pomijany'
+test = "tests/test_mutanty_reczne.py::test_pominiecie_w_raporcie_to_blad_narzedzia_z_brakiem_dowodu_i_node_id_testu"
+
+# Komunikat pominiecia wskazuje node id testu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'raise BladNarzedzia(f"{test}: test pominięty'
+zamien = 'raise BladNarzedzia(f"test pominięty'
+test = "tests/test_mutanty_reczne.py::test_pominiecie_w_raporcie_to_blad_narzedzia_z_brakiem_dowodu_i_node_id_testu"
+
+# except OSError: raport bedacy katalogiem to IsADirectoryError, nie FileNotFoundError.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    except OSError as blad:
+        raise BladNarzedzia(f"{test}: brak raportu JUnit'''
+zamien = '''    except FileNotFoundError as blad:
+        raise BladNarzedzia(f"{test}: brak raportu JUnit'''
+test = "tests/test_mutanty_reczne.py::test_raport_bedacy_katalogiem_to_blad_narzedzia_z_brakiem_dowodu"
+
+# Komunikat braku raportu niesie "brak dowodu".
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "brak raportu JUnit {sciezka}: brak dowodu"
+zamien = "brak raportu JUnit {sciezka}: ok"
+test = "tests/test_mutanty_reczne.py::test_raport_bedacy_katalogiem_to_blad_narzedzia_z_brakiem_dowodu"
+
+# except ET.ParseError: nieparsowalny XML to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "except ET.ParseError as blad:"
+zamien = "except KeyError as blad:"
+test = "tests/test_mutanty_reczne.py::test_raport_xml_ktorego_nie_da_sie_sparsowac_to_blad_narzedzia_z_brakiem_dowodu"
+
+# Komunikat nieparsowalnego XML niesie "brak dowodu".
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nie jest poprawnym XML: brak dowodu"
+zamien = "nie jest poprawnym XML: ok"
+test = "tests/test_mutanty_reczne.py::test_raport_xml_ktorego_nie_da_sie_sparsowac_to_blad_narzedzia_z_brakiem_dowodu"
+
+# except ValueError: licznik nie bedacy liczba to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    except ValueError as blad:
+        raise BladNarzedzia(f"{test}: raport JUnit ma'''
+zamien = '''    except KeyError as blad:
+        raise BladNarzedzia(f"{test}: raport JUnit ma'''
+test = "tests/test_mutanty_reczne.py::test_raport_z_atrybutem_nie_bedacym_liczba_to_blad_narzedzia_z_brakiem_dowodu"
+
+# Komunikat licznika nie bedacego liczba niesie "brak dowodu".
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "liczniki nie bedace liczbami: brak dowodu"
+zamien = "liczniki nie bedace liczbami: ok"
+test = "tests/test_mutanty_reczne.py::test_raport_z_atrybutem_nie_bedacym_liczba_to_blad_narzedzia_z_brakiem_dowodu"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: uruchom_test (raport, srodowisko, kod 0/1)
+# ===========================================================================
+
+# Raport JUnit ma stala nazwe w kopii.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'RAPORT_JUNIT = ".mutanty-reczne-junit.xml"'
+zamien = 'RAPORT_JUNIT = "raport-junit.xml"'
+test = "tests/test_mutanty_reczne.py::test_raport_junit_ma_stala_nazwe_i_jest_zapisywany_w_kopii_przez_uruchom_test"
+
+# Pytest dostaje --junitxml: bez niego nie ma dowodu uruchomienia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'f"--junitxml={raport}", test,'
+zamien = 'test,'
+test = "tests/test_mutanty_reczne.py::test_test_zielony_w_kopii_daje_kod_0"
+
+# Stary raport jest usuwany przed przebiegiem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "raport.unlink(missing_ok=True)"
+zamien = "pass"
+test = "tests/test_mutanty_reczne.py::test_raport_z_pierwszego_przebiegu_nie_jest_czytany_w_drugim_przebiegu_w_tej_samej_kopii"
+
+# Brak starego raportu (pierwszy przebieg) nie jest bledem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "raport.unlink(missing_ok=True)"
+zamien = "raport.unlink(missing_ok=False)"
+test = "tests/test_mutanty_reczne.py::test_test_zielony_w_kopii_daje_kod_0"
+
+# Stary raport, ktorego nie da sie usunac, to blad narzedzia (OSError tlumaczony).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    except OSError as blad:
+        raise BladNarzedzia(f"nie da sie usunac starego raportu'''
+zamien = '''    except KeyError as blad:
+        raise BladNarzedzia(f"nie da sie usunac starego raportu'''
+test = "tests/test_mutanty_reczne.py::test_stary_raport_ktorego_nie_da_sie_usunac_konczy_uruchomienie_testu_bledem_narzedzia"
+
+# COCKPIT_WYMAGAJ_BAZY jest usuwane ze srodowiska pytesta (skip to nie zabity mutant).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "srodowisko.pop(ZMIENNA_WYMAGANIA_BAZY, None)"
+zamien = "pass"
+test = "tests/test_mutanty_reczne.py::test_zmienna_wymagaj_bazy_nie_trafia_do_procesu_pytesta"
+
+# Nazwa usuwanej zmiennej to COCKPIT_WYMAGAJ_BAZY.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'ZMIENNA_WYMAGANIA_BAZY = "COCKPIT_WYMAGAJ_BAZY"'
+zamien = 'ZMIENNA_WYMAGANIA_BAZY = "COCKPIT_WYMAGAJ_BAZ"'
+test = "tests/test_mutanty_reczne.py::test_zmienna_wymagaj_bazy_nie_trafia_do_procesu_pytesta"
+
+# Raport sprawdzamy dla kodu 1 (czerwony test), nie tylko dla 0.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod in (0, 1):"
+zamien = "if kod in (0,):"
+test = "tests/test_mutanty_reczne.py::test_test_czerwony_tez_jest_sprawdzany_raportem_junit"
+
+# Raport sprawdzamy dla kodu 0 (zielony test), nie tylko dla 1.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod in (0, 1):"
+zamien = "if kod in (1,):"
+test = "tests/test_mutanty_reczne.py::test_test_zielony_jest_sprawdzany_raportem_junit_z_kopii"
+
+# Raportu nie ma dla innych kodow (zly node id): ocena kodu nalezy do wolajacego.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod in (0, 1):"
+zamien = "if True:"
+test = "tests/test_mutanty_reczne.py::test_zly_node_id_nie_jest_sprawdzany_raportem_bo_kod_pytesta_4_ocenia_wolajacy"
+
+# Sprawdzany jest raport z kopii, nie inny plik.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "sprawdz_raport_junit(raport, test)"
+zamien = "sprawdz_raport_junit(raport.parent, test)"
+test = "tests/test_mutanty_reczne.py::test_test_zielony_jest_sprawdzany_raportem_junit_z_kopii"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: _uruchom_proces (grupa procesow, limit, wyjscie)
+# ===========================================================================
+
+# Proces startuje w katalogu kopii.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''cwd=cwd,
+            env=srodowisko,'''
+zamien = '''cwd=None,
+            env=srodowisko,'''
+test = "tests/test_mutanty_reczne.py::test_npm_ci_i_npm_run_build_biegna_w_katalogu_web_kopii"
+
+# Stderr procesu laczy sie ze stdout: koncowka wyjscia npm ma oba kanaly.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "stderr=subprocess.STDOUT,"
+zamien = "stderr=subprocess.DEVNULL,"
+test = "tests/test_mutanty_reczne.py::test_blad_budowania_to_blad_narzedzia_z_kodem_poleceniem_i_koncowka_wyjscia"
+
+# OSError przy starcie procesu (brak npm) to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    except OSError as blad:
+        raise BladNarzedzia(f"nie da sie uruchomic {co}'''
+zamien = '''    except KeyError as blad:
+        raise BladNarzedzia(f"nie da sie uruchomic {co}'''
+test = "tests/test_mutanty_reczne.py::test_brak_npm_w_path_to_blad_narzedzia_a_nie_oserror"
+
+# Po limicie ginie cala grupa procesow (potomek npm), nie tylko lider.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "os.killpg(proces.pid, signal.SIGKILL)"
+zamien = "proces.kill()"
+test = "tests/test_mutanty_reczne.py::test_przekroczony_limit_budowania_to_blad_narzedzia_a_proces_npm_ginie"
+
+# Wyjscie w zlym UTF-8 nie wywala narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'errors="replace"'
+zamien = 'errors="strict"'
+test = "tests/test_mutanty_reczne.py::test_wyjscie_npm_w_zlym_utf8_nie_psuje_udanego_budowania"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: wymaga_frontu i pod_webem
+# ===========================================================================
+
+# Plik pod web/ wymaga frontu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''return (
+        pod_webem(mutant.plik)'''
+zamien = '''return (
+        False'''
+test = "tests/test_mutanty_reczne.py::test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e"
+
+# Plik pod tests/e2e/ wymaga frontu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'Path(mutant.plik).parts[:2] == ("tests", "e2e")'
+zamien = 'False'
+test = "tests/test_mutanty_reczne.py::test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e"
+
+# Test pod tests/e2e/ wymaga frontu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'Path(plik_testu).parts[:2] == ("tests", "e2e")'
+zamien = 'False'
+test = "tests/test_mutanty_reczne.py::test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e"
+
+# Plik tests/e2e_x.py to nie katalog tests/e2e (porownanie po czesciach sciezki).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'Path(mutant.plik).parts[:2] == ("tests", "e2e")'
+zamien = 'mutant.plik.startswith("tests/e2e")'
+test = "tests/test_mutanty_reczne.py::test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e"
+
+# Test w tests/e2e_x/ to nie katalog tests/e2e (porownanie po czesciach sciezki).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'Path(plik_testu).parts[:2] == ("tests", "e2e")'
+zamien = 'plik_testu.startswith("tests/e2e")'
+test = "tests/test_mutanty_reczne.py::test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e"
+
+# Sciezka testu to czesc node id PRZED separatorem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'mutant.test.split("::", 1)[0]'
+zamien = 'mutant.test.split("::", 1)[1]'
+test = "tests/test_mutanty_reczne.py::test_mutant_wymaga_frontu_tylko_gdy_plik_lub_test_leza_pod_web_albo_tests_e2e"
+
+# Odciecie czesci po separatorze jest potrzebne (tests/e2e::test_a).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'plik_testu = mutant.test.split("::", 1)[0]'
+zamien = 'plik_testu = mutant.test'
+test = "tests/test_mutanty_reczne.py::test_node_id_z_separatorem_tuz_po_katalogu_tests_e2e_tez_wymaga_frontu"
+
+# web musi byc pierwsza czescia sciezki, nie przedrostkiem napisu (webx/).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'Path(plik).parts[:1] == ("web",)'
+zamien = 'plik.startswith("web")'
+test = "tests/test_mutanty_reczne.py::test_front_jest_przebudowywany_po_mutacji_tylko_dla_pliku_pod_web"
+
+# web musi byc pierwsza czescia sciezki, nie dowolna (src/web/).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'Path(plik).parts[:1] == ("web",)'
+zamien = '"web" in Path(plik).parts'
+test = "tests/test_mutanty_reczne.py::test_front_jest_przebudowywany_po_mutacji_tylko_dla_pliku_pod_web"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: zbuduj_front (npm ci tylko bez node_modules)
+# ===========================================================================
+
+# node_modules musi byc katalogiem: zwykly plik nie zwalnia z npm ci.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '(kopia / "web" / "node_modules").is_dir()'
+zamien = '(kopia / "web" / "node_modules").exists()'
+test = "tests/test_mutanty_reczne.py::test_node_modules_bedacy_zwyklym_plikiem_nie_zwalnia_z_npm_ci"
+
+# node_modules szukamy w web/, nie w korzeniu kopii.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '(kopia / "web" / "node_modules").is_dir()'
+zamien = '(kopia / "node_modules").is_dir()'
+test = "tests/test_mutanty_reczne.py::test_front_z_istniejacym_katalogiem_node_modules_jest_tylko_budowany_bez_npm_ci"
+
+# Istniejace node_modules zwalnia z npm ci.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not zainstalowane:"
+zamien = "if True:"
+test = "tests/test_mutanty_reczne.py::test_front_z_istniejacym_katalogiem_node_modules_jest_tylko_budowany_bez_npm_ci"
+
+# Brak node_modules wymaga npm ci.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not zainstalowane:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_front_bez_zainstalowanych_zaleznosci_najpierw_instaluje_je_przez_npm_ci_potem_buduje"
+
+# Instalacja to npm ci (czysta, z lockfile), nie npm install.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '_npm(kopia, ["ci"], limit)'
+zamien = '_npm(kopia, ["install"], limit)'
+test = "tests/test_mutanty_reczne.py::test_front_bez_zainstalowanych_zaleznosci_najpierw_instaluje_je_przez_npm_ci_potem_buduje"
+
+# Budowanie to npm run build.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '_npm(kopia, ["run", "build"], limit)'
+zamien = '_npm(kopia, ["run", "builda"], limit)'
+test = "tests/test_mutanty_reczne.py::test_front_z_istniejacym_katalogiem_node_modules_jest_tylko_budowany_bez_npm_ci"
+
+# npm biegnie w katalogu web/ kopii.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'kopia / "web", dict(os.environ)'
+zamien = 'kopia, dict(os.environ)'
+test = "tests/test_mutanty_reczne.py::test_npm_ci_i_npm_run_build_biegna_w_katalogu_web_kopii"
+
+# Komunikat bledu niesie cale polecenie ("npm ci").
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '" ".join(["npm", *argumenty])'
+zamien = '"-".join(["npm", *argumenty])'
+test = "tests/test_mutanty_reczne.py::test_blad_npm_ci_konczy_sie_bledem_narzedzia_z_poleceniem_i_kodem_bez_budowania"
+
+# Kod npm rozny od 0 (takze ujemny, zabity sygnalem) to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod != 0:"
+zamien = "if kod > 0:"
+test = "tests/test_mutanty_reczne.py::test_npm_zabity_sygnalem_to_blad_narzedzia_z_kodem_sygnalu_a_nie_udane_budowanie"
+
+# Komunikat niesie KONIEC wyjscia, nie poczatek.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wyjscie[-KONCOWKA_WYJSCIA:]"
+zamien = "wyjscie[:KONCOWKA_WYJSCIA]"
+test = "tests/test_mutanty_reczne.py::test_blad_budowania_to_blad_narzedzia_z_kodem_poleceniem_i_koncowka_wyjscia"
+
+# Koncowka ma ograniczona dlugosc.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "KONCOWKA_WYJSCIA = 2000"
+zamien = "KONCOWKA_WYJSCIA = 20000"
+test = "tests/test_mutanty_reczne.py::test_blad_budowania_to_blad_narzedzia_z_kodem_poleceniem_i_koncowka_wyjscia"
+
+# index.html po buildzie jest dowodem: jego brak to blad.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not istnieje:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_budowanie_z_kodem_0_bez_index_html_to_blad_narzedzia_z_brakiem_dowodu"
+
+# index.html leży w src/cockpit/static.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '"cockpit" / "static" / "index.html"'
+zamien = '"cockpit" / "public" / "index.html"'
+test = "tests/test_mutanty_reczne.py::test_udane_budowanie_zostawia_index_html_w_static_kopii"
+
+# OSError przy sprawdzaniu node_modules to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        zainstalowane = (kopia / "web" / "node_modules").is_dir()
+    except OSError as blad:'''
+zamien = '''        zainstalowane = (kopia / "web" / "node_modules").is_dir()
+    except KeyError as blad:'''
+test = "tests/test_mutanty_reczne.py::test_nieczytelny_katalog_node_modules_to_blad_narzedzia_a_nie_wyjatek_systemowy"
+
+# OSError przy sprawdzaniu index.html to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        istnieje = indeks.is_file()
+    except OSError as blad:'''
+zamien = '''        istnieje = indeks.is_file()
+    except KeyError as blad:'''
+test = "tests/test_mutanty_reczne.py::test_nieczytelny_index_html_po_budowaniu_to_blad_narzedzia_a_nie_wyjatek_systemowy"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: _zabity (kolejnosc budowania) i limity
+# ===========================================================================
+
+# Mutant frontu/e2e buduje front przed przebiegiem bazowym.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if wymaga_frontu(mutant):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_mutant_z_testem_e2e_i_plikiem_spoza_web_buduje_front_raz_przed_baza_bez_przebudowy"
+
+# Mutant bez frontu w ogole nie woła npm.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if wymaga_frontu(mutant):"
+zamien = "if True:"
+test = "tests/test_mutanty_reczne.py::test_mutant_poza_web_z_testem_spoza_e2e_w_ogole_nie_wola_npm"
+
+# Po mutacji w web/ front jest budowany ponownie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if pod_webem(mutant.plik):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_mutant_w_web_zabija_test_tylko_dzieki_przebudowaniu_frontu_po_mutacji"
+
+# Po mutacji poza web/ front nie jest budowany ponownie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if pod_webem(mutant.plik):"
+zamien = "if True:"
+test = "tests/test_mutanty_reczne.py::test_mutant_z_testem_e2e_i_plikiem_spoza_web_buduje_front_raz_przed_baza_bez_przebudowy"
+
+# Pierwsze budowanie dostaje limit budowy, nie limit testu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if wymaga_frontu(mutant):
+            zbuduj_front(kopia, limit_budowy)'''
+zamien = '''if wymaga_frontu(mutant):
+            zbuduj_front(kopia, limit)'''
+test = "tests/test_mutanty_reczne.py::test_limit_budowy_z_wiersza_polecen_trafia_do_budowania_a_limit_testu_zostaje_osobny"
+
+# Budowanie po mutacji tez dostaje limit budowy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if pod_webem(mutant.plik):
+            zbuduj_front(kopia, limit_budowy)'''
+zamien = '''if pod_webem(mutant.plik):
+            zbuduj_front(kopia, limit)'''
+test = "tests/test_mutanty_reczne.py::test_limit_budowy_trafia_tez_do_przebudowania_frontu_po_mutacji_w_web"
+
+# main przekazuje do _zabity limit budowy z wiersza polecen.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "args.limit, args.limit_budowy"
+zamien = "args.limit, args.limit"
+test = "tests/test_mutanty_reczne.py::test_limit_budowy_z_wiersza_polecen_trafia_do_budowania_a_limit_testu_zostaje_osobny"
+
+# Domyslny limit budowania to 900 s.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "LIMIT_BUDOWY = 900.0"
+zamien = "LIMIT_BUDOWY = 600.0"
+test = "tests/test_mutanty_reczne.py::test_domyslny_limit_budowania_to_900_sekund"
+
+# Opcja --limit-budowy ma domyslna wartosc LIMIT_BUDOWY, nie limit testu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "type=_limit, default=LIMIT_BUDOWY"
+zamien = "type=_limit, default=LIMIT_DOMYSLNY"
+test = "tests/test_mutanty_reczne.py::test_bez_opcji_limit_budowy_front_dostaje_domyslny_limit_budowania"
+
+# Opcja --limit-budowy odrzuca zero, wartosci ujemne, nieskonczone i nie-liczby.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "type=_limit, default=LIMIT_BUDOWY"
+zamien = "type=float, default=LIMIT_BUDOWY"
+test = "tests/test_mutanty_reczne.py::test_limit_budowy_niedodatni_albo_nie_liczba_jest_bledem_wiersza_polecen"
+
+# Nazwa opcji to --limit-budowy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '"--limit-budowy", type'
+zamien = '"--limit-budowa", type'
+test = "tests/test_mutanty_reczne.py::test_limit_budowy_z_wiersza_polecen_trafia_do_budowania_a_limit_testu_zostaje_osobny"
+
+# ===========================================================================
+# tools/mutanty_reczne.py: --czy-front
+# ===========================================================================
+
+# Opcja --czy-front uruchamia tryb wykrywania (flaga ustawiana, gdy podana).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'action="store_true"'
+zamien = 'action="store_false"'
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# Tryb --czy-front niczego nie uruchamia po wypisaniu wyniku.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.czy_front:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# Po wypisaniu wyniku tryb konczy sie (kod 0), nie przechodzi do uruchamiania mutantow.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''            return 0
+        przezywajace'''
+zamien = '''            pass
+        przezywajace'''
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# front=1, gdy KTORYKOLWIEK mutant wymaga frontu (any, nie all).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(wymaga_frontu(m) for m in mutanty)"
+zamien = "all(wymaga_frontu(m) for m in mutanty)"
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# front=0, gdy zaden mutant nie wymaga frontu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(wymaga_frontu(m) for m in mutanty)"
+zamien = "True"
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# front=1, gdy mutant wymaga frontu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(wymaga_frontu(m) for m in mutanty)"
+zamien = "False"
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# Format wyjscia to front=<0|1>: odczyt w kroku workflow przez $GITHUB_OUTPUT.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'print(f"front={int('
+zamien = 'print(f"front:{int('
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# ===========================================================================
+# .github/workflows/mutation.yml: krok wykrycia frontu
+# ===========================================================================
+
+# Krok wykrycia ma id "front": z niego czytaja trzy kroki srodowiska.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "id: front"
+zamien = "id: frontx"
+test = "tests/test_workflow_mutacje.py::test_krok_wykrycia_frontu_ma_id_front_i_galaz_docelowa_w_env_a_nie_warunek_if"
+
+# Galaz docelowa PR idzie przez env (github.base_ref), nie inna zmienna.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''id: front
+        env:
+          BASE_REF: ${{ github.base_ref }}'''
+zamien = '''id: front
+        env:
+          BASE_REF: ${{ github.ref_name }}'''
+test = "tests/test_workflow_mutacje.py::test_krok_wykrycia_frontu_ma_id_front_i_galaz_docelowa_w_env_a_nie_warunek_if"
+
+# Wykrycie dostaje --czy-front: bez niego skrypt uruchomilby mutanty.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'mutanty_reczne.py --czy-front $tabele'
+zamien = 'mutanty_reczne.py $tabele'
+test = "tests/test_workflow_mutacje.py::test_skrypt_wykrycia_dostaje_opcje_czy_front_i_sciezki_wszystkich_zmienionych_tabel"
+
+# Wynik --czy-front trafia do $GITHUB_OUTPUT.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--czy-front $tabele >> "$GITHUB_OUTPUT"'
+zamien = '--czy-front $tabele'
+test = "tests/test_workflow_mutacje.py::test_pr_ze_zmieniona_tabela_przekazuje_wyjscie_skryptu_do_github_output"
+
+# Brak tabel to front=0 (nie front=1).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "front=0"'
+zamien = 'echo "front=1"'
+test = "tests/test_workflow_mutacje.py::test_pr_bez_zmienionej_tabeli_ma_front_0_w_wyjsciu_kroku_i_nie_wola_skryptu"
+
+# front=0 trafia do $GITHUB_OUTPUT.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "front=0" >> "$GITHUB_OUTPUT"'
+zamien = 'echo "front=0"'
+test = "tests/test_workflow_mutacje.py::test_pr_bez_zmienionej_tabeli_ma_front_0_w_wyjsciu_kroku_i_nie_wola_skryptu"
+
+# Gałąź "brak tabel" zalezy od pustej listy (-z), nie niepustej.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''if [ -z "$tabele" ]; then
+            echo "front=0"'''
+zamien = '''if [ -n "$tabele" ]; then
+            echo "front=0"'''
+test = "tests/test_workflow_mutacje.py::test_pr_bez_zmienionej_tabeli_ma_front_0_w_wyjsciu_kroku_i_nie_wola_skryptu"
+
+# Galaz docelowa PR jest pobierana przed porownaniem z nia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''git fetch origin "$BASE_REF"
+          tabele='''
+zamien = '''git fetch origin "main"
+          tabele='''
+test = "tests/test_workflow_mutacje.py::test_krok_wykrycia_pobiera_galaz_docelowa_pr_przed_porownaniem_z_nia"
+
+# Usuniete tabele nie licza sie (--diff-filter=d, nie D).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''--diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+zamien = '''--diff-filter=D "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+test = "tests/test_workflow_mutacje.py::test_pr_z_usunieta_tabela_ma_front_0_bo_usunieta_tabela_nie_jest_dowodem"
+
+# Zapytanie o tabele bez wykrywania przemianowan.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''--name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+zamien = '''--name-only --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+test = "tests/test_workflow_mutacje.py::test_tabele_do_wykrycia_frontu_sa_wybierane_tym_samym_zapytaniem_co_w_kroku_recznych_mutantow"
+
+# Porownanie z galaza docelowa PR, nie ze stala galezia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''"origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+zamien = '''"origin/main...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+test = "tests/test_workflow_mutacje.py::test_krok_wykrycia_pobiera_galaz_docelowa_pr_przed_porownaniem_z_nia"
+
+# Zapytanie ogranicza sie do katalogu tabel.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''-- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+zamien = '''-- 'tests/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0"'''
+test = "tests/test_workflow_mutacje.py::test_tabele_do_wykrycia_frontu_sa_wybierane_tym_samym_zapytaniem_co_w_kroku_recznych_mutantow"
+
+# ===========================================================================
+# .github/workflows/mutation.yml: kroki srodowiska (warunki if, Node, Chromium)
+# ===========================================================================
+
+# Node instaluje sie tylko dla front=1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- uses: actions/setup-node@v7\n        if: steps.front.outputs.front == '1'"
+zamien = "- uses: actions/setup-node@v7\n        if: steps.front.outputs.front == '0'"
+test = "tests/test_workflow_mutacje.py::test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+
+# Przegladarka instaluje sie tylko dla front=1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: przeglądarka dla mutantów ręcznych\n        if: steps.front.outputs.front == '1'"
+zamien = "- name: przeglądarka dla mutantów ręcznych\n        if: steps.front.outputs.front == '0'"
+test = "tests/test_workflow_mutacje.py::test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+
+# PostgreSQL startuje tylko dla front=1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: PostgreSQL dla mutantów ręcznych\n        id: postgres\n        if: steps.front.outputs.front == '1'"
+zamien = "- name: PostgreSQL dla mutantów ręcznych\n        id: postgres\n        if: steps.front.outputs.front == '0'"
+test = "tests/test_workflow_mutacje.py::test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+
+# Wykrycie frontu stoi PRZED krokiem Node (kolejnosc krokow).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''- name: front dla mutantów ręcznych
+        id: front
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF"
+          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0" >> "$GITHUB_OUTPUT"
+          else
+            # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
+            python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.front.outputs.front == '1'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json'''
+zamien = '''- uses: actions/setup-node@v7
+        if: steps.front.outputs.front == '1'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: front dla mutantów ręcznych
+        id: front
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF"
+          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          if [ -z "$tabele" ]; then
+            echo "front=0" >> "$GITHUB_OUTPUT"
+          else
+            # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
+            python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+          fi'''
+test = "tests/test_workflow_mutacje.py::test_krok_wykrycia_frontu_stoi_przed_krokami_ktore_czytaja_jego_wynik"
+
+# Node 22 (wersja frontu).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'node-version: "22"'
+zamien = 'node-version: "20"'
+test = "tests/test_workflow_mutacje.py::test_node_22_z_cache_npm_wedlug_lockfile_frontu"
+
+# Cache menedzera npm.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cache: npm"
+zamien = "cache: yarn"
+test = "tests/test_workflow_mutacje.py::test_node_22_z_cache_npm_wedlug_lockfile_frontu"
+
+# Klucz cache npm wedlug lockfile frontu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cache-dependency-path: web/package-lock.json"
+zamien = "cache-dependency-path: web/yarn.lock"
+test = "tests/test_workflow_mutacje.py::test_node_22_z_cache_npm_wedlug_lockfile_frontu"
+
+# Chromium z zaleznosciami systemowymi (--with-deps).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "playwright install --with-deps chromium"
+zamien = "playwright install chromium"
+test = "tests/test_workflow_mutacje.py::test_przegladarka_dla_mutantow_recznych_to_chromium_z_zaleznosciami_systemowymi"
+
+# Przegladarka to chromium.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "playwright install --with-deps chromium"
+zamien = "playwright install --with-deps firefox"
+test = "tests/test_workflow_mutacje.py::test_przegladarka_dla_mutantow_recznych_to_chromium_z_zaleznosciami_systemowymi"
+
+# ===========================================================================
+# .github/workflows/mutation.yml: PostgreSQL dla testow e2e
+# ===========================================================================
+
+# Obraz bazy to postgres:16.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "postgres:16"
+zamien = "postgres:15"
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_startuje_z_obrazem_uzytkownikiem_haslem_baza_i_portem_z_adresu"
+
+# Nieudane docker run oblewa krok (bez || true).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "postgres:16"
+zamien = "postgres:16 || true"
+test = "tests/test_workflow_mutacje.py::test_nieudane_docker_run_oblewa_krok_a_adres_bazy_nie_trafia_do_wyjscia_kroku"
+
+# Uzytkownik bazy zgodny z adresem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "POSTGRES_USER=cockpit"
+zamien = "POSTGRES_USER=postgres"
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_startuje_z_obrazem_uzytkownikiem_haslem_baza_i_portem_z_adresu"
+
+# Haslo bazy zgodne z adresem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "POSTGRES_PASSWORD=cockpit"
+zamien = "POSTGRES_PASSWORD=haslo"
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_startuje_z_obrazem_uzytkownikiem_haslem_baza_i_portem_z_adresu"
+
+# Nazwa bazy zgodna z adresem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "POSTGRES_DB=cockpit_test"
+zamien = "POSTGRES_DB=cockpit"
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_startuje_z_obrazem_uzytkownikiem_haslem_baza_i_portem_z_adresu"
+
+# Port bazy zgodny z adresem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "-p 5432:5432"
+zamien = "-p 5433:5432"
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_startuje_z_obrazem_uzytkownikiem_haslem_baza_i_portem_z_adresu"
+
+# Kontener startuje w tle (-d): krok czeka na jego zdrowie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "docker run -d --name postgres-mutanty"
+zamien = "docker run --name postgres-mutanty"
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_startuje_w_tle_bo_krok_czeka_na_jego_zdrowie"
+
+# Kontener ma healthcheck: bez niego docker inspect nie zwroci statusu zdrowia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--health-cmd "pg_isready -U cockpit -d cockpit_test" '
+zamien = '--no-healthcheck '
+test = "tests/test_workflow_mutacje.py::test_kontener_postgres_ma_healthcheck_gdy_krok_czeka_na_status_zdrowia_z_docker_inspect"
+
+# Petla ma wiele prob (nie jedna).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "seq 1 60"
+zamien = "seq 1 1"
+test = "tests/test_workflow_mutacje.py::test_krok_czeka_az_baza_bedzie_zdrowa_a_nie_sprawdza_jej_tylko_raz"
+
+# Warunek wyjscia z petli to status healthy, nie dowolny status.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '[ "$status" = "healthy" ]'
+zamien = '[ -n "$status" ]'
+test = "tests/test_workflow_mutacje.py::test_krok_czeka_az_baza_bedzie_zdrowa_a_nie_sprawdza_jej_tylko_raz"
+
+# Status healthy jest rozpoznawany (nie unhealthy).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '[ "$status" = "healthy" ]'
+zamien = '[ "$status" = "unhealthy" ]'
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Po osiagnieciu zdrowia petla sie konczy (break).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''zdrowa=1
+              break'''
+zamien = '''zdrowa=1'''
+test = "tests/test_workflow_mutacje.py::test_krok_czeka_az_baza_bedzie_zdrowa_a_nie_sprawdza_jej_tylko_raz"
+
+# Baza zaczyna jako niezdrowa: brak zdrowia po probach to blad.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "zdrowa=0"
+zamien = "zdrowa=1"
+test = "tests/test_workflow_mutacje.py::test_baza_ktora_nigdy_nie_staje_sie_zdrowa_oblewa_krok_z_komunikatem_bledu_i_bez_adresu"
+
+# Blad tylko gdy baza NIE jest zdrowa.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '[ "$zdrowa" != "1" ]'
+zamien = '[ "$zdrowa" = "1" ]'
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Brak zdrowia to ::error::, nie ostrzezenie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "::error::PostgreSQL'
+zamien = 'echo "::warning::PostgreSQL'
+test = "tests/test_workflow_mutacje.py::test_baza_ktora_nigdy_nie_staje_sie_zdrowa_oblewa_krok_z_komunikatem_bledu_i_bez_adresu"
+
+# Brak zdrowia konczy krok kodem 1 (exit 1).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''nic nie zmierzono"
+            exit 1'''
+zamien = '''nic nie zmierzono"
+            true'''
+test = "tests/test_workflow_mutacje.py::test_baza_ktora_nigdy_nie_staje_sie_zdrowa_oblewa_krok_z_komunikatem_bledu_i_bez_adresu"
+
+# Adres bazy trafia do wyjscia kroku (GITHUB_OUTPUT), skad czyta go krok recznych mutantow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''          echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> "$GITHUB_OUTPUT"'''
+zamien = '''          echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> /dev/null'''
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Adres bazy nie trafia do srodowiska calego joba (GITHUB_ENV): zobaczylby go mutmut.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''          echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> "$GITHUB_OUTPUT"'''
+zamien = '''          echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> "$GITHUB_ENV"'''
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Nazwa wyjscia kroku to adres (czyta je wyrazenie w kroku recznych mutantow).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "adres=postgresql'''
+zamien = '''echo "adresy=postgresql'''
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Krok PostgreSQL ma id postgres: z niego czyta krok recznych mutantow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''id: postgres'''
+zamien = '''id: postgresx'''
+test = "tests/test_workflow_mutacje.py::test_krok_postgres_ma_id_postgres_z_ktorego_krok_recznych_mutantow_czyta_adres_bazy"
+
+# Krok recznych mutantow czyta wyjscie adres kroku postgres, nie inne.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''steps.postgres.outputs.adres }}'''
+zamien = '''steps.postgres.outputs.adresy }}'''
+test = "tests/test_workflow_mutacje.py::test_krok_mutanty_reczne_dostaje_adres_bazy_z_wyjscia_kroku_postgres_obok_galezi_docelowej"
+
+# Zmienna adresu w kroku recznych mutantow to COCKPIT_TEST_DATABASE_URL.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''          COCKPIT_TEST_DATABASE_URL: ${{ steps.postgres.outputs.adres }}'''
+zamien = '''          COCKPIT_DATABASE_URL: ${{ steps.postgres.outputs.adres }}'''
+test = "tests/test_workflow_mutacje.py::test_krok_mutanty_reczne_dostaje_adres_bazy_z_wyjscia_kroku_postgres_obok_galezi_docelowej"
+
+# Krok mutmuta nie dostaje adresu bazy (testy z baza pod mutmutem na wspolnej bazie).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''      - name: mutanty zmienionych funkcji
+        env:
+          BASE_REF: ${{ github.base_ref }}'''
+zamien = '''      - name: mutanty zmienionych funkcji
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          COCKPIT_TEST_DATABASE_URL: ${{ steps.postgres.outputs.adres }}'''
+test = "tests/test_workflow_mutacje.py::test_adres_bazy_testowej_widzi_tylko_krok_mutanty_reczne_a_mutmut_go_nie_dostaje"
+
+# Zaden inny krok joba nie pisze do GITHUB_ENV (zmienna trafilaby do mutmuta).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "front=0" >> "$GITHUB_OUTPUT"'''
+zamien = '''echo "front=0" >> "$GITHUB_OUTPUT"; echo "X=1" >> "$GITHUB_ENV"'''
+test = "tests/test_workflow_mutacje.py::test_zaden_krok_zadania_mutation_nie_pisze_do_srodowiska_calego_joba"
+
+# Port w adresie bazy zgodny z kontenerem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "localhost:5432/cockpit_test"
+zamien = "localhost:5433/cockpit_test"
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Sterownik w adresie bazy to asyncpg (SQLAlchemy async).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "postgresql+asyncpg://cockpit:cockpit@localhost"
+zamien = "postgresql://cockpit:cockpit@localhost"
+test = "tests/test_workflow_mutacje.py::test_zdrowa_baza_konczy_krok_kodem_0_i_zapisuje_adres_bazy_testowej_do_wyjscia_kroku"
+
+# Kontener ma nazwe, o ktora pytamy przy sprawdzaniu zdrowia (nazwa z docker run).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--name postgres-mutanty"
+zamien = "--name postgres-inny"
+test = "tests/test_workflow_mutacje.py::test_krok_pyta_o_zdrowie_tego_samego_kontenera_ktory_uruchomil"
+
+# Zdrowie sprawdzamy u kontenera uruchomionego przez ten krok (nazwa w docker inspect).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "Status}}' postgres-mutanty"
+zamien = "Status}}' postgres-inny"
+test = "tests/test_workflow_mutacje.py::test_krok_pyta_o_zdrowie_tego_samego_kontenera_ktory_uruchomil"
+
+# Miedzy probami jest przerwa dodatniej dlugosci (sleep 2, nie 0).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "sleep 2"
+zamien = "sleep 0"
+test = "tests/test_workflow_mutacje.py::test_krok_robi_przerwe_dodatniej_dlugosci_miedzy_sprawdzeniami_zdrowia_bazy"
+
+# Nazwa opcji to --czy-front (argparse przyjmuje przedrostki, wiec skracamy nazwe).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '"--czy-front",'
+zamien = '"--czy-fron",'
+test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
+
+# Healthcheck kontenera bazy ma te same wartosci co usluga postgres joba e2e w ci.yml.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--health-interval 5s'
+zamien = '--health-interval 6s'
+test = "tests/test_workflow_mutacje.py::test_kontener_bazy_mutantow_recznych_ma_te_same_ustawienia_zdrowia_co_baza_testow_e2e_w_ci"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--health-timeout 5s'
+zamien = '--health-timeout 6s'
+test = "tests/test_workflow_mutacje.py::test_kontener_bazy_mutantow_recznych_ma_te_same_ustawienia_zdrowia_co_baza_testow_e2e_w_ci"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--health-retries 10'
+zamien = '--health-retries 11'
+test = "tests/test_workflow_mutacje.py::test_kontener_bazy_mutantow_recznych_ma_te_same_ustawienia_zdrowia_co_baza_testow_e2e_w_ci"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--health-cmd "pg_isready -U cockpit -d cockpit_test"'
+zamien = '--health-cmd "pg_isready -U postgres -d cockpit_test"'
+test = "tests/test_workflow_mutacje.py::test_kontener_bazy_mutantow_recznych_ma_te_same_ustawienia_zdrowia_co_baza_testow_e2e_w_ci"
+
+# Wersja akcji setup-node i wersja node jak w jobie e2e.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'actions/setup-node@v7'
+zamien = 'actions/setup-node@v6'
+test = "tests/test_workflow_mutacje.py::test_instalacja_node_w_mutantach_recznych_ma_ta_sama_akcje_i_wersje_node_co_job_e2e_w_ci"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'node-version: "22"'
+zamien = 'node-version: "20"'
+test = "tests/test_workflow_mutacje.py::test_instalacja_node_w_mutantach_recznych_ma_ta_sama_akcje_i_wersje_node_co_job_e2e_w_ci"
+
+# Kod wyjscia docker inspect decyduje: `;` zamiast `&&` uznaje blad z napisem healthy za zdrowa baze.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '&& [ "$status" = "healthy" ]'
+zamien = '; [ "$status" = "healthy" ]'
+test = "tests/test_workflow_mutacje.py::test_docker_inspect_zakonczony_bledem_nie_daje_zdrowej_bazy_nawet_gdy_wypisal_healthy"

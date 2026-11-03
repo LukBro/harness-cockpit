@@ -756,6 +756,81 @@ async def test_runner_odpowiada_na_zapytanie_postem_z_tokenem_i_wynikiem_operacj
     assert json.loads(zadania[0].content) == {"req_id": "r1", "ok": True, "wynik": {"pong": True}}
 
 
+def _cykl() -> dict:
+    d: dict = {}
+    d["d"] = d
+    return d
+
+
+@pytest.mark.parametrize(
+    ("wynik", "typ_bledu"),
+    [
+        (object(), "TypeError"),
+        ({"zbior": {1, 2}}, "TypeError"),
+        (float("nan"), "ValueError"),
+        ({"x": float("inf")}, "ValueError"),
+        (_cykl(), "ValueError"),
+    ],
+    ids=["obiekt", "zbior", "nan", "inf", "cykl"],
+)
+async def test_wynik_operacji_nieserializowalny_do_json_wraca_do_kokpitu_jako_blad_operacji(
+    monkeypatch, wynik, typ_bledu,
+):
+    # wykonaj() zwraca {"ok": True, "wynik": ...}; podmieniamy je, by wynik trafil prosto do klienta
+    async def wykonaj(cmd):
+        return {"req_id": cmd["req_id"], "ok": True, "wynik": wynik}
+
+    monkeypatch.setattr(operacje, "wykonaj", wykonaj)
+    zadania: list[httpx.Request] = []
+
+    def handler(request):
+        zadania.append(request)
+        return httpx.Response(204)
+
+    runner = RunnerKlient("http://kokpit.test", SEKRET)
+    async with _klient_z_atrapa(handler) as klient:
+        await asyncio.wait_for(
+            runner._odpowiedz_na_zapytanie(klient, {"type": "x", "req_id": "r-nieser"}), 5)
+
+    assert len(zadania) == 1
+    assert zadania[0].method == "POST"
+    assert str(zadania[0].url) == "http://kokpit.test/api/runners/odpowiedzi"
+    assert zadania[0].headers["Authorization"] == f"Bearer {SEKRET}"
+    odp = json.loads(zadania[0].content)
+    assert set(odp) == {"req_id", "ok", "blad", "kod"}
+    assert odp["req_id"] == "r-nieser"
+    assert odp["ok"] is False
+    assert odp["kod"] == "blad_operacji"
+    assert typ_bledu in odp["blad"]
+    assert "serializable" not in odp["blad"]
+    assert "object at" not in odp["blad"]
+    assert "Out of range" not in odp["blad"]
+    assert "Circular" not in odp["blad"]
+
+
+async def test_poprawny_wynik_operacji_idzie_do_kokpitu_bez_zmian_mimo_straznika_serializacji(
+    monkeypatch,
+):
+    async def wykonaj(cmd):
+        return {"req_id": cmd["req_id"], "ok": True, "wynik": {"a": [1, 2.5, None, "zażółć"]}}
+
+    monkeypatch.setattr(operacje, "wykonaj", wykonaj)
+    zadania: list[httpx.Request] = []
+
+    def handler(request):
+        zadania.append(request)
+        return httpx.Response(204)
+
+    runner = RunnerKlient("http://kokpit.test", SEKRET)
+    async with _klient_z_atrapa(handler) as klient:
+        await asyncio.wait_for(
+            runner._odpowiedz_na_zapytanie(klient, {"type": "x", "req_id": "r-ok"}), 5)
+
+    assert len(zadania) == 1
+    assert json.loads(zadania[0].content) == {
+        "req_id": "r-ok", "ok": True, "wynik": {"a": [1, 2.5, None, "zażółć"]}}
+
+
 @pytest.mark.parametrize("status", [200, 204])
 async def test_odpowiedz_przyjeta_przez_kokpit_niczego_nie_wypisuje(status, capsys):
     runner = RunnerKlient("http://kokpit.test", SEKRET)
