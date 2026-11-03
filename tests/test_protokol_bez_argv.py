@@ -4,7 +4,8 @@ Dwie strony protokołu:
 - kokpit: `POST /api/runs` nie przyjmuje pola `command`, a do kolejki runnera trafia
   nazwa operacji (sprawdzamy dane zdarzenia w kolejce, nie sam kod HTTP),
 - runner: nazwę operacji rozwiązuje na argv z własnej, lokalnej listy; polecenie z `command`
-  albo z nieznaną operacją kończy się `step_failed` i nie uruchamia żadnego procesu.
+  albo z nieznaną operacją kończy się `step_failed` i nie uruchamia żadnego procesu;
+  po przyjętym `step_failed` runner zgłasza `run_finished`, jak po kroku z procesem (HAR-78).
 
 Nazwy testów w języku dziedziny, nie technologii (CLAUDE.md).
 """
@@ -286,10 +287,13 @@ class _StrumienPolecen(httpx.AsyncByteStream):
 
 
 class _AtrapaKokpitu(httpx.AsyncBaseTransport):
-    """Kokpit: rejestracja, strumień z gotowymi poleceniami, heartbeat, przyjmowanie zdarzeń."""
+    """Kokpit: rejestracja, strumień z gotowymi poleceniami, heartbeat, przyjmowanie zdarzeń.
+    Zdarzenia z `odrzucane` (para run_id, kind) kokpit odrzuca kodem 400."""
 
-    def __init__(self, polecenia: list[dict]):
+    def __init__(self, polecenia: list[dict],
+                 odrzucane: frozenset[tuple[str, str]] = frozenset()):
         self.polecenia = polecenia
+        self.odrzucane = odrzucane
         self.zadania: list[httpx.Request] = []
 
     def zdarzenia(self) -> list[dict]:
@@ -309,7 +313,12 @@ class _AtrapaKokpitu(httpx.AsyncBaseTransport):
         if sciezka.endswith("/api/runners/stream"):
             return httpx.Response(200, stream=_StrumienPolecen(self.polecenia),
                                   headers={"content-type": "text/event-stream"})
-        if sciezka.endswith("/api/runners/heartbeat") or sciezka.endswith("/api/events"):
+        if sciezka.endswith("/api/events"):
+            z = json.loads(request.content)
+            if (z["run_id"], z["kind"]) in self.odrzucane:
+                return httpx.Response(400, json={"detail": "odrzucone"})
+            return httpx.Response(200, json={"status": "ok"})
+        if sciezka.endswith("/api/runners/heartbeat"):
             return httpx.Response(200, json={"status": "ok"})
         return httpx.Response(404)
 
@@ -319,7 +328,8 @@ def _krok(run_id: str, step_id: str, **pola) -> dict:
 
 
 @asynccontextmanager
-async def _runner_ze_strumieniem(polecenia: list[dict], monkeypatch):
+async def _runner_ze_strumieniem(polecenia: list[dict], monkeypatch,
+                                 odrzucane: frozenset[tuple[str, str]] = frozenset()):
     """Prawdziwy `Runner.listen` na atrapie kokpitu; zwraca (atrapa, argv wszystkich
     uruchomionych procesów). Procesy startują przez prawdziwe `create_subprocess_exec`."""
     uruchomione: list[tuple] = []
@@ -332,7 +342,7 @@ async def _runner_ze_strumieniem(polecenia: list[dict], monkeypatch):
         return proc
 
     monkeypatch.setattr(runner_client.asyncio, "create_subprocess_exec", exec_z_rejestrem)
-    atrapa = _AtrapaKokpitu(polecenia)
+    atrapa = _AtrapaKokpitu(polecenia, odrzucane)
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     async with zadanie_tla(runner.listen(), "nasluch runnera") as nasluch:
         try:
@@ -341,22 +351,23 @@ async def _runner_ze_strumieniem(polecenia: list[dict], monkeypatch):
             await runner.stop()
 
 
-async def _poczekaj_na_koniec_kroku(atrapa: _AtrapaKokpitu, run_id: str, step_id: str) -> None:
+async def _poczekaj_na_koniec_runu(atrapa: _AtrapaKokpitu, run_id: str, step_id: str) -> None:
+    """Czeka na `run_finished` — ostatnie zdarzenie runu po kroku (HAR-78). Polecenia ze
+    strumienia runner obsługuje po kolei, więc wcześniejsze polecenia są wtedy domknięte."""
     def gotowe() -> bool:
-        return any(kind in ("step_finished", "step_failed")
-                   for kind, _ in atrapa.kind_i_tekst(run_id, step_id))
+        return any(kind == "run_finished" for kind, _ in atrapa.kind_i_tekst(run_id, step_id))
 
-    await czekaj_na_warunek(gotowe, LIMIT_S, f"koniec kroku {run_id}/{step_id}")
+    await czekaj_na_warunek(gotowe, LIMIT_S, f"koniec runu {run_id}/{step_id}")
 
 
 async def test_runner_wykonuje_znana_operacje_z_lokalnej_listy_i_zglasza_jej_wynik(monkeypatch):
     polecenia = [_krok("run-1", "s0", operacja="szkielet")]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, _):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-1", "s0")
+        await _poczekaj_na_koniec_runu(atrapa, "run-1", "s0")
 
         assert uruchomione == [ARGV_SZKIELET]
         assert atrapa.kind_i_tekst("run-1", "s0") == [
-            ("output", "szkielet dziala"), ("step_finished", "kod wyjscia 0")]
+            ("output", "szkielet dziala"), ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
 
 
 async def test_runner_uruchamia_argv_z_biezacej_listy_operacji_a_nie_zaszyte_polecenie(
@@ -366,11 +377,12 @@ async def test_runner_uruchamia_argv_z_biezacej_listy_operacji_a_nie_zaszyte_pol
     monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {"drukuj": argv})
     polecenia = [_krok("run-1", "s0", operacja="drukuj")]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, _):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-1", "s0")
+        await _poczekaj_na_koniec_runu(atrapa, "run-1", "s0")
 
         assert uruchomione == [argv]
         assert atrapa.kind_i_tekst("run-1", "s0") == [
-            ("output", "z listy lokalnej"), ("step_finished", "kod wyjscia 0")]
+            ("output", "z listy lokalnej"), ("step_finished", "kod wyjscia 0"),
+            ("run_finished", "")]
 
 
 @pytest.mark.parametrize("command", [
@@ -381,10 +393,10 @@ async def test_runner_odrzuca_polecenie_z_argv_nawet_przy_znanej_operacji(monkey
         _krok("run-ok", "s1", operacja="szkielet"),
     ]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, _):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
         assert atrapa.kind_i_tekst("run-zly", "s7") == [
-            ("step_failed", "operacja spoza listy dozwolonych")]
+            ("step_failed", "operacja spoza listy dozwolonych"), ("run_finished", "")]
         assert uruchomione == [ARGV_SZKIELET]       # tylko drugie polecenie uruchomiło proces
 
 
@@ -394,10 +406,10 @@ async def test_runner_nie_uruchamia_procesu_dla_operacji_spoza_listy(monkeypatch
         _krok("run-ok", "s1", operacja="szkielet"),
     ]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, _):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
         assert atrapa.kind_i_tekst("run-zly", "s7") == [
-            ("step_failed", "operacja spoza listy dozwolonych")]
+            ("step_failed", "operacja spoza listy dozwolonych"), ("run_finished", "")]
         assert uruchomione == [ARGV_SZKIELET]
 
 
@@ -416,11 +428,12 @@ async def test_runner_odrzuca_polecenie_bez_poprawnej_nazwy_operacji_i_dalej_obs
         _krok("run-ok", "s1", operacja="szkielet"),
     ]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, nasluch):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
         assert atrapa.kind_i_tekst("run-zly", "s7") == [
-            ("step_failed", "operacja spoza listy dozwolonych")]
-        assert atrapa.kind_i_tekst("run-ok", "s1")[-1] == ("step_finished", "kod wyjscia 0")
+            ("step_failed", "operacja spoza listy dozwolonych"), ("run_finished", "")]
+        assert atrapa.kind_i_tekst("run-ok", "s1")[-2:] == [
+            ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
         assert uruchomione == [ARGV_SZKIELET]
         assert not nasluch.done()                   # nasłuch żyje: odmowa nie zrywa strumienia
 
@@ -444,11 +457,12 @@ async def test_polecenie_spoza_listy_bez_identyfikatorow_kroku_nie_trafia_do_kok
         _krok("run-ok", "s1", operacja="szkielet"),
     ]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, nasluch):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
         # do kokpitu dociera wylacznie drugie polecenie: odmowa bez adresata nie ma dokad pojsc
         assert {z["run_id"] for z in atrapa.zdarzenia()} == {"run-ok"}
-        assert atrapa.kind_i_tekst("run-ok", "s1")[-1] == ("step_finished", "kod wyjscia 0")
+        assert atrapa.kind_i_tekst("run-ok", "s1")[-2:] == [
+            ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
         assert uruchomione == [ARGV_SZKIELET]
         assert not nasluch.done()
         assert capsys.readouterr().err.splitlines().count(KOMUNIKAT_BEZ_ID) == 1  # cala linia
@@ -465,7 +479,7 @@ async def test_runner_otwiera_strumien_polecen_metoda_get(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "stream", stream_z_rejestrem)
     polecenia = [_krok("run-ok", "s1", operacja="szkielet")]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, _, _n):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
         assert metody == ["GET"]
 
@@ -486,11 +500,85 @@ async def test_brak_miejsca_przy_zapisie_odmowy_konczy_krok_przerwaniem_z_powode
         _krok("run-ok", "s1", operacja="szkielet"),
     ]
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, nasluch):
-        await _poczekaj_na_koniec_kroku(atrapa, "run-ok", "s1")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
         # odmowa nie zmiescila sie w buforze, wiec kokpit dostaje bezposrednie przerwanie
         assert atrapa.kind_i_tekst("run-zly", "s7") == [("step_aborted", KOMUNIKAT_BRAK_MIEJSCA)]
-        assert atrapa.kind_i_tekst("run-ok", "s1")[-1] == ("step_finished", "kod wyjscia 0")
+        assert atrapa.kind_i_tekst("run-ok", "s1")[-2:] == [
+            ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
+        assert uruchomione == [ARGV_SZKIELET]
+        assert not nasluch.done()
+
+
+# --- runner: koniec runu po odmowie (HAR-78 x HAR-159) ---------------------------------
+
+async def test_odmowa_operacji_spoza_listy_konczy_run_zgloszeniem_konca_po_nieudanym_kroku(
+    monkeypatch,
+):
+    polecenia = [
+        _krok("run-zly", "s7", operacja="nieznana"),
+        _krok("run-ok", "s1", operacja="szkielet"),
+    ]
+    async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, _):
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
+
+        zdarzenia = [z for z in atrapa.zdarzenia() if z["run_id"] == "run-zly"]
+        assert [(z["kind"], z["text"]) for z in zdarzenia] == [
+            ("step_failed", POWOD_SPOZA_LISTY), ("run_finished", "")]
+        koniec = zdarzenia[-1]
+        assert koniec["step_id"] == "s7"
+        # koszt nieznany to brak pomiaru, nie zero (measured_or_null)
+        assert koniec["cost_usd"] is None
+        assert koniec["cost_source"] == "unavailable"
+        assert uruchomione == [ARGV_SZKIELET]
+
+
+async def test_nieprzyjeta_odmowa_operacji_spoza_listy_nie_pozwala_zglosic_konca_runu(
+    monkeypatch, capsys,
+):
+    polecenia = [
+        _krok("run-zly", "s7", operacja="nieznana"),
+        _krok("run-ok", "s1", operacja="szkielet"),
+    ]
+    odrzucane = frozenset({("run-zly", "step_failed")})
+    async with _runner_ze_strumieniem(polecenia, monkeypatch, odrzucane) as (
+        atrapa, uruchomione, nasluch,
+    ):
+        # polecenia ze strumienia ida po kolei: koniec run-ok znaczy, ze odmowa jest domknieta
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
+
+        # runner probowal zglosic odmowe, kokpit jej nie przyjal - bez dowodu nie ma konca runu
+        assert atrapa.kind_i_tekst("run-zly", "s7") == [("step_failed", POWOD_SPOZA_LISTY)]
+        assert atrapa.kind_i_tekst("run-ok", "s1")[-2:] == [
+            ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
+        assert uruchomione == [ARGV_SZKIELET]
+        assert not nasluch.done()
+        assert ("koniec runu niewyslany: run_id=run-zly - "
+                "zdarzenie kroku step_failed nie zostalo przyjete") in (
+            capsys.readouterr().err.splitlines())
+
+
+async def test_brak_miejsca_przy_zgloszeniu_konca_runu_po_odmowie_konczy_krok_przerwaniem(
+    monkeypatch,
+):
+    prawdziwe_dopisz = Bufor.dopisz
+
+    def dopisz_z_pelnym_dyskiem_dla_konca_runu(self, zdarzenie):
+        if zdarzenie.get("run_id") == "run-zly" and zdarzenie.get("kind") == "run_finished":
+            raise BrakMiejsca("zapis run-zly.ndjson: OSError")
+        return prawdziwe_dopisz(self, zdarzenie)
+
+    monkeypatch.setattr(Bufor, "dopisz", dopisz_z_pelnym_dyskiem_dla_konca_runu)
+    polecenia = [
+        _krok("run-zly", "s7", operacja="nieznana"),
+        _krok("run-ok", "s1", operacja="szkielet"),
+    ]
+    async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, nasluch):
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
+
+        # tak samo jak po kroku z procesem: brak miejsca na koniec runu to przerwanie kroku
+        assert atrapa.kind_i_tekst("run-zly", "s7") == [
+            ("step_failed", POWOD_SPOZA_LISTY), ("step_aborted", KOMUNIKAT_BRAK_MIEJSCA)]
         assert uruchomione == [ARGV_SZKIELET]
         assert not nasluch.done()
 
