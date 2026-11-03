@@ -163,7 +163,8 @@ test = "tests/e2e/test_widok_runu.py::test_krok_z_trzema_subagentami_pokazuje_tr
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''{runId && status && <p>Stan runu: {napisStatusuRunu(status)}</p>}'''
-zamien = '''{runId && status && null}'''
+# napisStatusuRunu zostaje uzyta (void), inaczej tsc odrzuca build (TS6133) i narzedzie zwraca kod 2
+zamien = '''{runId && status && <p>{void napisStatusuRunu(status)}</p>}'''
 test = "tests/e2e/test_widok_runu.py::test_run_w_toku_pokazuje_stan_runu_w_toku"
 
 [[mutant]]
