@@ -15,7 +15,6 @@ Proces straznika i mini-runner startuja z cwd = korzen repozytorium i PYTHONPATH
 <korzen>/src (pod mutmut korzen to `mutants/`).
 """
 import asyncio
-import inspect
 import json
 import os
 import select
@@ -913,9 +912,9 @@ async def test_straznik_z_potokiem_od_runnera_na_stdin_daje_agentowi_pusty_stdin
     assert kod == 0
 
 
-def test_straznik_domyslnie_czyta_potok_od_runnera_ze_standardowego_wejscia():
+def test_straznik_uruchomiony_jako_modul_czyta_potok_od_runnera_ze_standardowego_wejscia():
     """Straznik uruchomiony jako modul czyta potok od runnera na stdin, czyli fd 0."""
-    assert inspect.signature(straznik.main).parameters["fd_wejscia"].default == 0
+    assert straznik.FD_WEJSCIA == 0
 
 
 # --- uruchomienie agenta pod straznikiem ----------------------------------------
@@ -1044,7 +1043,7 @@ def test_brak_separatora_przed_poleceniem_daje_kod_2_bez_skutkow_ubocznych(
 ):
     watkow_przed = threading.active_count()
 
-    kod = straznik.main(["--cwd", str(tmp_path)])
+    kod = straznik.main(["--cwd", str(tmp_path)], straznik.FD_WEJSCIA)
 
     assert kod == 2
     assert capsys.readouterr().err == "straznik: brak '--' przed poleceniem agenta\n"
@@ -1057,7 +1056,7 @@ def test_puste_polecenie_po_separatorze_daje_kod_2_bez_skutkow_ubocznych(
 ):
     watkow_przed = threading.active_count()
 
-    kod = straznik.main(["--cwd", str(tmp_path), "--"])
+    kod = straznik.main(["--cwd", str(tmp_path), "--"], straznik.FD_WEJSCIA)
 
     assert kod == 2
     assert capsys.readouterr().err == "straznik: puste polecenie agenta\n"
@@ -1067,7 +1066,7 @@ def test_puste_polecenie_po_separatorze_daje_kod_2_bez_skutkow_ubocznych(
 
 def test_brak_wymaganego_katalogu_roboczego_konczy_straznika_kodem_2(capsys):
     with pytest.raises(SystemExit) as info:
-        straznik.main(["--", "true"])
+        straznik.main(["--", "true"], straznik.FD_WEJSCIA)
 
     blad = capsys.readouterr().err
     assert info.value.code == 2

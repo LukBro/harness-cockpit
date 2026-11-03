@@ -35,6 +35,11 @@ from collections.abc import Mapping
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle agent ma na SIGTERM, potem SIGKILL
 KOD_BLEDU_STARTU = 127
 KROK_PETLI_S = 0.05
+# Karencja liczona probami, nie porownaniem zegara: `<` i `<=` na czasie ciaglym sa
+# nieodroznialne, wiec mutant takiego porownania przezywalby kazdy test.
+PROBY_KARENCJI = round(CZAS_NA_ZAKONCZENIE_S / KROK_PETLI_S)
+ROZMIAR_ODCZYTU = 4096
+FD_WEJSCIA = 0  # potok od runnera: jego EOF oznacza smierc runnera
 # Runner dopisuje katalog kokpitu do PYTHONPATH straznika (zeby ten importowal kod
 # z biezacego drzewa). Pierwotna wartosc przychodzi tu, a agent dostaje ja z powrotem:
 # inaczej narzedzia Pythona w repozytorium uzytkownika widzialyby pakiety kokpitu,
@@ -86,8 +91,7 @@ def _zakoncz_grupe(agent: subprocess.Popen) -> int:
     """SIGTERM do grupy, po karencji SIGKILL. Zwraca kod wyjscia agenta."""
     pgid = agent.pid  # start_new_session: pgid == pid lidera
     _wyslij_sygnal(pgid, signal.SIGTERM)
-    koniec = time.monotonic() + CZAS_NA_ZAKONCZENIE_S
-    while time.monotonic() < koniec:
+    for _ in range(PROBY_KARENCJI):
         agent.poll()  # odbiera lidera, inaczej zombie trzyma grupe przy zyciu
         if not _grupa_istnieje(pgid):
             break
@@ -99,7 +103,7 @@ def _zakoncz_grupe(agent: subprocess.Popen) -> int:
 
 def _czytaj_do_eof(zdarzenie: threading.Event, fd: int) -> None:
     try:
-        while os.read(fd, 4096):
+        while os.read(fd, ROZMIAR_ODCZYTU):
             pass
     except OSError:
         pass  # zamkniete albo bledne stdin = runner nieosiagalny
@@ -151,14 +155,14 @@ def _uruchom(
             return _zakoncz_grupe(agent)
 
 
-def main(argv: list[str], fd_wejscia: int = 0) -> int:
+def main(argv: list[str], fd_wejscia: int) -> int:
     if "--" not in argv:
         print("straznik: brak '--' przed poleceniem agenta", file=sys.stderr)
         return 2
     granica = argv.index("--")
     parser = argparse.ArgumentParser(prog="runner.straznik")
     parser.add_argument("--cwd", required=True)
-    parser.add_argument("--status-fd", type=int, default=None)
+    parser.add_argument("--status-fd", type=int)
     opcje = parser.parse_args(argv[:granica])
     polecenie = argv[granica + 1:]
     if not polecenie:
@@ -170,4 +174,4 @@ def main(argv: list[str], fd_wejscia: int = 0) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main(sys.argv[1:], FD_WEJSCIA))

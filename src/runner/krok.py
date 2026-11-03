@@ -10,6 +10,7 @@ wstrzykiwane - testy podstawiaja atrape zamiast `claude`.
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import signal
 import sys
@@ -118,12 +119,13 @@ async def _status_startu(plik) -> str | None:
             lambda: asyncio.StreamReaderProtocol(czytnik), plik
         )
         try:
-            dane = await czytnik.read(-1)
+            dane = await czytnik.read()
         finally:
             transport.close()
     finally:
         plik.close()
-    return dane.decode(errors="replace") if dane else None
+    # fsdecode nie rzuca (surrogateescape); straznik i tak pisze poprawny UTF-8
+    return os.fsdecode(dane) if dane else None
 
 
 def _porazka(powod: str, kod: int | None) -> WynikKroku:
@@ -146,7 +148,8 @@ async def wykonaj_krok(
             return _porazka(f"nie można wykonać migawki katalogu: {blad}", None)
 
     odczyt, zapis = os.pipe()
-    plik_statusu = os.fdopen(odczyt, "rb")
+    # FileIO: binarny odczyt bez bufora; connect_read_pipe i tak czyta przez fileno()
+    plik_statusu = io.FileIO(odczyt)
     try:
         proc = await asyncio.create_subprocess_exec(
             sys.executable, "-m", "runner.straznik",
