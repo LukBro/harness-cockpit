@@ -497,9 +497,9 @@ async def test_runner_po_powrocie_nie_dostaje_polecenia_przerwanego_runu_i_run_s
     assert await _sprawdz() == [przerwany]
     aktualny = await _run(swiat.browarek, R_STARY)     # nowy run po przerwaniu poprzedniego
     await bus.send_to_runner(
-        R_STARY, {"type": "run_step", "run_id": przerwany, "step_id": "s0", "command": ["echo"]})
+        R_STARY, {"type": "run_step", "run_id": przerwany, "step_id": "s0", "operacja": "szkielet"})
     await bus.send_to_runner(
-        R_STARY, {"type": "run_step", "run_id": aktualny, "step_id": "s0", "command": ["echo"]})
+        R_STARY, {"type": "run_step", "run_id": aktualny, "step_id": "s0", "operacja": "szkielet"})
     zdarzen_przed = len(await _zdarzenia(przerwany))
     polaczenia.append(R_STARY)
 
@@ -540,7 +540,7 @@ async def _aktualne(polecenie: dict, runner_id: str, tenant_id: str) -> bool:
 
 
 def _krok(run_id: str | None) -> dict:
-    polecenie: dict = {"type": "run_step", "step_id": "s0", "command": ["echo"]}
+    polecenie: dict = {"type": "run_step", "step_id": "s0", "operacja": "szkielet"}
     if run_id is not None:
         polecenie["run_id"] = run_id
     return polecenie

@@ -1,0 +1,153 @@
+# Tabela recznych mutantow HAR-159: model RunCreate (Field, ConfigDict, wzorzec), tablica
+# operacji runnera i zatwierdzony schemat kontraktu - poza zasiegiem mutmuta (kod 3).
+# tools/demo_szkielet.py: bez wiersza, bo jedyny test warunku "szkielet dziala" wymaga
+# PostgreSQL (COCKPIT_TEST_DATABASE_URL) i bez bazy jest pomijany, wiec mutant by przezyl.
+
+# --- src/cockpit/api/app.py: RunCreate ---------------------------------------------
+
+# Pole spoza modelu (stare `command`) to 422, nie ciche zignorowanie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'ConfigDict(extra="forbid")'
+zamien = 'ConfigDict(extra="ignore")'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_nie_moze_kazac_runnerowi_wykonac_dowolnej_komendy"
+
+# Bez podanej operacji kokpit wysyla runnerowi operacje "szkielet".
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(default="szkielet", max_length=64'
+zamien = 'Field(default="inna", max_length=64'
+test = "tests/test_protokol_bez_argv.py::test_uruchomienie_runu_bez_podanej_operacji_wysyla_runnerowi_operacje_szkielet"
+
+# Nazwa operacji ma najwyzej 64 znaki: 65 jest odrzucone (wzorzec ja przepuszcza).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'max_length=64, pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'max_length=65, pattern=r"^[A-Za-z0-9_.-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_odrzuca_nazwe_operacji_ze_znakami_spoza_dozwolonych_albo_za_dluga"
+
+# Wzorzec nazwy operacji: kotwica poczatku.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"[A-Za-z0-9_.-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_odrzuca_nazwe_operacji_ze_znakami_spoza_dozwolonych_albo_za_dluga"
+
+# Wzorzec nazwy operacji: kotwica konca.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Za-z0-9_.-]+"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_odrzuca_nazwe_operacji_ze_znakami_spoza_dozwolonych_albo_za_dluga"
+
+# Wzorzec nazwy operacji: kropka dozwolona.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Za-z0-9_-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_przyjmuje_nazwe_operacji_ze_znakow_dozwolonych_do_64_znakow"
+
+# Wzorzec nazwy operacji: myslnik dozwolony.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Za-z0-9_.]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_przyjmuje_nazwe_operacji_ze_znakow_dozwolonych_do_64_znakow"
+
+# Wzorzec nazwy operacji: podkreslnik dozwolony.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Za-z0-9.-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_przyjmuje_nazwe_operacji_ze_znakow_dozwolonych_do_64_znakow"
+
+# Wzorzec nazwy operacji: cyfry dozwolone.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Za-z_.-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_przyjmuje_nazwe_operacji_ze_znakow_dozwolonych_do_64_znakow"
+
+# Wzorzec nazwy operacji: wielkie litery dozwolone.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[a-z0-9_.-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_przyjmuje_nazwe_operacji_ze_znakow_dozwolonych_do_64_znakow"
+
+# Wzorzec nazwy operacji: male litery dozwolone.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Z0-9_.-]+$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_przyjmuje_nazwe_operacji_ze_znakow_dozwolonych_do_64_znakow"
+
+# Wzorzec nazwy operacji: co najmniej jeden znak (pusta nazwa jest odrzucona).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'pattern=r"^[A-Za-z0-9_.-]+$"'
+zamien = 'pattern=r"^[A-Za-z0-9_.-]*$"'
+test = "tests/test_protokol_bez_argv.py::test_kokpit_odrzuca_nazwe_operacji_ze_znakami_spoza_dozwolonych_albo_za_dluga"
+
+# Runnerowi trafia operacja wskazana w zadaniu, nie stala.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"operacja": body.operacja'
+zamien = '"operacja": "szkielet"'
+test = "tests/test_protokol_bez_argv.py::test_uruchomienie_runu_wysyla_runnerowi_operacje_wskazana_przez_uzytkownika"
+
+# --- src/runner/client.py: lokalna lista operacji -----------------------------------
+
+# Argv operacji "szkielet" to echo z napisem "szkielet dziala".
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '"szkielet": ("echo", "szkielet dziala"),'
+zamien = '"szkielet": ("echo", "szkielet nie dziala"),'
+test = "tests/test_protokol_bez_argv.py::test_lista_operacji_runnera_jest_tylko_do_odczytu_i_zna_tylko_szkielet"
+
+# Nazwa operacji na liscie to "szkielet".
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '"szkielet": ("echo", "szkielet dziala"),'
+zamien = '"szkielet2": ("echo", "szkielet dziala"),'
+test = "tests/test_protokol_bez_argv.py::test_runner_wykonuje_znana_operacje_z_lokalnej_listy_i_zglasza_jej_wynik"
+
+# Lista operacji jest tylko do odczytu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "MappingProxyType({"
+zamien = "dict({"
+test = "tests/test_protokol_bez_argv.py::test_lista_operacji_runnera_jest_tylko_do_odczytu_i_zna_tylko_szkielet"
+
+# Powod odmowy dla operacji spoza listy.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = 'POWOD_SPOZA_LISTY = "operacja spoza listy dozwolonych"'
+zamien = 'POWOD_SPOZA_LISTY = "operacja nieznana"'
+test = "tests/test_protokol_bez_argv.py::test_powod_odmowy_to_operacja_spoza_listy_dozwolonych"
+
+# --- web/openapi.json: zatwierdzony schemat RunCreate -------------------------------
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '"additionalProperties": false,'
+zamien = '"additionalProperties": true,'
+test = "tests/test_protokol_bez_argv.py::test_zatwierdzony_schemat_kontraktu_ma_run_create_zgodny_z_kodem_kokpitu"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = "\"maxLength\": 64,\n            \"pattern\": \"^[A-Za-z0-9_.-]+$\","
+zamien = "\"maxLength\": 65,\n            \"pattern\": \"^[A-Za-z0-9_.-]+$\","
+test = "tests/test_protokol_bez_argv.py::test_zatwierdzony_schemat_kontraktu_ma_run_create_zgodny_z_kodem_kokpitu"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '"pattern": "^[A-Za-z0-9_.-]+$",'
+zamien = '"pattern": "^[A-Za-z0-9_.]+$",'
+test = "tests/test_protokol_bez_argv.py::test_zatwierdzony_schemat_kontraktu_ma_run_create_zgodny_z_kodem_kokpitu"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = "\"default\": \"szkielet\",\n            \"maxLength\": 64,"
+zamien = "\"default\": \"inna\",\n            \"maxLength\": 64,"
+test = "tests/test_protokol_bez_argv.py::test_zatwierdzony_schemat_kontraktu_ma_run_create_zgodny_z_kodem_kokpitu"

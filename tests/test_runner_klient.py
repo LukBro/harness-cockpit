@@ -835,9 +835,13 @@ async def test_linie_strumienia_inne_niz_dane_nie_przerywaja_czytania_polecen(ca
     assert wpisy == ["strumien otwarty"]
 
 
-async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_wynik():
+async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_wynik(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        runner_client, "OPERACJE_RUNU", {"powiedz_hej": ("sh", "-c", "echo hej")})
     polecenie = {"type": "run_step", "run_id": "run-1", "step_id": "s0",
-                 "command": ["sh", "-c", "echo hej"]}
+                 "operacja": "powiedz_hej"}
     cialo = f"data: {json.dumps(polecenie)}\n\n".encode()
     transport, zadania = _nagrywajacy_kokpit(stream_body=cialo)
     runner, _ = _runner(transport=transport, zatrzymaj_po=1)

@@ -32,6 +32,7 @@ from cockpit.db.models import Base, Event, Run, Runner, RunStatus, Tenant
 from cockpit.services import zapytania_runnera as zapytania
 from cockpit.services.errors import StanNiemozliwy
 from cockpit.settings import Settings, settings
+from runner import client as runner_client
 from runner import operacje
 from runner.client import Runner as RunnerKlient
 from transport_asgi import TransportASGIStrumieniujacy
@@ -1022,13 +1023,15 @@ async def test_wolne_zapytanie_nie_blokuje_kroku_runu_wyslanego_tym_samym_strumi
         return {"skonczona": True}
 
     monkeypatch.setitem(operacje.OPERACJE, "wolna", wolna)
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {
+        "drukuj_x": (sys.executable, "-c", "print('x')")})
     run_id = await _utworz_run(swiat.browarek, B1)
     zapytanie = asyncio.create_task(_zapytaj_zespol(swiat.browarek, "wolna"))
     try:
         await asyncio.wait_for(ruszyla.wait(), 10)          # runner przyjal zapytanie i je wykonuje
 
         await bus.send_to_runner(B1, {"type": "run_step", "run_id": run_id, "step_id": "s0",
-                                      "command": [sys.executable, "-c", "print('x')"]})
+                                      "operacja": "drukuj_x"})
 
         async def krok_skonczony() -> bool:
             return ("step_finished", "kod wyjscia 0") in await _rodzaje_zdarzen(run_id)

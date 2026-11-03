@@ -102,9 +102,7 @@ async def main():
         wejscie.raise_for_status()
         naglowki = {"X-CSRF-Token": wejscie.json()["csrf"]}
         r = await c.post(f"{BASE}/api/runs", headers=naglowki,
-                         json={"workflow": "szkielet",
-                               "command": ["python3", "-c",
-                                           "print('krok wykonany na maszynie runnera')"]})
+                         json={"workflow": "szkielet"})
         run_id = r.json()["run_id"]
         print("run utworzony:", run_id)
         await asyncio.sleep(2.0)
@@ -118,7 +116,7 @@ async def main():
     server.should_exit = True
     await serve
     ok = szczegoly["status"] == "to_accept" and any(
-        "krok wykonany" in e["text"] for e in szczegoly["events"])
+        "szkielet dziala" in e["text"] for e in szczegoly["events"])
     print("\nWYNIK:", "szkielet dziala na wylot" if ok else "BLAD")
     return 0 if ok else 1
 
