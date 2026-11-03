@@ -162,7 +162,7 @@ def test_wczytany_skill_niesie_pola_brief_i_katalog(tmp_path: Path):
     )
     plik.write_text(
         plik.read_text(encoding="utf-8").replace(
-            "role: gatherer\n", "role: gatherer\nconsumes: [a]\nproduces: [b, c]\nneeds: [d]\n"
+            "role: gatherer\n", "role: gatherer\nconsumes: [a]\nproduces: [b]\nneeds: [d]\n"
         ),
         encoding="utf-8",
     )
@@ -174,7 +174,7 @@ def test_wczytany_skill_niesie_pola_brief_i_katalog(tmp_path: Path):
     assert skill.name == "Analiza"
     assert skill.role == Rola.gatherer
     assert skill.consumes == ["a"]
-    assert skill.produces == ["b", "c"]
+    assert skill.produces == ["b"]
     assert skill.needs == ["d"]
     assert skill.brief == "\nBrief z pusta linia na poczatku.\n"
     assert skill.katalog == plik.parent
@@ -1063,3 +1063,53 @@ def test_frontmatter_ktorego_parser_nie_zbuduje_to_dokladnie_blad_skilla(dodatek
         _meta("id: x\nname: X\nrole: author\n" + dodatek)
 
     assert type(wyjatek.value) is BlednySkill
+
+
+# --- rola bez zapisu oddaje jeden artefakt (HAR-160) ----------------------------
+
+
+def napisz_skill_z_produces(zrodlo: Path, id: str, role: str, produces: str) -> Path:
+    plik = napisz_skill_kokpitu(zrodlo, id, role=role)
+    plik.write_text(
+        plik.read_text(encoding="utf-8").replace(
+            f"role: {role}\n", f"role: {role}\nproduces: {produces}\n"
+        ),
+        encoding="utf-8",
+    )
+    return plik
+
+
+@pytest.mark.parametrize("rola", ["reviewer", "gatherer"])
+def test_skill_roli_bez_zapisu_z_dwoma_artefaktami_nie_przechodzi_wczytania(
+    tmp_path: Path, rola: str
+):
+    plik = napisz_skill_z_produces(tmp_path / "skills", "dwa", rola, "[a.md, b.md]")
+
+    with pytest.raises(BlednySkill) as blad:
+        wczytaj_skill(plik)
+
+    assert type(blad.value) is BlednySkill
+    assert "skill dwa" in str(blad.value)
+    assert f"rola {rola}" in str(blad.value)
+    assert "a.md" in str(blad.value)
+    assert "b.md" in str(blad.value)
+    assert "produces ma 2: a.md, b.md" in str(blad.value)
+
+
+def test_skill_autora_z_dwoma_artefaktami_jest_wczytany(tmp_path: Path):
+    plik = napisz_skill_z_produces(tmp_path / "skills", "dwa", "author", "[a.md, b.md]")
+
+    assert wczytaj_skill(plik).produces == ["a.md", "b.md"]
+
+
+def test_skill_wykonawcy_z_dwoma_artefaktami_jest_wczytany(tmp_path: Path):
+    plik = napisz_skill_z_produces(tmp_path / "skills", "dwa", "executor", "[a.md, b.md]")
+
+    assert wczytaj_skill(plik).produces == ["a.md", "b.md"]
+
+
+@pytest.mark.parametrize("rola", ["reviewer", "gatherer"])
+def test_skill_roli_bez_zapisu_z_jednym_artefaktem_jest_wczytany(tmp_path: Path, rola: str):
+    plik = napisz_skill_z_produces(tmp_path / "skills", "jeden", rola, "[a.md]")
+
+    assert wczytaj_skill(plik).produces == ["a.md"]

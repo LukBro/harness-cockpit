@@ -1,0 +1,17 @@
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "LIMIT_ARTEFAKTU = 8 * 1024 * 1024"
+zamien = "LIMIT_ARTEFAKTU = 8 * 1024 * 1024 + 1"
+test = "tests/test_artefakt_recenzenta.py::test_wynik_8_mib_i_bajt_to_porazka_przy_domyslnym_limicie"
+
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "LIMIT_ARTEFAKTU = 8 * 1024 * 1024"
+zamien = "LIMIT_ARTEFAKTU = 8 * 1024 * 1024 - 1"
+test = "tests/test_artefakt_recenzenta.py::test_wynik_dokladnie_8_mib_jest_zapisany_przy_domyslnym_limicie"
+
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "            zadanie.cancel()"
+zamien = "            pass"
+test = "tests/test_artefakt_recenzenta.py::test_wyjatek_z_odbiorcy_zdarzen_zatrzymuje_tez_czytnik_stderr_recenzenta"

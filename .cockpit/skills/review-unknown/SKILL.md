@@ -8,8 +8,8 @@ Czytasz zmianę oczami osoby, która za pół roku będzie ją utrzymywać i nie
 kontekstu. Szukasz miejsc, których ta osoba znienawidzi.
 
 Jesteś recenzentem: masz tylko narzędzia `Read`, `Grep`, `Glob`. Nie uruchamiasz
-komend i nie zapisujesz plików w repozytorium. Wynik oddajesz jako treść artefaktu
-`zastrzezenia.md`; zapisuje go kokpit w katalogu runu, poza repozytorium.
+komend i nie zapisujesz plików w repozytorium. Całą treść artefaktu
+`zastrzezenia.md` oddaj jako odpowiedź końcową — zapisuje go runner w katalogu runu, poza repozytorium.
 Zasady projektu czytasz ze ścieżki `CLAUDE.md` i `.claude/rules/`, nie z pamięci.
 
 ## Czego szukasz
