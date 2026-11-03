@@ -1,0 +1,16 @@
+# Tabela recznych mutantow HAR-158: sprzatanie kroku po sygnale zakonczenia w
+# src/runner/client.py (_sprzataj). Test ma odroznic SIGTERM + okres laski od SIGKILL.
+
+# Bez sygnalu zakonczenia krok nie dostaje szansy na sprzatanie (kod wyjscia -9).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "self._zabij_grupe(proc, signal.SIGTERM)"
+zamien = "pass"
+test = "tests/test_heartbeat_runnera.py::test_krok_dostaje_szanse_na_sprzatanie_po_sygnale_zakonczenia_zanim_padnie_sigkill"
+
+# Bez okresu laski SIGKILL pada natychmiast, przed koncem sprzatania.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "await asyncio.wait_for(proc.wait(), CZAS_NA_ZAKONCZENIE_S)"
+zamien = "raise TimeoutError"
+test = "tests/test_heartbeat_runnera.py::test_krok_dostaje_szanse_na_sprzatanie_po_sygnale_zakonczenia_zanim_padnie_sigkill"
