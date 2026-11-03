@@ -411,6 +411,7 @@ async def przerwij_runy_offline(
                 break
             s.add(Event(tenant_id=tenant_id, run_id=run_id, kind=KIND_PRZERWANIA,
                         text=POWOD_RUNNER_OFFLINE,
+                        text_full_len=len(POWOD_RUNNER_OFFLINE),
                         seq=await _nastepny_seq(s, run_id, tenant_id)))
             try:
                 await s.commit()

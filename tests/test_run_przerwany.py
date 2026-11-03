@@ -22,7 +22,7 @@ from types import SimpleNamespace
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -326,6 +326,42 @@ async def test_zdarzenie_przerwania_dostaje_kolejny_numer_w_obrebie_runu(swiat):
     assert zdarzenia[-1].tenant_id == swiat.browarek
 
 
+async def test_przerwanie_runu_offline_zapisuje_pelna_dlugosc_powodu(swiat):
+    run_id = await _run(swiat.browarek, R_STARY)
+
+    assert await _sprawdz() == [run_id]
+
+    przerwania = await _przerwania(run_id)      # wiersz z bazy, nie odpowiedz trasy
+    assert len(przerwania) == 1
+    assert przerwania[0].text == POWOD
+    assert przerwania[0].text_full_len == len(POWOD)
+    assert przerwania[0].text_truncated is False
+
+
+async def test_przerwanie_runu_offline_zmienia_status_tylko_w_zespole_runu(swiat):
+    # Run.id jest kluczem glownym, wiec danymi nie odroznimy zapisu z warunkiem zespolu
+    # od zapisu bez niego - sprawdzamy wykonane UPDATE tabeli run.
+    run_id = await _run(swiat.browarek, R_STARY)
+    aktualizacje: list[tuple[str, tuple]] = []
+
+    def przechwyc(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("UPDATE RUN "):
+            aktualizacje.append((statement, tuple(parameters)))
+
+    silnik = db_session.engine.sync_engine
+    event.listen(silnik, "before_cursor_execute", przechwyc)
+    try:
+        assert await _sprawdz() == [run_id]
+    finally:
+        event.remove(silnik, "before_cursor_execute", przechwyc)
+
+    assert len(aktualizacje) == 1
+    statement, parametry = aktualizacje[0]
+    warunek = statement.upper().split(" WHERE ", 1)[1]
+    assert "RUN.TENANT_ID =" in warunek
+    assert swiat.browarek in parametry
+
+
 async def test_przerwanie_jest_publikowane_przegladarce_z_numerem_zdarzenia_i_statusem(swiat):
     run_id = await _run(swiat.browarek, R_STARY)
     await _dopisz_zdarzenia(run_id, swiat.browarek, 2)
@@ -340,7 +376,7 @@ async def test_przerwanie_jest_publikowane_przegladarce_z_numerem_zdarzenia_i_st
 
     assert ev == {"seq": 3, "kind": "run_aborted", "text": POWOD, "step_id": "",
                   "status": "aborted", "reason": POWOD,
-                  "text_truncated": False, "text_full_len": None}
+                  "text_truncated": False, "text_full_len": len(POWOD)}
 
 
 async def test_przerwanie_nie_jest_publikowane_subskrybentom_innego_runu(swiat):

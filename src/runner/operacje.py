@@ -19,7 +19,7 @@ from typing import Any
 
 from cockpit.services.errors import BlednySkill
 from cockpit.services.skills import NAZWA_PLIKU, ZRODLA, _podziel
-from runner.zakres import PozaZakresem, Zakres
+from runner.zakres import PozaZakresem, Zakres, _jest_sekretem
 
 LIMIT_WYNIKOW = 2000
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
@@ -125,14 +125,16 @@ def _podkatalogi_w_glab(korzen: Path, widziane: set[Path]) -> list[Path]:
     do_przejrzenia = [korzen]
     while do_przejrzenia:
         katalog = do_przejrzenia.pop()
-        if katalog in widziane:
-            continue
-        widziane.add(katalog)
-        wynik.append(katalog)
-        with os.scandir(katalog) as wpisy:
-            for wpis in wpisy:
-                if wpis.is_dir(follow_symlinks=False):
-                    do_przejrzenia.append(katalog / wpis.name)
+        if katalog not in widziane:
+            widziane.add(katalog)
+            wynik.append(katalog)
+            with os.scandir(katalog) as wpisy:
+                for wpis in wpisy:
+                    # HAR-148/HAR-55: katalog sekretu pomijamy jak `*/*`; bez filtra po kropce.
+                    # is_dir() podaza za dowiazaniem, wiec dowiazania wykluczamy jawnie
+                    if (not wpis.is_symlink() and wpis.is_dir()
+                            and not _jest_sekretem(wpis.name)):
+                        do_przejrzenia.append(katalog / wpis.name)
     return wynik
 
 
