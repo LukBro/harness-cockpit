@@ -307,6 +307,10 @@ def test_brak_tokenu_nie_dodaje_niczego_do_rejestru_sekretow(monkeypatch, tmp_pa
 # --- instalacja maskowania ----------------------------------------------------
 
 
+def test_filtr_sekretow_jest_filtrem_biblioteki_logowania():
+    assert isinstance(_FILTR, logging.Filter)
+
+
 def test_lista_maskowanych_loggerow_to_uvicorn_i_httpx():
     assert _LOGGERY_MASKOWANE == ("uvicorn", "uvicorn.error", "uvicorn.access", "httpx")
 
