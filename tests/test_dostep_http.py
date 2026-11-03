@@ -18,7 +18,12 @@ from starlette.routing import Mount, Route
 
 from cockpit.api import bus
 from cockpit.api.app import app
-from cockpit.api.zaleznosci import kontekst_sesji, runner_z_tokenu, trasa_publiczna
+from cockpit.api.zaleznosci import (
+    kontekst_sesji,
+    kontekst_sesji_strumienia,
+    runner_z_tokenu,
+    trasa_publiczna,
+)
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, RolaWZespole, Run, RunStatus
 from sesja_testowa import (
@@ -278,6 +283,7 @@ async def test_heartbeat_z_tokenem_runnera_dziala_a_z_nieznanym_tokenem_nie(swia
 
 ZNACZNIKI = {
     "kontekst_sesji": kontekst_sesji,
+    "kontekst_sesji_strumienia": kontekst_sesji_strumienia,
     "runner_z_tokenu": runner_z_tokenu,
     "trasa_publiczna": trasa_publiczna,
 }
@@ -347,7 +353,7 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("GET", "/api/runs"): {"kontekst_sesji"},
         ("POST", "/api/runs"): {"kontekst_sesji"},
         ("GET", "/api/runs/{run_id}"): {"kontekst_sesji"},
-        ("GET", "/api/runs/{run_id}/stream"): {"kontekst_sesji"},
+        ("GET", "/api/runs/{run_id}/stream"): {"kontekst_sesji_strumienia"},
         ("GET", "/api/konto/ja"): {"kontekst_sesji"},
         ("GET", "/api/pliki"): {"kontekst_sesji"},
         ("GET", "/api/pliki/lista"): {"kontekst_sesji"},

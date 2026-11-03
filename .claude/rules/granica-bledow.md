@@ -72,3 +72,16 @@ istnieje i nadal jest łamana, w nowych kształtach:
   bezkońcowe ponawianie z bufora (HAR-66, wcześniej HAR-39 dla API).
 - **Segment URL z danych** (klucz ticketu, nazwa repo) przechodzi przez `quote(…, safe="")`
   (HAR-63).
+
+## Regresja (retro M1.6)
+
+Źródło: HAR-67 (-25), wcześniej HAR-13 i HAR-133 (pamięć backend-python).
+
+- **Wyjątki spoza hierarchii biblioteki** — parser YAML zamienia daty i liczby na typy
+  Pythona i na złych danych rzuca `ValueError`, `OverflowError`, `TypeError`, nie `YAMLError`.
+  Tłumaczysz każdy typ, który faktycznie leci na złych danych (HAR-67, `skills.py`).
+- **Brak klucza w odpowiedzi runnera** (`KeyError`) to błąd dziedziny (409 i stan bez zmian),
+  nie 500 (HAR-67, `katalog.py`).
+
+Co sprawdzić w review: każdy z powyższych kształtów = **-25**; każdy typ w krotce `except`
+ma test (zob. [test-odroznia-regule](test-odroznia-regule.md)).
