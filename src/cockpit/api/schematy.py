@@ -70,6 +70,16 @@ class RunNaLiscie(BaseModel):
     workflow: str
     status: RunStatus
     created_at: str
+    project_id: str | None
+
+
+class Projekt(BaseModel):
+    id: str
+    runner_id: str
+    path: str
+    name: str
+    stack: list[str]
+    created_at: str
 
 
 class PlikOdczytany(BaseModel):

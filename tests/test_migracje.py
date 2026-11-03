@@ -35,7 +35,7 @@ pytestmark = [
 ]
 
 TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja", "blokada_logowania",
-                 "definicja", "step_run"}
+                 "definicja", "step_run", "project"}
 TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole", "stepstatus"}
 
 
@@ -44,9 +44,20 @@ def cfg():
     c = Config(str(KORZEN / "alembic.ini"))
     c.set_main_option("script_location", str(KORZEN / "alembic"))
     c.set_main_option("sqlalchemy.url", URL.replace("%", "%%"))
-    command.downgrade(c, "base")  # czysty start, takze na pustej bazie
+    # Czysty start przez reset schematu, nie przez downgrade: reczne mutanty migracji
+    # (tests/mutanty_reczne) zostawiaja stan, ktorego niezmutowany downgrade nie cofnie
+    # (DROP INDEX nieistniejacego indeksu, DROP TABLE blokowany przez FK pozostalej tabeli).
+    # Baza z COCKPIT_TEST_DATABASE_URL jest wylacznie testowa (lokalnie tools/testy_pelne.sh,
+    # w CI kontener postgres-mutanty / job e2e), wiec reset schematu public jest bezpieczny.
+    _z_polaczeniem(_wyczysc_schemat)
     yield c
     command.downgrade(c, "base")
+
+
+def _wyczysc_schemat(c) -> None:
+    c.execute(text("DROP SCHEMA public CASCADE"))
+    c.execute(text("CREATE SCHEMA public"))
+    c.commit()
 
 
 def _z_polaczeniem(funkcja):
@@ -438,8 +449,8 @@ def test_cofniecie_do_migracji_0007_usuwa_tylko_tabele_katalogu_definicji(cfg):
 
     tabele, _ = _tabele_i_typy_w_public()
     # znikaja tabele z migracji powyzej 0007 (katalog definicji, stan krokow) i nic wiecej
-    assert not ({"definicja", "step_run"} & tabele)
-    assert (TABELE_MODELU - {"definicja", "step_run"}) <= tabele
+    assert not ({"definicja", "step_run", "project"} & tabele)
+    assert (TABELE_MODELU - {"definicja", "step_run", "project"}) <= tabele
 
 
 def test_ta_sama_definicja_tego_samego_runnera_i_projektu_nie_moze_wystapic_dwa_razy(cfg):
@@ -464,6 +475,110 @@ def test_definicja_o_innym_kluczu_mieszka_obok_pierwszej(cfg):
         return c.execute(text("SELECT count(*) FROM definicja")).one()[0]
 
     assert _z_polaczeniem(zapytaj) == 2
+
+
+# --- HAR-79: projekt zespolu (tabela `project`, kolumna `run.project_id`) ---
+
+
+def _wstaw_projekt(c, id_projektu: str = "p1", sciezka: str = "/repo", *, stos: str | None = None):
+    """Surowy INSERT: bez `stack`, gdy `stos` to None (sprawdza domyslna wartosc w bazie)."""
+    _wstaw_runnera(c)
+    _wstaw_projekt_obok(c, id_projektu, sciezka, stos=stos)
+
+
+def _wstaw_projekt_obok(c, id_projektu: str, sciezka: str, *, stos: str | None = None) -> None:
+    kolumna_stosu = ", stack" if stos is not None else ""
+    wartosc_stosu = ", CAST(:stos AS json)" if stos is not None else ""
+    c.execute(
+        text(
+            "INSERT INTO project (id, tenant_id, runner_id, path, name, created_at"
+            + kolumna_stosu + ") VALUES (:id, 't1', 'rn1', :sciezka, 'repo', now()"
+            + wartosc_stosu + ")"
+        ),
+        {"id": id_projektu, "sciezka": sciezka, **({"stos": stos} if stos is not None else {})},
+    )
+
+
+def test_projekt_zapisany_bez_stosu_ma_w_bazie_pusta_liste_stosu(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_projekt(c)
+        return c.execute(text("SELECT CAST(stack AS text) FROM project WHERE id = 'p1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == "[]"
+
+
+def test_stos_projektu_zapisany_w_bazie_wraca_jako_ta_sama_lista(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_projekt(c, stos='["python"]')
+        return c.execute(text("SELECT CAST(stack AS text) FROM project WHERE id = 'p1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == '["python"]'
+
+
+def test_ten_sam_katalog_tego_samego_runnera_nie_moze_byc_projektem_dwa_razy(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_projekt(c, "p1", "/repo")
+        _wstaw_projekt_obok(c, "p2", "/repo")
+
+    with pytest.raises(IntegrityError, match="uq_project_runner_path"):
+        _z_polaczeniem(zapytaj)
+
+
+def test_inny_katalog_tego_samego_runnera_mieszka_obok_pierwszego_projektu(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_projekt(c, "p1", "/repo")
+        _wstaw_projekt_obok(c, "p2", "/inne")
+        return c.execute(text("SELECT count(*) FROM project")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) == 2
+
+
+def test_run_bez_projektu_jest_poprawny_a_kolumna_projektu_dopuszcza_brak(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_zespol(c)
+        c.execute(Run.__table__.insert().values(id="r1", tenant_id="t1"))
+        return c.execute(text("SELECT project_id FROM run WHERE id = 'r1'")).one()[0]
+
+    assert _z_polaczeniem(zapytaj) is None
+
+
+def test_run_nie_moze_wskazywac_nieistniejacego_projektu(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_zespol(c)
+        c.execute(Run.__table__.insert().values(id="r1", tenant_id="t1", project_id="nie-ma"))
+
+    with pytest.raises(IntegrityError):
+        _z_polaczeniem(zapytaj)
+
+
+def test_cofniecie_do_migracji_0009_usuwa_tabele_projektu_i_kolumne_runu(cfg):
+    command.upgrade(cfg, "head")
+    tabele, _ = _tabele_i_typy_w_public()
+    assert "project" in tabele  # kontrast: przed cofnieciem tabela jest
+
+    command.downgrade(cfg, "0009")
+
+    tabele, _ = _tabele_i_typy_w_public()
+    assert "project" not in tabele
+    assert "run" in tabele
+
+    def kolumny(c):
+        return {r[0] for r in c.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'run'"))}
+
+    assert "project_id" not in _z_polaczeniem(kolumny)
 
 
 # --- HAR-78: stan krokow (tabela `step_run`, kolumna `event.attempt`) ---
@@ -524,7 +639,7 @@ def test_cofniecie_stanu_krokow_do_0008_usuwa_tabele_kolumne_i_typ(cfg):
     assert "stepstatus" not in typy
     assert "attempt" not in _kolumny_tabeli("event")
     # cofniecie tylko jednej migracji: reszta schematu zostaje
-    assert (TABELE_MODELU - {"step_run"}) <= tabele
+    assert (TABELE_MODELU - {"step_run", "project"}) <= tabele  # project powstaje w 0010
     assert (TYPY_ENUM - {"stepstatus"}) <= typy
 
 

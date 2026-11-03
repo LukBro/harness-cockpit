@@ -28,7 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import dostep, katalog, kroki, pliki_runnera, sesje
+from cockpit.services import dostep, katalog, kroki, pliki_runnera, projekty, sesje
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import BrakDostepu, NieZnaleziono
@@ -43,6 +43,7 @@ from .schematy import (
     ListaPlikow,
     PlikOdczytany,
     PlikZapisany,
+    Projekt,
     RunnerZameldowany,
     RunnerZespolu,
     RunNaLiscie,
@@ -401,13 +402,14 @@ async def odczytaj_runnery(
 
 
 @app.get("/api/runs", response_model=list[RunNaLiscie],
-         responses=odpowiedzi_bledow(401))
+         responses=odpowiedzi_bledow(401, 422))
 async def lista_runow(
+    project: str | None = Query(default=None, max_length=36),
     k: Kontekst = Depends(kontekst_sesji),
     s: AsyncSession = Depends(get_session),
 ) -> Any:
     dostep.wymagaj(k, Uprawnienie.podglad)
-    return await uslugi.runy_zespolu(s, k.tenant_id)
+    return await uslugi.runy_zespolu(s, k.tenant_id, project_id=project)
 
 
 @app.get("/api/katalog", response_model=Katalog,
@@ -428,6 +430,33 @@ async def odswiez_katalog(
 ) -> Any:
     dostep.wymagaj(k, Uprawnienie.podglad)   # odswiezenie nie zmienia plikow uzytkownika
     return await katalog.odswiez_katalog(s, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)
+
+
+class NowyProjekt(BaseModel):
+    runner_id: str = Field(min_length=1, max_length=36)
+    path: str = Field(min_length=1, max_length=4096)
+
+
+@app.get("/api/projects", response_model=list[Projekt],
+         responses=odpowiedzi_bledow(401))
+async def lista_projektow(
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await projekty.projekty_zespolu(s, k.tenant_id)
+
+
+@app.post("/api/projects", response_model=Projekt, status_code=201,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def podlacz_projekt(
+    body: NowyProjekt,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)   # przed zapytaniem runnera
+    return await projekty.podlacz_projekt(
+        s, k.tenant_id, body.runner_id, body.path, bus.connected_runner_ids(), bus.zapytaj)
 
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
