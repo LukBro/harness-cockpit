@@ -15,7 +15,9 @@ baze (`alembic downgrade base`) i port 8799 w demo, wiec ida sekwencyjnie.
 """
 from __future__ import annotations
 
+import logging
 import os
+import sys
 
 import pytest
 
@@ -32,6 +34,27 @@ def _katalog_stanu_runnera_w_katalogu_testu(tmp_path, monkeypatch):
     """HAR-45: bufor zdarzen runnera leży w katalogu stanu. Żaden test nie pisze do
     ~/.local/state; podprocesy testów dziedziczą tę zmienną środowiskową."""
     monkeypatch.setenv("COCKPIT_STATE_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _maskowanie_sekretow_nie_przecieka_miedzy_testami():
+    """HAR-86: `main()` runnera uruchamiane w procesie testów instaluje filtr na
+    loggerze korzenia, a `get_token` rejestruje sekret w rejestrze modułu. Bez
+    sprzątania krótki token jednego testu maskuje komunikaty logów innego."""
+    yield
+    # Modul niezaimportowany = brak stanu; conftest kopiowany przez `pytester`
+    # trafia tez do srodowisk, w ktorych `runner.maskowanie` nie istnieje.
+    maskowanie = sys.modules.get("runner.maskowanie")
+    if maskowanie is None:
+        return
+    maskowanie._SEKRETY.clear()
+    obiekty = [logging.lastResort] if logging.lastResort is not None else []
+    for nazwa in ("", *maskowanie._LOGGERY_MASKOWANE):
+        logger = logging.getLogger(nazwa or None)
+        obiekty += [logger, *logger.handlers]
+    for obiekt in obiekty:
+        for f in [f for f in obiekt.filters if isinstance(f, maskowanie.FiltrSekretow)]:
+            obiekt.removeFilter(f)
 
 
 @pytest.fixture(autouse=True)
