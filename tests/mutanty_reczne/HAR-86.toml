@@ -1,0 +1,51 @@
+# Tabela recznych mutantow HAR-86: stale, wyrazenia regularne i klasa filtru w
+# maskowanie.py oraz wywolanie instalacji w cockpit/__main__.py - poza zasiegiem mutmuta (kod 3).
+
+# Start kokpitu instaluje maskowanie logow.
+[[mutant]]
+plik = "src/cockpit/__main__.py"
+szukaj = "    zainstaluj_maskowanie()"
+zamien = "    pass"
+test = "tests/test_sekrety_w_logach.py::test_start_kokpitu_instaluje_maskowanie_logow_serwera"
+
+# Rejestr sekretow jest zmiennym zbiorem.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "_SEKRETY: set[str] = set()"
+zamien = "_SEKRETY: set[str] = frozenset()"
+test = "tests/test_sekrety_w_logach.py::test_zarejestrowany_token_w_tresci_logu_jest_zamaskowany"
+
+# Pusty srodek nazwy COCKPIT__TOKEN tez jest zmienna tokenu.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = 'r"COCKPIT_.*_TOKEN"'
+zamien = 'r"COCKPIT_.+_TOKEN"'
+test = "tests/test_sekrety_w_logach.py::test_zmienna_cockpit_token_z_pustym_srodkiem_nazwy_jest_maskowana"
+
+# Token bearer maskowany jest w calosci, takze z kropkami i myslnikiem.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = 'r"(Bearer\s+)(\S+)"'
+zamien = 'r"(Bearer\s+)(\w+)"'
+test = "tests/test_sekrety_w_logach.py::test_naglowek_bearer_z_tokenem_z_kropkami_i_myslnikiem_jest_zamaskowany_w_calosci"
+
+# Filtr sekretow jest filtrem biblioteki logging.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "class FiltrSekretow(logging.Filter):"
+zamien = "class FiltrSekretow:"
+test = "tests/test_sekrety_w_logach.py::test_filtr_sekretow_jest_filtrem_biblioteki_logowania"
+
+# Logger klienta http jest na liscie maskowanych.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = '"uvicorn.access", "httpx")'
+zamien = '"uvicorn.access")'
+test = "tests/test_sekrety_w_logach.py::test_lista_maskowanych_loggerow_to_uvicorn_i_httpx"
+
+# Wspolny filtr maskuje sekrety: zwykly filtr biblioteki przepuscilby token do logu.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "_FILTR = FiltrSekretow()"
+zamien = "_FILTR = logging.Filter()"
+test = "tests/test_sekrety_w_logach.py::test_po_instalacji_log_z_loggera_potomnego_korzenia_jest_zamaskowany"
