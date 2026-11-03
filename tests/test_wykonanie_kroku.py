@@ -262,7 +262,7 @@ async def test_recenzent_piszacy_tylko_do_katalogu_runu_jest_zakonczony(run):
     (run / "istniejacy.txt").write_text("stare")
 
     wynik, _ = await uruchom(
-        spec(Rola.reviewer, wyjscia=[".cockpit/_run/x.md"]),
+        spec(Rola.reviewer),
         atrapa(zapisz={".cockpit/_run/x.md": "werdykt: ok"}),
         run,
     )
@@ -277,7 +277,7 @@ async def test_pliki_runu_obecne_przed_krokiem_recenzenta_nie_sa_naruszeniem(run
     skill.write_text("skill skopiowany przez runner przed krokiem")
 
     wynik, _ = await uruchom(
-        spec(Rola.reviewer, wyjscia=[".cockpit/_run/x.md"]),
+        spec(Rola.reviewer),
         atrapa(zapisz={".cockpit/_run/x.md": "werdykt: ok"}),
         run,
     )
@@ -289,7 +289,7 @@ async def test_pliki_runu_obecne_przed_krokiem_recenzenta_nie_sa_naruszeniem(run
 
 async def test_wyjatek_katalogu_runu_nie_chroni_zapisu_poza_nim(run):
     wynik, _ = await uruchom(
-        spec(Rola.reviewer, wyjscia=[".cockpit/_run/x.md"]),
+        spec(Rola.reviewer),
         atrapa(zapisz={".cockpit/_run/x.md": "werdykt", "nowy.txt": "poza"}),
         run,
     )
@@ -299,7 +299,7 @@ async def test_wyjatek_katalogu_runu_nie_chroni_zapisu_poza_nim(run):
 
 async def test_zapis_obok_katalogu_runu_w_cockpit_jest_naruszeniem(run):
     wynik, _ = await uruchom(
-        spec(Rola.reviewer, wyjscia=[".cockpit/_run/x.md"]),
+        spec(Rola.reviewer),
         atrapa(zapisz={".cockpit/_run/x.md": "werdykt", ".cockpit/inny.md": "poza"}),
         run,
     )
@@ -340,16 +340,6 @@ async def test_recenzent_z_kodem_bledu_dostaje_powod_z_kodem_a_nie_z_naruszenia(
     )
 
     assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
-
-
-async def test_brak_artefaktu_recenzenta_ma_pierwszenstwo_przed_naruszeniem(run):
-    wynik, _ = await uruchom(
-        spec(Rola.reviewer, wyjscia=[".cockpit/_run/x.md"]),
-        atrapa(zapisz={"nowy.txt": "poza"}),
-        run,
-    )
-
-    assert wynik == WynikKroku("nieudany", "brak artefaktu .cockpit/_run/x.md", 0)
 
 
 # --- zdarzenia wyjscia -------------------------------------------------------

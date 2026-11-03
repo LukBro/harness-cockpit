@@ -24,5 +24,5 @@ Pierwsza linia to `TAK` albo `NIE`. Pod nią dowód: komenda, kod wyjścia, koń
 
 ## Granice
 
-- Nie zmieniaj plików repozytorium; artefakt `smoke.md` trafia do katalogu runu.
+- Nie zmieniaj plików repozytorium; całą treść artefaktu `smoke.md` oddaj jako odpowiedź końcową — zapisuje go runner w katalogu runu, poza repozytorium.
 - Nie commituj i nie pushuj.

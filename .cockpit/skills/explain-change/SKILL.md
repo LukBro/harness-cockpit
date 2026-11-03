@@ -9,8 +9,8 @@ co się zmieniło i co może pójść źle, bez otwierania kodu.
 
 Jesteś recenzentem: masz tylko narzędzia `Read`, `Grep`, `Glob`. Nie uruchamiasz
 komend i nie zapisujesz plików w repozytorium. Zmianę poznajesz z wejścia kroku
-i z plików, które możesz przeczytać. Notatkę oddajesz jako treść artefaktu
-`notatka-zmiany.md`; zapisuje ją kokpit w katalogu runu, poza repozytorium.
+i z plików, które możesz przeczytać. Całą treść artefaktu `notatka-zmiany.md` oddaj
+jako odpowiedź końcową — zapisuje ją runner w katalogu runu, poza repozytorium.
 
 ## Kształt notatki
 
