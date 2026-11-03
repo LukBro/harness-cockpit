@@ -15,7 +15,9 @@ import signal
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from types import MappingProxyType
+from typing import Any
 
 import httpx
 
@@ -24,6 +26,26 @@ from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
 
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
+
+# Operacje kroku runu (HAR-159). Nowa operacja = nowy wpis. Lista jest LOKALNA: kokpit
+# podaje tylko nazwe operacji, a argv powstaje tu, nigdy z danych kokpitu.
+OPERACJE_RUNU: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "szkielet": ("echo", "szkielet dziala"),
+})
+POWOD_SPOZA_LISTY = "operacja spoza listy dozwolonych"
+
+
+def argv_operacji(cmd: Mapping[str, Any]) -> tuple[str, ...] | None:
+    """Argv z lokalnej listy dla polecenia `run_step`; None, gdy polecenia nie wolno wykonac.
+
+    Odrzuca polecenie z kluczem `command` (stary protokol), z nazwa niebedaca napisem
+    i z nazwa spoza `OPERACJE_RUNU`."""
+    if "command" in cmd:
+        return None
+    nazwa = cmd.get("operacja")
+    if not isinstance(nazwa, str):
+        return None
+    return OPERACJE_RUNU.get(nazwa)
 
 
 class StrumienZamkniety(Exception):
@@ -396,6 +418,28 @@ class Runner:
             asyncio.current_task().uncancel()
         return None
 
+    async def _krok_z_polecenia(self, client: httpx.AsyncClient, cmd: dict) -> None:
+        """Rozwiazuje nazwe operacji na argv z lokalnej listy; polecenia spoza listy
+        konczy `step_failed` bez startu procesu."""
+        argv = argv_operacji(cmd)
+        if argv is not None:
+            await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
+            return
+        run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
+        if not isinstance(run_id, str) or not isinstance(step_id, str):
+            print("polecenie bez run_id/step_id odrzucone: operacja spoza listy", file=sys.stderr)
+            return
+        try:
+            await self.send_event(
+                client, run_id=run_id, step_id=step_id,
+                kind="step_failed", text=POWOD_SPOZA_LISTY)
+        except BrakMiejsca:
+            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+            )
+
     async def _nasluchuj(self) -> None:
         async with httpx.AsyncClient(timeout=None, transport=self._transport) as client:
             await self.register(client)
@@ -422,9 +466,7 @@ class Runner:
                             print("strumien otwarty", file=sys.stderr)
                             self._proba_laczenia = 0
                         elif cmd.get("type") == "run_step":
-                            await self.run_command(
-                                client, cmd["run_id"], cmd["step_id"], cmd["command"]
-                            )
+                            await self._krok_z_polecenia(client, cmd)
                         elif "req_id" in cmd:
                             # osobne zadanie: wolna operacja nie wstrzymuje czytania strumienia
                             zadanie = asyncio.create_task(

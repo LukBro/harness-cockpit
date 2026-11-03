@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -115,8 +115,10 @@ class RunnerRegister(BaseModel):
 
 
 class RunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")   # bez `command`: kokpit nie podaje argv (HAR-159)
+
     workflow: str = "szkielet"
-    command: list[str] = ["echo", "szkielet dziala"]
+    operacja: str = Field(default="szkielet", max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     ticket_id: str | None = Field(default=None, min_length=1, max_length=200)  # kolumna String(200)
     potwierdz_rownolegly: bool = False
 
@@ -243,7 +245,7 @@ async def create_run(
     )
     await bus.send_to_runner(
         run.runner_id,
-        {"type": "run_step", "run_id": run.id, "step_id": "s0", "command": body.command},
+        {"type": "run_step", "run_id": run.id, "step_id": "s0", "operacja": body.operacja},
     )
     return RunUtworzony(run_id=run.id)
 

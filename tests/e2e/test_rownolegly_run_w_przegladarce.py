@@ -58,7 +58,7 @@ def aktywny_run(runner_online, adres_kokpitu, dane_wlasciciela) -> str:
         assert logowanie.status_code == 200, f"logowanie nie powiodlo sie: {logowanie.text}"
         odpowiedz = klient.post(
             "/api/runs",
-            json={"workflow": "szkielet", "ticket_id": TICKET, "command": ["sleep", "30"]},
+            json={"workflow": "szkielet", "ticket_id": TICKET, "operacja": "czekaj"},
             headers={"X-CSRF-Token": logowanie.json()["csrf"]},
         )
     assert odpowiedz.status_code in (200, 201), f"aktywny run nie powstal: {odpowiedz.text}"

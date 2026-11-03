@@ -1106,9 +1106,11 @@ async def test_krok_ignorujacy_sygnal_zakonczenia_uruchomiony_z_nasluchu_jest_za
     widzi, bo `run_command` zdejmuje proces z `_procesy` w `finally`."""
     monkeypatch.setattr(runner_client, "CZAS_NA_ZAKONCZENIE_S", 0.3)
     plik_pid = tmp_path / "pid-kroku"
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {
+        "ignoruj_sigterm": tuple(_program_ignorujacy_sigterm(plik_pid))})
     atrapa = _AtrapaKokpitu(polecenia=[{
         "type": "run_step", "run_id": "run-1", "step_id": "s0",
-        "command": _program_ignorujacy_sigterm(plik_pid),
+        "operacja": "ignoruj_sigterm",
     }])
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     proc = None
@@ -1246,9 +1248,11 @@ async def test_polecenie_kroku_ktore_przyszlo_w_trakcie_zatrzymywania_runnera_ni
 
     monkeypatch.setattr(runner_client.asyncio, "create_subprocess_exec", exec_z_rejestrem)
     dosylka = asyncio.Event()
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {
+        "spij": (sys.executable, "-c", f"import time; time.sleep(60)  # {znacznik}")})
     atrapa = _AtrapaKokpitu(polecenia_po=dosylka, polecenia=[{
         "type": "run_step", "run_id": "run-1", "step_id": "s0",
-        "command": [sys.executable, "-c", f"import time; time.sleep(60)  # {znacznik}"],
+        "operacja": "spij",
     }])
     runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA, transport=atrapa)
     try:
