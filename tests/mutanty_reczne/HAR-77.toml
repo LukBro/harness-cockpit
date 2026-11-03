@@ -73,6 +73,7 @@ szukaj = """
         if (!r.ok) throw new Error(String(r.status));
 """
 zamien = """
+        /* usuniete */
 """
 test = "tests/e2e/test_tryb_tylko_do_odczytu.py::test_blad_pobrania_katalogu_pokazuje_komunikat_zamiast_listy"
 
