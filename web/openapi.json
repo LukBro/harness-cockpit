@@ -669,6 +669,19 @@
             "title": "Potwierdz Rownolegly",
             "type": "boolean"
           },
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
           "ticket_id": {
             "anyOf": [
               {
@@ -2408,6 +2421,16 @@
               }
             },
             "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
           },
           "409": {
             "content": {

@@ -125,6 +125,7 @@ class RunCreate(BaseModel):
     operacja: str = Field(default="szkielet", max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     ticket_id: str | None = Field(default=None, min_length=1, max_length=200)  # kolumna String(200)
     potwierdz_rownolegly: bool = False
+    project_id: str | None = Field(default=None, min_length=1, max_length=36)  # kolumna String(36)
 
 
 class EventIn(BaseModel):
@@ -238,7 +239,7 @@ async def runner_stream(
 
 
 @app.post("/api/runs", response_model=RunUtworzony,
-          responses=odpowiedzi_bledow(401, 403, 409, 422))
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
 async def create_run(
     body: RunCreate,
     k: Kontekst = Depends(kontekst_sesji),
@@ -248,11 +249,19 @@ async def create_run(
     run = await uslugi.utworz_run(
         s, k.tenant_id, body.workflow, polaczone=bus.connected_runner_ids(),
         ticket_id=body.ticket_id, potwierdz_rownolegly=body.potwierdz_rownolegly,
+        project_id=body.project_id,
     )
-    await bus.send_to_runner(
-        run.runner_id,
-        {"type": "run_step", "run_id": run.id, "step_id": "s0", "operacja": body.operacja},
-    )
+    if body.project_id is None:
+        polecenie = {
+            "type": "run_step", "run_id": run.id, "step_id": "s0", "operacja": body.operacja,
+        }
+    else:
+        sciezka = await projekty.sciezka_projektu(s, k.tenant_id, body.project_id)
+        polecenie = {
+            "type": "run_workflow", "run_id": run.id, "workflow": body.workflow,
+            "sciezka": sciezka,
+        }
+    await bus.send_to_runner(run.runner_id, polecenie)
     return RunUtworzony(run_id=run.id)
 
 
