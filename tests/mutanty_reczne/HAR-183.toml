@@ -1,0 +1,29 @@
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = 'def z_konfiguracji(cls, plik: Path | str | None = None, *, scisle: bool = False) -> Zakres:'
+zamien = 'def z_konfiguracji(cls, plik: Path | str | None = None, *, scisle: bool = True) -> Zakres:'
+test = "tests/test_zakres_sciezek.py::test_brak_pliku_konfiguracji_w_trybie_domyslnym_jest_cichy"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "Zakres.z_konfiguracji(scisle=True)"
+zamien = "Zakres.z_konfiguracji(scisle=False)"
+test = "tests/test_katalog_definicji.py::test_runner_z_uszkodzonym_runner_json_odpowiada_bledem_zlej_konfiguracji_zakresu"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '"zla_konfiguracja_zakresu"'
+zamien = '"zla_konfiguracja"'
+test = "tests/test_katalog_definicji.py::test_runner_z_uszkodzonym_runner_json_odpowiada_bledem_zlej_konfiguracji_zakresu"
+
+[[mutant]]
+plik = "src/cockpit/services/katalog.py"
+szukaj = '"lista projektow jest pusta"'
+zamien = '"lista projektow jest pusta."'
+test = "tests/test_katalog_definicji.py::test_zly_ksztalt_odpowiedzi_runnera_wskazuje_w_komunikacie_co_jest_zle"
+
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = "class ZlaKonfiguracjaZakresu(Exception):"
+zamien = "class ZlaKonfiguracjaZakresu(BladDziedziny):"
+test = "tests/test_zakres_sciezek.py::test_wyjatek_zlej_konfiguracji_zakresu_nie_jest_bledem_dziedziny"
