@@ -288,7 +288,9 @@ async def test_zerwanie_strumienia_polecen_nie_przerywa_trwajacego_runu(tmp_path
             lambda: [z["kind"] for z in kokpit.zdarzenia] == ["run_finished"],
             "run_finished u kokpitu mimo zerwanego strumienia")
         assert not silnik.anulowany.is_set()
-        odczekania.brama.set()
+        # brama zostaje zamknieta: wyjscie z `zadanie_tla` anuluje nasluch w trakcie odczekania.
+        # WHY: zwolnienie bramy tuz przed anulowaniem to na Pythonie 3.11 wyscig, w ktorym
+        # `asyncio.wait_for` polyka anulowanie (poprawione w 3.12) i runner laczy sie dalej.
 
 
 async def test_brak_miejsca_na_zdarzenia_kontroluje_run_przerwaniem_a_nie_wyjatkiem_zadania(tmp_path, silnik):
