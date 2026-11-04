@@ -12,7 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cockpit.db.models import Event, Run, Runner, RunStatus
+from cockpit.db.models import Event, Project, Run, Runner, RunStatus
 
 from cockpit.settings import settings
 
@@ -179,9 +179,14 @@ async def utworz_run(
     *,
     ticket_id: str | None = None,
     potwierdz_rownolegly: bool = False,
+    project_id: str | None = None,
 ) -> Run:
     """Run powstaje tylko wtedy, gdy zespol ma runnera z otwartym strumieniem
     (`polaczone`; HAR-2, HAR-26).
+
+    Z `project_id` (HAR-80) run idzie do runnera tego projektu: projekt obcego zespolu
+    albo nieistniejacy to NieZnaleziono, a runner projektu offline albo spoza zespolu to
+    StanNiemozliwy - bez przekierowania na inny runner.
 
     Drugi run na tickecie z aktywnym runem wymaga `potwierdz_rownolegly` (HAR-58).
     To ostrzezenie, nie blokada: dwa rownoczesne starty moga oba przejsc."""
@@ -197,11 +202,19 @@ async def utworz_run(
         ).scalar_one_or_none()
         if aktywny is not None:
             raise WymagaPotwierdzenia(aktywny)
-    runnery = (
-        await s.execute(
-            select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
-        )
-    ).scalars().all()
+    zapytanie_runnerow = select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
+    if project_id is not None:
+        runner_projektu = (
+            await s.execute(
+                select(Project.runner_id).where(
+                    Project.id == project_id, Project.tenant_id == tenant_id
+                )
+            )
+        ).scalar_one_or_none()
+        if runner_projektu is None:
+            raise NieZnaleziono("projekt nieznany")
+        zapytanie_runnerow = zapytanie_runnerow.where(Runner.id == runner_projektu)
+    runnery = (await s.execute(zapytanie_runnerow)).scalars().all()
     runner = next(
         (r for r in runnery
          if runner_online(r, polaczone)),
@@ -213,7 +226,7 @@ async def utworz_run(
         )
 
     run = Run(tenant_id=tenant_id, runner_id=runner.id, workflow=workflow,
-              status=RunStatus.running, ticket_id=ticket_id)
+              status=RunStatus.running, ticket_id=ticket_id, project_id=project_id)
     s.add(run)
     await s.commit()
     return run
@@ -245,6 +258,7 @@ async def run_runnera(s: AsyncSession, run_id: str, runner: Runner) -> Run:
 
 # Status runu wylicza kokpit ze stanow krokow i ze zdarzenia `run_finished` (HAR-78);
 # deklaracja runnera nie jest zrodlem prawdy. Zdarzenia kroku same nie koncza runu.
+_POLECENIA_RUNU = frozenset({"run_step", "run_workflow"})  # (HAR-80)
 _KONIEC_RUNU = "run_finished"
 # `step_aborted` nie rusza runu `waiting` (HAR-47)
 _STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})
@@ -487,7 +501,7 @@ async def polecenie_aktualne(
     wymaga `tenant_id` w kazdym zapytaniu, a polecenie go nie niesie. Krok runu
     jest aktualny tylko dla runu `running` tego runnera i zespolu.
     """
-    if polecenie.get("type") != "run_step":
+    if polecenie.get("type") not in _POLECENIA_RUNU:
         return True
     run_id = polecenie.get("run_id")
     if not run_id:
