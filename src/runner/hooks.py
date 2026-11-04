@@ -14,16 +14,24 @@ import json
 import os
 import shlex
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from cockpit.kernel.events import normalize
 from cockpit.services.errors import BladDziedziny
+from cockpit.services.invariants import Rola
 from runner import bufor
 from runner.bufor import BladBufora
 
 ZMIENNA_PLIKU = "COCKPIT_HOOK_FILE"
 _RUN_ID = bufor._RUN_ID  # ten sam obiekt wzorca co w buforze, nie kopia
+
+# HAR-175: straz roli to hook PreToolUse uruchamiany jako `python -I <plik>` (nie `-m`), wiec
+# dziala bez instalacji pakietu; sciezka liczona z pliku tego modulu, tak samo pod mutmutem.
+_STRAZ_ROLI = Path(__file__).resolve().parent / "straz_roli.py"
+_MATCHER_STRAZY = "Bash|Write|Edit|MultiEdit|NotebookEdit"
+_PREFIKS_POWTORZENIA = "agent powtarza zablokowaną komendę: "
 
 # Zdarzenia zgodne z deploy/hooks.example.json; runner nie czyta tego pliku w runtime
 # (wheel go nie zawiera), spojnosc pilnuje test.
@@ -86,11 +94,47 @@ def plik_hookow(katalog_stanu: Path | None, run_id: str, step_id: str) -> Path:
     return plik
 
 
-def ustawienia_hookow(plik: Path) -> dict[str, Any]:
-    """Ustawienia hookow dla agenta; polecenie bierze sciezke ze zmiennej, nie z tekstu."""
+def plik_ustawien(
+    katalog_stanu: Path, run_id: str, step_id: str, ustawienia: Mapping[str, Any]
+) -> Path:
+    """Zapisuje ustawienia kroku (`claude --settings`) obok pliku hookow; zwraca sciezke pliku.
+
+    Plik lezy w katalogu stanu runnera, poza repozytorium (run_dir_outside_repo), z prawami 0600.
+    """
+    run = _sprawdz_id("run_id", run_id)
+    krok = _sprawdz_id("step_id", step_id)
+    katalog_hookow = katalog_stanu / "hooks"
+    katalog_runu = katalog_hookow / run
+    plik = katalog_runu / f"{krok}.settings.json"
+    tresc = json.dumps(ustawienia).encode()
+    try:
+        for k in (katalog_hookow, katalog_runu):
+            k.mkdir(mode=0o700, parents=True, exist_ok=True)
+            k.chmod(0o700)
+        fd = os.open(plik, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)  # umask i wczesniej istniejacy plik nie moga poszerzyc praw
+            os.write(fd, tresc)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise BladPlikuHookow(f"plik ustawien kroku: {type(exc).__name__}") from exc
+    return plik
+
+
+def ustawienia_hookow(
+    plik: Path, *, rola: Rola | None = None, worktree: Path | None = None
+) -> dict[str, Any]:
+    """Ustawienia hookow dla agenta; polecenie bierze sciezke ze zmiennej, nie z tekstu.
+
+    Z `rola` dokladamy do PreToolUse strazy roli (HAR-175); `worktree` jest wtedy wymagany
+    i bezwzgledny. Bez `rola` wynik jest taki jak przed HAR-175, a `worktree` jest ignorowany.
+    """
     # WHY: wzgledna sciezka rozwinelaby sie wzgledem cwd agenta, czyli w repozytorium projektu
     if not plik.is_absolute():
         raise BladPlikuHookow("sciezka pliku hookow musi byc bezwzgledna")
+    if rola is not None and (worktree is None or not worktree.is_absolute()):
+        raise BladPlikuHookow("worktree strazy roli musi byc sciezka bezwzgledna")
     polecenie = f"{shlex.quote(sys.executable)} -c {shlex.quote(_KOD_HOOKA)} || true"
     hooki: dict[str, list[dict[str, Any]]] = {}
     for zdarzenie, opcje in ZDARZENIA.items():
@@ -101,6 +145,17 @@ def ustawienia_hookow(plik: Path) -> dict[str, Any]:
         if "matcher" in opcje:
             grupa["matcher"] = opcje["matcher"]
         hooki[zdarzenie] = [grupa]
+    if rola is not None and worktree is not None:
+        # WHY brak `|| true` i `if`: odmowa idzie kodem 0 i JSON-em na stdout, a straz jest
+        # fail-closed sama - zdjecie kodu wyjscia albo warunek wylaczylyby ja po cichu.
+        straz = (
+            f"{shlex.quote(sys.executable)} -I {shlex.quote(str(_STRAZ_ROLI))} "
+            f"--rola {shlex.quote(rola.value)} --worktree {shlex.quote(str(worktree))}"
+        )
+        hooki["PreToolUse"].append({
+            "matcher": _MATCHER_STRAZY,
+            "hooks": [{"type": "command", "command": straz}],
+        })
     return {"hooks": hooki}
 
 
@@ -244,6 +299,25 @@ def _napis_lub_brak(ev: dict, pole: str) -> str | None:
     return wartosc
 
 
+def _dane_odmowy(ev: dict) -> tuple[str, str, str]:
+    """(narzedzie, komenda, rola) ze zdarzenia ToolDenied; zly typ pola to BladZdarzeniaHooka."""
+    extra = ev.get("extra")
+    if not isinstance(extra, dict):
+        extra = {}
+    pola = []
+    for nazwa, zrodlo in (("tool", ev), ("command", extra), ("role", extra)):
+        wartosc = zrodlo.get(nazwa)
+        if wartosc is not None and not isinstance(wartosc, str):
+            raise BladZdarzeniaHooka(nazwa)
+        pola.append(wartosc or "")
+    return pola[0], pola[1], pola[2]
+
+
+def _tekst_odmowy(ev: dict) -> str:
+    narzedzie, komenda, rola = _dane_odmowy(ev)
+    return f"{narzedzie}: {komenda} [role={rola}]"
+
+
 def do_wysylki(ev: dict, run_id: str, step_id: str) -> dict:
     """Zdarzenie hooka -> pola wysylane w gore: same metadane, nigdy tresc.
 
@@ -262,6 +336,9 @@ def do_wysylki(ev: dict, run_id: str, step_id: str) -> dict:
     if len(kind) > _MAKS_KIND:
         raise BladZdarzeniaHooka("kind")
     ms = ev.get("ms")
+    text = tool or phase or ""
+    if event == "ToolDenied":
+        text = _tekst_odmowy(ev)
     return {
         "kind": kind,
         "run_id": run_id,
@@ -271,7 +348,7 @@ def do_wysylki(ev: dict, run_id: str, step_id: str) -> dict:
         "agent_type": (agent_type or "")[:_MAKS_ID_AGENTA],
         # measured_or_null: bool jest podklasa int, ale to nie jest pomiar
         "duration_ms": ms if isinstance(ms, int) and not isinstance(ms, bool) else None,
-        "text": tool or phase or "",
+        "text": text,
     }
 
 
@@ -281,10 +358,21 @@ async def przekazuj(czytnik: CzytnikHookow, wyslij) -> None:
     Produkcyjnie `wyslij = functools.partial(runner.send_event, client)`; zdarzenia
     nie niosa event_id - nadaje go `send_event`. Konczy sie tylko przez anulowanie.
     """
+    odmowy: dict[tuple[str, str], int] = {}  # licznik odmow (narzedzie, komenda) w tym kroku
     while True:
         ev = await czytnik.kolejka.get()
         try:
-            await wyslij(**do_wysylki(ev, czytnik.run_id, czytnik.step_id))
+            wysylka = do_wysylki(ev, czytnik.run_id, czytnik.step_id)
+            await wyslij(**wysylka)
+            if ev.get("event") == "ToolDenied":
+                narzedzie, komenda, _ = _dane_odmowy(ev)
+                klucz = (narzedzie, komenda)
+                odmowy[klucz] = odmowy.get(klucz, 0) + 1
+                if odmowy[klucz] >= 2:
+                    await wyslij(**(wysylka | {
+                        "kind": "hook:ToolDeniedRepeat",
+                        "text": f"{_PREFIKS_POWTORZENIA}{narzedzie}: {komenda}",
+                    }))
         except BladZdarzeniaHooka as e:
             # tylko klasa i nazwa pola: wartosc z payloadu nie trafia do logu
             print(

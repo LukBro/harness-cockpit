@@ -20,6 +20,7 @@ from ruamel.yaml.comments import CommentedMap
 
 from cockpit.services.errors import BlednySkill, NieZnaleziono
 from cockpit.services.invariants import Rola, profil_roli
+from cockpit.services.walidacja import waliduj_definicje
 
 # Zrodla od najwyzszego priorytetu (wygrywa pierwsze, w ktorym jest id).
 # (baza, podkatalog, scisle): scisle = model kokpitu; nie scisle = format innych narzedzi.
@@ -178,6 +179,11 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
     dane = _pola_skilla(mapa, katalog.name, scisle=scisle, opis=plik)
     if dane is None:
         return Pominiety(plik=plik, powod="brak pola role - to nie skill kokpitu")
+    # HAR-175: surowa mapa frontmattera (nie `dane` z _POLA, ktore gubi write/model/tier/command);
+    # klucze niebedace napisami (`1: x`, `true: x`) nie sa kluczami definicji
+    naruszenia = waliduj_definicje({k: v for k, v in mapa.items() if isinstance(k, str)})
+    if naruszenia:
+        raise BlednySkill(f"{plik}: " + "; ".join(str(n) for n in naruszenia))
     try:
         skill = Skill(
             **{
