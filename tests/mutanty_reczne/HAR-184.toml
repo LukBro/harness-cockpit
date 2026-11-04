@@ -1,0 +1,69 @@
+# Usuniecie fragmentu warunku (zamien = "") przywraca niepustosc takze dla `zamien`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = ' and pole != "zamien"'
+zamien = ""
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_pustym_zamien_jest_poprawnym_mutantem_usuwajacym_fragment"
+
+# Wyjatek od niepustosci obejmuje tez `plik`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pole != "zamien"'
+zamien = 'pole not in ("zamien", "plik")'
+test = "tests/test_mutanty_reczne.py::test_puste_pole_inne_niz_zamien_jest_bledem_wskazujacym_to_pole[plik]"
+
+# Wyjatek od niepustosci obejmuje tez `szukaj`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pole != "zamien"'
+zamien = 'pole not in ("zamien", "szukaj")'
+test = "tests/test_mutanty_reczne.py::test_puste_pole_inne_niz_zamien_jest_bledem_wskazujacym_to_pole[szukaj]"
+
+# Wyjatek od niepustosci obejmuje tez `test`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pole != "zamien"'
+zamien = 'pole not in ("zamien", "test")'
+test = "tests/test_mutanty_reczne.py::test_puste_pole_inne_niz_zamien_jest_bledem_wskazujacym_to_pole[test]"
+
+# Niepustosc sprawdzana tylko dla `zamien` (odwrocony wyjatek): niepuste `zamien` przestaje byc poprawne.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pole != "zamien"'
+zamien = 'pole == "zamien"'
+test = "tests/test_mutanty_reczne.py::test_puste_pole_inne_niz_zamien_jest_bledem_wskazujacym_to_pole[plik]"
+
+# `and` -> `or`: kazde niepuste pole zglaszane jako puste.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if not wpis[pole] and pole != "zamien":'
+zamien = 'if not wpis[pole] or pole != "zamien":'
+test = "tests/test_mutanty_reczne.py::test_poprawna_tabela_daje_mutanty_w_kolejnosci_wpisow"
+
+# Brak sprawdzenia typu: puste `zamien` innego typu (False) przechodzi, bo niepustosc go nie dotyczy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not isinstance(wpis[pole], str):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_zamien_inne_niz_napis_jest_bledem_wskazujacym_to_pole[bool_falsz]"
+
+# Brak sprawdzenia typu dla pustej listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not isinstance(wpis[pole], str):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_zamien_inne_niz_napis_jest_bledem_wskazujacym_to_pole[pusta_lista]"
+
+# Komunikat o zlym typie nie wskazuje pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "pole {pole!r} musi byc napisem"
+zamien = "musi byc napisem"
+test = "tests/test_mutanty_reczne.py::test_zamien_inne_niz_napis_jest_bledem_wskazujacym_to_pole[liczba]"
+
+# Komunikat o pustym polu nie wskazuje pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "pole {pole!r} musi byc niepustym napisem"
+zamien = "musi byc niepustym napisem"
+test = "tests/test_mutanty_reczne.py::test_puste_pole_inne_niz_zamien_jest_bledem_wskazujacym_to_pole[szukaj]"

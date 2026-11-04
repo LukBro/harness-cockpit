@@ -169,7 +169,7 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("POST", "/api/runs"), ("POST", "/api/events"), ("GET", "/api/runs/{run_id}"),
         ("GET", "/api/pliki"), ("GET", "/api/pliki/lista"), ("PUT", "/api/pliki"),
         ("GET", "/api/runners"), ("GET", "/api/katalog"), ("POST", "/api/katalog/odswiez"),
-        ("GET", "/api/konto/ja"),
+        ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
     })
     assert znane <= set(TRASY), f"brakuje tras: {sorted(znane - set(TRASY))}"
 
@@ -223,6 +223,7 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("POST", "/api/runs"): ("RunUtworzony", False),
         ("POST", "/api/events"): ("ZdarzeniePrzyjete", False),
         ("GET", "/api/runs/{run_id}"): ("RunSzczegoly", False),
+        ("GET", "/api/runs/{run_id}/diff"): ("DiffRunu", False),
         ("GET", "/api/pliki"): ("PlikOdczytany", False),
         ("GET", "/api/pliki/lista"): ("ListaPlikow", False),
         ("PUT", "/api/pliki"): ("PlikZapisany", False),
@@ -289,6 +290,7 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("GET", "/api/pliki/lista"), {"401", "409", "422", "500"}),
     (("POST", "/api/katalog/odswiez"), {"401", "409", "500"}),
     (("GET", "/api/runs/{run_id}"), {"401", "404", "500"}),
+    (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
     (("POST", "/api/events"), {"401", "404", "422", "500"}),
     (("POST", "/api/runners/odpowiedzi"), {"401", "404", "422"}),
     (("POST", "/api/konto/logowanie"), {"401", "422", "429", "500"}),
@@ -343,6 +345,7 @@ POLA_MODELI = {
     "KrokRunu": {"step_id": {S}, "agent_id": {S}, "attempt": {INT}, "status": {S},
                  "reason": {S, N}},
     "RunNaLiscie": {"id": {S}, "workflow": {S}, "status": {S}, "created_at": {S}},
+    "DiffRunu": {"diff": {S}},
     "PlikOdczytany": {"sciezka": {S}, "tresc": {S}, "rozmiar": {INT}},
     "WpisPliku": {"sciezka": {S}, "katalog": {B}},
     "ListaPlikow": {"pliki": {"array"}, "obcieto": {B}},

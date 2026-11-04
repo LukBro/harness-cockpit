@@ -19,7 +19,9 @@ from typing import Any
 
 from cockpit.services.errors import BlednySkill
 from cockpit.services.skills import NAZWA_PLIKU, ZRODLA, _podziel
-from runner.zakres import PozaZakresem, Zakres, _jest_sekretem
+from runner.odbior import SHA_PELNY, BladOdbioru, zbierz_diff
+from runner.worktree import BladWorktree, katalog_runu
+from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_sekretem
 
 LIMIT_WYNIKOW = 2000
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
@@ -319,7 +321,12 @@ def _workflow_projektu(zakres: Zakres, projekt: Path) -> list[dict]:
 
 
 def _katalog_definicji() -> dict:
-    zakres = Zakres.z_konfiguracji()
+    try:
+        zakres = Zakres.z_konfiguracji(scisle=True)
+    except ZlaKonfiguracjaZakresu:
+        raise BladOperacji(
+            "zla_konfiguracja_zakresu",
+            "konfiguracja zakresu runnera jest nieczytelna albo ma złą strukturę") from None
     limit = _limit_odczytu()
     dom = Path.home()
     z_domu = [
@@ -375,12 +382,35 @@ async def katalog_definicji(dane: dict) -> dict:
     return await asyncio.to_thread(_katalog_definicji)
 
 
+def _zbierz_diff_runu(run_id: str, base_commit: str) -> dict:
+    try:
+        worktree = katalog_runu(run_id) / "worktree"
+    except BladWorktree:
+        raise BladOperacji("zle_dane", "niedozwolony identyfikator runu") from None
+    if not SHA_PELNY.fullmatch(base_commit):
+        raise BladOperacji("zle_dane", "base_commit nie jest SHA")
+    if not worktree.is_dir():
+        raise BladOperacji("brak_worktree", "worktree runu nie istnieje")
+    try:
+        return {"diff": zbierz_diff(worktree, base_commit)}
+    except BladOdbioru:
+        raise BladOperacji("blad_gita", "git nie zebral diffu runu") from None
+
+
+async def collect(dane: dict) -> dict:
+    """Diff runu tylko do odczytu; worktree runner liczy sam z `run_id`, sciezki od kokpitu nie bierze."""
+    run_id = _tekst(dane, "run_id")
+    base_commit = _tekst(dane, "base_commit")
+    return await asyncio.to_thread(_zbierz_diff_runu, run_id, base_commit)
+
+
 OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "ping": ping,
     "read_file": read_file,
     "list_files": list_files,
     "write_file": write_file,
     "katalog_definicji": katalog_definicji,
+    "collect": collect,
 }
 
 

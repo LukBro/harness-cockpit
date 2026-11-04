@@ -3,6 +3,10 @@
 Jedno miejsce rozstrzyga, czy czlonek zespolu moze wykonac operacje. Brak
 czlonkostwa to `NieZnaleziono` o tej samej tresci dla zespolu istniejacego
 i nieistniejacego - nie zdradzamy, czy zasob jest.
+
+HAR-206: liczenie wlascicieli i zapis sa atomowe - wiersze wlascicieli zespolu
+sa blokowane (`FOR UPDATE`) w tej samej transakcji przed decyzja, wiec dwie
+rownolegle degradacje albo usuniecia nie zostawia zespolu bez wlasciciela.
 """
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Membership, RolaWZespole
@@ -88,27 +92,37 @@ async def _cel(s: AsyncSession, kontekst: Kontekst, user_id: str) -> Membership:
     return m
 
 
-async def _sprawdz_wlasnosc(s: AsyncSession, kontekst: Kontekst, cel: Membership, nowa_rola: RolaWZespole | None) -> None:
+async def _zablokuj_wlascicieli(s: AsyncSession, tenant_id: str) -> int:
+    # FOR UPDATE nie laczy sie z agregatem, wiec liczymy w Pythonie; ORDER BY
+    # daje stala kolejnosc blokad (bez zakleszczen). Wolane przed `_cel`, zeby
+    # obiekt celu nie byl wczytany przed odczekaniem na blokade.
+    wiersze = (
+        await s.execute(
+            select(Membership.id)
+            .where(Membership.tenant_id == tenant_id, Membership.rola == RolaWZespole.owner)
+            .order_by(Membership.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+    return len(wiersze)
+
+
+async def _sprawdz_wlasnosc(
+    kontekst: Kontekst, cel: Membership, nowa_rola: RolaWZespole | None, wlasciciele: int
+) -> None:
     # Wszystkie odmowy przed zapisem: po rollback obiekty sesji async wygasaja.
     if cel.rola == RolaWZespole.owner or nowa_rola == RolaWZespole.owner:
         wymagaj(kontekst, Uprawnienie.przeniesienie_wlasnosci)
     traci_wlasciciela = cel.rola == RolaWZespole.owner and nowa_rola != RolaWZespole.owner
-    if traci_wlasciciela:
-        wlasciciele = (
-            await s.execute(
-                select(func.count())
-                .select_from(Membership)
-                .where(Membership.tenant_id == kontekst.tenant_id, Membership.rola == RolaWZespole.owner)
-            )
-        ).scalar_one()
-        if wlasciciele == 1:
-            raise StanNiemozliwy(OSTATNI_WLASCICIEL)
+    if traci_wlasciciela and wlasciciele == 1:
+        raise StanNiemozliwy(OSTATNI_WLASCICIEL)
 
 
 async def zmien_role(s: AsyncSession, kontekst: Kontekst, user_id: str, nowa_rola: RolaWZespole) -> Membership:
     wymagaj(kontekst, Uprawnienie.zaproszenia_i_role)
+    wlasciciele = await _zablokuj_wlascicieli(s, kontekst.tenant_id)
     cel = await _cel(s, kontekst, user_id)
-    await _sprawdz_wlasnosc(s, kontekst, cel, nowa_rola)
+    await _sprawdz_wlasnosc(kontekst, cel, nowa_rola, wlasciciele)
     cel.rola = nowa_rola
     await s.commit()
     return cel
@@ -116,7 +130,8 @@ async def zmien_role(s: AsyncSession, kontekst: Kontekst, user_id: str, nowa_rol
 
 async def usun_czlonka(s: AsyncSession, kontekst: Kontekst, user_id: str) -> None:
     wymagaj(kontekst, Uprawnienie.zaproszenia_i_role)
+    wlasciciele = await _zablokuj_wlascicieli(s, kontekst.tenant_id)
     cel = await _cel(s, kontekst, user_id)
-    await _sprawdz_wlasnosc(s, kontekst, cel, None)
+    await _sprawdz_wlasnosc(kontekst, cel, None, wlasciciele)
     await s.delete(cel)
     await s.commit()

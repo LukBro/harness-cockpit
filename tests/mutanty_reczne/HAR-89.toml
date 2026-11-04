@@ -1,0 +1,222 @@
+# Tabela recznych mutantow HAR-89: odbior runu (`collect`) - diff tylko do odczytu, bez
+# plikow z `.cockpit/_run/`. Elementy, ktorych mutmut nie mutuje: wpis w OPERACJE, stale
+# i elementy list argumentow gita, regex SHA, filtr prefiksu, model odpowiedzi, dekorator trasy.
+#
+# Pola `szukaj` uzgodnione z faktycznym kodem: kazdy wystepuje w pliku dokladnie raz,
+# a tabela uruchomiona przez `tools/mutanty_reczne.py` konczy sie kodem 0.
+# Testy wskazane bez nawiasow kwadratowych uruchamiaja wszystkie warianty parametryzacji.
+
+# --- operacja `collect` w runnerze ---
+
+# Wpis w OPERACJE wskazuje na `collect`, nie na inna operacje.
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '"collect": collect,'
+zamien = '"collect": ping,'
+test = "tests/test_collect.py::test_operacja_collect_zwraca_diff_runu_z_plikiem_zmienionym_i_nowym"
+
+# --- wykluczenie `.cockpit/_run/` (pathspec) ---
+
+# Bez wykluczenia pliki runu (sledzony i nieslediowne) trafiaja do diffu.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '":(exclude).cockpit/_run"'
+zamien = '":(exclude).cockpit/_runX"'
+test = "tests/test_collect.py::test_artefakt_runu_sledzony_w_commicie_bazowym_i_zmieniony_nie_jest_w_diffie"
+
+# Za szeroki pathspec (cala `.cockpit/`) wycinalby `.cockpit/inne.txt`.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '":(exclude).cockpit/_run"'
+zamien = '":(exclude).cockpit"'
+test = "tests/test_collect.py::test_pliki_w_katalogach_o_nazwie_podobnej_do_run_sa_w_diffie_sledzone_i_nowe"
+
+# Wzorzec z gwiazdka wycinalby `.cockpit/_runner/`.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '":(exclude).cockpit/_run"'
+zamien = '":(exclude).cockpit/_run*"'
+test = "tests/test_collect.py::test_pliki_w_katalogach_o_nazwie_podobnej_do_run_sa_w_diffie_sledzone_i_nowe"
+
+# --- drugie zabezpieczenie: filtr prefiksu w Pythonie ---
+
+# Bez ukosnika filtr wycinalby `.cockpit/_runner/` i `.cockpit/_run.txt`.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '.startswith(".cockpit/_run/")'
+zamien = '.startswith(".cockpit/_run")'
+test = "tests/test_collect.py::test_niesledzone_pliki_runu_odfiltrowuje_takze_sama_lista_plikow_gdy_git_ich_poda"
+
+# Inny prefiks nie odfiltrowuje plikow runu.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '.startswith(".cockpit/_run/")'
+zamien = '.startswith(".cockpit/_runX/")'
+test = "tests/test_collect.py::test_niesledzone_pliki_runu_odfiltrowuje_takze_sama_lista_plikow_gdy_git_ich_poda"
+
+# --- tylko do odczytu ---
+
+# Wlaczone opcjonalne blokady: git odswieza indeks worktree przy `git diff`.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"GIT_OPTIONAL_LOCKS": "0"'
+zamien = '"GIT_OPTIONAL_LOCKS": "1"'
+test = "tests/test_collect.py::test_kazdy_proces_gita_zbierajacy_diff_dostaje_wylaczone_opcjonalne_blokady"
+
+# --- format diffu niezalezny od konfiguracji uzytkownika ---
+
+# Kolorowanie z konfiguracji wchodzi do wyniku.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"--no-color",'
+zamien = '"--color=always",'
+test = "tests/test_collect.py::test_kolorowanie_diffu_wlaczone_w_konfiguracji_uzytkownika_nie_trafia_do_wyniku"
+
+# Zewnetrzny program diffu z konfiguracji jest uruchamiany.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"--no-ext-diff",'
+zamien = '"--ext-diff",'
+test = "tests/test_collect.py::test_zewnetrzny_program_diffu_z_konfiguracji_uzytkownika_nie_jest_uruchamiany"
+
+# Filtr textconv z konfiguracji zmienia tresc diffu.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"--no-textconv",'
+zamien = '"--textconv",'
+test = "tests/test_collect.py::test_filtr_tekstowy_textconv_z_konfiguracji_uzytkownika_nie_zmienia_tresci_diffu"
+
+# Prefiksy a/ b/ wymuszone flagami, nie konfiguracja.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"--src-prefix=a/",'
+zamien = '"--src-prefix=x/",'
+test = "tests/test_collect.py::test_konfiguracja_prefiksow_gita_uzytkownika_nie_zmienia_prefiksow_a_i_b_w_diffie"
+
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"--dst-prefix=b/",'
+zamien = '"--dst-prefix=x/",'
+test = "tests/test_collect.py::test_konfiguracja_prefiksow_gita_uzytkownika_nie_zmienia_prefiksow_a_i_b_w_diffie"
+
+# --- lista nowych plikow ---
+
+# Bez -z nazwy sa rozdzielone nowymi liniami i cytowane.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"-z",'
+zamien = '"--full-name",'
+test = "tests/test_collect.py::test_nowy_plik_z_polskimi_znakami_w_nazwie_jest_w_diffie_doslownie"
+
+# Pliki ignorowane przez .gitignore nie sa zmianami do odbioru.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"--exclude-standard",'
+zamien = '"--full-name",'
+test = "tests/test_collect.py::test_nowy_plik_ignorowany_przez_gitignore_nie_jest_zmiana_do_odbioru"
+
+# Nazwa z polskimi znakami w naglowku diffu jest zapisana doslownie, nie osemkowo.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '"core.quotepath=false"'
+zamien = '"core.quotepath=true"'
+test = "tests/test_collect.py::test_nowy_plik_z_polskimi_znakami_w_nazwie_jest_w_diffie_doslownie"
+
+# --- walidacja base_commit ---
+
+# SHA zapisany wielkimi literami albo z dopisanym ogonem nie jest przyjmowany.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = 're.compile(r"[0-9a-f]{40}")'
+zamien = 're.compile(r"[0-9a-fA-F]{40}")'
+test = "tests/test_collect.py::test_base_commit_niebedacy_pelnym_sha_jest_bledem_odbioru_i_git_nie_rusza"
+
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = 're.compile(r"[0-9a-f]{40}")'
+zamien = 're.compile(r"[0-9a-f]{40,}")'
+test = "tests/test_collect.py::test_base_commit_niebedacy_pelnym_sha_jest_bledem_odbioru_i_git_nie_rusza"
+
+# --- API ---
+
+# Pole `diff` modelu odpowiedzi jest wymagane.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class DiffRunu(BaseModel):\n    diff: str\n"
+zamien = "class DiffRunu(BaseModel):\n    diff: str | None = None\n"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+# Trasa opisuje 409 (run trwa / runner offline).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "response_model=DiffRunu,\n         responses=odpowiedzi_bledow(401, 404, 409, 422)"
+zamien = "response_model=DiffRunu,\n         responses=odpowiedzi_bledow(401, 404, 422)"
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Sciezka trasy odbioru.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"/api/runs/{run_id}/diff"'
+zamien = '"/api/runs/{run_id}/diffs"'
+test = "tests/test_collect.py::test_diff_runu_zwraca_200_z_plikiem_zmienionym_i_nowym_bez_plikow_runu"
+
+# Porcelana diff przepisuje indeks worktree; plumbing diff-index nie.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = '["diff-index", "-p",'
+zamien = '["diff", "-p",'
+test = "tests/test_collect.py::test_zebranie_diffu_nie_dodaje_plikow_do_indeksu_i_nie_odswieza_go"
+
+# Dekodowanie bajtow spoza UTF-8 nie moze rzucac.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = 'errors="replace"'
+zamien = 'errors="strict"'
+test = "tests/test_collect.py::test_nowy_plik_z_bajtem_spoza_utf8_nie_przerywa_zbierania_diffu"
+
+# --- trasa `diff_runu` (funkcja z dekoratorem: mutmut jej nie mutuje) ---
+
+# Trasa przekazuje do serwisu zespol z sesji; obcy zespol nie znajduje runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "odbior.diff_runu(s, run_id, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = 'odbior.diff_runu(s, run_id, "obcy-zespol", bus.connected_runner_ids(), bus.zapytaj)'
+test = "tests/test_collect.py::test_diff_runu_zwraca_200_z_plikiem_zmienionym_i_nowym_bez_plikow_runu"
+
+# Trasa zwraca diff z serwisu, nie pusty tekst.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return DiffRunu(diff=diff)"
+zamien = 'return DiffRunu(diff="")'
+test = "tests/test_collect.py::test_diff_runu_zwraca_200_z_plikiem_zmienionym_i_nowym_bez_plikow_runu"
+
+# --- blad dziedziny modulu odbioru ---
+
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "class BladOdbioru(BladDziedziny):"
+zamien = "class BladOdbioru(Exception):"
+test = "tests/test_collect.py::test_blad_odbioru_jest_bledem_dziedziny_modulu"
+
+# --- zagniezdzone repozytorium i pusty wynik przy kodzie 1 ---
+
+# Wpis zakonczony `/` to zagniezdzone repozytorium; inna koncowka go nie rozpoznaje.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = 'if sciezka.endswith("/"):'
+zamien = 'if sciezka.endswith("//"):'
+test = "tests/test_collect.py::test_worktree_z_zagniezdzonym_repozytorium_jest_bledem_a_nie_diffem_bez_jego_zawartosci"
+
+# Odwrocony warunek przepuszcza pusty diff przy kodzie 1.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "if kod == 1 and not wynik:"
+zamien = "if kod == 1 and wynik:"
+test = "tests/test_collect.py::test_porownanie_nowego_pliku_z_kodem_jeden_i_pustym_wynikiem_to_blad_odbioru"
+
+# Pusty wynik przy kodzie 0 (stary git, pusty plik) nie jest bledem.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "if kod == 1 and not wynik:"
+zamien = "if kod in (0, 1) and not wynik:"
+test = "tests/test_collect.py::test_kod_zero_z_porownania_nowego_pliku_nie_jest_bledem"
