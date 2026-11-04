@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import socket
 import stat
 import sys
@@ -24,10 +25,17 @@ from procesy import czekaj, czekaj_na_warunek, uruchom_proces
 
 from cockpit.kernel.events import normalize
 from cockpit.services.errors import BladDziedziny
+from cockpit.services.invariants import Rola
 from cockpit.services.walidacja import sprawdz_katalog_runu
-from runner import bufor, hooks
+from runner import bufor, hooks, straz_roli
 from runner.bufor import katalog_stanu
-from runner.hooks import BladPlikuHookow, CzytnikHookow, plik_hookow, ustawienia_hookow
+from runner.hooks import (
+    BladPlikuHookow,
+    CzytnikHookow,
+    plik_hookow,
+    plik_ustawien,
+    ustawienia_hookow,
+)
 
 KORZEN = Path(__file__).resolve().parents[1]
 FIXTURY = Path(__file__).resolve().parent / "fixtures" / "hooks"
@@ -1267,3 +1275,370 @@ def test_jednobajtowa_nieparsowalna_linia_na_poczatku_nie_blokuje_kolejnej(tmp_p
 
     assert [z["event"] for z in czytnik.odczytaj_nowe()] == ["Stop"]
     assert capsys.readouterr().err == ""
+
+
+# --- HAR-175: straż roli w ustawieniach kroku i plik ustawień dla `--settings` -------------
+
+MATCHER_STRAZY = "Bash|Write|Edit|MultiEdit|NotebookEdit"
+ROLE = [pytest.param(r, id=r.value) for r in Rola]
+
+
+def _grupy_strazy(ustawienia: dict) -> list[dict]:
+    return [g for g in ustawienia["hooks"]["PreToolUse"] if g.get("matcher") == MATCHER_STRAZY]
+
+
+def _polecenie_strazy(ustawienia: dict) -> str:
+    [grupa] = _grupy_strazy(ustawienia)
+    return grupa["hooks"][0]["command"]
+
+
+def _bez_strazy(ustawienia: dict) -> dict:
+    hooki = dict(ustawienia["hooks"])
+    hooki["PreToolUse"] = [
+        g for g in ustawienia["hooks"]["PreToolUse"] if g.get("matcher") != MATCHER_STRAZY
+    ]
+    return {"hooks": hooki}
+
+
+def test_ustawienia_bez_roli_nie_maja_strazy_roli_i_sa_takie_same_jak_z_pustymi_argumentami(
+    tmp_path,
+):
+    plik = tmp_path / "x.ndjson"
+    ustawienia = ustawienia_hookow(plik)
+
+    assert ustawienia == ustawienia_hookow(plik, rola=None, worktree=None)
+    assert len(ustawienia["hooks"]["PreToolUse"]) == 1
+    assert _grupy_strazy(ustawienia) == []
+
+
+def test_worktree_bez_roli_jest_ignorowany_takze_gdy_jest_wzgledny(tmp_path):
+    plik = tmp_path / "x.ndjson"
+
+    assert ustawienia_hookow(plik, worktree=Path("wzgledny")) == ustawienia_hookow(plik)
+    assert ustawienia_hookow(plik, worktree=tmp_path / "wt") == ustawienia_hookow(plik)
+
+
+@pytest.mark.parametrize("rola", ROLE)
+def test_ustawienia_z_rola_maja_w_pretooluse_dwie_grupy_obserwacje_i_straz(tmp_path, rola):
+    ustawienia = ustawienia_hookow(tmp_path / "x.ndjson", rola=rola, worktree=tmp_path / "wt")
+
+    assert len(ustawienia["hooks"]["PreToolUse"]) == 2
+    assert len(_grupy_strazy(ustawienia)) == 1
+
+
+@pytest.mark.parametrize("rola", ROLE)
+def test_straz_roli_nie_zmienia_dotychczasowych_hookow_obserwacji(tmp_path, rola):
+    plik = tmp_path / "x.ndjson"
+
+    z_rola = ustawienia_hookow(plik, rola=rola, worktree=tmp_path / "wt")
+
+    assert _bez_strazy(z_rola) == ustawienia_hookow(plik)
+
+
+@pytest.mark.parametrize("rola", ROLE)
+def test_grupa_strazy_ma_jeden_hook_polecenia_bez_warunku_if_wiec_obejmuje_kazde_wywolanie(
+    tmp_path, rola
+):
+    ustawienia = ustawienia_hookow(tmp_path / "x.ndjson", rola=rola, worktree=tmp_path / "wt")
+
+    [grupa] = _grupy_strazy(ustawienia)
+    assert set(grupa) == {"matcher", "hooks"}
+    assert len(grupa["hooks"]) == 1
+    hook = grupa["hooks"][0]
+    assert hook["type"] == "command"
+    assert "if" not in hook
+    assert set(hook) == {"type", "command"}
+
+
+@pytest.mark.parametrize("rola", ROLE)
+def test_polecenie_strazy_to_interpreter_runnera_w_trybie_izolowanym_skrypt_rola_i_worktree(
+    tmp_path, rola
+):
+    worktree = tmp_path / "wt"
+    ustawienia = ustawienia_hookow(tmp_path / "x.ndjson", rola=rola, worktree=worktree)
+
+    argv = shlex.split(_polecenie_strazy(ustawienia))
+
+    assert len(argv) == 7
+    assert argv[0] == sys.executable
+    assert argv[1] == "-I"
+    assert Path(argv[2]).is_absolute()
+    assert Path(argv[2]).resolve() == Path(straz_roli.__file__).resolve()
+    assert argv[3:] == ["--rola", rola.value, "--worktree", str(worktree)]
+
+
+def test_polecenie_strazy_cytuje_worktree_z_biala_spacja_i_znakami_powloki(tmp_path):
+    worktree = tmp_path / "moj wt $(touch pwn) `id` 'q' \"d\" ; rm"
+
+    ustawienia = ustawienia_hookow(
+        tmp_path / "x.ndjson", rola=Rola.executor, worktree=worktree
+    )
+
+    assert shlex.split(_polecenie_strazy(ustawienia))[-1] == str(worktree)
+
+
+def test_polecenie_strazy_nie_niesie_sciezki_pliku_hookow_ani_zdejmuje_kodu_wyjscia(tmp_path):
+    plik = tmp_path / "unikalny-katalog-4417" / "krok-qq.ndjson"
+
+    ustawienia = ustawienia_hookow(plik, rola=Rola.executor, worktree=tmp_path / "wt")
+
+    polecenie = _polecenie_strazy(ustawienia)
+    assert "unikalny-katalog-4417" not in polecenie
+    assert "krok-qq" not in polecenie
+    assert "|| true" not in polecenie
+
+
+def test_ustawienia_z_rola_sa_serializowalne_do_json_i_wracaja_bez_zmian(tmp_path):
+    ustawienia = ustawienia_hookow(
+        tmp_path / "x.ndjson", rola=Rola.reviewer, worktree=tmp_path / "wt"
+    )
+
+    assert json.loads(json.dumps(ustawienia)) == ustawienia
+
+
+@pytest.mark.parametrize("rola", ROLE)
+def test_rola_bez_worktree_jest_bledem_pliku_hookow(tmp_path, rola):
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        ustawienia_hookow(tmp_path / "x.ndjson", rola=rola)
+
+    assert type(wyjatek.value) is BladPlikuHookow
+
+
+@pytest.mark.parametrize("rola", ROLE)
+def test_rola_ze_sciezka_worktree_wzgledna_jest_bledem_pliku_hookow(tmp_path, rola):
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        ustawienia_hookow(tmp_path / "x.ndjson", rola=rola, worktree=Path("wt/wzgledny"))
+
+    assert type(wyjatek.value) is BladPlikuHookow
+
+
+def test_rola_ze_wzgledna_sciezka_pliku_hookow_jest_bledem_pliku_hookow(tmp_path):
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        ustawienia_hookow(Path("krok.ndjson"), rola=Rola.executor, worktree=tmp_path / "wt")
+
+    assert str(wyjatek.value) == "sciezka pliku hookow musi byc bezwzgledna"
+
+
+def test_polecenie_strazy_z_ustawien_uruchomione_w_powloce_odmawia_zakazanej_komendy(tmp_path):
+    # komenda z ustawien jest jedyna rzecza, ktora Claude Code dostaje: sh -c musi ja wykonac
+    ustawienia = ustawienia_hookow(
+        tmp_path / "x.ndjson", rola=Rola.executor, worktree=tmp_path / "wt"
+    )
+    polecenie = _polecenie_strazy(ustawienia)
+    stdin = json.dumps({
+        "session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash",
+        "tool_input": {"command": "git " + "push"}, "cwd": str(tmp_path / "wt"),
+    })
+
+    wynik = _uruchom_hook(polecenie, stdin, None)
+
+    assert wynik.returncode == 0
+    assert json.loads(wynik.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# --- plik ustawień kroku ------------------------------------------------------------------
+
+
+def _ustawienia_przykladowe(tmp_path: Path) -> dict:
+    return ustawienia_hookow(tmp_path / "x.ndjson", rola=Rola.executor, worktree=tmp_path / "wt")
+
+
+def test_plik_ustawien_lezy_w_katalogu_hookow_runu_pod_nazwa_kroku(tmp_path):
+    ustawienia = _ustawienia_przykladowe(tmp_path)
+
+    plik = plik_ustawien(tmp_path / "stan", "run-7", "krok-3", ustawienia)
+
+    assert plik == tmp_path / "stan" / "hooks" / "run-7" / "krok-3.settings.json"
+    assert plik.is_file()
+
+
+def test_plik_ustawien_zawiera_przekazane_ustawienia_jako_json(tmp_path):
+    ustawienia = _ustawienia_przykladowe(tmp_path)
+
+    plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, ustawienia)
+
+    assert json.loads(plik.read_text(encoding="utf-8")) == ustawienia
+
+
+def test_plik_ustawien_ma_prawa_tylko_dla_wlasciciela_nawet_przy_umask_zero(tmp_path):
+    with _umask(0):
+        plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert _prawa(plik) == 0o600
+
+
+def test_istniejacy_plik_ustawien_dostaje_nowa_tresc_i_prawa_tylko_dla_wlasciciela(tmp_path):
+    run_dir = tmp_path / "stan" / "hooks" / RUN
+    run_dir.mkdir(parents=True)
+    stary = run_dir / f"{KROK_A}.settings.json"
+    stary.write_text('{"hooks": {"stare": []}}')
+    stary.chmod(0o644)
+    ustawienia = _ustawienia_przykladowe(tmp_path)
+
+    with _umask(0):
+        plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, ustawienia)
+
+    assert plik == stary
+    assert _prawa(plik) == 0o600
+    assert json.loads(plik.read_text(encoding="utf-8")) == ustawienia
+
+
+def test_plik_ustawien_nie_zostawia_obok_siebie_plikow_pomocniczych(tmp_path):
+    plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert [p.name for p in plik.parent.iterdir()] == [plik.name]
+
+
+def test_plik_ustawien_i_plik_hookow_tego_samego_kroku_leza_obok_siebie_bez_kolizji(tmp_path):
+    ndjson = plik_hookow(tmp_path / "stan", RUN, KROK_A)
+
+    ustawienia = plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert ustawienia != ndjson
+    assert ustawienia.parent == ndjson.parent
+    assert ndjson.read_bytes() == b""
+
+
+def test_plik_ustawien_nie_laduje_w_repozytorium_uzytkownika(tmp_path):
+    plik = plik_ustawien(katalog_stanu(), RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert sprawdz_katalog_runu(plik.parent, KORZEN) is None
+    assert plik.resolve().is_relative_to(tmp_path.resolve())
+
+
+@pytest.mark.parametrize(
+    "zly",
+    ["", ".", "..", "a/b", "a\\b", "a b", "run\n", "a" * 65, "ą", "a.b", 5, None, b"abc"],
+)
+@pytest.mark.parametrize("pole", ["run_id", "step_id"])
+def test_plik_ustawien_odrzuca_zly_identyfikator_bez_tworzenia_plikow(tmp_path, pole, zly):
+    argumenty = {"run_id": RUN, "step_id": KROK_A}
+    argumenty[pole] = zly
+
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        plik_ustawien(
+            tmp_path / "stan", argumenty["run_id"], argumenty["step_id"],
+            _ustawienia_przykladowe(tmp_path),
+        )
+
+    assert type(wyjatek.value) is BladPlikuHookow
+    assert not (tmp_path / "stan" / "hooks").exists()
+
+
+def test_zly_run_id_i_step_id_maja_w_pliku_ustawien_komunikaty_jak_w_pliku_hookow(tmp_path):
+    ustawienia = _ustawienia_przykladowe(tmp_path)
+
+    with pytest.raises(BladPlikuHookow) as zly_run:
+        plik_ustawien(tmp_path / "stan", "a/b", KROK_A, ustawienia)
+    with pytest.raises(BladPlikuHookow) as zly_krok:
+        plik_ustawien(tmp_path / "stan", RUN, "a/b", ustawienia)
+
+    assert str(zly_run.value) == "niedozwolony run_id hookow"
+    assert str(zly_krok.value) == "niedozwolony step_id hookow"
+
+
+def test_katalog_stanu_bedacy_plikiem_daje_przy_ustawieniach_blad_pliku_hookow_z_przyczyna(
+    tmp_path,
+):
+    stan = tmp_path / "stan"
+    stan.write_text("to jest plik")
+
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        plik_ustawien(stan, RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert isinstance(wyjatek.value.__cause__, OSError)
+
+
+def test_plik_ustawien_zajety_przez_katalog_daje_blad_pliku_hookow_z_przyczyna_systemowa(tmp_path):
+    (tmp_path / "stan" / "hooks" / RUN / f"{KROK_A}.settings.json").mkdir(parents=True)
+
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert isinstance(wyjatek.value.__cause__, OSError)
+
+
+# --- mutanty zmian HAR-175: prawa katalogow, tryb tworzenia, komunikaty ---------------------
+
+
+def test_komunikat_bledu_pliku_ustawien_niesie_nazwe_klasy_bledu_systemowego(tmp_path):
+    (tmp_path / "stan" / "hooks" / RUN / f"{KROK_A}.settings.json").mkdir(parents=True)
+
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert str(wyjatek.value) == "plik ustawien kroku: IsADirectoryError"
+
+
+def test_oba_katalogi_ustawien_maja_prawa_tylko_dla_wlasciciela_nawet_przy_umask_zero(tmp_path):
+    with _umask(0):
+        plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert _prawa(plik.parent) == 0o700
+    assert _prawa(plik.parent.parent) == 0o700
+    assert plik.parent.parent.name == "hooks"
+
+
+def test_istniejace_katalogi_ustawien_dostaja_prawa_tylko_dla_wlasciciela(tmp_path):
+    hooks_dir = tmp_path / "stan" / "hooks"
+    run_dir = hooks_dir / RUN
+    run_dir.mkdir(parents=True)
+    hooks_dir.chmod(0o755)
+    run_dir.chmod(0o755)
+
+    with _umask(0):
+        plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert _prawa(hooks_dir) == 0o700
+    assert _prawa(run_dir) == 0o700
+
+
+def test_katalogi_ustawien_sa_tworzone_od_razu_z_prawami_tylko_dla_wlasciciela(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "stan").mkdir()
+    prawdziwe = Path.mkdir
+    wywolania: list[tuple[Path, int]] = []
+
+    def podsluch(self, mode=0o777, parents=False, exist_ok=False):
+        wywolania.append((self, mode))
+        return prawdziwe(self, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    monkeypatch.setattr(Path, "mkdir", podsluch)
+
+    plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    for katalog in (plik.parent.parent, plik.parent):
+        tryby = [mode for sciezka, mode in wywolania if sciezka == katalog]
+        assert tryby and set(tryby) == {0o700}
+
+
+def test_plik_ustawien_jest_tworzony_od_razu_z_prawami_tylko_dla_wlasciciela(
+    tmp_path, monkeypatch
+):
+    prawdziwe = os.open
+    wywolania: list[tuple[Path, int]] = []
+
+    def podsluch(sciezka, flagi, mode=0o777, *args, **kwargs):
+        wywolania.append((Path(sciezka), mode))
+        return prawdziwe(sciezka, flagi, mode, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", podsluch)
+
+    plik = plik_ustawien(tmp_path / "stan", RUN, KROK_A, _ustawienia_przykladowe(tmp_path))
+
+    assert [mode for sciezka, mode in wywolania if sciezka == plik] == [0o600]
+
+
+def test_rola_bez_worktree_ma_komunikat_o_sciezce_bezwzglednej_worktree(tmp_path):
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        ustawienia_hookow(tmp_path / "x.ndjson", rola=Rola.executor)
+
+    assert str(wyjatek.value) == "worktree strazy roli musi byc sciezka bezwzgledna"
+
+
+def test_rola_z_wzgledna_sciezka_worktree_ma_komunikat_o_sciezce_bezwzglednej_worktree(tmp_path):
+    with pytest.raises(BladPlikuHookow) as wyjatek:
+        ustawienia_hookow(tmp_path / "x.ndjson", rola=Rola.executor, worktree=Path("wt"))
+
+    assert str(wyjatek.value) == "worktree strazy roli musi byc sciezka bezwzgledna"

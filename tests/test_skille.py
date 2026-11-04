@@ -21,6 +21,7 @@ from cockpit.services.skills import (
     wczytaj_skill,
     zapisz_skill,
 )
+from cockpit.services.walidacja import waliduj_definicje
 
 KORZEN_PROJEKTU = Path(__file__).resolve().parents[1]
 
@@ -1113,3 +1114,306 @@ def test_skill_roli_bez_zapisu_z_jednym_artefaktem_jest_wczytany(tmp_path: Path,
     plik = napisz_skill_z_produces(tmp_path / "skills", "jeden", rola, "[a.md]")
 
     assert wczytaj_skill(plik).produces == ["a.md"]
+
+
+# --- HAR-175: frontmatter SKILL.md przechodzi przez waliduj_definicje -------------------
+
+
+def skill_z_polami(zrodlo: Path, id: str, role: str, dodatek: str = "") -> Path:
+    """SKILL.md z id, name i role oraz doklejonymi wierszami frontmattera (kazdy konczy sie \\n)."""
+    katalog = zrodlo / id
+    katalog.mkdir(parents=True, exist_ok=True)
+    plik = katalog / "SKILL.md"
+    plik.write_text(
+        f"---\nid: {id}\nname: {id}\nrole: {role}\n{dodatek}---\nBrief.\n", encoding="utf-8"
+    )
+    return plik
+
+
+ZRODLA_SKILLI = [
+    pytest.param("repo", ".cockpit/skills", id="kokpit-w-repozytorium"),
+    pytest.param("repo", ".claude/skills", id="konwencyjne-claude"),
+    pytest.param("repo", ".agents/skills", id="konwencyjne-agents"),
+    pytest.param("dom", ".cockpit/skills", id="kokpit-w-katalogu-domowym"),
+]
+
+
+def zrodlo_skilli(repo: Path, dom: Path, baza: str, podkatalog: str) -> Path:
+    return (repo if baza == "repo" else dom) / podkatalog
+
+
+def test_recenzent_z_dopisanym_prawem_zapisu_w_skill_md_nie_wchodzi_do_rejestru(
+    repo: Path, dom: Path
+):
+    plik = skill_z_polami(repo / ".cockpit" / "skills", "recenzja", "reviewer", "write: true\n")
+
+    with pytest.raises(BlednySkill) as przez_rejestr:
+        rozstrzygnij_rejestr(repo, dom)
+    with pytest.raises(BlednySkill) as przez_wczytanie:
+        wczytaj_skill(plik)
+
+    for blad in (przez_rejestr.value, przez_wczytanie.value):
+        assert type(blad) is BlednySkill
+        assert str(blad).startswith(f"{plik}: ")
+        assert "niezmiennik reviewer_readonly" in str(blad)
+
+
+@pytest.mark.parametrize("klucz", ["write", "zapis", "can_write"])
+@pytest.mark.parametrize("wartosc", ["true", "yes", "tak", "1"])
+def test_recenzent_z_kazdym_kluczem_prawa_zapisu_lamie_reviewer_readonly(
+    repo: Path, dom: Path, klucz: str, wartosc: str
+):
+    skill_z_polami(repo / ".cockpit" / "skills", "recenzja", "reviewer", f"{klucz}: {wartosc}\n")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert "niezmiennik reviewer_readonly" in str(blad.value)
+
+
+def test_recenzent_z_kluczem_zapisu_wylaczonym_lamie_tylko_role_binding_a_nie_regule_recenzenta(
+    repo: Path, dom: Path
+):
+    skill_z_polami(repo / ".cockpit" / "skills", "recenzja", "reviewer", "write: false\n")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert "niezmiennik role_binding" in str(blad.value)
+    assert "reviewer_readonly" not in str(blad.value)
+
+
+def test_skill_z_nazwa_modelu_wskazuje_profil_backendu_u_runnera(repo: Path, dom: Path):
+    plik = skill_z_polami(repo / ".cockpit" / "skills", "pisanie", "author", "model: opus\n")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert type(blad.value) is BlednySkill
+    assert str(blad.value).startswith(f"{plik}: ")
+    assert "niezmiennik role_binding" in str(blad.value)
+    assert "'model'" in str(blad.value)
+    assert "profilu backendu u runnera" in str(blad.value)
+
+
+def test_skill_z_tierem_spoza_listy_tierow_wskazuje_profil_backendu_u_runnera(
+    repo: Path, dom: Path
+):
+    plik = skill_z_polami(repo / ".cockpit" / "skills", "pisanie", "author", "tier: gold\n")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(blad.value).startswith(f"{plik}: ")
+    assert "niezmiennik role_binding" in str(blad.value)
+    assert "tier 'gold' nie jest tierem" in str(blad.value)
+    assert "profilu backendu u runnera" in str(blad.value)
+
+
+def test_skill_z_tierem_niepasujacym_do_roli_lamie_role_binding(repo: Path, dom: Path):
+    skill_z_polami(repo / ".cockpit" / "skills", "pisanie", "author", "tier: execution\n")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert "niezmiennik role_binding" in str(blad.value)
+    assert "nie pasuje do roli author" in str(blad.value)
+
+
+def test_skill_z_tierem_zgodnym_z_rola_jest_wczytany(repo: Path, dom: Path):
+    skill_z_polami(repo / ".cockpit" / "skills", "pisanie", "author", "tier: judgment\n")
+
+    assert set(rozstrzygnij_rejestr(repo, dom).skille) == {"pisanie"}
+
+
+@pytest.mark.parametrize("rola", ["author", "executor"])
+@pytest.mark.parametrize("klucz", ["write", "zapis", "can_write"])
+@pytest.mark.parametrize("wartosc", ["true", "false"])
+def test_autor_z_jawnym_prawem_zapisu_lamie_role_binding(
+    repo: Path, dom: Path, rola: str, klucz: str, wartosc: str
+):
+    plik = skill_z_polami(
+        repo / ".cockpit" / "skills", "pisanie", rola, f"{klucz}: {wartosc}\n"
+    )
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(blad.value).startswith(f"{plik}: ")
+    assert "niezmiennik role_binding" in str(blad.value)
+    assert f"'{klucz}'" in str(blad.value)
+    assert "reviewer_readonly" not in str(blad.value)
+
+
+def test_skill_konwencyjny_z_rola_i_prawem_zapisu_jest_bledem_a_bez_roli_jest_pominiety(
+    repo: Path, dom: Path
+):
+    zrodlo = repo / ".claude" / "skills"
+    bez_roli = napisz_skill_konwencyjny(zrodlo, "bez-roli", extra="write: true\nmodel: opus\n")
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert rejestr.skille == {}
+    assert [p.plik for p in rejestr.pominiete] == [bez_roli]
+
+    z_rola = napisz_skill_konwencyjny(
+        zrodlo, "z-rola", extra="role: reviewer\nwrite: true\n"
+    )
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert type(blad.value) is BlednySkill
+    assert str(blad.value).startswith(f"{z_rola}: ")
+    assert "niezmiennik reviewer_readonly" in str(blad.value)
+
+
+@pytest.mark.parametrize("baza,podkatalog", ZRODLA_SKILLI)
+def test_naruszenie_niezmiennika_w_skill_md_jest_bledem_w_kazdym_zrodle_skilli(
+    repo: Path, dom: Path, baza: str, podkatalog: str
+):
+    plik = skill_z_polami(
+        zrodlo_skilli(repo, dom, baza, podkatalog), "pisanie", "author", "write: true\n"
+    )
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(blad.value).startswith(f"{plik}: ")
+    assert "niezmiennik role_binding" in str(blad.value)
+
+
+@pytest.mark.parametrize("baza,podkatalog", ZRODLA_SKILLI)
+def test_skill_bez_kluczy_zapisu_modelu_i_tieru_wchodzi_do_rejestru_w_kazdym_zrodle(
+    repo: Path, dom: Path, baza: str, podkatalog: str
+):
+    skill_z_polami(
+        zrodlo_skilli(repo, dom, baza, podkatalog), "pisanie", "reviewer",
+        "description: Opis\nconsumes: [a.md]\n",
+    )
+
+    assert set(rozstrzygnij_rejestr(repo, dom).skille) == {"pisanie"}
+
+
+def test_przeslaniety_skill_kokpitu_z_naruszeniem_niezmiennika_nadal_jest_bledem(
+    repo: Path, dom: Path
+):
+    skill_z_polami(dom / ".cockpit" / "skills", "wspolny", "reviewer", "write: true\n")
+    skill_z_polami(repo / ".cockpit" / "skills", "wspolny", "reviewer")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert "niezmiennik reviewer_readonly" in str(blad.value)
+
+
+def test_dwa_naruszenia_w_jednym_skillu_sa_oba_w_komunikacie(repo: Path, dom: Path):
+    plik = skill_z_polami(
+        repo / ".cockpit" / "skills", "recenzja", "reviewer", "write: true\nmodel: opus\n"
+    )
+    oczekiwane = waliduj_definicje({"role": "reviewer", "write": True, "model": "opus"})
+    assert {n.niezmiennik.value for n in oczekiwane} == {"reviewer_readonly", "role_binding"}
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(blad.value) == f"{plik}: " + "; ".join(str(n) for n in oczekiwane)
+    assert "niezmiennik reviewer_readonly" in str(blad.value)
+    assert "niezmiennik role_binding" in str(blad.value)
+    assert "'model'" in str(blad.value)
+
+
+def test_trzy_naruszenia_roznych_regul_w_jednym_skillu_sa_wszystkie_w_komunikacie(
+    repo: Path, dom: Path
+):
+    skill_z_polami(
+        repo / ".cockpit" / "skills", "recenzja", "reviewer",
+        "write: true\nmodel: opus\ntier: gold\ncommand: git push\n",
+    )
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    for nazwa in ("reviewer_readonly", "role_binding", "no_git_write"):
+        assert f"niezmiennik {nazwa}" in str(blad.value)
+    assert "tier 'gold' nie jest tierem" in str(blad.value)
+    assert "'model'" in str(blad.value)
+
+
+@pytest.mark.parametrize("klucz", ["command", "run"])
+@pytest.mark.parametrize("komenda", ["git push", "git commit -m x", "cd r && git push"])
+def test_skill_z_komenda_zapisujaca_do_gita_lamie_no_git_write(
+    repo: Path, dom: Path, klucz: str, komenda: str
+):
+    plik = skill_z_polami(
+        repo / ".cockpit" / "skills", "wydanie", "executor", f"{klucz}: {komenda}\n"
+    )
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert str(blad.value).startswith(f"{plik}: ")
+    assert "niezmiennik no_git_write" in str(blad.value)
+
+
+def test_skill_z_komenda_gita_podana_jako_lista_lamie_no_git_write(repo: Path, dom: Path):
+    skill_z_polami(
+        repo / ".cockpit" / "skills", "wydanie", "executor", "command: [git, push]\n"
+    )
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert "niezmiennik no_git_write" in str(blad.value)
+
+
+@pytest.mark.parametrize("klucz", ["command", "run"])
+def test_skill_z_bezpieczna_komenda_wchodzi_do_rejestru(repo: Path, dom: Path, klucz: str):
+    skill_z_polami(repo / ".cockpit" / "skills", "testy", "executor", f"{klucz}: pytest -q\n")
+
+    assert set(rozstrzygnij_rejestr(repo, dom).skille) == {"testy"}
+
+
+@pytest.mark.parametrize("klucz", ["command", "run"])
+def test_komenda_niebedaca_napisem_ani_lista_nie_daje_surowego_typeerror(
+    repo: Path, dom: Path, klucz: str
+):
+    skill_z_polami(repo / ".cockpit" / "skills", "testy", "executor", f"{klucz}: 5\n")
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert set(rejestr.skille) == {"testy"}
+
+
+@pytest.mark.parametrize("klucz", ["1: x\n", "2.5: x\n", "true: x\n", "~: x\n"])
+def test_klucz_frontmattera_niebedacy_napisem_nie_daje_surowego_typeerror_i_jest_pomijany(
+    repo: Path, dom: Path, klucz: str
+):
+    skill_z_polami(repo / ".cockpit" / "skills", "pisanie", "author", klucz)
+
+    rejestr = rozstrzygnij_rejestr(repo, dom)
+
+    assert set(rejestr.skille) == {"pisanie"}
+
+
+@pytest.mark.parametrize("klucz", ["1: x\n", "true: x\n", "~: x\n"])
+def test_klucz_niebedacy_napisem_obok_naruszenia_nie_ukrywa_naruszenia(
+    repo: Path, dom: Path, klucz: str
+):
+    skill_z_polami(repo / ".cockpit" / "skills", "pisanie", "author", klucz + "write: true\n")
+
+    with pytest.raises(BlednySkill) as blad:
+        rozstrzygnij_rejestr(repo, dom)
+
+    assert type(blad.value) is BlednySkill
+    assert "niezmiennik role_binding" in str(blad.value)
+
+
+def test_klucz_niebedacy_napisem_w_skillu_konwencyjnym_z_rola_nie_daje_surowego_typeerror(
+    repo: Path, dom: Path
+):
+    napisz_skill_konwencyjny(
+        repo / ".claude" / "skills", "wlasny", extra="role: author\n1: x\n"
+    )
+
+    assert set(rozstrzygnij_rejestr(repo, dom).skille) == {"wlasny"}

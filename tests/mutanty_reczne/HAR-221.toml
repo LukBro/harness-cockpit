@@ -1,0 +1,98 @@
+# Tabela recznych mutantow HAR-221: baza PostgreSQL dla mutantow recznych takze bez wierszy
+# frontu (.github/workflows/mutation.yml, kroki `front` i `postgres`).
+# Mutmut nie mutuje workflow, wiec ta tabela jest jedyna egzekucja tych regul.
+
+# ===========================================================================
+# Krok `postgres`: warunek zalezy od zmienionej tabeli, nie od frontu
+# ===========================================================================
+
+# Sedno HAR-221: z powrotem warunek frontu zostawia PR z tabela bez wierszy frontu bez bazy.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if: steps.front.outputs.tabele == '1'"
+zamien = "if: steps.front.outputs.front == '1'"
+test = "tests/test_workflow_mutacje.py::test_baza_dla_mutantow_recznych_startuje_gdy_pr_zmienia_tabele_a_nie_tylko_gdy_ma_wiersze_frontu"
+
+# Odwrocony warunek: baza startuje tylko dla PR bez tabeli.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if: steps.front.outputs.tabele == '1'"
+zamien = "if: steps.front.outputs.tabele == '0'"
+test = "tests/test_workflow_mutacje.py::test_kazdy_krok_zadania_uruchamiajacy_baze_ma_warunek_zmienionej_tabeli"
+
+# ===========================================================================
+# Krok `front`: wyjscie tabele
+# ===========================================================================
+
+# Brak tabel zapisuje tabele=1: baza startowalaby bez zmienionej tabeli.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "tabele=0" >> "$GITHUB_OUTPUT"'
+zamien = 'echo "tabele=1" >> "$GITHUB_OUTPUT"'
+test = "tests/test_workflow_mutacje.py::test_pr_bez_tabeli_nie_ma_front_1_ani_tabele_1_w_wyjsciu_kroku"
+
+# Linia tabele=0 nie trafia do wyjscia kroku.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "tabele=0" >> "$GITHUB_OUTPUT"'
+zamien = 'echo "tabele=0" >> /dev/null'
+test = "tests/test_workflow_mutacje.py::test_pr_bez_zmienionej_tabeli_ma_front_0_w_wyjsciu_kroku_i_nie_wola_skryptu"
+
+# Zmieniona tabela zapisuje tabele=0: tabela bez wierszy frontu zostaje bez bazy.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "tabele=1" >> "$GITHUB_OUTPUT"'
+zamien = 'echo "tabele=0" >> "$GITHUB_OUTPUT"'
+test = "tests/test_workflow_mutacje.py::test_pr_z_tabela_bez_wierszy_frontu_ma_front_0_ale_tabele_1_wiec_baza_wystartuje"
+
+# Linia tabele=1 nie trafia do wyjscia kroku.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "tabele=1" >> "$GITHUB_OUTPUT"'
+zamien = 'echo "tabele=1" >> /dev/null'
+test = "tests/test_workflow_mutacje.py::test_pr_z_tabela_i_wierszem_frontu_ma_front_1_i_tabele_1"
+
+# tabele=0 zapisane przed wywolaniem skryptu zostaje w wyjsciu, gdy skrypt konczy sie kodem 2.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "            python3 tools/mutanty_reczne.py --czy-front $tabele"
+zamien = '''            echo "tabele=0" >> "$GITHUB_OUTPUT"
+            python3 tools/mutanty_reczne.py --czy-front $tabele'''
+test = "tests/test_workflow_mutacje.py::test_blad_skryptu_wykrycia_nie_zostawia_tabele_1_wiec_baza_nie_startuje"
+
+# tabele=1 zapisane przed wywolaniem skryptu zostaje w wyjsciu, gdy skrypt konczy sie kodem 2:
+# baza wystartowalaby mimo bledu wykrycia (zamiana kolejnosci dwoch linii w galezi `else`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''            python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+            # Dopiero po udanym wykryciu: pod `bash -e` blad skryptu konczy krok, zanim tabele=1 trafi do wyjscia.
+            echo "tabele=1" >> "$GITHUB_OUTPUT"'''
+zamien = '''            echo "tabele=1" >> "$GITHUB_OUTPUT"
+            python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+            # Dopiero po udanym wykryciu: pod `bash -e` blad skryptu konczy krok, zanim tabele=1 trafi do wyjscia.'''
+test = "tests/test_workflow_mutacje.py::test_blad_skryptu_wykrycia_nie_zostawia_tabele_1_wiec_baza_nie_startuje"
+
+# ===========================================================================
+# Kryteria: adres bazy poza srodowiskiem joba, Node i przegladarka nadal pod front=1
+# ===========================================================================
+
+# Adres bazy w `env` joba trafilby tez do mutmuta.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "  mutation:\n    if: github.event_name == 'pull_request'"
+zamien = "  mutation:\n    if: github.event_name == 'pull_request'\n    env:\n      COCKPIT_TEST_DATABASE_URL: ${{ steps.postgres.outputs.adres }}"
+test = "tests/test_workflow_mutacje.py::test_adres_bazy_testowej_nie_trafia_do_srodowiska_joba_ani_calego_workflow"
+
+# Node instalowany dla kazdej zmienionej tabeli, nie tylko dla front=1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- uses: actions/setup-node@v7\n        if: steps.front.outputs.front == '1'"
+zamien = "- uses: actions/setup-node@v7\n        if: steps.front.outputs.tabele == '1'"
+test = "tests/test_workflow_mutacje.py::test_node_i_przegladarka_instaluja_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+
+# Przegladarka instalowana dla kazdej zmienionej tabeli, nie tylko dla front=1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: przeglądarka dla mutantów ręcznych\n        if: steps.front.outputs.front == '1'"
+zamien = "- name: przeglądarka dla mutantów ręcznych\n        if: steps.front.outputs.tabele == '1'"
+test = "tests/test_workflow_mutacje.py::test_kazdy_krok_zadania_instalujacy_node_albo_playwrighta_ma_warunek_front_1"

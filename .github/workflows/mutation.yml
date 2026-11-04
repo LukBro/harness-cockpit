@@ -73,8 +73,9 @@ jobs:
       # HAR-156: reczny mutant w web/ albo sprawdzany testem e2e potrzebuje zbudowanego frontu,
       # Chromium i prawdziwego Postgresa; wynik ma zalezec od kodu, nie od srodowiska. Krok
       # wykrycia pyta o to tabele zmienione w PR (to samo zapytanie co w kroku `mutanty reczne`),
-      # a trzy kroki srodowiska wykonuja sie tylko dla front=1. PR bez takich wierszy nie
-      # instaluje Node, przegladarki ani bazy. Blad wykrycia (zla tabela) oblewa krok.
+      # a Node i przegladarka wykonuja sie tylko dla front=1. PR bez takich wierszy ich nie
+      # instaluje. Baza zalezy od osobnego wyjscia tabele=1 (HAR-221): dostaje ja kazdy PR
+      # ze zmieniona tabela, nie tylko z wierszami frontu. Blad wykrycia (zla tabela) oblewa krok.
       - name: front dla mutantów ręcznych
         id: front
         env:
@@ -84,9 +85,12 @@ jobs:
           tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
           if [ -z "$tabele" ]; then
             echo "front=0" >> "$GITHUB_OUTPUT"
+            echo "tabele=0" >> "$GITHUB_OUTPUT"
           else
             # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
             python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+            # Dopiero po udanym wykryciu: pod `bash -e` blad skryptu konczy krok, zanim tabele=1 trafi do wyjscia.
+            echo "tabele=1" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-node@v7
@@ -101,14 +105,16 @@ jobs:
         run: |
           playwright install --with-deps chromium
 
-      # Baza dla testow e2e: kontener z healthcheckiem, czekamy az bedzie zdrowy. Brak zdrowia
+      # Baza dla testow e2e i testow bazy (HAR-221): wiersz tabeli wskazujacy test bazy, np.
+      # migracje, bez bazy jest pomijany i konczy sie kodem 2, wiec nie wolno jej wiazac z front=1.
+      # Kontener z healthcheckiem, czekamy az bedzie zdrowy. Brak zdrowia
       # to czerwony krok, a adres bazy trafia do wyjscia kroku dopiero po sukcesie. Adres idzie
       # jako wyjscie kroku, nie do srodowiska calego joba: dostaje go tylko krok `mutanty reczne`.
       # Srodowisko joba trafiloby tez do mutmuta i testy `baza` biegly pod nim rownolegle na
       # wspolnej bazie, a wynik mutmuta zalezalby od tego, czy PR ma wiersze frontu.
       - name: PostgreSQL dla mutantów ręcznych
         id: postgres
-        if: steps.front.outputs.front == '1'
+        if: steps.front.outputs.tabele == '1'
         run: |
           docker run -d --name postgres-mutanty -e POSTGRES_USER=cockpit -e POSTGRES_PASSWORD=cockpit -e POSTGRES_DB=cockpit_test -p 5432:5432 --health-cmd "pg_isready -U cockpit -d cockpit_test" --health-interval 5s --health-timeout 5s --health-retries 10 postgres:16
           zdrowa=0

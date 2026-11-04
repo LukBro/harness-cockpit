@@ -198,6 +198,46 @@ def adres_kokpitu(czysta_baza, token_runnera, tmp_path, dodatkowe_env_kokpitu):
         _zabij_grupe(proc)
 
 
+def zdejmij_podstawione_trasy_z_kontekstu(kontekst) -> None:
+    """Zdejmuje trasy testu (`page.route`, `context.route`) z kazdej strony kontekstu i z kontekstu.
+
+    HAR-185: zamkniecie kontekstu przy handlerze trasy w locie (`route.fetch()`) konczylo sie
+    `TargetClosedError` zglaszanym dopiero przy nastepnym wywolaniu sync API, czyli w
+    nastepnym tescie. `behavior="ignoreErrors"` nie czeka na handlery w locie i ignoruje
+    ich bledy, wiec handlery tras nie potrzebuja wlasnej obslugi zamkniecia kontekstu.
+    Kontekst zamkniety juz przez test (np. zapis profilu w tescie logowania) rzuca przy
+    zdejmowaniu `TargetClosedError` - sprzatanie go pomija, kazdy inny wyjatek (takze inny
+    blad Playwrighta, np. protokolu albo TimeoutError) leci dalej.
+    WHY import z `playwright._impl._errors`: `TargetClosedError` nie jest eksportowany z
+    `playwright.sync_api` (tam tylko Error, TimeoutError, WebError). Typ nie jest publiczny:
+    zmiana w Playwright da glosny ImportError, nie ciche przepuszczenie bledow.
+    Import jest leniwy: ten plik laduje sie takze bez przegladarki.
+    """
+    from playwright._impl._errors import TargetClosedError
+
+    for cel in (*kontekst.pages, kontekst):
+        try:
+            cel.unroute_all(behavior="ignoreErrors")
+        except TargetClosedError:
+            pass
+
+
+@pytest.fixture
+def context(context):
+    """Kontekst z pluginu playwrighta; trasy testu zdejmowane tuz przed jego zamknieciem.
+
+    Teardown tego nadpisania biegnie przed teardownem fixture'a z pluginu, ktory zamyka kontekst.
+    """
+    yield context
+    zdejmij_podstawione_trasy_z_kontekstu(context)
+
+
+@pytest.fixture
+def zdejmij_podstawione_trasy():
+    """Funkcja sprzatajaca trasy kontekstu, dla fixture'ow tworzacych wlasne konteksty."""
+    return zdejmij_podstawione_trasy_z_kontekstu
+
+
 @pytest.fixture
 def zalogowana_strona(page, adres_kokpitu, dane_wlasciciela):
     """Strona zalogowana formularzem jak uzytkownik; zwraca ja po pojawieniu sie widoku runu."""
