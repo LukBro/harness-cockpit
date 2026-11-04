@@ -191,7 +191,7 @@ test = "tests/e2e/test_widok_runu.py::test_run_z_krokiem_nieudanym_pokazuje_nieu
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''pending: "oczekuje",'''
 zamien = '''pending: "gotowe",'''
-test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[pending]"
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-pending]"
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
@@ -199,7 +199,7 @@ szukaj = '''waiting: "czeka",
   to_accept'''
 zamien = '''waiting: "gotowe",
   to_accept'''
-test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[waiting]"
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-waiting]"
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
@@ -207,13 +207,13 @@ szukaj = '''skipped: "pominięty",
   aborted'''
 zamien = '''skipped: "gotowe",
   aborted'''
-test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[skipped]"
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-skipped]"
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''aborted: "przerwany",'''
 zamien = '''aborted: "gotowe",'''
-test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[aborted]"
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-aborted]"
 
 # --- warunek dociagania GET po zdarzeniu z strumienia ---
 
