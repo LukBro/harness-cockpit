@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -45,7 +46,8 @@ if [ "$1" = compose ]; then
     exec)
       case "$*" in
         *system_identifier*) echo 7000000000000000001 ;;
-        *pg_database*) echo 1 ;;
+        *"datname='cockpit'"*) echo 1 ;;
+        *pg_database*) [ "${FALSZYWY_BAZA_TESTOWA_ISTNIEJE:-1}" = 1 ] && echo 1 ;;
       esac
       exit 0 ;;
   esac
@@ -73,6 +75,7 @@ case "$1" in
           *"baza and not e2e"*) kind=baza ;;
         esac
         tag="${FALSZYWY_TAG:-x}"
+        if [ -n "${FALSZYWY_URL_BAZY:-}" ]; then echo "$COCKPIT_TEST_DATABASE_URL" >> "$FALSZYWY_URL_BAZY"; fi
         if [ -n "${FALSZYWY_DZIENNIK:-}" ]; then echo "start $tag $kind" >> "$FALSZYWY_DZIENNIK"; fi
         if [ -n "${FALSZYWY_PID_BLOKADY:-}" ]; then
           cat "$COCKPIT_TESTY_BLOKADA/pid" >> "$FALSZYWY_PID_BLOKADY" 2>&1
@@ -135,10 +138,12 @@ def _srodowisko(
     return env
 
 
-def _start(env: dict[str, str]) -> tuple[subprocess.Popen, float]:
+def _start(
+    env: dict[str, str], skrypt: Path = SKRYPT, cwd: Path = KORZEN
+) -> tuple[subprocess.Popen, float]:
     proc = uruchom_proces_sync(
-        ["/bin/bash", str(SKRYPT)],
-        cwd=KORZEN,
+        ["/bin/bash", str(skrypt)],
+        cwd=cwd,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -665,7 +670,7 @@ def _srodowisko_bez_ps(tmp_path: Path, **dodatkowe: str) -> dict[str, str]:
     narzedzia.mkdir()
     for nazwa in (
         "dirname", "mkdir", "rmdir", "rm", "cat", "tr", "sleep", "mktemp", "tee", "grep",
-        "lsof", "env", "sh",
+        "lsof", "env", "sh", "cksum", "cut", "awk",
     ):
         sciezka = shutil.which(nazwa)
         if sciezka is not None:
@@ -774,3 +779,177 @@ def test_limit_dwa_z_zywym_wlascicielem_czeka_dokladnie_dwie_sekundy(tmp_path):
     assert wynik.kod == 75, wynik.stderr
     assert dziennik.read_text().split() == ["1", "1"]
     assert "limit 2 s minal" in wynik.stderr
+
+
+# --- HAR-186: osobna baza testowa na worktree ---------------------------------------------
+
+
+def _korzen_z_kopia_skryptu(tmp_path: Path, nazwa: str) -> Path:
+    """Udaje inny worktree: kopia skryptu w `<korzen>/tools/` i pusty katalog `web/`."""
+    korzen = (tmp_path / nazwa).resolve()
+    (korzen / "tools").mkdir(parents=True)
+    (korzen / "web").mkdir()
+    shutil.copy(SKRYPT, korzen / "tools" / "testy_pelne.sh")
+    return korzen
+
+
+def _przebieg_w_korzeniu(
+    tmp_path: Path, korzen: Path, etykieta: str, *, dostep: Path | None = None, **dodatkowe: str
+) -> tuple[Wynik, list[str], list[str]]:
+    """Pelny przebieg skryptu z `korzen`; zwraca wynik, URL-e przekazane pytestowi (po
+    jednym na przebieg) i polecenia dockera. Dzienniki sa osobne dla kazdej etykiety.
+    `dostep` = sciezka do tego samego korzenia (np. dowiazanie), z ktorej startuje skrypt."""
+    url_log = tmp_path / f"url_{etykieta}.log"
+    docker_log = tmp_path / f"docker_{etykieta}.log"
+    env = _srodowisko(
+        tmp_path,
+        blokada=tmp_path / f"blokada_{etykieta}",
+        FALSZYWY_URL_BAZY=str(url_log),
+        FALSZYWY_DZIENNIK_DOCKERA=str(docker_log),
+        **dodatkowe,
+    )
+    wejscie = dostep if dostep is not None else korzen
+    proc, start = _start(env, wejscie / "tools" / "testy_pelne.sh", wejscie)
+    wynik = _koniec(proc, start)
+    urle = url_log.read_text().splitlines() if url_log.exists() else []
+    docker = docker_log.read_text().splitlines() if docker_log.exists() else []
+    return wynik, urle, docker
+
+
+def _nazwa_bazy(url: str) -> str:
+    return url.rsplit("/", 1)[-1]
+
+
+def _skrot_sciezki(korzen: Path) -> str:
+    """Pierwsze pole `cksum` ze sciezki korzenia (bez konca linii) - jak w skrypcie."""
+    proc = uruchom_proces_sync(
+        ["cksum"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        out, _ = proc.communicate(str(korzen), timeout=LIMIT_PROCESU)
+    finally:
+        zakoncz_proces_sync(proc, nazwa="cksum")
+    return out.split()[0]
+
+
+def test_dwa_worktree_o_roznych_sciezkach_dostaja_rozne_bazy_testowe(tmp_path):
+    a = _korzen_z_kopia_skryptu(tmp_path, "a")
+    b = _korzen_z_kopia_skryptu(tmp_path, "b")
+    wynik_a, urle_a, _ = _przebieg_w_korzeniu(tmp_path, a, "a")
+    wynik_b, urle_b, _ = _przebieg_w_korzeniu(tmp_path, b, "b")
+    assert (wynik_a.kod, wynik_b.kod) == (0, 0), (wynik_a.stderr, wynik_b.stderr)
+    assert len(urle_a) == 3 and len(urle_b) == 3
+    assert len(set(urle_a)) == 1 and len(set(urle_b)) == 1
+    nazwa_a, nazwa_b = _nazwa_bazy(urle_a[0]), _nazwa_bazy(urle_b[0])
+    assert re.fullmatch(r"cockpit_test_[0-9]+", nazwa_a), nazwa_a
+    assert re.fullmatch(r"cockpit_test_[0-9]+", nazwa_b), nazwa_b
+    assert nazwa_a != nazwa_b
+
+
+def test_ten_sam_worktree_dostaje_za_kazdym_razem_ta_sama_baze_testowa(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    pierwszy, urle_1, _ = _przebieg_w_korzeniu(tmp_path, korzen, "1")
+    drugi, urle_2, _ = _przebieg_w_korzeniu(tmp_path, korzen, "2")
+    assert (pierwszy.kod, drugi.kod) == (0, 0), (pierwszy.stderr, drugi.stderr)
+    assert urle_1 and urle_1 == urle_2
+
+
+def test_nazwa_bazy_testowej_to_skrot_cksum_sciezki_korzenia_worktree(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    wynik, urle, _ = _przebieg_w_korzeniu(tmp_path, korzen, "a")
+    assert wynik.kod == 0, wynik.stderr
+    assert urle == [
+        f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/"
+        f"cockpit_test_{_skrot_sciezki(korzen)}"
+    ] * 3
+    assert f"Baza testowa tego worktree: cockpit_test_{_skrot_sciezki(korzen)}" in wynik.stderr
+
+
+def test_jawny_url_bazy_ma_pierwszenstwo_przed_nazwa_wyliczona(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    jawny = "postgresql+asyncpg://u:p@localhost:54329/moja_baza"
+    wynik, urle, docker = _przebieg_w_korzeniu(
+        tmp_path,
+        korzen,
+        "a",
+        COCKPIT_TEST_DATABASE_URL=jawny,
+        FALSZYWY_BAZA_TESTOWA_ISTNIEJE="0",  # gdyby skrypt pytal o baze worktree, utworzylby ja
+    )
+    assert wynik.kod == 0, wynik.stderr
+    assert urle == [jawny] * 3
+    assert "Baza testowa tego worktree" not in wynik.stderr
+    assert not [p for p in docker if "CREATE DATABASE cockpit_test_" in p], docker
+    assert not [p for p in docker if "datname='cockpit_test_" in p], docker
+
+
+def test_brak_bazy_testowej_worktree_skrypt_ja_tworzy_na_tym_samym_serwerze(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    nazwa = f"cockpit_test_{_skrot_sciezki(korzen)}"
+    wynik, urle, docker = _przebieg_w_korzeniu(
+        tmp_path, korzen, "a", FALSZYWY_BAZA_TESTOWA_ISTNIEJE="0"
+    )
+    assert wynik.kod == 0, wynik.stderr
+    assert "OK: pelny zestaw testow zielony" in wynik.stdout
+    tworzenie = [p for p in docker if "CREATE DATABASE cockpit_test_" in p]
+    assert len(tworzenie) == 1, docker
+    assert tworzenie[0].startswith("compose exec")
+    assert f"CREATE DATABASE {nazwa} OWNER cockpit" in tworzenie[0]
+    assert urle == [f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/{nazwa}"] * 3
+
+
+def test_istniejaca_baza_testowa_worktree_nie_jest_tworzona_drugi_raz(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    nazwa = f"cockpit_test_{_skrot_sciezki(korzen)}"
+    wynik, _, docker = _przebieg_w_korzeniu(
+        tmp_path, korzen, "a", FALSZYWY_BAZA_TESTOWA_ISTNIEJE="1"
+    )
+    assert wynik.kod == 0, wynik.stderr
+    assert [p for p in docker if f"datname='{nazwa}'" in p], docker  # skrypt sprawdzil baze
+    assert not [p for p in docker if "CREATE DATABASE cockpit_test_" in p], docker
+
+
+def test_worktree_dostepny_przez_dowiazanie_dostaje_baze_ze_sciezki_fizycznej(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "prawdziwy")
+    dowiazanie = tmp_path / "skrot_do_worktree"
+    dowiazanie.symlink_to(korzen, target_is_directory=True)
+    assert _skrot_sciezki(dowiazanie) != _skrot_sciezki(korzen)  # test nie jest pusty
+    wynik, urle, _ = _przebieg_w_korzeniu(tmp_path, korzen, "a", dostep=dowiazanie)
+    assert wynik.kod == 0, wynik.stderr
+    assert urle == [
+        f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/"
+        f"cockpit_test_{_skrot_sciezki(korzen)}"
+    ] * 3
+
+
+@pytest.mark.parametrize("wynik_cksum", ["", "abc 12"], ids=["pusty", "nieliczbowy"])
+def test_skrot_sciezki_pusty_albo_nieliczbowy_to_blad_bez_tworzenia_bazy_i_testow(
+    tmp_path, wynik_cksum
+):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    (tmp_path / "bin").mkdir()
+    _zapisz_narzedzie(
+        tmp_path / "bin" / "cksum",
+        f"#!/bin/sh\ncat >/dev/null\nprintf '%s' '{wynik_cksum}'\n",
+    )
+    wynik, urle, docker = _przebieg_w_korzeniu(
+        tmp_path, korzen, "a", FALSZYWY_BAZA_TESTOWA_ISTNIEJE="0"
+    )
+    assert wynik.kod == 1, wynik.stderr
+    assert "nie udalo sie wyliczyc skrotu sciezki korzenia repo" in wynik.stderr
+    assert urle == []
+    assert not [p for p in docker if "CREATE DATABASE cockpit_test" in p], docker
+    assert "Traceback" not in wynik.calosc
+
+
+def test_pusty_jawny_url_bazy_jest_traktowany_jak_brak_i_dostaje_nazwe_wyliczona(tmp_path):
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    wynik, urle, _ = _przebieg_w_korzeniu(tmp_path, korzen, "a", COCKPIT_TEST_DATABASE_URL="")
+    assert wynik.kod == 0, wynik.stderr
+    assert urle == [
+        f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/"
+        f"cockpit_test_{_skrot_sciezki(korzen)}"
+    ] * 3

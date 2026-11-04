@@ -120,8 +120,9 @@ def liczba_runow():
 def czysta_baza():
     if not URL_BAZY.startswith("postgresql"):
         pytest.skip(
-            "test e2e wymaga PostgreSQL: ustaw "
-            "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../cockpit_test"
+            "test e2e wymaga PostgreSQL: uruchom tools/testy_pelne.sh (baza "
+            "cockpit_test_<skrot> na worktree) albo ustaw jawnie "
+            "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../<baza>"
         )
     if not INDEX_FRONTU.is_file():
         pytest.fail("brak zbudowanego frontu: zbuduj front: npm ci && npm run build w web/")

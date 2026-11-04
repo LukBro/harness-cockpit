@@ -11,7 +11,7 @@ nie zmienia.
 
 HAR-143: test z markerem `baza` w workerze xdist (przebieg `-n`) przy ustawionym
 COCKPIT_TEST_DATABASE_URL konczy sie porazka, nie skipem: testy bazy dziela jedna
-baze (`alembic downgrade base`) i port 8799 w demo, wiec ida sekwencyjnie.
+baze worktree (`alembic downgrade base`) i port 8799 w demo, wiec ida sekwencyjnie.
 """
 from __future__ import annotations
 
@@ -81,7 +81,8 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     if _w_workerze_xdist(item):
         pytest.fail(
             "Test bazy w workerze xdist: testy bazy dziela jedna baze "
-            "cockpit_test i port 8799, wiec nie wolno ich uruchamiac rownolegle. "
+            "worktree (cockpit_test_<skrot> z tools/testy_pelne.sh albo jawny "
+            "COCKPIT_TEST_DATABASE_URL) i port 8799, wiec nie wolno ich uruchamiac rownolegle. "
             'Uruchom je bez -n: pytest -m "baza and not e2e"',
             pytrace=False,
         )
