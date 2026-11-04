@@ -695,21 +695,17 @@ test = "tests/test_workflow_mutacje.py::test_tabele_do_wykrycia_frontu_sa_wybier
 plik = ".github/workflows/mutation.yml"
 szukaj = "- uses: actions/setup-node@v7\n        if: steps.front.outputs.front == '1'"
 zamien = "- uses: actions/setup-node@v7\n        if: steps.front.outputs.front == '0'"
-test = "tests/test_workflow_mutacje.py::test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+test = "tests/test_workflow_mutacje.py::test_kazdy_krok_zadania_instalujacy_node_albo_playwrighta_ma_warunek_front_1"
 
 # Przegladarka instaluje sie tylko dla front=1.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
 szukaj = "- name: przeglądarka dla mutantów ręcznych\n        if: steps.front.outputs.front == '1'"
 zamien = "- name: przeglądarka dla mutantów ręcznych\n        if: steps.front.outputs.front == '0'"
-test = "tests/test_workflow_mutacje.py::test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+test = "tests/test_workflow_mutacje.py::test_kazdy_krok_zadania_instalujacy_node_albo_playwrighta_ma_warunek_front_1"
 
-# PostgreSQL startuje tylko dla front=1.
-[[mutant]]
-plik = ".github/workflows/mutation.yml"
-szukaj = "- name: PostgreSQL dla mutantów ręcznych\n        id: postgres\n        if: steps.front.outputs.front == '1'"
-zamien = "- name: PostgreSQL dla mutantów ręcznych\n        id: postgres\n        if: steps.front.outputs.front == '0'"
-test = "tests/test_workflow_mutacje.py::test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1"
+# Warunek startu PostgreSQL (`tabele == '1'`, HAR-221) pokrywa tabela HAR-221.toml;
+# dawny wiersz z `front == '1'` nie ma juz swojego tekstu w mutation.yml.
 
 # Wykrycie frontu stoi PRZED krokiem Node (kolejnosc krokow).
 [[mutant]]
@@ -723,9 +719,12 @@ szukaj = '''- name: front dla mutantów ręcznych
           tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
           if [ -z "$tabele" ]; then
             echo "front=0" >> "$GITHUB_OUTPUT"
+            echo "tabele=0" >> "$GITHUB_OUTPUT"
           else
             # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
             python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+            # Dopiero po udanym wykryciu: pod `bash -e` blad skryptu konczy krok, zanim tabele=1 trafi do wyjscia.
+            echo "tabele=1" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-node@v7
@@ -750,9 +749,12 @@ zamien = '''- uses: actions/setup-node@v7
           tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
           if [ -z "$tabele" ]; then
             echo "front=0" >> "$GITHUB_OUTPUT"
+            echo "tabele=0" >> "$GITHUB_OUTPUT"
           else
             # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
             python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
+            # Dopiero po udanym wykryciu: pod `bash -e` blad skryptu konczy krok, zanim tabele=1 trafi do wyjscia.
+            echo "tabele=1" >> "$GITHUB_OUTPUT"
           fi'''
 test = "tests/test_workflow_mutacje.py::test_krok_wykrycia_frontu_stoi_przed_krokami_ktore_czytaja_jego_wynik"
 
