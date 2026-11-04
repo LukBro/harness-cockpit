@@ -192,6 +192,19 @@
         "title": "DefinicjaKatalogu",
         "type": "object"
       },
+      "DiffRunu": {
+        "properties": {
+          "diff": {
+            "title": "Diff",
+            "type": "string"
+          }
+        },
+        "required": [
+          "diff"
+        ],
+        "title": "DiffRunu",
+        "type": "object"
+      },
       "EventIn": {
         "properties": {
           "agent_id": {
@@ -2497,6 +2510,85 @@
           }
         },
         "summary": "Get Run"
+      }
+    },
+    "/api/runs/{run_id}/diff": {
+      "get": {
+        "operationId": "diff_runu_api_runs__run_id__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffRunu"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Diff Runu"
       }
     },
     "/api/runs/{run_id}/stream": {

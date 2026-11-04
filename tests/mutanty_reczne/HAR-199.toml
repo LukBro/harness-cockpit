@@ -1,0 +1,115 @@
+# Tabela recznych mutantow HAR-199: run_stream.gen() w src/cockpit/api/app.py
+# (kontrola sesji raz na okno). Funkcja zagniezdzona w trasie z dekoratorem - mutmut jej nie mutuje.
+# Rownowazny (bez wiersza): `ev = None` w `except TimeoutError:` - ev jest juz None
+# z przypisania tuz przed `if pozostalo > 0:`, zadne wejscie nie odroznia wersji.
+
+# Poczatkowa ostatnia = 0.0: pierwsza kontrola od razu po otwarciu, choc otwarcie sesje rozstrzygnelo.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """            ostatnia = time.monotonic()
+            while True:"""
+zamien = """            ostatnia = 0.0
+            while True:"""
+test = "tests/test_sesja_a_strumien.py::test_strumien_nie_kontroluje_sesji_zaraz_po_otwarciu_bo_otwarcie_ja_juz_rozstrzygnelo"
+
+# Brak odnowienia okna po udanej kontroli: po pierwszym oknie kontrola przy kazdym zdarzeniu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                    ostatnia = time.monotonic()
+                if ev is None:"""
+zamien = """                    pass
+                if ev is None:"""
+test = "tests/test_sesja_a_strumien.py::test_ciagly_ruch_w_szynie_powoduje_kontrole_sesji_raz_na_okno_nie_przy_kazdym_zdarzeniu"
+
+# Bez czekania na szyne w ogole: zdarzenia nie sa nigdy czytane.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if pozostalo > 0:"
+zamien = "if False:"
+test = "tests/test_sesja_a_strumien.py::test_wazna_sesja_nie_zamyka_strumienia_mimo_kilku_cykli_kontroli_i_dostarcza_zdarzenie"
+
+# Odwrocony warunek czekania: czeka tylko gdy kontrola jest nalezna (pozostalo == 0 nigdy nie czeka).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if pozostalo > 0:"
+zamien = "if pozostalo < 0:"
+test = "tests/test_sesja_a_strumien.py::test_wazna_sesja_nie_zamyka_strumienia_mimo_kilku_cykli_kontroli_i_dostarcza_zdarzenie"
+
+# Pelne okno od zdarzenia zamiast reszty okna: zdarzenie w 0,6 s okna odracza kontrole na ok. 1,6 s.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "ev = await asyncio.wait_for(q.get(), pozostalo)"
+zamien = "ev = await asyncio.wait_for(q.get(), settings.sesja_kontrola_s)"
+test = "tests/test_sesja_a_strumien.py::test_zdarzenie_tuz_przed_koncem_okna_nie_odracza_kontroli_o_kolejne_pelne_okno"
+
+# Pierwsze liczenie reszty z ogromnym oknem: cisza w szynie odracza kontrole bez konca.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                    ostatnia, time.monotonic(), settings.sesja_kontrola_s)
+                ev = None"""
+zamien = """                    ostatnia, time.monotonic(), 1e9)
+                ev = None"""
+test = "tests/test_sesja_a_strumien.py::test_kontrola_sesji_idzie_takze_gdy_w_szynie_nie_ma_zadnego_zdarzenia"
+
+# Drugie liczenie z ogromnym oknem: kontrola nigdy nie jest nalezna.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                        ostatnia, time.monotonic(), settings.sesja_kontrola_s) <= 0:"""
+zamien = """                        ostatnia, time.monotonic(), 1e9) <= 0:"""
+test = "tests/test_sesja_a_strumien.py::test_wylogowanie_wszedzie_konczy_otwarty_strumien_komunikatem_sesja_wygasla"
+
+# Warunek kontroli odwrocony: kontrola w srodku okna, przy kazdym zdarzeniu (setki UPDATE).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "settings.sesja_kontrola_s) <= 0:"
+zamien = "settings.sesja_kontrola_s) > 0:"
+test = "tests/test_sesja_a_strumien.py::test_sto_zdarzen_w_oknie_kontroli_sesji_nie_powoduje_wiecej_niz_jednego_zapisu_sesji"
+
+# Kontrola zawsze: kazdy obrot petli to UPDATE.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "settings.sesja_kontrola_s) <= 0:"
+zamien = "settings.sesja_kontrola_s) <= 1e9:"
+test = "tests/test_sesja_a_strumien.py::test_sto_zdarzen_w_oknie_kontroli_sesji_nie_powoduje_wiecej_niz_jednego_zapisu_sesji"
+
+# Kontrola nigdy: uniewazniona sesja nie zamyka strumienia.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "settings.sesja_kontrola_s) <= 0:"
+zamien = "settings.sesja_kontrola_s) < 0:"
+test = "tests/test_sesja_a_strumien.py::test_wylogowanie_wszedzie_konczy_otwarty_strumien_komunikatem_sesja_wygasla"
+
+# Brak przypisania ev = None przed warunkiem czekania: pierwszy obrot z minionym oknem
+# nie czeka na szyne i dostaje UnboundLocalError.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                ev = None
+                if pozostalo > 0:"""
+zamien = """                if pozostalo > 0:"""
+test = "tests/test_sesja_a_strumien.py::test_strumien_z_minionym_oknem_przed_pierwszym_obrotem_kontroluje_sesje_i_dostarcza_zdarzenie"
+
+# Timeout szyny przestaje byc tlumaczony: cisza w szynie przerywa strumien wyjatkiem.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "except TimeoutError:"
+zamien = "except KeyError:"
+test = "tests/test_sesja_a_strumien.py::test_kontrola_sesji_idzie_takze_gdy_w_szynie_nie_ma_zadnego_zdarzenia"
+
+# Po sesja_wygasla strumien nie konczy sie, tylko krazy dalej.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                        break
+                    ostatnia = time.monotonic()"""
+zamien = """                        continue
+                    ostatnia = time.monotonic()"""
+test = "tests/test_sesja_a_strumien.py::test_wylogowanie_wszedzie_konczy_otwarty_strumien_komunikatem_sesja_wygasla"
+
+# Odnowienie okna po kontroli w pierwszym wierszu ma sens tylko z poprawnym czasem: okno nie
+# odnawiane z biezacego zegara (zawsze od startu) - kontrola przy kazdym zdarzeniu po pierwszym oknie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                    ostatnia = time.monotonic()
+                if ev is None:"""
+zamien = """                    ostatnia = 0.0
+                if ev is None:"""
+test = "tests/test_sesja_a_strumien.py::test_ciagly_ruch_w_szynie_powoduje_kontrole_sesji_raz_na_okno_nie_przy_kazdym_zdarzeniu"

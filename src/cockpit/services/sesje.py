@@ -89,6 +89,15 @@ async def rozstrzygnij(s: AsyncSession, identyfikator: str) -> Kontekst:
     return Kontekst(user_id=user_id, tenant_id=tenant_id, rola=rola)
 
 
+def pozostalo_do_kontroli(ostatnia: float, teraz: float, okno_s: float) -> float:
+    """Ile sekund zostalo do nastepnej kontroli sesji (0 = kontrola nalezy sie juz).
+
+    HAR-199: strumien kontroluje sesje raz na okno zamiast przy kazdym zdarzeniu,
+    bo kazda kontrola to UPDATE `ostatnio_at` + commit.
+    """
+    return max(0.0, okno_s - (teraz - ostatnia))
+
+
 async def wyloguj(s: AsyncSession, identyfikator: str) -> None:
     await s.execute(
         update(Sesja)

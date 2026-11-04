@@ -82,6 +82,10 @@ class Projekt(BaseModel):
     created_at: str
 
 
+class DiffRunu(BaseModel):
+    diff: str
+
+
 class PlikOdczytany(BaseModel):
     sciezka: str
     tresc: str

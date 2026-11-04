@@ -19,6 +19,8 @@ from typing import Any
 
 from cockpit.services.errors import BlednySkill
 from cockpit.services.skills import NAZWA_PLIKU, ZRODLA, _podziel
+from runner.odbior import SHA_PELNY, BladOdbioru, zbierz_diff
+from runner.worktree import BladWorktree, katalog_runu
 from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_sekretem
 
 LIMIT_WYNIKOW = 2000
@@ -409,6 +411,28 @@ async def detect_stack(dane: dict) -> dict:
     return await asyncio.to_thread(_wykryj_stos, sciezka)
 
 
+def _zbierz_diff_runu(run_id: str, base_commit: str) -> dict:
+    try:
+        worktree = katalog_runu(run_id) / "worktree"
+    except BladWorktree:
+        raise BladOperacji("zle_dane", "niedozwolony identyfikator runu") from None
+    if not SHA_PELNY.fullmatch(base_commit):
+        raise BladOperacji("zle_dane", "base_commit nie jest SHA")
+    if not worktree.is_dir():
+        raise BladOperacji("brak_worktree", "worktree runu nie istnieje")
+    try:
+        return {"diff": zbierz_diff(worktree, base_commit)}
+    except BladOdbioru:
+        raise BladOperacji("blad_gita", "git nie zebral diffu runu") from None
+
+
+async def collect(dane: dict) -> dict:
+    """Diff runu tylko do odczytu; worktree runner liczy sam z `run_id`, sciezki od kokpitu nie bierze."""
+    run_id = _tekst(dane, "run_id")
+    base_commit = _tekst(dane, "base_commit")
+    return await asyncio.to_thread(_zbierz_diff_runu, run_id, base_commit)
+
+
 OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "ping": ping,
     "read_file": read_file,
@@ -416,6 +440,7 @@ OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "write_file": write_file,
     "katalog_definicji": katalog_definicji,
     "detect_stack": detect_stack,
+    "collect": collect,
 }
 
 

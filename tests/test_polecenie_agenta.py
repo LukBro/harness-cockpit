@@ -3,6 +3,10 @@
 Prompt kroku niesie wylacznie sciezki, a polecenie agenta wynika z profilu roli:
 model z tieru, brak zapisu dla roli bez prawa zapisu. Czyste funkcje, bez procesow.
 """
+import asyncio
+import json
+import shlex
+import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -11,6 +15,7 @@ import pytest
 from cockpit.services.errors import BladDziedziny
 from cockpit.services.invariants import Rola, Tier
 from cockpit.services.skills import materializuj, rozstrzygnij_rejestr
+from cockpit.services.walidacja import sprawdz_katalog_runu
 from runner.agent import (
     BrakModelu,
     ProfilBackendu,
@@ -18,6 +23,8 @@ from runner.agent import (
     polecenie_agenta,
     zbuduj_prompt,
 )
+from runner.hooks import plik_hookow, plik_ustawien, ustawienia_hookow
+from runner.krok import wykonaj_krok
 
 # Kazdy tier ma inny model, zeby zla mapa rol nie przeszla niezauwazona.
 PROFIL = ProfilBackendu(
@@ -524,3 +531,90 @@ def test_znak_nowej_linii_w_identyfikatorze_runu_nie_blokuje_budowy_promptu():
 
     assert "r\n1" not in prompt
     assert ".cockpit/_run/skills/pisanie/SKILL.md" in prompt
+
+
+# --- HAR-175: ustawienia kroku przez --settings -----------------------------------------
+
+WSZYSTKIE_ROLE = [pytest.param(r, id=r.value) for r in Rola]
+MATCHER_STRAZY = "Bash|Write|Edit|MultiEdit|NotebookEdit"
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE)
+def test_polecenie_z_ustawieniami_kroku_niesie_flage_settings_ze_sciezka_pliku_obok_siebie(
+    tmp_path, rola
+):
+    ustawienia = tmp_path / "hooks" / "run-1" / "krok-1.settings.json"
+
+    argv = polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=ustawienia)
+
+    assert argv.count("--settings") == 1
+    assert argv[argv.index("--settings") + 1] == str(ustawienia)
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE)
+def test_ustawienia_kroku_niczego_nie_zmieniaja_w_reszcie_polecenia_agenta(tmp_path, rola):
+    ustawienia = tmp_path / "krok-1.settings.json"
+    bez = polecenie_agenta(spec(rola), "p", PROFIL)
+
+    z = polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=ustawienia)
+
+    i = z.index("--settings")
+    assert z[:i] + z[i + 2:] == bez
+    assert z[:5] == bez[:5]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE)
+def test_polecenie_bez_ustawien_kroku_nie_ma_flagi_settings(rola):
+    assert "--settings" not in polecenie_agenta(spec(rola), "p", PROFIL)
+    assert "--settings" not in polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=None)
+
+
+def test_sciezka_ustawien_ze_spacja_jest_jednym_argumentem_polecenia(tmp_path):
+    ustawienia = tmp_path / "katalog ze spacja" / "krok 1.settings.json"
+
+    argv = polecenie_agenta(spec(Rola.executor), "p", PROFIL, ustawienia=ustawienia)
+
+    assert str(ustawienia) in argv
+
+
+KOD_ATRAPY_ARGV = r"""
+import json, sys
+with open(sys.argv[-1], "w") as f:
+    json.dump(sys.argv[1:-1], f)
+"""
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE)
+async def test_realne_polecenie_agenta_ma_settings_a_plik_hookow_kroku_lezy_poza_worktree(
+    tmp_path, rola
+):
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    stan = tmp_path / "stan"
+    plik = plik_hookow(stan, "run-1", "krok-1")
+    ustawienia = plik_ustawien(
+        stan, "run-1", "krok-1", ustawienia_hookow(plik, rola=rola, worktree=worktree)
+    )
+    zapis_argv = tmp_path / "argv-atrapy.json"
+    argv = polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=ustawienia)
+    polecenie = [sys.executable, "-I", "-c", KOD_ATRAPY_ARGV, *argv[1:], str(zapis_argv)]
+    zdarzenia: list[dict] = []
+
+    async def emit(zdarzenie: dict) -> None:
+        zdarzenia.append(zdarzenie)
+
+    wynik = await asyncio.wait_for(wykonaj_krok(spec(rola), polecenie, worktree, emit), 60)
+
+    assert wynik.status == "zakonczony"
+    argv_atrapy = json.loads(zapis_argv.read_text())
+    sciezka = Path(argv_atrapy[argv_atrapy.index("--settings") + 1])
+    assert sciezka == ustawienia
+    assert sciezka.is_file()
+    assert worktree.resolve() not in sciezka.resolve().parents
+    assert sprawdz_katalog_runu(sciezka.parent, worktree) is None
+    zapisane = json.loads(sciezka.read_text(encoding="utf-8"))
+    grupy = [g for g in zapisane["hooks"]["PreToolUse"] if g.get("matcher") == MATCHER_STRAZY]
+    assert len(grupy) == 1
+    polecenie_strazy = shlex.split(grupy[0]["hooks"][0]["command"])
+    assert polecenie_strazy[polecenie_strazy.index("--rola") + 1] == rola.value
+    assert polecenie_strazy[polecenie_strazy.index("--worktree") + 1] == str(worktree)
