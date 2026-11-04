@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from runner import operacje
+from runner import operacje, silnik
 from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
 
@@ -135,6 +135,9 @@ class Runner:
         )
         self._proba_laczenia = 0
         self._zapytania: set[asyncio.Task] = set()
+        # runy workflow (HAR-80): osobne zadania, zyja niezaleznie od strumienia polecen
+        self._runy: set[asyncio.Task] = set()
+        self._zapis_zdarzen = asyncio.Lock()    # jeden zapis do bufora naraz: kolejnosc zdarzen
 
     async def register(self, client: httpx.AsyncClient) -> None:
         r = await client.post(
@@ -372,6 +375,37 @@ class Runner:
         if zadania:
             await asyncio.wait(zadania)     # odczekanie, zeby po powrocie nie zostaly zadania
 
+    async def _anuluj_runy(self) -> None:
+        zadania = list(self._runy)
+        for zadanie in zadania:
+            zadanie.cancel()
+        if zadania:
+            await asyncio.wait(zadania)
+
+    def _klient_http(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(CZAS_ODCZYTU_POST_S, connect=CZAS_POLACZENIA_S),
+            transport=self._transport,
+        )
+
+    async def _run_workflow(self, cmd: dict) -> None:
+        """Run workflow w wlasnym kliencie HTTP: zerwanie strumienia polecen nie przerywa
+        runu (BRO-75), a zdarzenia silnika ida do kokpitu przez `send_event`."""
+        async with self._klient_http() as client:
+
+            async def emit(zdarzenie: dict) -> None:
+                async with self._zapis_zdarzen:
+                    await self.send_event(client, **zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)
+            except BrakMiejsca:
+                # silnik anulowal kroki w `finally`; kokpit dostaje przerwanie poza buforem
+                await self._wyslij_bezposrednio(
+                    client, run_id=cmd.get("run_id"), step_id="run", kind="step_aborted",
+                    text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
+
     @staticmethod
     def _zabij_grupe(proc: asyncio.subprocess.Process, sygnal: signal.Signals) -> None:
         if proc.returncode is not None:
@@ -410,6 +444,7 @@ class Runner:
         if zadanie is not None and zadanie is not asyncio.current_task() and not zadanie.done():
             zadanie.cancel()
         await self._anuluj_zapytania()
+        await self._anuluj_runy()
         if self._heartbeat is not None:
             await self._heartbeat.stop()
         # petla, bo krok moze zostac przyjety w trakcie sprzatania innego; _procesy oprozniaja
@@ -472,10 +507,7 @@ class Runner:
             )
 
     async def _nasluchuj(self) -> None:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(CZAS_ODCZYTU_POST_S, connect=CZAS_POLACZENIA_S),
-            transport=self._transport,
-        ) as client:
+        async with self._klient_http() as client:
             await self.register(client)
             await self.dosylaj(client)      # zalegle z poprzedniego polaczenia albo startu
             if self._zatrzymany.is_set():
@@ -503,6 +535,11 @@ class Runner:
                             self._proba_laczenia = 0
                         elif cmd.get("type") == "run_step":
                             await self._krok_z_polecenia(client, cmd)
+                        elif cmd.get("type") == "run_workflow":
+                            # osobne zadanie: run trwa dlugo, a strumien czytamy dalej
+                            run = asyncio.create_task(self._run_workflow(cmd))
+                            self._runy.add(run)
+                            run.add_done_callback(self._runy.discard)
                         elif "req_id" in cmd:
                             # osobne zadanie: wolna operacja nie wstrzymuje czytania strumienia
                             zadanie = asyncio.create_task(

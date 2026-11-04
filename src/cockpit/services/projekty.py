@@ -105,6 +105,16 @@ async def podlacz_projekt(
     return pozycja
 
 
+async def sciezka_projektu(s: AsyncSession, tenant_id: str, project_id: str) -> str:
+    """Sciezka katalogu projektu zespolu na maszynie runnera (HAR-80); obcy projekt to NieZnaleziono."""
+    sciezka = (await s.execute(
+        select(Project.path).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if sciezka is None:
+        raise NieZnaleziono("projekt nieznany")
+    return sciezka
+
+
 async def projekty_zespolu(s: AsyncSession, tenant_id: str) -> list[dict]:
     """Projekty zespolu od najnowszego."""
     projekty = (await s.execute(

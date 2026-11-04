@@ -1,0 +1,478 @@
+# Tabela recznych mutantow HAR-80: silnik runu u runnera (`runner.silnik`) i polecenie
+# `run_workflow` w kokpicie. Elementy, ktorych mutmut nie mutuje: stale modulu silnika (wzorzec
+# nazwy workflow, katalog workflow, krok walidacji, powod approval), aliasy typow, klasy wyjatkow
+# i dataclass, typy w `except`, linia `W_TOKU` z `# pragma: no mutate`, pole `project_id` modelu
+# wejscia, lista odpowiedzi trasy, polecenie runu w `create_run`, zbior `_POLECENIA_RUNU`,
+# schemat `web/openapi.json`.
+#
+# Pola `szukaj` uzgodnione z faktycznym kodem: kazdy wystepuje w pliku dokladnie raz.
+# Testy wskazane bez nawiasow kwadratowych uruchamiaja wszystkie warianty parametryzacji.
+
+# =========================== src/runner/silnik.py ===========================
+
+# --- NAZWA_WORKFLOW: dlugosc i klasa znakow ---
+
+# Limit dlugosci o jeden za duzy: 65 znakow przechodziloby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_.-]{1,65}'
+test = "tests/test_silnik_runu.py::test_niedozwolona_nazwa_workflow_konczy_run_bledem_bez_tworzenia_worktree"
+
+# Limit dlugosci o jeden za maly: 64 znaki nie przechodzilyby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_.-]{1,63}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_o_najdluzszej_dozwolonej_dlugosci_jest_wykonana"
+
+# Minimum 2 znaki: jednoznakowa nazwa nie przechodzilaby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_.-]{2,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Minimum 0 znakow: pusta nazwa przechodzilaby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_.-]{0,64}'
+test = "tests/test_silnik_runu.py::test_niedozwolona_nazwa_workflow_konczy_run_bledem_bez_tworzenia_worktree"
+
+# Bez podkreslenia.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9.-]{1,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Bez kropki.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_-]{1,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Bez myslnika.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_.]{1,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Duze litery konczace sie na Y: nazwa z Z nie przechodzilaby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Ya-z0-9_.-]{1,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Male litery konczace sie na y: nazwa z z nie przechodzilaby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-y0-9_.-]{1,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Cyfry konczace sie na 8: nazwa z 9 nie przechodzilaby.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-8_.-]{1,64}'
+test = "tests/test_silnik_runu.py::test_nazwa_workflow_z_dozwolonych_znakow_jest_wykonana"
+
+# Dozwolony ukosnik: `a/b` i `../w` wychodzilyby poza katalog workflow.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_./-]{1,64}'
+test = "tests/test_silnik_runu.py::test_niedozwolona_nazwa_workflow_konczy_run_bledem_bez_tworzenia_worktree"
+
+# Dozwolona spacja.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '[A-Za-z0-9_.-]{1,64}'
+zamien = '[A-Za-z0-9_. -]{1,64}'
+test = "tests/test_silnik_runu.py::test_niedozwolona_nazwa_workflow_konczy_run_bledem_bez_tworzenia_worktree"
+
+# --- KATALOG_WORKFLOW: odczyt workflow z `.cockpit/workflows` w worktree ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'KATALOG_WORKFLOW = Path(".cockpit") / "workflows"'
+zamien = 'KATALOG_WORKFLOW = Path(".cockpitx") / "workflows"'
+test = "tests/test_silnik_runu.py::test_kopia_workflow_w_katalogu_runu_ma_tresc_pliku_z_repozytorium"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'KATALOG_WORKFLOW = Path(".cockpit") / "workflows"'
+zamien = 'KATALOG_WORKFLOW = Path(".cockpit") / "workflowsx"'
+test = "tests/test_silnik_runu.py::test_kopia_workflow_w_katalogu_runu_ma_tresc_pliku_z_repozytorium"
+
+# --- KROK_WALIDACJI: id kroku, na ktorym kokpit widzi blad przed startem ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'KROK_WALIDACJI = "walidacja"'
+zamien = 'KROK_WALIDACJI = "walidacja_x"'
+test = "tests/test_silnik_runu.py::test_brak_pliku_workflow_konczy_run_bledem_bez_startu_krokow"
+
+# --- POWOD_APPROVAL: tekst porazki kroku z approval (kazdy fragment) ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'krok wymaga decyzji człowieka'
+zamien = 'krok wymaga decyzji'
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'człowieka (approval)'
+zamien = 'człowieka (aprobata)'
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'bramka nie jest jeszcze obsługiwana'
+zamien = 'bramka jest obsługiwana'
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'obsługiwana (HAR-172)'
+zamien = 'obsługiwana (HAR-173)'
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+# --- aliasy typow: wyliczane przy imporcie modulu, zly alias przewraca import ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'Emit = Callable[[dict], Awaitable[None]]'
+zamien = 'Emit = Callable[dict, Awaitable[None]]'
+test = "tests/test_silnik_runu.py::test_kopia_workflow_w_katalogu_runu_ma_tresc_pliku_z_repozytorium"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'UruchomAgenta = Callable[..., Awaitable[WynikKroku]]'
+zamien = 'UruchomAgenta = Callable[int, Awaitable[WynikKroku]]'
+test = "tests/test_silnik_runu.py::test_kopia_workflow_w_katalogu_runu_ma_tresc_pliku_z_repozytorium"
+
+# --- klasy wyjatkow i dataclass ---
+
+# Wyjatek startu musi dziedziczyc po Exception, inaczej `raise` konczy sie TypeError.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'class BladStartu(Exception):'
+zamien = 'class BladStartu:'
+test = "tests/test_silnik_runu.py::test_workflow_z_bledami_konczy_run_bez_startu_krokow_i_wymienia_problemy"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'class PorazkaKroku(Exception):'
+zamien = 'class PorazkaKroku:'
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+# Przygotowany run jest niezmienny.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '@dataclass(frozen=True)'
+zamien = '@dataclass'
+test = "tests/test_silnik_runu.py::test_przygotowany_run_jest_niezmienny"
+
+# --- typy w `except` ---
+
+# Odmowa zakresu (BladDziedziny) tlumaczona na blad startu.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
+zamien = 'except (ZlaKonfiguracjaZakresu, OSError) as e:'
+test = "tests/test_silnik_runu.py::test_sciezka_poza_zakresem_runnera_konczy_run_bledem_bez_tworzenia_worktree"
+
+# Uszkodzona konfiguracja zakresu tlumaczona na blad startu.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
+zamien = 'except (BladDziedziny, OSError) as e:'
+test = "tests/test_silnik_runu.py::test_uszkodzona_konfiguracja_zakresu_konczy_run_bledem_a_nie_pustym_zakresem"
+
+# Blad dysku (OSError) tlumaczony na blad startu.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
+zamien = 'except (BladDziedziny, ZlaKonfiguracjaZakresu) as e:'
+test = "tests/test_silnik_runu.py::test_blad_zapisu_kopii_workflow_konczy_run_bledem_przed_startem_krokow"
+
+# Porazka kroku zbudowanego przez silnik (approval) konczy krok, nie run.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'except PorazkaKroku as e:'
+zamien = 'except KeyError as e:'
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+# Znak sterujacy w prompcie (ValueError) konczy krok porazka.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'except ValueError as e:'
+zamien = 'except KeyError as e:'
+test = "tests/test_silnik_runu.py::test_znak_sterujacy_w_komendzie_capability_konczy_krok_bledem_bez_uruchomienia_agenta"
+
+# Brak modelu w profilu (BrakModelu) konczy krok porazka.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'except BrakModelu as e:'
+zamien = 'except KeyError as e:'
+test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej"
+
+# --- stan kroku w toku (linia z `# pragma: no mutate`) ---
+
+# Krok zaplanowany ponownie startowalby drugi raz, gdy inny krok sie konczy.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'StanKroku.W_TOKU  # pragma: no mutate'
+zamien = 'StanKroku.OCZEKUJE  # pragma: no mutate'
+test = "tests/test_silnik_runu.py::test_kazdy_krok_startuje_dokladnie_raz_takze_gdy_inny_krok_konczy_sie_wczesniej"
+
+# =========================== src/runner/client.py ===========================
+
+# Brak miejsca z silnika (BrakMiejsca) tlumaczony na przerwanie runu, nie wyjatek zadania.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "await silnik.wykonaj_run(cmd, emit)\n            except BrakMiejsca:"
+zamien = "await silnik.wykonaj_run(cmd, emit)\n            except KeyError:"
+test = "tests/test_polecenie_run_workflow.py::test_brak_miejsca_na_zdarzenia_kontroluje_run_przerwaniem_a_nie_wyjatkiem_zadania"
+
+# ======================= src/cockpit/api/app.py (RunCreate, create_run) =======================
+
+# Pole project_id: dolny i gorny limit dlugosci oraz wartosc domyslna.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project_id: str | None = Field(default=None, min_length=1,"
+zamien = "project_id: str | None = Field(default=None, min_length=0,"
+test = "tests/test_polecenie_run_workflow.py::test_project_id_dluzsze_niz_kolumna_albo_puste_daje_422_i_run_nie_powstaje"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "max_length=36)  # kolumna String(36)"
+zamien = "max_length=37)  # kolumna String(36)"
+test = "tests/test_polecenie_run_workflow.py::test_project_id_dluzsze_niz_kolumna_albo_puste_daje_422_i_run_nie_powstaje"
+
+# Domyslnie brak projektu (None), nie pusty napis.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project_id: str | None = Field(default=None,"
+zamien = 'project_id: str | None = Field(default="",'
+test = "tests/test_polecenie_run_workflow.py::test_run_bez_projektu_nadal_wysyla_krok_szkieletu_i_nie_zapisuje_projektu"
+
+# Odpowiedz 404 w opisie trasy POST /api/runs.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def create_run("
+zamien = "odpowiedzi_bledow(401, 403, 409, 422))\nasync def create_run("
+test = "tests/test_polecenie_run_workflow.py::test_schemat_openapi_tworzenia_runu_opisuje_odpowiedz_404_dla_nieznanego_projektu"
+
+# Projekt trafia do utworz_run (run idzie do runnera projektu i zapisuje project_id).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project_id=body.project_id,"
+zamien = "project_id=None,"
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zapisuje_projekt_i_runner_projektu_w_bazie"
+
+# Gałąź wyboru polecenia: bez projektu krok szkieletu, z projektem run_workflow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if body.project_id is None:"
+zamien = "if body.project_id is not None:"
+test = "tests/test_polecenie_run_workflow.py::test_run_bez_projektu_nadal_wysyla_krok_szkieletu_i_nie_zapisuje_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if body.project_id is None:"
+zamien = "if body.project_id is not None:"
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+# Pola kroku szkieletu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"type": "run_step", "run_id": run.id,'
+zamien = '"type": "run_stepx", "run_id": run.id,'
+test = "tests/test_polecenie_run_workflow.py::test_run_bez_projektu_nadal_wysyla_krok_szkieletu_i_nie_zapisuje_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"run_id": run.id, "step_id": "s0"'
+zamien = '"run_id": "r", "step_id": "s0"'
+test = "tests/test_polecenie_run_workflow.py::test_run_bez_projektu_nadal_wysyla_krok_szkieletu_i_nie_zapisuje_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"step_id": "s0"'
+zamien = '"step_id": "s1"'
+test = "tests/test_polecenie_run_workflow.py::test_run_bez_projektu_nadal_wysyla_krok_szkieletu_i_nie_zapisuje_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"operacja": body.operacja,'
+zamien = '"operacja": "szkielet",'
+test = "tests/test_polecenie_run_workflow.py::test_run_bez_projektu_przekazuje_runnerowi_wybrana_operacje"
+
+# Pola polecenia run_workflow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"type": "run_workflow"'
+zamien = '"type": "run_workflows"'
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"run_id": run.id, "workflow"'
+zamien = '"run_id": "r", "workflow"'
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"workflow": body.workflow,'
+zamien = '"workflow": "szkielet",'
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"sciezka": sciezka,'
+zamien = '"path": sciezka,'
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"sciezka": sciezka,'
+zamien = '"sciezka": "/",'
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+# Sciezka projektu wyszukana dla zespolu zalogowanego, nie dla innego identyfikatora.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "sciezka_projektu(s, k.tenant_id, body.project_id)"
+zamien = "sciezka_projektu(s, run.id, body.project_id)"
+test = "tests/test_polecenie_run_workflow.py::test_run_z_projektem_zespolu_wysyla_runnerowi_projektu_polecenie_run_workflow"
+
+# ===================== src/cockpit/services/runs.py (_POLECENIA_RUNU) =====================
+
+# Krok szkieletu dalej podlega regule aktualnosci.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '{"run_step", "run_workflow"}'
+zamien = '{"run_stepx", "run_workflow"}'
+test = "tests/test_polecenie_run_workflow.py::test_przerwany_run_nie_wysyla_juz_polecenia_run_workflow_po_powrocie_runnera"
+
+# run_workflow podlega regule aktualnosci.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '{"run_step", "run_workflow"}'
+zamien = '{"run_step", "run_workflowx"}'
+test = "tests/test_polecenie_run_workflow.py::test_polecenie_run_workflow_runu_ktory_nie_jest_w_toku_jest_odrzucane"
+
+# Inne polecenia nie podlegaja tej regule.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '{"run_step", "run_workflow"}'
+zamien = '{"run_step", "run_workflow", "ping"}'
+test = "tests/test_polecenie_run_workflow.py::test_polecenie_inne_niz_krok_runu_jest_zawsze_aktualne_nawet_z_id_przerwanego_runu"
+
+# ========================= web/openapi.json (kontrakt API) =========================
+
+# Limity pola project_id w schemacie wejscia.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''            "title": "Potwierdz Rownolegly",
+            "type": "boolean"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,'''
+zamien = '''            "title": "Potwierdz Rownolegly",
+            "type": "boolean"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 37,'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''            "title": "Potwierdz Rownolegly",
+            "type": "boolean"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,'''
+zamien = '''            "title": "Potwierdz Rownolegly",
+            "type": "boolean"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 0,'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Odpowiedz 404 trasy POST /api/runs.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''                  "$ref": "#/components/schemas/RunUtworzony"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {'''
+zamien = '''                  "$ref": "#/components/schemas/RunUtworzony"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "405": {'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
