@@ -121,13 +121,13 @@ test = "tests/test_stan_krokow.py::test_dwa_kroki_tego_samego_runu_maja_osobne_s
 # --- front: dociaganie szczegolow runu po zdarzeniu konca runu ---
 
 [[mutant]]
-plik = "web/src/App.tsx"
+plik = "web/src/WidokRunu.tsx"
 szukaj = ' || z.kind === "run_finished"'
 zamien = ' || z.kind === "step_skipped"'
 test = "tests/e2e/test_szkielet_w_przegladarce.py::test_status_do_odbioru_pojawia_sie_dopiero_po_zdarzeniu_konca_runu_przyslanym_pozniej"
 
 [[mutant]]
-plik = "web/src/App.tsx"
+plik = "web/src/WidokRunu.tsx"
 szukaj = ' || z.kind === "run_finished"'
 zamien = ' || z.kind === "step_skipped"'
 test = "tests/e2e/test_szkielet_w_przegladarce.py::test_porazka_kroku_pokazuje_status_nieudany_z_powodem_dopiero_po_zakonczeniu_runu"
