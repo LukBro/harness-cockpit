@@ -1,19 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchZSesja, Konto, odswiezSesje, PanelKonta, ustawPowrotDoLogowania, ustawToken } from "./Konto";
+import type { Katalog, RunnerZespolu } from "./api";
 import { KOMUNIKAT_SIEC, opisOffline, PODPOWIEDZ_OFFLINE_ID, PODPOWIEDZ_OFFLINE, WidokRunu, type StanRunnera } from "./WidokRunu";
-
-type Backend = { nazwa: string; auth: string };
-type Runner = {
-  id: string;
-  name: string;
-  version: string;
-  backends: Backend[];
-  online: boolean;
-  last_seen_at: string | null;
-};
-
-type Definicja = { runner_id: string; projekt: string; rodzaj: "skill" | "workflow"; klucz: string; nazwa: string; rola: string | null };
-type Katalog = { odswiezono_at: string | null; definicje: Definicja[] };
 
 const ODSWIEZANIE_RUNNEROW_MS = 5000;
 const KOMUNIKAT_TRYB_ODCZYTU = "Runner offline — tryb tylko do odczytu";
@@ -46,7 +34,7 @@ function useStanRunnera(): StanRunnera {
           setStan("nieznany");
           return;
         }
-        const lista: Runner[] = await r.json();
+        const lista: RunnerZespolu[] = await r.json();
         if (anulowano) return;
         setStan(lista.some((x) => x.online) ? "online" : "offline");
       } catch {
@@ -241,7 +229,7 @@ function Definicje({ stanRunnera }: { stanRunnera: StanRunnera }) {
 // Lista runnerow zespolu. Przy chwilowym bledzie zostaje ostatnia znana lista
 // (z komunikatem), bo znikajaca lista wygladalaby jak "wszystkie runnery padly".
 function PanelRunnerow() {
-  const [runnery, setRunnery] = useState<Runner[] | null>(null);
+  const [runnery, setRunnery] = useState<RunnerZespolu[] | null>(null);
   const [blad, setBlad] = useState<string | null>(null);
 
   useEffect(() => {
@@ -255,7 +243,7 @@ function PanelRunnerow() {
           setBlad(KOMUNIKAT_BLAD_RUNNEROW);
           return;
         }
-        const lista: Runner[] = await r.json();
+        const lista: RunnerZespolu[] = await r.json();
         if (anulowano) return;
         setRunnery(lista);
         setBlad(null);
