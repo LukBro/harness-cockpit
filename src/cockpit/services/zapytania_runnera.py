@@ -39,8 +39,27 @@ async def zapytaj_runnera_online(
     runner = next((r for r in runnery if runner_online(r, polaczone)), None)
     if runner is None:
         raise RunnerOffline("runner offline — tryb tylko do odczytu")
+    return runner.id, await _wyslij_i_sprawdz(runner.id, typ, dane, wyslij)
+
+
+async def zapytaj_runnera(
+    s: AsyncSession, tenant_id: str, runner_id: str, typ: str, dane: dict[str, Any],
+    polaczone: frozenset[str], wyslij: Wyslij,
+) -> Any:
+    """Wynik zapytania do KONKRETNEGO runnera zespolu (HAR-89): brak, cudzy albo offline = RunnerOffline."""
+    runner = (await s.execute(
+        select(Runner).where(Runner.id == runner_id, Runner.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if runner is None or not runner_online(runner, polaczone):
+        raise RunnerOffline("runner runu jest offline")
+    return await _wyslij_i_sprawdz(runner.id, typ, dane, wyslij)
+
+
+async def _wyslij_i_sprawdz(
+    runner_id: str, typ: str, dane: dict[str, Any], wyslij: Wyslij,
+) -> Any:
     try:
-        cialo = await wyslij(runner.id, typ, dane, settings.runner_zapytanie_timeout_s)
+        cialo = await wyslij(runner_id, typ, dane, settings.runner_zapytanie_timeout_s)
     except TimeoutError:
         raise StanNiemozliwy("runner nie odpowiedzial w limicie czasu") from None
     if len(json.dumps(cialo).encode()) > settings.runner_odpowiedz_max_kb * 1024:
@@ -50,4 +69,4 @@ async def zapytaj_runnera_online(
         if cialo.get("kod") == "poza_zakresem":
             raise PlikPozaZakresem(cialo.get("blad") or "sciezka poza zakresem runnera")
         raise StanNiemozliwy(cialo.get("blad") or "runner zglosil blad")
-    return runner.id, cialo.get("wynik")
+    return cialo.get("wynik")

@@ -28,7 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import dostep, katalog, kroki, pliki_runnera, sesje
+from cockpit.services import dostep, katalog, kroki, odbior, pliki_runnera, sesje
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import BrakDostepu, NieZnaleziono
@@ -37,6 +37,7 @@ from cockpit.settings import settings
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
+    DiffRunu,
     Katalog,
     KatalogOdswiezony,
     KrokRunu,
@@ -300,6 +301,17 @@ async def get_run(
             step_id=k.step_id, agent_id=k.agent_id, attempt=k.attempt, status=k.status.value,
             reason=k.reason) for k in wiersze_krokow],
     )
+
+
+@app.get("/api/runs/{run_id}/diff", response_model=DiffRunu,
+         responses=odpowiedzi_bledow(401, 404, 409, 422))
+async def diff_runu(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> DiffRunu:
+    diff = await odbior.diff_runu(s, run_id, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)
+    return DiffRunu(diff=diff)
 
 
 @app.get("/api/runs/{run_id}/stream", response_model=None,
