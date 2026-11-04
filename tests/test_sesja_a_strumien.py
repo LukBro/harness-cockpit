@@ -475,6 +475,12 @@ async def test_strumien_nie_kontroluje_sesji_zaraz_po_otwarciu_bo_otwarcie_ja_ju
 ):
     """Jedyne rozstrzygniecie w oknie 3600 s to to z otwarcia strumienia; pierwsza kontrola po oknie."""
     monkeypatch.setattr(settings, "sesja_kontrola_s", 3600)
+    # Zegar strumienia przesuniety daleko poza okno: okno liczone od zera (zamiast od otwarcia)
+    # daje kontrole od razu niezaleznie od czasu pracy maszyny (swiezy runner CI ma uptime < 1 h).
+    modul_app = importlib.import_module("cockpit.api.app")
+    zegar = time.monotonic
+    monkeypatch.setattr(
+        modul_app, "time", SimpleNamespace(monotonic=lambda: zegar() + 10 * 3600))
     wywolania = _licz_rozstrzygniecia_sesji(monkeypatch)
     klient = await _zalogowany(swiat, swiat.wlasciciel)
 
