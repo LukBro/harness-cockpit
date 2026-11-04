@@ -8,6 +8,7 @@ Asercje dotyczą rodzaju zdarzenia (`kind`); pola pomiarowe (`duration_ms`, `cos
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ import httpx
 import pytest
 
 import runner.client as runner_client
-from procesy import czekaj, czekaj_bez_anulowania, zadanie_tla
+from procesy import czekaj, czekaj_bez_anulowania, czekaj_na_warunek, zadanie_tla
 from runner.bufor import Bufor
 from runner.client import Runner, TokenOdrzucony
 
@@ -854,7 +855,7 @@ async def test_polecenie_run_step_ze_strumienia_uruchamia_komende_i_zglasza_jej_
     assert len({z["event_id"] for z in zdarzenia}) == 3
 
 
-async def test_strumien_polecen_nie_ma_limitu_czasu_bo_trwa_godzinami(monkeypatch):
+async def test_klient_runnera_ma_limit_czasu_a_nie_czeka_bez_konca(monkeypatch):
     kwargs_klienta: list[dict] = []
     prawdziwy = httpx.AsyncClient
 
@@ -868,7 +869,166 @@ async def test_strumien_polecen_nie_ma_limitu_czasu_bo_trwa_godzinami(monkeypatc
     await _nasluchuj(runner)
 
     assert len(kwargs_klienta) == 1
-    assert kwargs_klienta[0].get("timeout", "brak") is None
+    assert "timeout" in kwargs_klienta[0]
+    assert kwargs_klienta[0]["timeout"] is not None
+
+
+ZDARZENIE_W_BUFORZE = {
+    "run_id": RUN_ID, "step_id": STEP_ID, "kind": "output", "text": "x", "event_id": "ev-1"}
+
+
+async def _jedno_polaczenie_z_zaleglym_zdarzeniem(tmp_path):
+    """Runner z zaleglym zdarzeniem w buforze, jedno polaczenie z nagrywajacym kokpitem.
+    Zwraca nagrane zadania."""
+    bufor = Bufor(tmp_path / "bufor")
+    bufor.dopisz(ZDARZENIE_W_BUFORZE)
+    transport, zadania = _nagrywajacy_kokpit()
+    odczekania = Odczekania(zatrzymaj_po=1)
+    runner = Runner("http://kokpit.test", TOKEN, transport=transport, bufor=bufor,
+                    odczekaj=odczekania)
+    odczekania.runner = runner
+    await _nasluch(runner)
+    return zadania
+
+
+async def test_zameldowanie_runnera_czeka_na_polaczenie_10_s_i_na_odpowiedz_30_s(tmp_path):
+    zadania = await _jedno_polaczenie_z_zaleglym_zdarzeniem(tmp_path)
+
+    limity = _zadanie(zadania, "/api/runners/register").extensions["timeout"]
+    assert limity == {"connect": 10, "read": 30, "write": 30, "pool": 30}
+
+
+async def test_wysylka_zdarzenia_czeka_na_polaczenie_10_s_i_na_odpowiedz_30_s(tmp_path):
+    zadania = await _jedno_polaczenie_z_zaleglym_zdarzeniem(tmp_path)
+
+    limity = _zadanie(zadania, "/api/events").extensions["timeout"]
+    assert limity == {"connect": 10, "read": 30, "write": 30, "pool": 30}
+
+
+async def test_strumien_polecen_uznaje_polaczenie_za_martwe_po_45_s_ciszy_czyli_trzech_pingach(
+    tmp_path,
+):
+    zadania = await _jedno_polaczenie_z_zaleglym_zdarzeniem(tmp_path)
+
+    limity = _zadanie(zadania, "/api/runners/stream").extensions["timeout"]
+    assert limity == {"connect": 10, "read": 45, "write": 45, "pool": 45}
+
+
+# --- HAR-198: prawdziwe gniazdo TCP (MockTransport nie egzekwuje limitow czasu) ---
+
+LIMIT_TESTU_S = 5
+
+
+class KokpitNaGniezdzie:
+    """Minimalny kokpit na prawdziwym gniezdzie TCP (HTTP/1.1). Strumien polecen wysyla
+    `polaczono` i milknie. Na pierwsze `bez_odpowiedzi` zdarzen nie odpowiada wcale."""
+
+    def __init__(self, bez_odpowiedzi: int = 0) -> None:
+        self.bez_odpowiedzi = bez_odpowiedzi
+        self.strumienie = 0
+        self.zdarzenia: list[dict] = []
+        self._pisarze: list[asyncio.StreamWriter] = []
+
+    @staticmethod
+    def _odpowiedz(pisarz: asyncio.StreamWriter, status: int, tresc: bytes = b"") -> None:
+        pisarz.write(
+            f"HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n"
+            f"Content-Length: {len(tresc)}\r\n\r\n".encode() + tresc)
+
+    async def obsluz(self, czytelnik: asyncio.StreamReader, pisarz: asyncio.StreamWriter) -> None:
+        self._pisarze.append(pisarz)
+        try:
+            while True:
+                naglowek = await czytelnik.readuntil(b"\r\n\r\n")
+                linie = naglowek.decode().split("\r\n")
+                sciezka = linie[0].split(" ")[1]
+                dlugosc = 0
+                for linia in linie[1:]:
+                    if linia.lower().startswith("content-length:"):
+                        dlugosc = int(linia.split(":")[1])
+                cialo = await czytelnik.readexactly(dlugosc)
+                if sciezka == "/api/runners/register":
+                    self._odpowiedz(pisarz, 200, json.dumps(
+                        {"runner_id": "r1", "tenant_id": "t1", "heartbeat_co_s": 15}).encode())
+                elif sciezka == "/api/runners/stream":
+                    self.strumienie += 1
+                    pisarz.write(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                        b"Transfer-Encoding: chunked\r\n\r\n"
+                        + b"%x\r\n%s\r\n" % (len(POLACZONO), POLACZONO))
+                    await pisarz.drain()
+                    await czytelnik.read()          # cisza do zamkniecia przez klienta
+                    return
+                elif sciezka == "/api/events":
+                    self.zdarzenia.append(json.loads(cialo))
+                    if len(self.zdarzenia) > self.bez_odpowiedzi:
+                        self._odpowiedz(pisarz, 200)
+                else:
+                    self._odpowiedz(pisarz, 404)
+                await pisarz.drain()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+        finally:
+            pisarz.close()
+
+
+@contextlib.asynccontextmanager
+async def _kokpit_na_gniezdzie(bez_odpowiedzi: int = 0):
+    kokpit = KokpitNaGniezdzie(bez_odpowiedzi)
+    serwer = await asyncio.start_server(kokpit.obsluz, "127.0.0.1", 0)
+    port = serwer.sockets[0].getsockname()[1]
+    try:
+        yield kokpit, f"http://127.0.0.1:{port}"
+    finally:
+        serwer.close()
+        for pisarz in kokpit._pisarze:
+            pisarz.close()
+        await czekaj(serwer.wait_closed(), LIMIT_TESTU_S, "zamkniecie serwera testowego")
+
+
+async def test_runner_laczy_sie_ponownie_gdy_strumien_polecen_milknie_na_dluzej_niz_limit(
+    monkeypatch, capsys, tmp_path,
+):
+    monkeypatch.setattr(runner_client, "CZAS_ODCZYTU_STRUMIENIA_S", 0.3)
+    async with _kokpit_na_gniezdzie() as (kokpit, adres):
+        odczekania = Odczekania(zatrzymaj_po=2)
+        runner = Runner(adres, TOKEN, odczekaj=odczekania, bufor=Bufor(tmp_path / "bufor"))
+        odczekania.runner = runner
+        async with zadanie_tla(runner.listen(), "nasluch runnera") as nasluch:
+            await czekaj_bez_anulowania(
+                nasluch, LIMIT_TESTU_S, "runner nie polaczyl sie ponownie po ciszy na strumieniu")
+
+        assert kokpit.strumienie == 2
+        assert odczekania.argumenty == [1.0, 1.0]
+        assert "strumien polecen przerwany (ReadTimeout)" in capsys.readouterr().err
+
+
+async def test_zdarzenie_bez_odpowiedzi_kokpitu_zostaje_w_buforze_i_jest_ponowione_z_tym_samym_id(
+    monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(runner_client, "CZAS_ODCZYTU_POST_S", 0.3)
+    bufor = Bufor(tmp_path / "bufor")
+    bufor.dopisz(ZDARZENIE_W_BUFORZE)
+    w_buforze_podczas_przerwy: list[list[str]] = []
+    odczekania: list[float] = []
+
+    async def odczekaj(sekundy: float) -> None:
+        odczekania.append(sekundy)
+        w_buforze_podczas_przerwy.append([w["event_id"] for w in bufor.niepotwierdzone()])
+
+    async with _kokpit_na_gniezdzie(bez_odpowiedzi=1) as (kokpit, adres):
+        runner = Runner(adres, TOKEN, bufor=bufor, odczekaj=odczekaj)
+        async with zadanie_tla(runner.listen(), "nasluch runnera") as nasluch:
+            await czekaj_na_warunek(
+                lambda: len(kokpit.zdarzenia) >= 2 and not bufor.niepotwierdzone(),
+                LIMIT_TESTU_S, "zdarzenie bez odpowiedzi nie zostalo ponowione")
+            await czekaj(runner.stop(), LIMIT_TESTU_S, "stop() runnera")
+            await czekaj_bez_anulowania(nasluch, LIMIT_TESTU_S, "koniec nasluchu po stop()")
+
+    assert w_buforze_podczas_przerwy == [["ev-1"]]
+    assert odczekania == [1.0]
+    assert [z["event_id"] for z in kokpit.zdarzenia] == ["ev-1", "ev-1"]
+    assert bufor.niepotwierdzone() == []
 
 
 async def test_zamkniecie_strumienia_przez_kokpit_ma_wewnetrzny_sygnal_z_komunikatem_przyczyny():
