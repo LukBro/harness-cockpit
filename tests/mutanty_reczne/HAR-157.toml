@@ -1,0 +1,16 @@
+# Tabela recznych mutantow HAR-157: stala modulu w src/runner/straznik.py - poza zasiegiem mutmuta.
+
+# Nazwa znacznika braku PYTHONPATH jest umowa miedzy runnerem a straznikiem; zmiana
+# (lub zrownanie ze znacznikiem wartosci) psuje jawna nazwe.
+[[mutant]]
+plik = "src/runner/straznik.py"
+szukaj = 'ZMIENNA_BRAK_PYTHONPATH_AGENTA = "RUNNER_BRAK_PYTHONPATH_AGENTA"'
+zamien = 'ZMIENNA_BRAK_PYTHONPATH_AGENTA = "RUNNER_BRAK_PYTHONPATH"'
+test = "tests/test_brak_sierot.py::test_nazwa_zmiennej_z_brakiem_pythonpath_dla_agenta_jest_stala_i_jawna"
+
+# Znacznik braku rowny znacznikowi wartosci: pusty PYTHONPATH znow nie odroznialby sie od braku.
+[[mutant]]
+plik = "src/runner/straznik.py"
+szukaj = 'ZMIENNA_BRAK_PYTHONPATH_AGENTA = "RUNNER_BRAK_PYTHONPATH_AGENTA"'
+zamien = 'ZMIENNA_BRAK_PYTHONPATH_AGENTA = "RUNNER_PYTHONPATH_AGENTA"'
+test = "tests/test_brak_sierot.py::test_bez_pythonpath_runnera_straznik_dostaje_znacznik_braku_a_nie_wartosc"
