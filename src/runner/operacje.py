@@ -21,7 +21,7 @@ from cockpit.services.errors import BlednySkill
 from cockpit.services.skills import NAZWA_PLIKU, ZRODLA, _podziel
 from runner.odbior import SHA_PELNY, BladOdbioru, zbierz_diff
 from runner.worktree import BladWorktree, katalog_runu
-from runner.zakres import PozaZakresem, Zakres, _jest_sekretem
+from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_sekretem
 
 LIMIT_WYNIKOW = 2000
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
@@ -321,7 +321,12 @@ def _workflow_projektu(zakres: Zakres, projekt: Path) -> list[dict]:
 
 
 def _katalog_definicji() -> dict:
-    zakres = Zakres.z_konfiguracji()
+    try:
+        zakres = Zakres.z_konfiguracji(scisle=True)
+    except ZlaKonfiguracjaZakresu:
+        raise BladOperacji(
+            "zla_konfiguracja_zakresu",
+            "konfiguracja zakresu runnera jest nieczytelna albo ma złą strukturę") from None
     limit = _limit_odczytu()
     dom = Path.home()
     z_domu = [
