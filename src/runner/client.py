@@ -27,6 +27,13 @@ from runner.heartbeat import Heartbeat
 
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
 
+# Limity czasu polaczen HTTP (HAR-198). Bez nich martwe polaczenie (zerwana siec bez RST)
+# wisi w nieskonczonosc. Przekroczenie to httpx.TransportError, obslugiwany istniejacym
+# ponawianiem bufora (POST-y) i backoffem w `listen` (strumien).
+CZAS_POLACZENIA_S = 10          # nawiazanie polaczenia (POST-y i strumien)
+CZAS_ODCZYTU_POST_S = 30        # odpowiedz na POST zdarzenia/zameldowania/odpowiedzi
+CZAS_ODCZYTU_STRUMIENIA_S = 45  # 3x ping SSE kokpitu (co 15 s): dluzsza cisza = martwe
+
 # Operacje kroku runu (HAR-159). Nowa operacja = nowy wpis. Lista jest LOKALNA: kokpit
 # podaje tylko nazwe operacji, a argv powstaje tu, nigdy z danych kokpitu.
 OPERACJE_RUNU: Mapping[str, tuple[str, ...]] = MappingProxyType({
@@ -465,7 +472,10 @@ class Runner:
             )
 
     async def _nasluchuj(self) -> None:
-        async with httpx.AsyncClient(timeout=None, transport=self._transport) as client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(CZAS_ODCZYTU_POST_S, connect=CZAS_POLACZENIA_S),
+            transport=self._transport,
+        ) as client:
             await self.register(client)
             await self.dosylaj(client)      # zalegle z poprzedniego polaczenia albo startu
             if self._zatrzymany.is_set():
@@ -477,7 +487,9 @@ class Runner:
             try:
                 self._heartbeat.start()
                 async with client.stream(
-                    "GET", f"{self.base_url}/api/runners/stream", headers=self._headers
+                    "GET", f"{self.base_url}/api/runners/stream", headers=self._headers,
+                    timeout=httpx.Timeout(
+                        CZAS_ODCZYTU_STRUMIENIA_S, connect=CZAS_POLACZENIA_S),
                 ) as resp:
                     if resp.status_code == 401:
                         raise TokenOdrzucony()

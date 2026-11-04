@@ -1,0 +1,23 @@
+# Tabela recznych mutantow HAR-198: stale limitow czasu w src/runner/client.py leza poza
+# funkcjami, wiec mutmut ich nie mutuje (kod 3).
+
+# Limit polaczenia (POST-y i strumien): 10 s.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "CZAS_POLACZENIA_S = 10"
+zamien = "CZAS_POLACZENIA_S = 11"
+test = "tests/test_runner_klient.py::test_wysylka_zdarzenia_czeka_na_polaczenie_10_s_i_na_odpowiedz_30_s"
+
+# Limit odczytu POST-ow: 30 s.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "CZAS_ODCZYTU_POST_S = 30"
+zamien = "CZAS_ODCZYTU_POST_S = 31"
+test = "tests/test_runner_klient.py::test_wysylka_zdarzenia_czeka_na_polaczenie_10_s_i_na_odpowiedz_30_s"
+
+# Limit odczytu strumienia polecen: 45 s (trzy pingi).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "CZAS_ODCZYTU_STRUMIENIA_S = 45"
+zamien = "CZAS_ODCZYTU_STRUMIENIA_S = 46"
+test = "tests/test_runner_klient.py::test_strumien_polecen_uznaje_polaczenie_za_martwe_po_45_s_ciszy_czyli_trzech_pingach"

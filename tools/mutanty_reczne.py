@@ -14,6 +14,8 @@ HAR-156: mutant z `plik` pod `web/` albo z testem pod `tests/e2e/` dostaje w kop
 front (`npm ci` raz na kopie, `npm run build` do `src/cockpit/static`); po mutacji pliku pod
 `web/` front jest budowany ponownie. `--czy-front <tabele>` tylko wypisuje `front=1`/`front=0`.
 Pominiety test nigdy nie liczy sie jako "przeszedl" ani "zabil mutanta".
+HAR-184: `zamien` moze byc pustym napisem (mutacja usuwajaca fragment `szukaj`); `plik`, `szukaj`
+i `test` pozostaja niepuste.
 """
 from __future__ import annotations
 
@@ -61,7 +63,9 @@ def _mutant_z_wpisu(wpis: object, numer: int, tabela: Path) -> Mutant:
     for pole in POLA:
         if pole not in wpis:
             raise BladNarzedzia(f"{gdzie}: brak pola {pole!r}")
-        if not isinstance(wpis[pole], str) or not wpis[pole]:
+        if not isinstance(wpis[pole], str):
+            raise BladNarzedzia(f"{gdzie}: pole {pole!r} musi byc napisem")
+        if not wpis[pole] and pole != "zamien":
             raise BladNarzedzia(f"{gdzie}: pole {pole!r} musi byc niepustym napisem")
     sciezka = Path(wpis["plik"])
     if sciezka.is_absolute() or ".." in sciezka.parts:
