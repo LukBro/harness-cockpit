@@ -1,0 +1,85 @@
+# Tabela recznych mutantow HAR-185: sprzatanie tras Playwrighta w tests/e2e (poza zasiegiem mutmuta).
+
+# Petla po stronach kontekstu: bez nich trasy stron zostaja.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "for cel in (*kontekst.pages, kontekst):"
+zamien = "for cel in (kontekst,):"
+test = "tests/test_sprzatanie_tras_e2e.py::test_trasy_schodza_z_kazdej_strony_kontekstu"
+
+# Zdejmowanie tras z samego kontekstu.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "for cel in (*kontekst.pages, kontekst):"
+zamien = "for cel in (*kontekst.pages,):"
+test = "tests/test_sprzatanie_tras_e2e.py::test_trasy_schodza_takze_z_samego_kontekstu"
+
+# Wartosc behavior.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = 'cel.unroute_all(behavior="ignoreErrors")'
+zamien = 'cel.unroute_all(behavior="wait")'
+test = "tests/test_sprzatanie_tras_e2e.py::test_trasy_schodza_bez_czekania_na_handlery_w_locie_i_ich_bledy"
+
+# Zamknieta strona: wyjatek konczy sprzatanie zamiast przejsc do reszty.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        except TargetClosedError:\n            pass"
+zamien = "        except TargetClosedError:\n            return"
+test = "tests/test_sprzatanie_tras_e2e.py::test_zamknieta_strona_nie_przerywa_sprzatania_reszty"
+
+# Kontekst zamkniety wczesniej przez test: wyjatek wylatuje ze sprzatania.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        except TargetClosedError:\n            pass"
+zamien = "        except TargetClosedError:\n            raise"
+test = "tests/test_sprzatanie_tras_e2e.py::test_kontekst_zamkniety_wczesniej_przez_test_nie_wywala_sprzatania"
+
+# Waski except: szeroki Exception polknalby cudzy blad.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        except TargetClosedError:"
+zamien = "        except Exception:"
+test = "tests/test_sprzatanie_tras_e2e.py::test_blad_inny_niz_playwrightowy_przy_sprzataniu_leci_dalej"
+
+# Waski except: klasa bazowa bibliotek polknalaby inny blad Playwrighta.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        except TargetClosedError:"
+zamien = "        except __import__('playwright.sync_api').sync_api.Error:"
+test = "tests/test_sprzatanie_tras_e2e.py::test_inny_blad_playwrighta_niz_zamkniecie_celu_przy_sprzataniu_leci_dalej"
+
+# Fixture context: brak wywolania sprzatania.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    zdejmij_podstawione_trasy_z_kontekstu(context)\n"
+zamien = "    pass\n"
+test = "tests/test_sprzatanie_tras_e2e.py::test_fixture_context_zdejmuje_trasy_po_tescie_a_przed_zamknieciem_kontekstu"
+
+# Fixture context: sprzatanie przed testem zamiast po nim.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    yield context\n    zdejmij_podstawione_trasy_z_kontekstu(context)\n"
+zamien = "    zdejmij_podstawione_trasy_z_kontekstu(context)\n    yield context\n"
+test = "tests/test_sprzatanie_tras_e2e.py::test_fixture_context_zdejmuje_trasy_po_tescie_a_przed_zamknieciem_kontekstu"
+
+# Fixture zdejmij_podstawione_trasy zwraca pustą funkcję.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    return zdejmij_podstawione_trasy_z_kontekstu\n"
+zamien = "    return lambda kontekst: None\n"
+test = "tests/test_sprzatanie_tras_e2e.py::test_fabryka_kontekstow_zdejmuje_trasy_przed_zamknieciem_kazdego_kontekstu"
+
+# otworz_kontekst: brak sprzatania przed zamknieciem.
+[[mutant]]
+plik = "tests/e2e/test_logowanie_w_przegladarce.py"
+szukaj = "        zdejmij_podstawione_trasy(kontekst)\n"
+zamien = "        pass\n"
+test = "tests/test_sprzatanie_tras_e2e.py::test_fabryka_kontekstow_zdejmuje_trasy_przed_zamknieciem_kazdego_kontekstu"
+
+# otworz_kontekst: sprzatanie po zamknieciu zamiast przed.
+[[mutant]]
+plik = "tests/e2e/test_logowanie_w_przegladarce.py"
+szukaj = "        zdejmij_podstawione_trasy(kontekst)\n        kontekst.close()\n"
+zamien = "        kontekst.close()\n        zdejmij_podstawione_trasy(kontekst)\n"
+test = "tests/test_sprzatanie_tras_e2e.py::test_fabryka_kontekstow_zdejmuje_trasy_przed_zamknieciem_kazdego_kontekstu"

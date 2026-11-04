@@ -9,6 +9,7 @@ import os
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 
 from cockpit.services.errors import BladDziedziny
@@ -115,9 +116,17 @@ def zbuduj_prompt(spec: SpecKroku) -> str:
     return "\n".join(linie)
 
 
-def polecenie_agenta(spec: SpecKroku, prompt: str, profil: ProfilBackendu) -> list[str]:
+def polecenie_agenta(
+    spec: SpecKroku,
+    prompt: str,
+    profil: ProfilBackendu,
+    ustawienia: Path | None = None,
+) -> list[str]:
+    """Polecenie `claude`; `ustawienia` to plik hookow kroku (HAR-175), podawany przez --settings."""
     rola = profil_roli(spec.rola)
     argv = ["claude", "-p", prompt, "--model", profil.model(rola.tier)]
+    if ustawienia is not None:
+        argv += ["--settings", str(ustawienia)]
     if not rola.zapis:
         argv += FLAGI_BEZ_ZAPISU
     return argv
