@@ -1,0 +1,131 @@
+# Tabela recznych mutantow HAR-84: typy frontu z kontraktu (web/), miejsca, ktorych mutmut nie mutuje.
+# Mutanty nie psuja buildu bazowego kopii: kopia nie ma web/src/api-types.ts (plik ignorowany),
+# wiec build po mutacji zawsze generuje go sam (`npm run types`).
+
+# --- web/package.json: generowanie typow w samym `build` (nie w `prebuild`) ---
+
+[[mutant]]
+plik = "web/package.json"
+szukaj = '''"build": "npm run types && tsc -b && vite build",'''
+# generowanie wraca do `prebuild` (stan sprzed HAR-84): build kopii nadal przechodzi
+zamien = '''"prebuild": "npm run types",
+    "build": "tsc -b && vite build",'''
+test = "tests/test_typy_frontu.py::test_budowanie_frontu_samo_generuje_typy_z_pliku_kontraktu_przed_kompilacja"
+
+# --- web/src/api.ts: alias zalezny od kontraktu zastapiony typem niezaleznym od niego ---
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type RunSzczegoly = Schemat["RunSzczegoly"];'''
+zamien = '''export type RunSzczegoly = any;'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_pole_usuniete_z_kontraktu_api_oblewa_kompilacje_frontu[RunSzczegoly-status]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type Katalog = Schemat["Katalog"];'''
+# typ przepisany recznie z kontraktu (z pelnym typem elementow: `any` dalby implicit any w callbacku `.map`)
+zamien = '''export type Katalog = {
+  odswiezono_at: string | null;
+  definicje: {
+    klucz: string;
+    nazwa: string;
+    odswiezono_at: string;
+    projekt: string;
+    rodzaj: string;
+    rola: string | null;
+    runner_id: string;
+    sciezka: string;
+  }[];
+};'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_pole_usuniete_z_kontraktu_api_oblewa_kompilacje_frontu[DefinicjaKatalogu-nazwa]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type RunnerZespolu = Schemat["RunnerZespolu"];'''
+# typ przepisany recznie z kontraktu (`any` dalby implicit any w `r.backends.map((b) => …)`)
+zamien = '''export type RunnerZespolu = {
+  id: string;
+  name: string;
+  version: string;
+  backends: { nazwa: string; auth: "subscription" | "api_key" }[];
+  online: boolean;
+  last_seen_at: string | null;
+};'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_pole_usuniete_z_kontraktu_api_oblewa_kompilacje_frontu[RunnerZespolu-online]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type ZdarzenieRunu = Schemat["ZdarzenieRunu"];'''
+zamien = '''export type ZdarzenieRunu = any;'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_pole_usuniete_z_kontraktu_api_oblewa_kompilacje_frontu[ZdarzenieRunu-seq]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type RunUtworzony = Schemat["RunUtworzony"];'''
+zamien = '''export type RunUtworzony = any;'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_identyfikator_runu_zmieniony_w_kontrakcie_api_na_liczbe_oblewa_kompilacje_frontu"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type KrokRunu = Schemat["KrokRunu"];'''
+zamien = '''export type KrokRunu = any;'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_pole_usuniete_z_kontraktu_api_oblewa_kompilacje_frontu[KrokRunu-status]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type Profil = Schemat["Profil"];'''
+zamien = '''export type Profil = any;'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_pole_usuniete_z_kontraktu_api_oblewa_kompilacje_frontu[Profil-csrf]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type RunStatus = Schemat["RunStatus"];'''
+zamien = '''export type RunStatus = any;'''
+test = "tests/e2e/test_typy_frontu_z_kontraktu.py::test_wartosc_stanu_runu_usunieta_z_kontraktu_api_oblewa_kompilacje_frontu"
+
+# --- .gitignore: wpis wygenerowanych typow ---
+
+[[mutant]]
+plik = ".gitignore"
+szukaj = '''web/src/api-types.ts'''
+# wpis przestaje pasowac do pliku
+zamien = '''web/src/api-types.tsx'''
+test = "tests/test_typy_frontu.py::test_wygenerowane_typy_frontu_nie_trafiaja_do_repozytorium"
+
+[[mutant]]
+plik = ".gitignore"
+szukaj = '''web/src/api-types.ts'''
+# wpis za szeroki: ukrywa tez reczny web/src/api.ts
+zamien = '''web/src/*.ts'''
+test = "tests/test_typy_frontu.py::test_wygenerowane_typy_frontu_nie_trafiaja_do_repozytorium"
+
+# --- import wygenerowanych typow z pominieciem api.ts ---
+
+[[mutant]]
+plik = "web/src/Konto.tsx"
+szukaj = '''import type { Profil } from "./api";'''
+zamien = '''import type { components } from "./api-types";
+
+type Profil = components["schemas"]["Profil"];'''
+test = "tests/test_typy_frontu.py::test_typy_odpowiedzi_api_importuje_tylko_modul_api"
+
+[[mutant]]
+plik = "web/src/App.tsx"
+szukaj = '''import type { Katalog, RunnerZespolu } from "./api";'''
+zamien = '''import type { components } from "./api-types";
+
+type Katalog = components["schemas"]["Katalog"];
+type RunnerZespolu = components["schemas"]["RunnerZespolu"];'''
+test = "tests/test_typy_frontu.py::test_typy_odpowiedzi_api_importuje_tylko_modul_api"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''import type { KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";'''
+zamien = '''import type { components } from "./api-types";
+
+type KrokRunu = components["schemas"]["KrokRunu"];
+type Run = components["schemas"]["RunSzczegoly"];
+type RunStatus = components["schemas"]["RunStatus"];
+type RunUtworzony = components["schemas"]["RunUtworzony"];
+type Zdarzenie = components["schemas"]["ZdarzenieRunu"];'''
+test = "tests/test_typy_frontu.py::test_typy_odpowiedzi_api_importuje_tylko_modul_api"

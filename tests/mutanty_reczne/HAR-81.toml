@@ -1,0 +1,274 @@
+# Tabela recznych mutantow HAR-81: widok runu (web/src/WidokRunu.tsx), miejsca, ktorych mutmut nie mutuje.
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''running: "w toku",
+  finished: "zakończony",'''
+zamien = '''running: "czeka",
+  finished: "zakończony",'''
+test = "tests/e2e/test_widok_runu.py::test_krok_z_trzema_subagentami_pokazuje_trzy_wiersze_z_ich_identyfikatorami"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''finished: "zakończony",'''
+zamien = '''finished: "w toku",'''
+test = "tests/e2e/test_widok_runu.py::test_powtorzony_krok_pokazuje_numer_proby_drugiej_obok_pierwszej"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''failed: "nieudany",
+  skipped: "pominięty",
+  waiting: "czeka",'''
+zamien = '''failed: "w toku",
+  skipped: "pominięty",
+  waiting: "czeka",'''
+test = "tests/e2e/test_widok_runu.py::test_krok_nieudany_pokazuje_stan_nieudany_z_powodem_porazki"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''skipped: "pominięty",
+  waiting: "czeka",
+};'''
+zamien = '''skipped: "w toku",
+  waiting: "czeka",
+};'''
+test = "tests/e2e/test_widok_runu.py::test_krok_pominiety_ma_stan_pominiety_i_powod_z_tekstu_zdarzenia"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''waiting: "czeka",
+};'''
+zamien = '''waiting: "w toku",
+};'''
+test = "tests/e2e/test_widok_runu.py::test_oczekiwanie_kroku_po_otwarciu_runu_dodaje_wiersz_czeka"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''to_accept: "do odbioru",'''
+zamien = '''to_accept: "gotowe",'''
+test = "tests/e2e/test_widok_runu.py::test_run_zakonczony_sukcesem_pokazuje_do_odbioru_i_nigdy_gotowe"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''to_accept: "do odbioru",
+  failed: "nieudany",'''
+zamien = '''to_accept: "do odbioru",
+  failed: "zepsuty",'''
+test = "tests/e2e/test_widok_runu.py::test_run_z_krokiem_nieudanym_pokazuje_nieudany_z_powodem_runu_i_nie_do_odbioru"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''running: "w toku",
+  waiting: "czeka",'''
+zamien = '''running: "uruchomiony",
+  waiting: "czeka",'''
+test = "tests/e2e/test_widok_runu.py::test_run_w_toku_pokazuje_stan_runu_w_toku"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''new Set(["step_started", "step_skipped", "step_waiting", "step_aborted"])'''
+zamien = '''new Set(["step_skipped", "step_waiting", "step_aborted"])'''
+test = "tests/e2e/test_widok_runu.py::test_rozpoczecie_kroku_po_otwarciu_runu_dodaje_wiersz_w_toku_bez_przeladowania"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''new Set(["step_started", "step_skipped", "step_waiting", "step_aborted"])'''
+zamien = '''new Set(["step_started", "step_waiting", "step_aborted"])'''
+test = "tests/e2e/test_widok_runu.py::test_pominiecie_kroku_po_otwarciu_runu_dodaje_wiersz_pominiety_z_powodem"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''new Set(["step_started", "step_skipped", "step_waiting", "step_aborted"])'''
+zamien = '''new Set(["step_started", "step_skipped", "step_aborted"])'''
+test = "tests/e2e/test_widok_runu.py::test_oczekiwanie_kroku_po_otwarciu_runu_dodaje_wiersz_czeka"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''new Set(["step_started", "step_skipped", "step_waiting", "step_aborted"])'''
+zamien = '''new Set(["step_started", "step_skipped", "step_waiting"])'''
+test = "tests/e2e/test_widok_runu.py::test_przerwanie_kroku_po_otwarciu_runu_dodaje_wiersz_nieudany_z_powodem_przerwania"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (krok.status !== "skipped") return null;'''
+zamien = '''if (false) return null;'''
+test = "tests/e2e/test_widok_runu.py::test_powod_pominiecia_nie_przechodzi_na_zakonczona_ponowiona_probe_kroku"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''z.step_id === krok.step_id && '''
+zamien = '''true && '''
+test = "tests/e2e/test_widok_runu.py::test_dwa_pominiete_kroki_pokazuja_kazdy_swoj_powod_a_nie_cudzy"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''z.kind === "step_skipped" && '''
+zamien = '''true && '''
+test = "tests/e2e/test_widok_runu.py::test_powod_pominietego_kroku_pochodzi_ze_zdarzenia_pominiecia_a_nie_z_innego_zdarzenia_kroku"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''z.seq > ostatnie.seq'''
+zamien = '''z.seq < ostatnie.seq'''
+test = "tests/e2e/test_widok_runu.py::test_pominiety_krok_pokazuje_powod_z_pozniejszego_zdarzenia_pominiecia"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (krok.reason) return krok.reason;'''
+zamien = '''if (false) return krok.reason;'''
+test = "tests/e2e/test_widok_runu.py::test_krok_nieudany_pokazuje_stan_nieudany_z_powodem_porazki"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (krok.reason) return krok.reason;'''
+zamien = '''if (krok.reason !== null) return krok.reason;'''
+test = "tests/e2e/test_widok_runu.py::test_krok_nieudany_bez_tekstu_porazki_ma_w_kolumnie_powodu_kreske"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''return ostatnie && ostatnie.text ? ostatnie.text : null;'''
+zamien = '''return ostatnie ? ostatnie.text : null;'''
+test = "tests/e2e/test_widok_runu.py::test_pominiety_krok_bez_tekstu_zdarzenia_ma_w_kolumnie_powodu_kreske"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{k.agent_id || "—"}'''
+zamien = '''{k.agent_id || ""}'''
+test = "tests/e2e/test_widok_runu.py::test_krok_bez_subagenta_ma_w_kolumnie_agenta_kreske"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{k.agent_id || "—"}'''
+zamien = '''{"—"}'''
+test = "tests/e2e/test_widok_runu.py::test_krok_z_trzema_subagentami_pokazuje_trzy_wiersze_z_ich_identyfikatorami"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{powodKroku(k, zdarzenia) ?? "—"}'''
+zamien = '''{powodKroku(k, zdarzenia) ?? ""}'''
+test = "tests/e2e/test_widok_runu.py::test_krok_zakonczony_ma_w_kolumnie_powodu_kreske"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''<td>próba {k.attempt}</td>'''
+zamien = '''<td>{k.attempt}</td>'''
+test = "tests/e2e/test_widok_runu.py::test_powtorzony_krok_pokazuje_numer_proby_drugiej_obok_pierwszej"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''aria-label="Kroki runu"'''
+zamien = '''aria-label="Tabela"'''
+test = "tests/e2e/test_widok_runu.py::test_krok_z_trzema_subagentami_pokazuje_trzy_wiersze_z_ich_identyfikatorami"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{runId && status && <p>Stan runu: {napisStatusuRunu(status)}</p>}'''
+# napisStatusuRunu zostaje uzyta (void), inaczej tsc odrzuca build (TS6133) i narzedzie zwraca kod 2
+zamien = '''{runId && status && <p>{void napisStatusuRunu(status)}</p>}'''
+test = "tests/e2e/test_widok_runu.py::test_run_w_toku_pokazuje_stan_runu_w_toku"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''setKroki(run.steps);'''
+zamien = '''setKroki([]);'''
+test = "tests/e2e/test_widok_runu.py::test_krok_z_trzema_subagentami_pokazuje_trzy_wiersze_z_ich_identyfikatorami"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{runId && kroki.length > 0 && ('''
+zamien = '''{runId && kroki.length >= 0 && ('''
+test = "tests/e2e/test_widok_runu.py::test_run_bez_krokow_nie_pokazuje_tabeli_krokow"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{runId && reason && <p style='''
+zamien = '''{runId && !reason && <p style='''
+test = "tests/e2e/test_widok_runu.py::test_run_z_krokiem_nieudanym_pokazuje_nieudany_z_powodem_runu_i_nie_do_odbioru"
+
+# --- STATUS_RUNU: kazdy wpis mapy ma wiersz, w ktorym tylko ta wartosc decyduje o napisie ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''pending: "oczekuje",'''
+zamien = '''pending: "gotowe",'''
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-pending]"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''waiting: "czeka",
+  to_accept'''
+zamien = '''waiting: "gotowe",
+  to_accept'''
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-waiting]"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''skipped: "pominięty",
+  aborted'''
+zamien = '''skipped: "gotowe",
+  aborted'''
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-skipped]"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''aborted: "przerwany",'''
+zamien = '''aborted: "gotowe",'''
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-aborted]"
+
+# --- warunek dociagania GET po zdarzeniu z strumienia ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''z.kind === "step_failed" || '''
+# `false || ` = usunięcie alternatywy; puste `zamien` odrzuca tools/mutanty_reczne.py
+zamien = '''false || '''
+test = "tests/e2e/test_widok_runu.py::test_krok_nieudany_po_otwarciu_runu_zmienia_wiersz_z_w_toku_na_nieudany_z_powodem"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''z.kind === "step_finished" || '''
+zamien = '''false || '''
+test = "tests/e2e/test_widok_runu.py::test_tabela_krokow_odswieza_sie_ze_strumienia_bez_przeladowania_strony"
+
+# --- czyszczenie krokow przy zmianie runId ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''setKroki([]);
+    setStatus(null);'''
+zamien = '''setStatus(null);'''
+test = "tests/e2e/test_widok_runu.py::test_przejscie_na_inny_run_z_bledem_pobrania_nie_zostawia_krokow_poprzedniego_runu"
+
+# --- ostatnie === null: bez tego pierwsze dopasowanie rzuca TypeError w renderze (strona pusta) ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''(ostatnie === null || z.seq > ostatnie.seq)'''
+zamien = '''(z.seq > ostatnie!.seq)'''
+test = "tests/e2e/test_widok_runu.py::test_krok_pominiety_ma_stan_pominiety_i_powod_z_tekstu_zdarzenia"
+
+# --- galaz zastepcza dla nieznanej wartosci spoza enumu (page.route podstawia odpowiedz) ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''STATUS_RUNU[status as RunStatus] : status;'''
+zamien = '''STATUS_RUNU[status as RunStatus] : "do odbioru";'''
+test = "tests/e2e/test_widok_runu.py::test_nieznany_status_runu_z_nowszego_serwera_pokazuje_sie_surowy_a_nie_jako_sukces"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''return Object.hasOwn(STATUS_RUNU, status) ? STATUS_RUNU[status as RunStatus] : status;'''
+zamien = '''return STATUS_RUNU[status as RunStatus];'''
+test = "tests/e2e/test_widok_runu.py::test_nieznany_status_runu_z_nowszego_serwera_pokazuje_sie_surowy_a_nie_jako_sukces"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''STAN_KROKU[status as KrokRunu["status"]] : status;'''
+zamien = '''STAN_KROKU[status as KrokRunu["status"]] : "zakończony";'''
+test = "tests/e2e/test_widok_runu.py::test_nieznany_stan_kroku_z_nowszego_serwera_pokazuje_sie_surowy_a_nie_jako_sukces"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''return Object.hasOwn(STAN_KROKU, status) ? STAN_KROKU[status as KrokRunu["status"]] : status;'''
+zamien = '''return STAN_KROKU[status as KrokRunu["status"]];'''
+test = "tests/e2e/test_widok_runu.py::test_nieznany_stan_kroku_z_nowszego_serwera_pokazuje_sie_surowy_a_nie_jako_sukces"

@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "types": "openapi-typescript http://127.0.0.1:8765/openapi.json -o src/api-types.ts"
+    "build": "npm run types && tsc -b && vite build",
+    "types": "openapi-typescript ./openapi.json -o src/api-types.ts"
   },
   "dependencies": {
     "react": "^19.3.0",

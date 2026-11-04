@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
+import type { Profil } from "./api";
 
-export type Ja = { email: string; zespol: string; rola: string; csrf: string };
+export type Ja = Profil;
 
 const KOMUNIKAT_SIEC = "Brak połączenia z kokpitem.";
 const KOMUNIKAT_OGOLNY = "Nie udało się. Sprawdź dane i spróbuj ponownie.";
