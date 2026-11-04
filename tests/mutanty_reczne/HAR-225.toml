@@ -1,0 +1,512 @@
+# Tabela recznych mutantow HAR-225: tryb `--sprawdz-wszystkie` w tools/mutanty_reczne.py i krok
+# `sprawdzenie tabel mutantów ręcznych` w .github/workflows/mutation.yml (miejsca, ktorych mutmut
+# nie mutuje: tools/ i .github/). Wiersz: element | mutacja | test, ktory po mutacji oblewa.
+
+# --- wspolna definicja "dokladnie raz" --------------------------------------------
+
+# Zero wystapien przechodzi (zostaje tylko ">1" jako blad).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if ile != 1:"
+zamien = "if ile > 1:"
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien"
+
+# Dwa wystapienia przechodza (zostaje tylko "0" jako blad).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if ile != 1:"
+zamien = "if ile < 1:"
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien"
+
+# Liczba wystapien w komunikacie to faktyczna liczba.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wystepuje {ile} razy, a ma dokladnie raz"
+zamien = "wystepuje {ile + 1} razy, a ma dokladnie raz"
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien"
+
+# Plik z `szukaj` jest sprawdzany: wystapienia nie raz to blad wiersza.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''try:
+        _wymagaj_dokladnie_raz(tresc, mutant)'''
+zamien = '''try:
+        pass'''
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if powod_pliku is not None:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien"
+
+# --- katalog tabel ---------------------------------------------------------------
+
+# Katalog tabel to tests/mutanty_reczne.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'KATALOG_TABEL = ("tests", "mutanty_reczne")'
+zamien = 'KATALOG_TABEL = ("tests", "inne")'
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Tylko `*.toml` jest tabela (README.md w katalogu nie jest czytany).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if k.name.endswith(".toml")'
+zamien = "if k.name"
+test = "tests/test_mutanty_reczne.py::test_katalog_tabel_bez_zadnej_tabeli_to_kod_2_a_nie_zielone"
+
+# Tabele w kolejnosci nazw.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "key=lambda k: k.name"
+zamien = "key=lambda k: k.name, reverse=True"
+test = "tests/test_mutanty_reczne.py::test_bledy_z_kilku_tabel_i_kilku_wierszy_sa_zebrane_naraz_w_kolejnosci_nazw_tabel"
+
+# Brak katalogu tabel to blad dziedziny, nie wyjatek.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''except OSError as blad:
+        raise BladNarzedzia(f"nie da sie odczytac katalogu tabel {katalog}'''
+zamien = '''except PermissionError as blad:
+        raise BladNarzedzia(f"nie da sie odczytac katalogu tabel {katalog}'''
+test = "tests/test_mutanty_reczne.py::test_brak_katalogu_tabel_to_kod_2_a_nie_zielone"
+
+# Nazwa tabeli w komunikacie: sciezka wzgledna od korzenia, nie bezwzgledna.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nazwa = tabela.relative_to(korzen).as_posix()"
+zamien = "nazwa = str(tabela)"
+test = "tests/test_mutanty_reczne.py::test_bledy_z_kilku_tabel_i_kilku_wierszy_sa_zebrane_naraz_w_kolejnosci_nazw_tabel"
+
+# --- zbieranie bledow tabel i wierszy ----------------------------------------------
+
+# Numeracja wierszy od 1 (tabela poprawna strukturalnie).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "list(enumerate(wczytaj_tabele(sciezka), start=1)), []"
+zamien = "list(enumerate(wczytaj_tabele(sciezka), start=0)), []"
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien"
+
+# Numeracja wierszy od 1 (tabela z blednym wpisem).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "for numer, wpis in enumerate(wpisy, start=1):"
+zamien = "for numer, wpis in enumerate(wpisy, start=0):"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_ma_linie_z_numerem_i_powodem_a_nastepne_wiersze_sa_dalej_sprawdzane"
+
+# Blad calej tabeli ma wlasna linie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'return [], [f"{nazwa}: {blad}"]'
+zamien = "return [], []"
+test = "tests/test_mutanty_reczne.py::test_blad_calej_tabeli_ma_linie_bez_numeru_a_pozostale_tabele_sa_dalej_sprawdzane"
+
+# Linia bledu wiersza niesie numer wpisu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'bledy.append(f"{nazwa} #{numer}: {blad}")'
+zamien = 'bledy.append(f"{nazwa}: {blad}")'
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_ma_linie_z_numerem_i_powodem_a_nastepne_wiersze_sa_dalej_sprawdzane"
+
+# Poprawne wiersze zepsutej tabeli sa dalej sprawdzane (zebranie wielu bledow).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wiersze.append((numer, _wpis_na_mutanta(wpis)))"
+zamien = "_wpis_na_mutanta(wpis)"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_ma_linie_z_numerem_i_powodem_a_nastepne_wiersze_sa_dalej_sprawdzane"
+
+# Pierwszy blad nie przerywa zbierania (zamiast przerwania).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'bledy.append(f"{nazwa} #{numer}: {blad}")'
+zamien = '''bledy.append(f"{nazwa} #{numer}: {blad}")
+            break'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_ma_linie_z_numerem_i_powodem_a_nastepne_wiersze_sa_dalej_sprawdzane"
+
+# Bledy jednej tabeli nie gubia sie przy sprawdzaniu nastepnych.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "bledy.extend(bledy_tabeli)"
+zamien = "pass"
+test = "tests/test_mutanty_reczne.py::test_blad_calej_tabeli_ma_linie_bez_numeru_a_pozostale_tabele_sa_dalej_sprawdzane"
+
+# Poprawne wiersze wszystkich tabel trafiaja do sprawdzenia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wiersze.extend((nazwa, numer, mutant) for numer, mutant in poprawne)"
+zamien = "wiersze.extend([])"
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# --- istnienie testu ---------------------------------------------------------------
+
+# Brak pliku testu to blad wiersza z nazwa pliku (bez wolania pytesta dla niego).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'return None if istnieje else f"test {test} nie istnieje: brak pliku {plik_testu}"'
+zamien = "return None"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_plikiem_testu_ktorego_nie_ma_na_dysku_to_blad_tego_wiersza_a_reszta_jest_sprawdzana"
+
+# Wiersz z istniejacym plikiem testu idzie do kolekcji.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "do_kolekcji.append((nazwa, numer, mutant))"
+zamien = "pass"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_nieistniejacym_testem_to_kod_2_bez_nakladania_mutacji_i_bez_zmian_w_repozytorium"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if do_kolekcji:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_nieistniejacym_testem_to_kod_2_bez_nakladania_mutacji_i_bez_zmian_w_repozytorium"
+
+# Node id spoza zebranych to blad wiersza.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not _istnieje_node_id(mutant.test, zebrane):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_nieistniejacym_testem_to_kod_2_bez_nakladania_mutacji_i_bez_zmian_w_repozytorium"
+
+# Komunikat: "nie istnieje" i node id.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nie istnieje wsrod zebranych testow"
+zamien = "jest nieobecny wsrod zebranych testow"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_nieistniejacym_testem_to_kod_2_bez_nakladania_mutacji_i_bez_zmian_w_repozytorium"
+
+# Node id dokladnie na liscie zebranych.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return test in zebrane or any("
+zamien = "return False or any("
+test = "tests/test_mutanty_reczne.py::test_node_id_funkcji_parametryzowanej_bez_nawiasu_istnieje_ale_prefiks_innej_funkcji_nie"
+
+# Funkcja parametryzowana bez nawiasu istnieje.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'or any(z.startswith(f"{test}[") for z in zebrane)'
+zamien = "or False"
+test = "tests/test_mutanty_reczne.py::test_node_id_funkcji_parametryzowanej_bez_nawiasu_istnieje_ale_prefiks_innej_funkcji_nie"
+
+# Prefiks nazwy innej funkcji nie jest istniejacym testem (zawezenie do `[`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'z.startswith(f"{test}[")'
+zamien = "z.startswith(test)"
+test = "tests/test_mutanty_reczne.py::test_node_id_funkcji_parametryzowanej_bez_nawiasu_istnieje_ale_prefiks_innej_funkcji_nie"
+
+# Kolekcja, nie wykonanie testow.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '"--collect-only", '
+zamien = ""
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Kolekcja widzi `src/` repozytorium (PYTHONPATH).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '[str(korzen / "src"), *([stare] if stare else [])]'
+zamien = "[*([stare] if stare else [])]"
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Kolekcja startuje w korzeniu repozytorium (sciezki testow sa wzgledne).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'polecenie, korzen, srodowisko, limit, "kolekcji testow"'
+zamien = 'polecenie, korzen / "src", srodowisko, limit, "kolekcji testow"'
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Limit czasu z wiersza polecen dociera do kolekcji (dwa miejsca przekazania).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "sprawdz_wszystkie_tabele(korzen, args.limit, bledy)"
+zamien = "sprawdz_wszystkie_tabele(korzen, LIMIT_DOMYSLNY, bledy)"
+test = "tests/test_mutanty_reczne.py::test_przekroczony_limit_czasu_kolekcji_to_kod_2_a_nie_wyjatek_ani_zielone"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "zebrane = _zbierz_node_id(korzen, pliki, limit)"
+zamien = "zebrane = _zbierz_node_id(korzen, pliki, LIMIT_DOMYSLNY)"
+test = "tests/test_mutanty_reczne.py::test_przekroczony_limit_czasu_kolekcji_to_kod_2_a_nie_wyjatek_ani_zielone"
+
+# --- wynik: zero wierszy, liczby, kody ----------------------------------------------
+
+# Zero sprawdzonych wierszy to blad, nie zielone.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not bledy and not wiersze:"
+zamien = "if False and not wiersze:"
+test = "tests/test_mutanty_reczne.py::test_tabela_ktorej_wiersze_przeszly_walidacje_ale_jest_ich_zero_to_kod_2_a_nie_zielone"
+
+# Liczba tabel w wyniku to liczba tabel.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return len(wiersze), len(tabele)"
+zamien = "return len(wiersze), len(wiersze)"
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Kolejnosc liczb w linii wyniku.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "{wiersze} wierszy w {tabele} tabelach"
+zamien = "{tabele} wierszy w {wiersze} tabelach"
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Blad narzedzia (brak tabel) zaczyna sie od `blad: `.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'bledy.append(f"blad: {blad}")'
+zamien = 'bledy.append(f"{blad}")'
+test = "tests/test_mutanty_reczne.py::test_katalog_tabel_bez_zadnej_tabeli_to_kod_2_a_nie_zielone"
+
+# Bledy ida na stderr.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "print(linia, file=sys.stderr)"
+zamien = "print(linia)"
+test = "tests/test_mutanty_reczne.py::test_bledy_z_kilku_tabel_i_kilku_wierszy_sa_zebrane_naraz_w_kolejnosci_nazw_tabel"
+
+# Kod wyjscia bledu sprawdzenia to 2.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "KOD_BLEDU_NARZEDZIA = 2"
+zamien = "KOD_BLEDU_NARZEDZIA = 1"
+test = "tests/test_mutanty_reczne.py::test_bledy_z_kilku_tabel_i_kilku_wierszy_sa_zebrane_naraz_w_kolejnosci_nazw_tabel"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return KOD_BLEDU_NARZEDZIA"
+zamien = "return 0"
+test = "tests/test_mutanty_reczne.py::test_bledy_z_kilku_tabel_i_kilku_wierszy_sa_zebrane_naraz_w_kolejnosci_nazw_tabel"
+
+# --- wiersz polecen -----------------------------------------------------------------
+
+# Tabele pozycyjne sa opcjonalne (tryb bez nich).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'parser.add_argument("tabele", nargs="*"'
+zamien = 'parser.add_argument("tabele", nargs="+"'
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Flaga naprawde wlacza tryb.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "const=True,"
+zamien = "const=False,"
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# Kolizja z tabela pozycyjna to blad wiersza polecen.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.sprawdz_wszystkie and (args.tabele or args.czy_front):"
+zamien = "if args.sprawdz_wszystkie and (args.czy_front):"
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_razem_z_tabela_pozycyjna_to_blad_wiersza_polecen"
+
+# Bez flagi brak tabel nadal jest bledem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not args.sprawdz_wszystkie and not args.tabele:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_wywolanie_bez_zadnej_tabeli_to_blad_wiersza_polecen"
+
+# Z flaga brak tabel pozycyjnych jest poprawny.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not args.sprawdz_wszystkie and not args.tabele:"
+zamien = "if not args.tabele:"
+test = "tests/test_mutanty_reczne.py::test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian"
+
+# --- krok CI `sprawdzenie tabel mutantów ręcznych` ------------------------------------
+
+# Krok wola narzedzie z `--sprawdz-wszystkie`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutanty_reczne.py --sprawdz-wszystkie > mutants/tabele-reczne.txt"
+zamien = "mutanty_reczne.py > mutants/tabele-reczne.txt"
+test = "tests/test_workflow_mutacje.py::test_sprawdzenie_tabel_wola_narzedzie_z_opcja_sprawdz_wszystkie_takze_gdy_pr_nie_zmienia_zadnej_tabeli"
+
+# Krok sam tworzy katalog `mutants/`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mkdir -p mutants
+          kod=0
+          python3 tools/mutanty_reczne.py --sprawdz-wszystkie'''
+zamien = '''kod=0
+          python3 tools/mutanty_reczne.py --sprawdz-wszystkie'''
+test = "tests/test_workflow_mutacje.py::test_sprawdzenie_tabel_z_kodem_0_tworzy_katalog_mutants_na_wyniki_gdy_go_nie_ma"
+
+# Podsumowanie pod wlasnym naglowkiem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "## Tabele mutantów ręcznych"'
+zamien = 'echo "## Inne"'
+test = "tests/test_workflow_mutacje.py::test_krok_sprawdzenia_tabel_pisze_podsumowanie_pod_wlasnym_naglowkiem"
+
+# Blad narzedzia nie jest ukryty kodem 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "tabele-reczne.err || kod=$?"
+zamien = "tabele-reczne.err || kod=0"
+test = "tests/test_workflow_mutacje.py::test_zepsute_wiersze_tabel_oblewaja_krok_a_bledy_sa_w_podsumowaniu_i_w_linii_bledu_ci"
+
+# Stderr narzedzia trafia do pliku, z ktorego czyta podsumowanie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "2> mutants/tabele-reczne.err"
+zamien = "2> /dev/null"
+test = "tests/test_workflow_mutacje.py::test_zepsute_wiersze_tabel_oblewaja_krok_a_bledy_sa_w_podsumowaniu_i_w_linii_bledu_ci"
+
+# Tresc bledow w podsumowaniu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cat mutants/tabele-reczne.err"
+zamien = "echo bledy-ukryte"
+test = "tests/test_workflow_mutacje.py::test_zepsute_wiersze_tabel_oblewaja_krok_a_bledy_sa_w_podsumowaniu_i_w_linii_bledu_ci"
+
+# Linia `::error::` przy kodzie != 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "::error::sprawdzenie tabel mutantów ręcznych'
+zamien = 'echo "sprawdzenie tabel mutantów ręcznych'
+test = "tests/test_workflow_mutacje.py::test_zepsute_wiersze_tabel_oblewaja_krok_a_bledy_sa_w_podsumowaniu_i_w_linii_bledu_ci"
+
+# Kod != 0 oblewa krok (`exit 1`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tr '\n' ' ' < mutants/tabele-reczne.err)"
+            exit 1'''
+zamien = '''tr '\n' ' ' < mutants/tabele-reczne.err)"
+            exit 0'''
+test = "tests/test_workflow_mutacje.py::test_nieoczekiwany_kod_sprawdzenia_tabel_tez_oblewa_krok"
+
+# Krok nie ma warunku zmienionych tabel.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: sprawdzenie tabel mutantów ręcznych"
+zamien = "- name: sprawdzenie tabel mutantów ręcznych\n        if: steps.front.outputs.tabele == '1'"
+test = "tests/test_workflow_mutacje.py::test_krok_sprawdzenia_tabel_nie_ma_warunku_if_wiec_wykonuje_sie_na_kazdym_pr"
+
+# --- runda poprawkowa: gałęzie błędu pliku, kolekcja, środowisko kolekcji, artefakt ------
+
+# Gałąź błędu pliku w `_blad_pliku_i_licznika`: bez niej `.count` leci na wyjątku zamiast błędu wiersza.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if isinstance(tresc, BladNarzedzia):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_plikiem_ktorego_nie_ma_w_repozytorium_to_blad_tego_wiersza_z_nazwa_pliku_a_reszta_jest_sprawdzana"
+
+# Zapis błędu pliku do `tresci`: bez niego odczyt następnego wiersza kończy się KeyError.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tresci[mutant.plik] = blad"
+zamien = "pass"
+test = "tests/test_mutanty_reczne.py::test_ten_sam_nieczytelny_plik_wskazany_przez_dwa_wiersze_daje_blad_przy_obu"
+
+# Plik w innym kodowaniu niż UTF-8: błąd z nazwą pliku, nie wyjątek.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return str(tresc)"
+zamien = "return None"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_plikiem_w_kodowaniu_innym_niz_utf8_to_blad_z_nazwa_pliku_a_nie_wyjatek"
+
+# Kod kolekcji != 0 to błąd, także gdy wszystkie node id zostały zebrane.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_kolekcja_zakonczona_kodem_innym_niz_zero_to_kod_2_nawet_gdy_wszystkie_node_id_zostaly_zebrane"
+
+# `-o addopts=` w kolekcji (w uruchom_test jest inny kontekst): bez niego marker z addopts odznacza test.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''"-o", "addopts=",
+        *pliki,'''
+zamien = "*pliki,"
+test = "tests/test_mutanty_reczne.py::test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_jest_zebrany_wiec_wiersz_istnieje"
+
+# `-p no:cacheprovider` w kolekcji: bez niego powstaje `.pytest_cache` w repozytorium użytkownika.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''"-p", "no:cacheprovider", "-o", "addopts=",
+        *pliki,'''
+zamien = '''"-o", "addopts=",
+        *pliki,'''
+test = "tests/test_mutanty_reczne.py::test_sprawdzenie_z_blednym_plikiem_testu_nie_zostawia_cache_pytesta_w_repozytorium_uzytkownika"
+
+# `PYTHONDONTWRITEBYTECODE` w kolekcji: bez niego powstaje `__pycache__` w repozytorium użytkownika.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'srodowisko["PYTHONDONTWRITEBYTECODE"] = "1"'
+zamien = 'srodowisko.pop("PYTHONDONTWRITEBYTECODE", None)'
+test = "tests/test_mutanty_reczne.py::test_sprawdzenie_nie_zostawia_bajtkodu_w_repozytorium_uzytkownika"
+
+# `str(korzen / "src")` w PYTHONPATH kolekcji: moduł tylko z `src/` przestaje być importowalny.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'str(korzen / "src")'
+zamien = "str(korzen)"
+test = "tests/test_mutanty_reczne.py::test_kolekcja_widzi_modul_z_katalogu_src_repozytorium_bez_instalacji_i_bez_pythonpath_z_zewnatrz"
+
+# `[stare] if stare` w PYTHONPATH kolekcji: PYTHONPATH wołającego przepada.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '[str(korzen / "src"), *([stare] if stare else [])]'
+zamien = '[str(korzen / "src"), *([] if stare else [])]'
+test = "tests/test_mutanty_reczne.py::test_kolekcja_zachowuje_pythonpath_wolajacego_obok_katalogu_src_repozytorium"
+
+# `args.czy_front` w warunku `parser.error`: opcja nie jest po cichu ignorowana.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.sprawdz_wszystkie and (args.tabele or args.czy_front):"
+zamien = "if args.sprawdz_wszystkie and (args.tabele):"
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_razem_z_czy_front_to_blad_wiersza_polecen_a_nie_ciche_pominiecie_opcji"
+
+# Artefakt zadania PR: ścieżka stdout sprawdzenia tabel.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mutants/mutanty-reczne.err
+            mutants/tabele-reczne.txt'''
+zamien = "mutants/mutanty-reczne.err"
+test = "tests/test_workflow_mutacje.py::test_zadanie_pull_requestu_publikuje_wynik_sprawdzenia_tabel_nawet_po_czerwonym_kroku"
+
+# Artefakt zadania PR: ścieżka stderr sprawdzenia tabel.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mutants/tabele-reczne.txt
+            mutants/tabele-reczne.err'''
+zamien = "mutants/tabele-reczne.txt"
+test = "tests/test_workflow_mutacje.py::test_zadanie_pull_requestu_publikuje_wynik_sprawdzenia_tabel_nawet_po_czerwonym_kroku"
+
+# Gałąź `0)` pokazuje w podsumowaniu wynik sprawdzenia (liczbę wierszy).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''0)
+                cat mutants/tabele-reczne.txt'''
+zamien = '''0)
+                echo ok'''
+test = "tests/test_workflow_mutacje.py::test_sprawdzenie_tabel_z_kodem_0_pokazuje_w_podsumowaniu_liczbe_sprawdzonych_wierszy_pod_naglowkiem"
+
+# --- runda poprawkowa 2: brak tabel, blad dysku przy pliku testu, koncowka kolekcji ---------
+
+# Katalog bez zadnej tabeli to blad (brak dowodu), nie zielone.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not tabele:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_katalog_tabel_bez_zadnej_tabeli_to_kod_2_a_nie_zielone"
+
+# `OSError` przy sprawdzaniu pliku testu to blad tego wiersza (reszta jest dalej sprawdzana).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''except OSError as blad:
+        return f"{plik_testu}: nie da sie sprawdzic'''
+zamien = '''except ZeroDivisionError as blad:
+        return f"{plik_testu}: nie da sie sprawdzic'''
+test = "tests/test_mutanty_reczne.py::test_plik_testu_ktorego_dysk_nie_pozwala_sprawdzic_to_blad_tego_wiersza_a_reszta_jest_sprawdzana"
+
+# Komunikat bledu kolekcji niesie koncowke jej wyjscia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "{wyjscie[-KONCOWKA_KOLEKCJI:]}"
+zamien = "x"
+test = "tests/test_mutanty_reczne.py::test_kolekcja_zakonczona_kodem_innym_niz_zero_to_kod_2_nawet_gdy_wszystkie_node_id_zostaly_zebrane"

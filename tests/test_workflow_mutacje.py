@@ -31,6 +31,8 @@ ZADANIE_PR = "mutation"
 ZADANIE_MAIN = "mutation-main"
 KROK_PR = "mutanty zmienionych funkcji"
 KROK_MAIN = "pelny przebieg mutacyjny i zapadka"
+# HAR-225: sprawdzenie WSZYSTKICH tabel recznych mutantow na kazdym PR, bez warunku zmienionych tabel.
+KROK_TABEL = "sprawdzenie tabel mutantów ręcznych"
 
 # Prawdziwy baseline repozytorium: testy wyprowadzaja z niego "lepszy" i "gorszy" wynik, wiec nowy pomiar
 # nie lamie testow. Lepszy = 100% zabitych (dziala dla kazdego baseline < 100), gorszy = 1 zabity na 10.
@@ -1145,12 +1147,12 @@ def test_kazdy_krok_zadania_uruchamiajacy_baze_ma_warunek_zmienionej_tabeli():
     assert len(kroki_bazy) >= 1
 
 
-@pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES])
+@pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES, KROK_TABEL])
 def test_nowe_kroki_run_nie_uzywaja_wyrazen_github_actions_w_skrypcie(nazwa):
     assert "${{" not in _krok(ZADANIE_PR, nazwa)["run"]
 
 
-@pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES])
+@pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES, KROK_TABEL])
 def test_nowe_kroki_run_nie_ukrywaja_bledu_komendy_i_nie_ciszy_kroku(nazwa):
     krok = _krok(ZADANIE_PR, nazwa)
 
@@ -1628,3 +1630,177 @@ def test_instalacja_node_w_mutantach_recznych_ma_ta_sama_akcje_i_wersje_node_co_
 
     assert krok["uses"] == wzorzec["uses"]
     assert str(krok["with"]["node-version"]) == str(wzorzec["with"]["node-version"])
+
+
+# =============================================================================
+# HAR-225: krok sprawdzajacy wszystkie tabele recznych mutantow na kazdym PR
+# =============================================================================
+
+NAGLOWEK_TABEL = "## Tabele mutantów ręcznych"
+OPCJA_WSZYSTKIE = "--sprawdz-wszystkie"
+BLEDY_TABEL = (
+    "tests/mutanty_reczne/HAR-0.toml #2: tools/mutanty_reczne.py: szukaj 'x' wystepuje 0 razy, a ma dokladnie raz\n"
+    "tests/mutanty_reczne/HAR-79.toml #35: src/cockpit/api/app.py: szukaj 'y' wystepuje 2 razy, a ma dokladnie raz\n"
+)
+
+
+def uruchom_krok_sprawdzenia_tabel(
+    tmp_path: Path, *, kod: int = 0, stdout: str = "", stderr: str = ""
+) -> PrzebiegRecznych:
+    """Uruchamia `run` kroku `sprawdzenie tabel mutantów ręcznych` z atrapami git i tools/mutanty_reczne.py.
+
+    Katalogu `mutants/` celowo nie tworzymy: krok ma go utworzyc sam. Atrapa git nie zwraca zadnych
+    zmian (PR bez zmienionej tabeli) - krok i tak ma wolac narzedzie."""
+    praca = tmp_path / "praca"
+    (praca / "tools").mkdir(parents=True)
+    _atrapa(praca / "tools", "mutanty_reczne.py", ATRAPA_MUTANTY_RECZNE)
+
+    narzedzia = tmp_path / "narzedzia"
+    narzedzia.mkdir()
+    (narzedzia / "python3").symlink_to(sys.executable)
+    atrapy = tmp_path / "atrapy"
+    atrapy.mkdir()
+    _atrapa(atrapy, "git", ATRAPA_GIT_ZMIANY)
+
+    przebieg = PrzebiegRecznych(tmp_path, praca)
+    krok = _krok(ZADANIE_PR, KROK_TABEL)
+    assert "${{" not in krok["run"], "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(krok["run"], encoding="utf-8")
+
+    srodowisko = {
+        "PATH": f"{atrapy}:{narzedzia}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_LOG_GIT": str(przebieg.log_git_plik),
+        "ATRAPA_ZMIANY": "",
+        "ATRAPA_TABELE": "",
+        "ATRAPA_ARGV_RECZNE": str(przebieg.argv_plik),
+        "ATRAPA_KOD_RECZNE": str(kod),
+        "ATRAPA_STDOUT_RECZNE": stdout,
+        "ATRAPA_STDERR_RECZNE": stderr,
+        "GITHUB_STEP_SUMMARY": str(przebieg.podsumowanie_plik),
+        **_srodowisko_kroku(krok),
+    }
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+# --- struktura kroku -------------------------------------------------------------
+
+
+def test_krok_sprawdzenia_tabel_nie_ma_warunku_if_wiec_wykonuje_sie_na_kazdym_pr():
+    krok = _krok(ZADANIE_PR, KROK_TABEL)
+
+    assert "if" not in krok
+
+
+def test_krok_sprawdzenia_tabel_nie_czyta_listy_zmian_ani_wyniku_wykrycia_frontu():
+    krok = _krok(ZADANIE_PR, KROK_TABEL)
+
+    assert "git diff" not in krok["run"]
+    assert "steps.front" not in str(krok)
+
+
+def test_krok_sprawdzenia_tabel_nie_jest_dozwolony_do_porazki():
+    krok = _krok(ZADANIE_PR, KROK_TABEL)
+
+    assert krok.get("continue-on-error") not in (True, "true")
+
+
+def test_krok_sprawdzenia_tabel_stoi_po_instalacji_zaleznosci_i_przed_mutantami_zmienionych_funkcji():
+    instalacja = _indeks_kroku(lambda k: "pip install" in k.get("run", ""))
+    sprawdzenie = _indeks_kroku(_czy_nazwa(KROK_TABEL))
+    zmienione = _indeks_kroku(_czy_nazwa(KROK_PR))
+
+    assert instalacja < sprawdzenie < zmienione
+
+
+def test_krok_sprawdzenia_tabel_stoi_przed_krokiem_mutanty_reczne():
+    sprawdzenie = _indeks_kroku(_czy_nazwa(KROK_TABEL))
+    reczne = _indeks_kroku(_czy_nazwa(KROK_RECZNE))
+
+    assert sprawdzenie < reczne
+
+
+def test_krok_sprawdzenia_tabel_pisze_podsumowanie_pod_wlasnym_naglowkiem():
+    skrypt = _krok(ZADANIE_PR, KROK_TABEL)["run"]
+
+    assert "$GITHUB_STEP_SUMMARY" in skrypt
+    assert NAGLOWEK_TABEL in skrypt
+
+
+# --- wykonanie kroku -----------------------------------------------------------------
+
+
+def test_sprawdzenie_tabel_wola_narzedzie_z_opcja_sprawdz_wszystkie_takze_gdy_pr_nie_zmienia_zadnej_tabeli(tmp_path):
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=0)
+
+    assert len(przebieg.wywolania_skryptu) == 1
+    argumenty = przebieg.wywolania_skryptu[0].split()
+    assert OPCJA_WSZYSTKIE in argumenty
+    assert not any(a.endswith(".toml") for a in argumenty)
+
+
+def test_sprawdzenie_tabel_nie_pyta_gita_o_zmienione_pliki(tmp_path):
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=0)
+
+    assert przebieg.wywolania_skryptu, "narzedzie nie zostalo wywolane"
+    assert not any(wywolanie.startswith("diff") for wywolanie in przebieg.wywolania_git)
+
+
+def test_sprawdzenie_tabel_z_kodem_0_daje_zielony_krok_z_naglowkiem_w_podsumowaniu(tmp_path):
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=0, stdout="sprawdzono 631 wierszy w 27 tabelach\n")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert "::error::" not in przebieg.wyjscie
+    assert NAGLOWEK_TABEL in przebieg.podsumowanie
+
+
+def test_sprawdzenie_tabel_z_kodem_0_tworzy_katalog_mutants_na_wyniki_gdy_go_nie_ma(tmp_path):
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=0)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert (przebieg.praca / "mutants").is_dir()
+
+
+def test_zepsute_wiersze_tabel_oblewaja_krok_a_bledy_sa_w_podsumowaniu_i_w_linii_bledu_ci(tmp_path):
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=2, stderr=BLEDY_TABEL)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert NAGLOWEK_TABEL in przebieg.podsumowanie
+    pod_naglowkiem = przebieg.podsumowanie.split(NAGLOWEK_TABEL, 1)[1]
+    for linia in BLEDY_TABEL.splitlines():
+        assert linia in pod_naglowkiem
+    linie_bledu = [linia for linia in przebieg.wyjscie.splitlines() if linia.startswith("::error::")]
+    assert linie_bledu
+    assert any("tests/mutanty_reczne/HAR-0.toml #2" in linia for linia in linie_bledu)
+
+
+def test_nieoczekiwany_kod_sprawdzenia_tabel_tez_oblewa_krok(tmp_path):
+    # Zielony jest wylacznie kod 0; kod 1 nie jest w tym trybie zdefiniowany, wiec to nie "czysto".
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=1, stderr="nieoczekiwany stan narzedzia\n")
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "nieoczekiwany stan narzedzia" in przebieg.podsumowanie
+    assert any(linia.startswith("::error::") for linia in przebieg.wyjscie.splitlines())
+
+
+# --- HAR-225, runda poprawkowa: artefakt i tresc podsumowania przy kodzie 0 ---------------
+
+
+def test_zadanie_pull_requestu_publikuje_wynik_sprawdzenia_tabel_nawet_po_czerwonym_kroku():
+    artefakt = _artefakt(ZADANIE_PR, "mutation-report")
+    sciezki = artefakt["with"]["path"].splitlines()
+
+    assert artefakt["if"] == "always()"
+    assert "mutants/tabele-reczne.txt" in sciezki
+    assert "mutants/tabele-reczne.err" in sciezki
+
+
+def test_sprawdzenie_tabel_z_kodem_0_pokazuje_w_podsumowaniu_liczbe_sprawdzonych_wierszy_pod_naglowkiem(tmp_path):
+    wynik = "sprawdzono 631 wierszy w 27 tabelach"
+    przebieg = uruchom_krok_sprawdzenia_tabel(tmp_path, kod=0, stdout=f"{wynik}\n")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert wynik in przebieg.podsumowanie.split(NAGLOWEK_TABEL, 1)[1]
+    assert (przebieg.praca / "mutants" / "tabele-reczne.txt").read_text(encoding="utf-8") == f"{wynik}\n"
