@@ -504,11 +504,14 @@ async def polecenie_aktualne(
 
 async def runy_zespolu(
     s: AsyncSession, tenant_id: str, limit: int = LIMIT_LISTY_RUNOW,
+    project_id: str | None = None,
 ) -> list[dict]:
-    """Runy zespolu od najnowszego, bez zdarzen (HAR-72)."""
+    """Runy zespolu od najnowszego, bez zdarzen (HAR-72); opcjonalnie jednego projektu (HAR-79)."""
+    zapytanie = select(Run).where(Run.tenant_id == tenant_id)
+    if project_id is not None:   # filtr przed limitem
+        zapytanie = zapytanie.where(Run.project_id == project_id)
     runy = (await s.execute(
-        select(Run).where(Run.tenant_id == tenant_id)
-        .order_by(Run.created_at.desc(), Run.id.desc()).limit(limit)
+        zapytanie.order_by(Run.created_at.desc(), Run.id.desc()).limit(limit)
     )).scalars().all()
     lista = []
     for run in runy:
@@ -520,5 +523,6 @@ async def runy_zespolu(
             "workflow": run.workflow,
             "status": run.status,
             "created_at": utworzony.astimezone(timezone.utc).isoformat(),
+            "project_id": run.project_id,
         })
     return lista

@@ -78,6 +78,22 @@ class Runner(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
+class Project(Base):
+    """Katalog repozytorium na maszynie z runnerem (HAR-79); stos wykrywa runner."""
+    __tablename__ = "project"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "runner_id", "path", name="uq_project_runner_path"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
+    runner_id: Mapped[str] = mapped_column(ForeignKey("runner.id"))
+    path: Mapped[str] = mapped_column(String(4096))
+    name: Mapped[str] = mapped_column(String(200))
+    stack: Mapped[list[str]] = mapped_column(JSON, default=list, server_default=text("'[]'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Run(Base):
     __tablename__ = "run"
     __table_args__ = (Index("ix_run_tenant_ticket", "tenant_id", "ticket_id"),)
@@ -91,6 +107,9 @@ class Run(Base):
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), default=RunStatus.pending)
     reason: Mapped[str | None] = mapped_column(Text, default=None)
     ticket_id: Mapped[str | None] = mapped_column(String(200), default=None)
+    # projekt zespolu (HAR-79); run bez projektu to None
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project.id"), index=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     events: Mapped[list["Event"]] = relationship(back_populates="run")
