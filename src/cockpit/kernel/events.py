@@ -88,7 +88,7 @@ def normalize(payload: dict[str, Any]) -> Event:
 
     if name in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
         phase, edge = parse_phase_mark(tool_input.get("command"))
-        phase_event = _PHASE_EVENT.get((name, edge)) if phase else None
+        phase_event = _PHASE_EVENT.get((name, edge))
         if phase_event:
             ev.phase = phase
             ev.event = phase_event
@@ -96,5 +96,11 @@ def normalize(payload: dict[str, Any]) -> Event:
             # Powod tylko z payloadu (brak pola = brak klucza); status zostaje None.
             if phase_event == "phase_failed" and "error" in payload:
                 ev.extra["error"] = payload["error"]
+
+    if name == "ToolDenied":
+        # HAR-175: odmowa strazy roli; komenda (albo sciezka) i rola do tekstu zdarzenia w gore
+        for pole in ("command", "role"):
+            if pole in payload:
+                ev.extra[pole] = payload[pole]
 
     return ev

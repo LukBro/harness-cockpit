@@ -32,6 +32,18 @@ def test_lista_niezmiennikow_ma_siedem_pozycji_i_kazda_ma_sprawdzenie():
 _ZAGNIEZDZENIA = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 
 
+def _to_thread(func: ast.expr) -> bool:
+    """`to_thread(...)` albo `asyncio.to_thread(...)`."""
+    if isinstance(func, ast.Name):
+        return func.id == "to_thread"
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "to_thread"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "asyncio"
+    )
+
+
 def _wolane_nazwy(zrodlo: str, funkcja: str) -> set[str]:
     """Nazwy (ast.Name) wolane w ciele funkcji modulu, wykonywane przez samo jej wywolanie.
 
@@ -58,6 +70,11 @@ def _wolane_nazwy(zrodlo: str, funkcja: str) -> set[str]:
             continue
         if isinstance(wezel, ast.Call) and isinstance(wezel.func, ast.Name):
             nazwy.add(wezel.func.id)
+        if isinstance(wezel, ast.Call) and _to_thread(wezel.func) and wezel.args:
+            # to_thread(f, ...) faktycznie wywoluje f; liczy sie tylko pierwszy argument
+            pierwszy = wezel.args[0]
+            if isinstance(pierwszy, ast.Name):
+                nazwy.add(pierwszy.id)
         stos.extend(ast.iter_child_nodes(wezel))
     return nazwy
 
@@ -120,6 +137,36 @@ def test_wywolanie_w_lambdzie_nie_egzekwuje_niezmiennika():
 
 def test_wywolanie_w_ciele_klasy_zagniezdzonej_nie_egzekwuje_niezmiennika():
     zrodlo = "def f(x):\n    class K:\n        y = sprawdz(x)\n    return K\n"
+    assert "sprawdz" not in _wolane_nazwy(zrodlo, "f")
+
+
+def test_funkcja_przekazana_do_asyncio_to_thread_jest_wolana_przez_sciezke_wykonania():
+    zrodlo = "async def f(x):\n    await asyncio.to_thread(sprawdz, x)\n"
+    assert "sprawdz" in _wolane_nazwy(zrodlo, "f")
+
+
+def test_funkcja_przekazana_do_to_thread_po_nazwie_jest_wolana_przez_sciezke_wykonania():
+    zrodlo = "async def f(x):\n    await to_thread(sprawdz, x)\n"
+    assert "sprawdz" in _wolane_nazwy(zrodlo, "f")
+
+
+def test_referencja_przekazana_innej_funkcji_nie_jest_wywolaniem_sprawdzenia():
+    assert "sprawdz" not in _wolane_nazwy("def f(x):\n    inna(sprawdz, x)\n", "f")
+
+
+def test_tylko_pierwszy_argument_to_thread_jest_wolanym_sprawdzeniem():
+    zrodlo = "async def f(x):\n    await asyncio.to_thread(g, sprawdz)\n"
+    assert "sprawdz" not in _wolane_nazwy(zrodlo, "f")
+    assert "g" in _wolane_nazwy(zrodlo, "f")
+
+
+def test_to_thread_w_zagniezdzonej_funkcji_nie_egzekwuje_niezmiennika():
+    zrodlo = "def f(x):\n    async def g():\n        await asyncio.to_thread(sprawdz, x)\n    return g\n"
+    assert "sprawdz" not in _wolane_nazwy(zrodlo, "f")
+
+
+def test_to_thread_w_lambdzie_nie_egzekwuje_niezmiennika():
+    zrodlo = "def f(x):\n    return lambda: asyncio.to_thread(sprawdz, x)\n"
     assert "sprawdz" not in _wolane_nazwy(zrodlo, "f")
 
 
@@ -201,3 +248,30 @@ def test_kazdy_egzekwowany_niezmiennik_ma_wywolanie_sprawdzenia_na_sciezce_wykon
         f"niezmiennik {niezmiennik.name} jest zadeklarowany jako egzekwowany, "
         f"ale {punkt} nie wola zadnego z jego sprawdzen"
     )
+
+
+# --- HAR-175: zakaz zapisu w gicie i tylko-odczyt recenzenta sa egzekwowane na sciezce wykonania
+
+def test_zakaz_zapisu_w_gicie_jest_egzekwowany_przez_straz_roli():
+    assert EGZEKWOWANE[Niezmiennik.no_git_write] == ("runner.straz_roli:decyzja",)
+
+
+def test_tylko_odczyt_recenzenta_jest_egzekwowany_przez_wykonanie_kroku():
+    assert EGZEKWOWANE[Niezmiennik.reviewer_readonly] == ("runner.krok:wykonaj_krok",)
+
+
+def test_decyzja_straz_roli_wola_walidator_definicji_po_nazwie_w_swoim_ciele():
+    zrodlo, funkcja = _zrodlo_punktu("runner.straz_roli:decyzja")
+
+    assert "waliduj_definicje" in _wolane_nazwy(zrodlo, funkcja)
+
+
+def test_wykonanie_kroku_wola_sprawdzenie_tylko_odczytu_po_nazwie_w_swoim_ciele():
+    zrodlo, funkcja = _zrodlo_punktu("runner.krok:wykonaj_krok")
+
+    assert "sprawdz_tylko_odczyt" in _wolane_nazwy(zrodlo, funkcja)
+
+
+def test_punkty_wywolania_zakazu_gita_i_tylko_odczytu_wolaja_sprawdzenia_swoich_niezmiennikow():
+    assert _wola_sprawdzenie("runner.straz_roli:decyzja", Niezmiennik.no_git_write)
+    assert _wola_sprawdzenie("runner.krok:wykonaj_krok", Niezmiennik.reviewer_readonly)

@@ -9,6 +9,11 @@ Pozostale istnieja, ale nie sa podlaczone do punktow wejscia (cockpit.__main__,
 runner.__main__): waliduj_workflow (walidator workflow poza zakresem M1.0, BRO-99)
 oraz runner/krok.py i runner/worktree.py, ktore wolaja sprawdzenia, ale nie sa
 osiagalne z runner.__main__.
+
+HAR-175: no_git_write egzekwuje straz roli (runner/straz_roli.py, hook PreToolUse
+uruchamiany przez Claude Code jako osobny proces, wiec bez wejscia z runner.__main__);
+reviewer_readonly egzekwuje runner/krok.py (migawka katalogu po kroku). Frontmatter
+SKILL.md przechodzi przez waliduj_definicje w cockpit/services/skills.py.
 """
 from __future__ import annotations
 
@@ -269,4 +274,6 @@ SPRAWDZENIA: Mapping[Niezmiennik, tuple[Callable[..., Any], ...]] = MappingProxy
 # Test w tests/test_warstwy.py pilnuje, ze punkt faktycznie wola sprawdzenie.
 EGZEKWOWANE: Mapping[Niezmiennik, tuple[str, ...]] = MappingProxyType({
     Niezmiennik.measured_or_null: ("cockpit.services.runs:zapisz_zdarzenie",),
+    Niezmiennik.no_git_write: ("runner.straz_roli:decyzja",),
+    Niezmiennik.reviewer_readonly: ("runner.krok:wykonaj_krok",),
 })
