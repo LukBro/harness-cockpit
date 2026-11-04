@@ -22,7 +22,7 @@ from sesja_testowa import zaloguj_klienta, zaloz_czlonka, zaloz_runnera, zaloz_w
 from transport_asgi import TransportASGIStrumieniujacy
 
 T0 = datetime(2030, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-KLUCZE = {"id", "workflow", "status", "created_at"}
+KLUCZE = {"id", "workflow", "status", "created_at", "project_id"}
 TOKEN_RUNNERA = "token-runnera-testowy"
 
 
@@ -160,7 +160,7 @@ async def test_pozycja_listy_ma_dokladnie_id_workflow_status_i_date_utworzenia(s
     assert set(lista[0]) == KLUCZE
     assert lista == [{
         "id": rid, "workflow": "przeglad", "status": "to_accept",
-        "created_at": "2030-01-01T12:00:00+00:00",
+        "created_at": "2030-01-01T12:00:00+00:00", "project_id": None,
     }]
 
 
@@ -251,7 +251,7 @@ async def test_wlasciciel_widzi_przez_http_tylko_runy_swojego_zespolu_od_najnows
     assert [r["id"] for r in tresc] == [nowy, stary]
     assert obcy not in {r["id"] for r in tresc}
     assert tresc[1] == {"id": stary, "workflow": "przeglad", "status": "to_accept",
-                        "created_at": "2030-01-01T12:00:00+00:00"}
+                        "created_at": "2030-01-01T12:00:00+00:00", "project_id": None}
     assert set(tresc[0]) == KLUCZE
 
 

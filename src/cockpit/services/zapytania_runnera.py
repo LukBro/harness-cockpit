@@ -30,12 +30,16 @@ async def zapytaj_runnera_zespolu(
 
 async def zapytaj_runnera_online(
     s: AsyncSession, tenant_id: str, typ: str, dane: dict[str, Any],
-    polaczone: frozenset[str], wyslij: Wyslij,
+    polaczone: frozenset[str], wyslij: Wyslij, runner_id: str | None = None,
 ) -> tuple[str, Any]:
-    """(runner_id, wynik) pierwszego runnera zespolu, ktory jest online (HAR-67)."""
-    runnery = (await s.execute(
-        select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
-    )).scalars().all()
+    """(runner_id, wynik) pierwszego runnera zespolu, ktory jest online (HAR-67).
+
+    Z `runner_id` pytany jest wylacznie ten runner (HAR-79): brak, obcy zespol albo offline
+    to RunnerOffline, nigdy zastepstwo innym runnerem."""
+    zapytanie = select(Runner).where(Runner.tenant_id == tenant_id)
+    if runner_id is not None:
+        zapytanie = zapytanie.where(Runner.id == runner_id)
+    runnery = (await s.execute(zapytanie.order_by(Runner.id))).scalars().all()
     runner = next((r for r in runnery if runner_online(r, polaczone)), None)
     if runner is None:
         raise RunnerOffline("runner offline — tryb tylko do odczytu")

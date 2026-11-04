@@ -30,6 +30,16 @@ _ZMIENNA_LIMITU = "COCKPIT_MAX_READ_KB"
 _CYFRY_ASCII = re.compile(r"[0-9]{1,12}")   # fullmatch: "$" przepuscilby "5\n"
 _TRYB_NOWEGO_PLIKU = 0o644
 KOMUNIKAT_POZA_ZAKRESEM = "sciezka poza zakresem runnera"
+# nazwa pliku w korzeniu projektu -> stos (HAR-79); tylko nazwy, tresc plikow nie jest czytana
+ZNACZNIKI_STOSU = {
+    "pyproject.toml": "python",
+    "requirements.txt": "python",
+    "setup.py": "python",
+    "package.json": "node",
+    "Gemfile": "ruby",
+    "go.mod": "go",
+    "Cargo.toml": "rust",
+}
 
 
 class BladOperacji(Exception):
@@ -103,6 +113,20 @@ def _czytaj_plik(sciezka: str, limit: int) -> dict:
     if "\0" in tresc:
         raise BladOperacji("binarny", "plik nie jest tekstem (zawiera bajt NUL)")
     return {"sciezka": str(cel), "tresc": tresc, "rozmiar": len(surowe)}
+
+
+def _wykryj_stos(sciezka: str) -> dict:
+    """Katalog w zakresie runnera, jeden przeglad jego korzenia (bez rekurencji i bez tresci)."""
+    cel = _rozwiaz(Zakres.z_konfiguracji(), sciezka)
+    try:
+        if not stat.S_ISDIR(os.stat(cel).st_mode):
+            raise BladOperacji("nie_katalog", "sciezka nie jest katalogiem")
+        with os.scandir(cel) as wpisy:
+            nazwy = [w.name for w in wpisy]
+    except OSError as e:
+        raise _blad_dysku(e) from None
+    stos = sorted({ZNACZNIKI_STOSU[n] for n in nazwy if n in ZNACZNIKI_STOSU})
+    return {"sciezka": str(cel), "nazwa": cel.name, "stack": stos}
 
 
 def _sprawdz_wzorzec(wzorzec: str) -> None:
@@ -382,6 +406,11 @@ async def katalog_definicji(dane: dict) -> dict:
     return await asyncio.to_thread(_katalog_definicji)
 
 
+async def detect_stack(dane: dict) -> dict:
+    sciezka = _tekst(dane, "sciezka")
+    return await asyncio.to_thread(_wykryj_stos, sciezka)
+
+
 def _zbierz_diff_runu(run_id: str, base_commit: str) -> dict:
     try:
         worktree = katalog_runu(run_id) / "worktree"
@@ -410,6 +439,7 @@ OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "list_files": list_files,
     "write_file": write_file,
     "katalog_definicji": katalog_definicji,
+    "detect_stack": detect_stack,
     "collect": collect,
 }
 

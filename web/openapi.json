@@ -454,6 +454,28 @@
         "title": "ListaPlikow",
         "type": "object"
       },
+      "NowyProjekt": {
+        "properties": {
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "runner_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Runner Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runner_id",
+          "path"
+        ],
+        "title": "NowyProjekt",
+        "type": "object"
+      },
       "OdpowiedzRunneraIn": {
         "properties": {
           "blad": {
@@ -591,6 +613,47 @@
         "title": "Profil",
         "type": "object"
       },
+      "Projekt": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "runner_id": {
+            "title": "Runner Id",
+            "type": "string"
+          },
+          "stack": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stack",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "runner_id",
+          "path",
+          "name",
+          "stack",
+          "created_at"
+        ],
+        "title": "Projekt",
+        "type": "object"
+      },
       "RunCreate": {
         "additionalProperties": false,
         "properties": {
@@ -638,6 +701,17 @@
             "title": "Id",
             "type": "string"
           },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
           "status": {
             "$ref": "#/components/schemas/RunStatus"
           },
@@ -650,7 +724,8 @@
           "id",
           "workflow",
           "status",
-          "created_at"
+          "created_at",
+          "project_id"
         ],
         "title": "RunNaLiscie",
         "type": "object"
@@ -1764,6 +1839,134 @@
         "summary": "Listuj Pliki"
       }
     },
+    "/api/projects": {
+      "get": {
+        "operationId": "lista_projektow_api_projects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Projekt"
+                  },
+                  "title": "Response Lista Projektow Api Projects Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Lista Projektow"
+      },
+      "post": {
+        "operationId": "podlacz_projekt_api_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NowyProjekt"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Projekt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Podlacz Projekt"
+      }
+    },
     "/api/runners": {
       "get": {
         "operationId": "odczytaj_runnery_api_runners_get",
@@ -2096,6 +2299,25 @@
     "/api/runs": {
       "get": {
         "operationId": "lista_runow_api_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2120,6 +2342,16 @@
               }
             },
             "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
           },
           "500": {
             "content": {

@@ -169,6 +169,7 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("POST", "/api/runs"), ("POST", "/api/events"), ("GET", "/api/runs/{run_id}"),
         ("GET", "/api/pliki"), ("GET", "/api/pliki/lista"), ("PUT", "/api/pliki"),
         ("GET", "/api/runners"), ("GET", "/api/katalog"), ("POST", "/api/katalog/odswiez"),
+        ("GET", "/api/projects"), ("POST", "/api/projects"),
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
     })
     assert znane <= set(TRASY), f"brakuje tras: {sorted(znane - set(TRASY))}"
@@ -231,6 +232,8 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("GET", "/api/runs"): ("RunNaLiscie", True),
         ("GET", "/api/katalog"): ("Katalog", False),
         ("POST", "/api/katalog/odswiez"): ("KatalogOdswiezony", False),
+        ("GET", "/api/projects"): ("Projekt", True),
+        ("POST", "/api/projects"): ("Projekt", False),
         ("POST", "/api/konto/rejestracja"): ("TokenCsrf", False),
         ("POST", "/api/konto/logowanie"): ("TokenCsrf", False),
         ("GET", "/api/konto/ja"): ("Profil", False),
@@ -289,6 +292,9 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("GET", "/api/pliki"), {"401", "409", "422", "500"}),
     (("GET", "/api/pliki/lista"), {"401", "409", "422", "500"}),
     (("POST", "/api/katalog/odswiez"), {"401", "409", "500"}),
+    (("POST", "/api/projects"), {"401", "403", "404", "409", "422", "500"}),
+    (("GET", "/api/projects"), {"401", "500"}),
+    (("GET", "/api/runs"), {"401", "422", "500"}),
     (("GET", "/api/runs/{run_id}"), {"401", "404", "500"}),
     (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
     (("POST", "/api/events"), {"401", "404", "422", "500"}),
@@ -303,6 +309,19 @@ def test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic(schemat, klucz,
 def test_rejestracja_nie_obiecuje_limitu_prob_bo_ten_ma_tylko_logowanie(schemat):
     # `zarejestruj` rzuca tylko StanNiemozliwy (409); 429 pochodzi z limitu prób logowania
     assert "429" not in _kody_bledow(schemat, ("POST", "/api/konto/rejestracja"))
+
+
+def test_lista_projektow_bez_parametrow_nie_obiecuje_bledu_walidacji_422(schemat):
+    # trasa bez wejścia nie ma czego walidować: dokładny zbiór, nie podzbiór
+    assert _kody_bledow(schemat, ("GET", "/api/projects")) == {"401", "500"}
+
+
+def test_lista_runow_opisuje_blad_walidacji_422_wlasnym_opisem_i_modelem_blad(schemat):
+    # bez jawnego 422 FastAPI dokłada własną odpowiedź ("Validation Error",
+    # HTTPValidationError) trasie z parametrem zapytania
+    odpowiedz = _operacja(schemat, ("GET", "/api/runs"))["responses"]["422"]
+    assert odpowiedz["description"] == "Niepoprawne dane wejściowe"
+    assert _tresc_json(odpowiedz) == SCHEMAT_BLEDU
 
 
 # =================================================================================================
@@ -344,7 +363,11 @@ POLA_MODELI = {
                      "reason": {S, N}, "events": {"array"}, "steps": {"array"}},
     "KrokRunu": {"step_id": {S}, "agent_id": {S}, "attempt": {INT}, "status": {S},
                  "reason": {S, N}},
-    "RunNaLiscie": {"id": {S}, "workflow": {S}, "status": {S}, "created_at": {S}},
+    "RunNaLiscie": {"id": {S}, "workflow": {S}, "status": {S}, "created_at": {S},
+                    "project_id": {S, N}},
+    "Projekt": {"id": {S}, "runner_id": {S}, "path": {S}, "name": {S}, "stack": {"array"},
+                "created_at": {S}},
+    "NowyProjekt": {"runner_id": {S}, "path": {S}},
     "DiffRunu": {"diff": {S}},
     "PlikOdczytany": {"sciezka": {S}, "tresc": {S}, "rozmiar": {INT}},
     "WpisPliku": {"sciezka": {S}, "katalog": {B}},
@@ -394,6 +417,30 @@ def test_pole_listowe_modelu_wskazuje_model_elementu(schemat, model, pole, eleme
     wlasciwosc = schemat["components"]["schemas"][model]["properties"][pole]
     assert wlasciwosc["type"] == "array"
     assert _nazwa_ref(wlasciwosc["items"]) == element
+
+
+def test_stos_projektu_w_schemacie_to_lista_napisow(schemat):
+    stos = schemat["components"]["schemas"]["Projekt"]["properties"]["stack"]
+    assert stos["type"] == "array"
+    assert stos["items"]["type"] == "string"
+
+
+def test_podlaczenie_projektu_odpowiada_kodem_201_a_lista_projektow_200():
+    assert TRASY[("POST", "/api/projects")].status_code == 201
+    assert (TRASY[("GET", "/api/projects")].status_code or 200) == 200
+
+
+def test_ograniczenia_dlugosci_pol_nowego_projektu_sa_w_schemacie(schemat):
+    pola = schemat["components"]["schemas"]["NowyProjekt"]["properties"]
+    assert (pola["runner_id"]["minLength"], pola["runner_id"]["maxLength"]) == (1, 36)
+    assert (pola["path"]["minLength"], pola["path"]["maxLength"]) == (1, 4096)
+
+
+def test_filtr_projektu_na_liscie_runow_ma_limit_36_znakow_i_jest_opcjonalny(schemat):
+    parametry = {p["name"]: p for p in _operacja(schemat, ("GET", "/api/runs"))["parameters"]}
+    assert parametry["project"]["required"] is False
+    schemat_pola = parametry["project"]["schema"]
+    assert {w.get("maxLength") for w in schemat_pola.get("anyOf", [schemat_pola])} >= {36}
 
 
 def test_model_katalogu_po_odswiezeniu_ma_pole_pominiete_a_sam_katalog_nie(schemat):

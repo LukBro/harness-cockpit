@@ -1,0 +1,502 @@
+# Tabela recznych mutantow HAR-79: projekt zespolu, GET/POST /api/projects, filtr ?project=.
+# Elementy poza zasiegiem mutmuta: stale modulu, kolumny modeli, pola pydantic, Field/Query,
+# trasy FastAPI (dekorator), migracja 0010. Testy migracji (PG) wymagaja COCKPIT_TEST_DATABASE_URL.
+# Brak wierszy dla drop_index w downgrade 0010: PostgreSQL usuwa indeks razem z kolumna/tabela,
+# wiec zadne wejscie nie odroznia wersji (mutant rownowazny).
+
+# ZNACZNIKI_STOSU: wpis pyproject.toml ma wartosc dokladnie python
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"pyproject.toml\": \"python\","
+zamien = "\"pyproject.toml\": \"node\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[pyproject.toml]"
+
+# ZNACZNIKI_STOSU: wpis requirements.txt ma wartosc dokladnie python
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"requirements.txt\": \"python\","
+zamien = "\"requirements.txt\": \"node\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[requirements.txt]"
+
+# ZNACZNIKI_STOSU: wpis setup.py ma wartosc dokladnie python
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"setup.py\": \"python\","
+zamien = "\"setup.py\": \"node\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[setup.py]"
+
+# ZNACZNIKI_STOSU: wpis package.json ma wartosc dokladnie node
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"package.json\": \"node\","
+zamien = "\"package.json\": \"python\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[package.json]"
+
+# ZNACZNIKI_STOSU: wpis Gemfile ma wartosc dokladnie ruby
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"Gemfile\": \"ruby\","
+zamien = "\"Gemfile\": \"node\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[Gemfile]"
+
+# ZNACZNIKI_STOSU: wpis go.mod ma wartosc dokladnie go
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"go.mod\": \"go\","
+zamien = "\"go.mod\": \"rust\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[go.mod]"
+
+# ZNACZNIKI_STOSU: wpis Cargo.toml ma wartosc dokladnie rust
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"Cargo.toml\": \"rust\","
+zamien = "\"Cargo.toml\": \"go\","
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[Cargo.toml]"
+
+# OPERACJE: wpis detect_stack wskazuje swoja operacje
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"detect_stack\": detect_stack,"
+zamien = "\"detect_stack\": ping,"
+test = "tests/test_projekty.py::test_sam_znacznik_w_katalogu_wystarcza_do_wykrycia_swojego_stosu[pyproject.toml]"
+
+# unikalnosc projektu: sciezka nalezy do klucza
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "UniqueConstraint(\"tenant_id\", \"runner_id\", \"path\", name=\"uq_project_runner_path\")"
+zamien = "UniqueConstraint(\"tenant_id\", \"runner_id\", name=\"uq_project_runner_path\")"
+test = "tests/test_projekty.py::test_dwa_rozne_katalogi_tego_samego_runnera_to_dwa_projekty"
+
+# unikalnosc projektu: runner nalezy do klucza
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "UniqueConstraint(\"tenant_id\", \"runner_id\", \"path\", name=\"uq_project_runner_path\")"
+zamien = "UniqueConstraint(\"tenant_id\", \"path\", name=\"uq_project_runner_path\")"
+test = "tests/test_projekty.py::test_ten_sam_katalog_na_innym_runnerze_zespolu_to_osobny_projekt"
+
+# nazwa ograniczenia unikalnosci w modelu zgodna z migracja (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "name=\"uq_project_runner_path\""
+zamien = "name=\"uq_project_inna_nazwa\""
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.id: domyslny identyfikator
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "primary_key=True, default=_uuid)\n    tenant_id: Mapped[str] = mapped_column(ForeignKey(\"tenant.id\"), index=True)\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path"
+zamien = "primary_key=True)\n    tenant_id: Mapped[str] = mapped_column(ForeignKey(\"tenant.id\"), index=True)\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path"
+test = "tests/test_projekty.py::test_projekt_zapisany_przez_model_bez_stosu_i_daty_dostaje_pusty_stos_date_i_id"
+
+# Project.tenant_id: index=True (PG compare_metadata)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(ForeignKey(\"tenant.id\"), index=True)\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path: Mapped[str]"
+zamien = "mapped_column(ForeignKey(\"tenant.id\"))\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path: Mapped[str]"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.tenant_id: klucz obcy do tenant (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(ForeignKey(\"tenant.id\"), index=True)\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path: Mapped[str]"
+zamien = "mapped_column(String(36), index=True)\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path: Mapped[str]"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.runner_id: klucz obcy do runner (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(ForeignKey(\"tenant.id\"), index=True)\n    runner_id: Mapped[str] = mapped_column(ForeignKey(\"runner.id\"))\n    path: Mapped[str]"
+zamien = "mapped_column(ForeignKey(\"tenant.id\"), index=True)\n    runner_id: Mapped[str] = mapped_column(String(36))\n    path: Mapped[str]"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.path: dlugosc kolumny (PG compare_type)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "path: Mapped[str] = mapped_column(String(4096))"
+zamien = "path: Mapped[str] = mapped_column(String(4095))"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.path: nullable (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "path: Mapped[str] = mapped_column(String(4096))"
+zamien = "path: Mapped[str | None] = mapped_column(String(4096))"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.name: dlugosc kolumny (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "name: Mapped[str] = mapped_column(String(200))\n    stack"
+zamien = "name: Mapped[str] = mapped_column(String(100))\n    stack"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Project.stack: default=list
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "stack: Mapped[list[str]] = mapped_column(JSON, default=list,"
+zamien = "stack: Mapped[list[str]] = mapped_column(JSON, default=dict,"
+test = "tests/test_projekty.py::test_projekt_zapisany_przez_model_bez_stosu_i_daty_dostaje_pusty_stos_date_i_id"
+
+# Project.stack: server_default
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "server_default=text(\"'[]'\"))"
+zamien = "server_default=text(\"'{}'\"))"
+test = "tests/test_projekty.py::test_projekt_wstawiony_surowym_sql_bez_stosu_ma_w_bazie_pusty_stos"
+
+# Project.created_at: default=_now
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "server_default=text(\"'[]'\"))\n    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)"
+zamien = "server_default=text(\"'[]'\"))\n    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))"
+test = "tests/test_projekty.py::test_podlaczenie_zwraca_projekt_z_tymi_samymi_polami_co_w_bazie"
+
+# Run.project_id: index=True (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "ForeignKey(\"project.id\"), index=True, default=None)"
+zamien = "ForeignKey(\"project.id\"), default=None)"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# Run.project_id: klucz obcy do project (PG)
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "ForeignKey(\"project.id\"), index=True, default=None)"
+zamien = "String(36), index=True, default=None)"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# RunNaLiscie.project_id dopuszcza null
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    project_id: str | None\n"
+zamien = "    project_id: str\n"
+test = "tests/test_projekty.py::test_lista_runow_bez_filtra_ma_wszystkie_runy_a_run_bez_projektu_niesie_null"
+
+# Projekt.stack: lista napisow
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    stack: list[str]\n"
+zamien = "    stack: list[int]\n"
+test = "tests/test_kontrakt_api.py::test_stos_projektu_w_schemacie_to_lista_napisow"
+
+# Projekt.runner_id w odpowiedzi
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class Projekt(BaseModel):\n    id: str\n    runner_id: str\n"
+zamien = "class Projekt(BaseModel):\n    id: str\n"
+test = "tests/test_projekty.py::test_podlaczenie_projektu_przez_http_daje_201_i_rekord_w_bazie_z_wykrytym_stosem"
+
+# NowyProjekt.runner_id min_length
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    runner_id: str = Field(min_length=1, max_length=36)"
+zamien = "    runner_id: str = Field(min_length=0, max_length=36)"
+test = "tests/test_projekty.py::test_nowy_projekt_bez_runnera_albo_sciezki_to_422_bez_pytania_runnera[pusty_runner_id]"
+
+# NowyProjekt.runner_id max_length gora
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    runner_id: str = Field(min_length=1, max_length=36)"
+zamien = "    runner_id: str = Field(min_length=1, max_length=37)"
+test = "tests/test_projekty.py::test_runner_id_dluzszy_niz_36_znakow_to_422_a_dokladnie_36_przechodzi_walidacje"
+
+# NowyProjekt.runner_id max_length dol
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    runner_id: str = Field(min_length=1, max_length=36)"
+zamien = "    runner_id: str = Field(min_length=1, max_length=35)"
+test = "tests/test_projekty.py::test_runner_id_dluzszy_niz_36_znakow_to_422_a_dokladnie_36_przechodzi_walidacje"
+
+# NowyProjekt.path min_length
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    path: str = Field(min_length=1, max_length=4096)"
+zamien = "    path: str = Field(min_length=0, max_length=4096)"
+test = "tests/test_projekty.py::test_nowy_projekt_bez_runnera_albo_sciezki_to_422_bez_pytania_runnera[pusta_sciezka]"
+
+# NowyProjekt.path max_length gora
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    path: str = Field(min_length=1, max_length=4096)"
+zamien = "    path: str = Field(min_length=1, max_length=4097)"
+test = "tests/test_projekty.py::test_sciezka_dluzsza_niz_4096_znakow_to_422_a_dokladnie_4096_jest_przyjeta"
+
+# NowyProjekt.path max_length dol
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    path: str = Field(min_length=1, max_length=4096)"
+zamien = "    path: str = Field(min_length=1, max_length=4095)"
+test = "tests/test_projekty.py::test_sciezka_dluzsza_niz_4096_znakow_to_422_a_dokladnie_4096_jest_przyjeta"
+
+# trasa GET /api/projects
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.get(\"/api/projects\", response_model=list[Projekt],"
+zamien = "@app.get(\"/api/project\", response_model=list[Projekt],"
+test = "tests/test_projekty.py::test_lista_projektow_przez_http_pokazuje_tylko_projekty_zespolu_z_sesji"
+
+# status_code=201
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.post(\"/api/projects\", response_model=Projekt, status_code=201,"
+zamien = "@app.post(\"/api/projects\", response_model=Projekt, status_code=200,"
+test = "tests/test_projekty.py::test_podlaczenie_projektu_przez_http_daje_201_i_rekord_w_bazie_z_wykrytym_stosem"
+
+# POST /api/projects: kody bledow w kontrakcie
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))"
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))"
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# GET /api/projects: kody bledow
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401))\nasync def lista_projektow("
+zamien = "responses=odpowiedzi_bledow(401, 422))\nasync def lista_projektow("
+test = "tests/test_kontrakt_api.py::test_lista_projektow_bez_parametrow_nie_obiecuje_bledu_walidacji_422"
+
+# GET /api/runs: kod 422 po dodaniu filtra
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.get(\"/api/runs\", response_model=list[RunNaLiscie],\n         responses=odpowiedzi_bledow(401, 422))"
+zamien = "@app.get(\"/api/runs\", response_model=list[RunNaLiscie],\n         responses=odpowiedzi_bledow(401))"
+test = "tests/test_kontrakt_api.py::test_lista_runow_opisuje_blad_walidacji_422_wlasnym_opisem_i_modelem_blad"
+
+# Query(project) max_length gora
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project: str | None = Query(default=None, max_length=36),"
+zamien = "project: str | None = Query(default=None, max_length=37),"
+test = "tests/test_projekty.py::test_filtr_projektu_dluzszy_niz_36_znakow_to_422_a_dokladnie_36_jest_przyjety"
+
+# Query(project) max_length dol
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project: str | None = Query(default=None, max_length=36),"
+zamien = "project: str | None = Query(default=None, max_length=35),"
+test = "tests/test_projekty.py::test_filtr_projektu_dluzszy_niz_36_znakow_to_422_a_dokladnie_36_jest_przyjety"
+
+# Query(project) default=None
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project: str | None = Query(default=None, max_length=36),"
+zamien = "project: str | None = Query(default=\"\", max_length=36),"
+test = "tests/test_projekty.py::test_lista_runow_bez_filtra_ma_wszystkie_runy_a_run_bez_projektu_niesie_null"
+
+# przekazanie project_id do uslugi
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return await uslugi.runy_zespolu(s, k.tenant_id, project_id=project)"
+zamien = "return await uslugi.runy_zespolu(s, k.tenant_id)"
+test = "tests/test_projekty.py::test_lista_runow_z_filtrem_projektu_pokazuje_tylko_runy_tego_projektu"
+
+# GET /api/runs: uprawnienie podglad
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await uslugi.runy_zespolu("
+zamien = "    dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)\n    return await uslugi.runy_zespolu("
+test = "tests/test_lista_runow.py::test_obserwator_zespolu_widzi_liste_runow_swojego_zespolu"
+
+# GET /api/projects: uprawnienie podglad
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await projekty.projekty_zespolu("
+zamien = "    dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)\n    return await projekty.projekty_zespolu("
+test = "tests/test_projekty.py::test_obserwator_widzi_liste_projektow_zespolu"
+
+# POST /api/projects: uprawnienie podlaczanie_projektow
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)"
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)"
+test = "tests/test_projekty.py::test_obserwator_nie_podlaczy_projektu_a_runner_nie_jest_nawet_pytany"
+
+# POST: kolejnosc argumentow
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "body.runner_id, body.path, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "body.path, body.runner_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_projekty.py::test_podlaczenie_projektu_przez_http_daje_201_i_rekord_w_bazie_z_wykrytym_stosem"
+
+# POST: runnery online z szyny
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "body.runner_id, body.path, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "body.runner_id, body.path, frozenset(), bus.zapytaj)"
+test = "tests/test_projekty.py::test_podlaczenie_projektu_przez_http_daje_201_i_rekord_w_bazie_z_wykrytym_stosem"
+
+# _MAX_SCIEZKA gora
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "_MAX_SCIEZKA = 4096"
+zamien = "_MAX_SCIEZKA = 4097"
+test = "tests/test_projekty.py::test_zly_ksztalt_odpowiedzi_runnera_to_stan_niemozliwy_z_opisem_i_bez_zapisu[sciezka_4097_znakow]"
+
+# _MAX_SCIEZKA dol
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "_MAX_SCIEZKA = 4096"
+zamien = "_MAX_SCIEZKA = 4095"
+test = "tests/test_projekty.py::test_nazwa_dlugosci_kolumny_i_sciezka_dlugosci_kolumny_sa_zapisane"
+
+# _MAX_NAZWA gora
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "_MAX_NAZWA = 200"
+zamien = "_MAX_NAZWA = 201"
+test = "tests/test_projekty.py::test_zly_ksztalt_odpowiedzi_runnera_to_stan_niemozliwy_z_opisem_i_bez_zapisu[nazwa_201_znakow]"
+
+# _MAX_NAZWA dol
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "_MAX_NAZWA = 200"
+zamien = "_MAX_NAZWA = 199"
+test = "tests/test_projekty.py::test_nazwa_dlugosci_kolumny_i_sciezka_dlugosci_kolumny_sa_zapisane"
+
+# KOMUNIKAT_OFFLINE
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "uruchom runnera na swojej maszynie"
+zamien = "zaczekaj na runnera"
+test = "tests/test_projekty.py::test_runner_offline_daje_blad_z_podpowiedzia_a_projekt_nie_powstaje"
+
+# 0010: FK project.tenant_id
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.ForeignKey(\"tenant.id\"), nullable=False),"
+zamien = "nullable=False),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: FK project.runner_id
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.ForeignKey(\"runner.id\"), nullable=False),"
+zamien = "nullable=False),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: dlugosc path
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.Column(\"path\", sa.String(4096), nullable=False),"
+zamien = "sa.Column(\"path\", sa.String(4095), nullable=False),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: path NOT NULL
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.Column(\"path\", sa.String(4096), nullable=False),"
+zamien = "sa.Column(\"path\", sa.String(4096), nullable=True),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: dlugosc name
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.Column(\"name\", sa.String(200), nullable=False),"
+zamien = "sa.Column(\"name\", sa.String(100), nullable=False),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: stack NOT NULL
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.Column(\"stack\", sa.JSON(), nullable=False, server_default=sa.text(\"'[]'\")),"
+zamien = "sa.Column(\"stack\", sa.JSON(), nullable=True, server_default=sa.text(\"'[]'\")),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: server_default stosu
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "server_default=sa.text(\"'[]'\")"
+zamien = "server_default=sa.text(\"'{}'\")"
+test = "tests/test_migracje.py::test_projekt_zapisany_bez_stosu_ma_w_bazie_pusta_liste_stosu"
+
+# 0010: created_at NOT NULL
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.Column(\"created_at\", sa.DateTime(timezone=True), nullable=False),"
+zamien = "sa.Column(\"created_at\", sa.DateTime(timezone=True), nullable=True),"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: unikalnosc bez path
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.UniqueConstraint(\"tenant_id\", \"runner_id\", \"path\", name=\"uq_project_runner_path\")"
+zamien = "sa.UniqueConstraint(\"tenant_id\", \"runner_id\", name=\"uq_project_runner_path\")"
+test = "tests/test_migracje.py::test_inny_katalog_tego_samego_runnera_mieszka_obok_pierwszego_projektu"
+
+# 0010: unikalnosc bez runner_id (roznica schematu)
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.UniqueConstraint(\"tenant_id\", \"runner_id\", \"path\", name=\"uq_project_runner_path\")"
+zamien = "sa.UniqueConstraint(\"tenant_id\", \"path\", name=\"uq_project_runner_path\")"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: nazwa ograniczenia
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "name=\"uq_project_runner_path\""
+zamien = "name=\"uq_project_inna_nazwa\""
+test = "tests/test_migracje.py::test_ten_sam_katalog_tego_samego_runnera_nie_moze_byc_projektem_dwa_razy"
+
+# 0010: indeks project.tenant_id
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "op.create_index(\"ix_project_tenant_id\", \"project\", [\"tenant_id\"])"
+zamien = "pass"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: indeks run.project_id
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "op.create_index(\"ix_run_project_id\", \"run\", [\"project_id\"])"
+zamien = "pass"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010: FK run.project_id
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.ForeignKey(\"project.id\"), nullable=True))"
+zamien = "nullable=True))"
+test = "tests/test_migracje.py::test_run_nie_moze_wskazywac_nieistniejacego_projektu"
+
+# 0010: run.project_id nullable
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "sa.ForeignKey(\"project.id\"), nullable=True))"
+zamien = "sa.ForeignKey(\"project.id\"), nullable=False))"
+test = "tests/test_migracje.py::test_run_bez_projektu_jest_poprawny_a_kolumna_projektu_dopuszcza_brak"
+
+# 0010: down_revision (dwie glowy)
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "down_revision: Union[str, None] = \"0009\""
+zamien = "down_revision: Union[str, None] = \"0008\""
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# 0010 downgrade: usuniecie kolumny
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "op.drop_column(\"run\", \"project_id\")"
+zamien = "pass"
+test = "tests/test_migracje.py::test_cofniecie_do_migracji_0009_usuwa_tabele_projektu_i_kolumne_runu"
+
+# 0010 downgrade: usuniecie tabeli
+[[mutant]]
+plik = "alembic/versions/0010_projekt.py"
+szukaj = "op.drop_table(\"project\")"
+zamien = "pass"
+test = "tests/test_migracje.py::test_cofniecie_do_migracji_0009_usuwa_tabele_projektu_i_kolumne_runu"
+
+# _iso: gałąź naive -> UTC (strefa procesu Tokio)
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "    if moment.tzinfo is None:\n"
+zamien = "    if False:\n"
+test = "tests/test_projekty.py::test_data_utworzenia_projektu_bez_strefy_jest_raportowana_jako_utc_niezaleznie_od_strefy_maszyny"
+
+# _iso: konwersja do UTC zamiast do strefy lokalnej procesu
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "moment.astimezone(timezone.utc)"
+zamien = "moment.astimezone()"
+test = "tests/test_projekty.py::test_data_utworzenia_projektu_w_innej_strefie_jest_zwracana_w_utc_niezaleznie_od_strefy_maszyny"
