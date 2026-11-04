@@ -839,6 +839,56 @@ def test_nieistniejacy_node_id_testu_konczy_sie_kodem_2_a_nie_zabitym_mutantem(t
     assert capsys.readouterr().err.startswith("blad: ")
 
 
+def test_nieistniejacy_node_id_w_przebiegu_bazowym_zglasza_zly_node_id_z_kodem_pytesta_4_a_nie_test_czerwony(
+    tmp_path, capsys
+):
+    node_id = "tests/test_modul.py::test_nie_ma"
+    repo = _repo(tmp_path, _mutant(SZUKAJ, ZABIJA, test=node_id))
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.startswith("blad: ")
+    assert node_id in zrzut.err
+    assert "node id" in zrzut.err
+    assert "kodem 4" in zrzut.err
+    assert "nie przechodzi bez mutacji" not in zrzut.err
+
+
+def test_test_czerwony_w_przebiegu_bazowym_zglasza_nie_przechodzi_bez_mutacji_a_nie_zly_node_id(
+    tmp_path, capsys
+):
+    repo = _repo(tmp_path, _mutant(SZUKAJ, ZABIJA, test=TEST_CZERWONY))
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.startswith("blad: ")
+    assert TEST_CZERWONY in zrzut.err
+    assert "test nie przechodzi bez mutacji" in zrzut.err
+    assert "node id" not in zrzut.err
+
+
+@pytest.mark.parametrize("kod_bazowy", [2, 3, 5, -9])
+def test_kazdy_kod_pytesta_bazowego_inny_niz_0_i_1_zglasza_zly_node_id_z_tym_kodem(
+    tmp_path, capsys, monkeypatch, kod_bazowy
+):
+    repo = _repo(tmp_path, TABELA_DO_PODSTAWKI)
+    monkeypatch.setattr(mutanty_reczne, "uruchom_test", lambda kopia, test, limit: kod_bazowy)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.startswith("blad: ")
+    assert TEST_DODAWANIE in zrzut.err
+    assert "node id" in zrzut.err
+    assert f"kodem {kod_bazowy}" in zrzut.err
+    assert "nie przechodzi bez mutacji" not in zrzut.err
+
+
 def test_mutacja_psujaca_skladnie_modulu_to_blad_a_nie_zabity_mutant(tmp_path, capsys):
     # Bazowy test przechodzi; po mutacji pytest konczy sie bledem zbierania (kod 2), nie oblaniem.
     repo = _repo(tmp_path, _mutant(SZUKAJ, "return a +"))

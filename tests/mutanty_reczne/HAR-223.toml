@@ -1,0 +1,40 @@
+# Tabela recznych mutantow HAR-223: przebieg bazowy `tools/mutanty_reczne.py` odroznia
+# test czerwony (kod pytesta 1) od zlego node id / nic nie zebrano (kod 4 i inne).
+# Mutmut nie mutuje `tools/`, wiec ta tabela jest jedyna egzekucja tych regul.
+
+# Kod 1 dostaje komunikat o node id zamiast "nie przechodzi bez mutacji".
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod_bazowy == 1:"
+zamien = "if kod_bazowy == 4:"
+test = "tests/test_mutanty_reczne.py::test_test_czerwony_w_przebiegu_bazowym_zglasza_nie_przechodzi_bez_mutacji_a_nie_zly_node_id"
+
+# Tylko kod 4 daje komunikat o node id; kody 2, 3, 5, -9 przechodza dalej do mutacji.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if kod_bazowy != 0:"
+zamien = "if kod_bazowy == 4:"
+test = "tests/test_mutanty_reczne.py::test_kazdy_kod_pytesta_bazowego_inny_niz_0_i_1_zglasza_zly_node_id_z_tym_kodem[5]"
+
+# Komunikat bez kodu pytesta.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "zakonczyl sie kodem {kod_bazowy} bez mutacji"
+zamien = "zakonczyl sie bez mutacji"
+test = "tests/test_mutanty_reczne.py::test_nieistniejacy_node_id_w_przebiegu_bazowym_zglasza_zly_node_id_z_kodem_pytesta_4_a_nie_test_czerwony"
+
+# Komunikat bez wskazania node id (obie wzmianki w nowym komunikacie).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = """brak dowodu - zly node id albo nic nie zebrano; sprawdz node id "
+                "(`pytest --collect-only -q <plik testu>`)\""""
+zamien = """brak dowodu - zly test albo nic nie zebrano; sprawdz test "
+                "(`pytest --collect-only -q <plik testu>`)\""""
+test = "tests/test_mutanty_reczne.py::test_nieistniejacy_node_id_w_przebiegu_bazowym_zglasza_zly_node_id_z_kodem_pytesta_4_a_nie_test_czerwony"
+
+# Komunikat bez node id testu na poczatku.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "f\"{mutant.test}: pytest zakonczyl sie kodem {kod_bazowy}"
+zamien = "f\"pytest zakonczyl sie kodem {kod_bazowy}"
+test = "tests/test_mutanty_reczne.py::test_nieistniejacy_node_id_w_przebiegu_bazowym_zglasza_zly_node_id_z_kodem_pytesta_4_a_nie_test_czerwony"

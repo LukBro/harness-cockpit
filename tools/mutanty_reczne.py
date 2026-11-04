@@ -6,7 +6,9 @@ i sprawdza, ze wskazany test oblewa. Najpierw ten sam test musi przejsc na kopii
 mutacji - inaczej czerwony test "zabilby" kazdego mutanta.
 Kody wyjscia: 0 - wszystkie mutanty zabite, 1 - sa przezywajace (stdout: po jednej linii
 `plik: szukaj → zamien`), 2 - blad narzedzia (brak dowodu: zla tabela, `szukaj` nie raz,
-test czerwony bez mutacji, kod pytesta inny niz 0/1, przekroczony limit czasu, test
+test czerwony bez mutacji (kod 1), kod pytesta inny niz 0/1 w przebiegu bazowym albo po
+mutacji (np. zly node id; HAR-223: komunikat o node id i kodzie pytesta, nie "czerwony"),
+przekroczony limit czasu, test
 pominiety albo niezebrany (zero testow, brak raportu JUnit) w ktorymkolwiek przebiegu,
 blad budowania frontu).
 Priorytet kodow: 2 > 1 > 0. Repozytorium uzytkownika nie jest modyfikowane.
@@ -294,9 +296,18 @@ def _zabity(korzen: Path, mutant: Mutant, limit: float, limit_budowy: float) -> 
         # Test e2e potrzebuje frontu juz w przebiegu bazowym (inaczej czerwony bez mutacji).
         if wymaga_frontu(mutant):
             zbuduj_front(kopia, limit_budowy)
-        if uruchom_test(kopia, mutant.test, limit) != 0:
+        # HAR-223: kod 1 to czerwony test; kazdy inny niz 0 (np. 4 = nieistniejacy node id,
+        # jak `pending` zamiast `chromium-pending` w HAR-81) to zly node id albo nic nie zebrano.
+        kod_bazowy = uruchom_test(kopia, mutant.test, limit)
+        if kod_bazowy == 1:
             raise BladNarzedzia(
                 f"{mutant.test}: test nie przechodzi bez mutacji - brak dowodu"
+            )
+        if kod_bazowy != 0:
+            raise BladNarzedzia(
+                f"{mutant.test}: pytest zakonczyl sie kodem {kod_bazowy} bez mutacji (nie 0 ani 1): "
+                "brak dowodu - zly node id albo nic nie zebrano; sprawdz node id "
+                "(`pytest --collect-only -q <plik testu>`)"
             )
         zastosuj_mutacje(kopia, mutant)
         # Mutacja w web/ jest widoczna dla testu dopiero po ponownym zbudowaniu frontu.
