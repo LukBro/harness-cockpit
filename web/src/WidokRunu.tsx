@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchZSesja } from "./Konto";
-import type { components } from "./api-types";
-
-type Zdarzenie = components["schemas"]["ZdarzenieRunu"];
-type KrokRunu = components["schemas"]["KrokRunu"];
-type RunStatus = components["schemas"]["RunStatus"];
-type Run = components["schemas"]["RunSzczegoly"];
+import type { KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
 
 // "nieznany": brak odpowiedzi albo blad pobrania. Nie blokujemy akcji, bo backend i tak broni sie 409.
 export type StanRunnera = "nieznany" | "online" | "offline";
@@ -208,7 +203,8 @@ export function WidokRunu({
         setBladUruchomienia(`Nie udało się uruchomić (błąd ${r.status}).`);
         return;
       }
-      const id: string = (await r.json()).run_id;
+      const utworzony: RunUtworzony = await r.json();
+      const id = utworzony.run_id;
       window.history.pushState(null, "", `?run=${encodeURIComponent(id)}`);
       setRunId(id);
     } catch {

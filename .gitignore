@@ -20,3 +20,5 @@ mutants/
 
 # pliki robocze kroku mutacji w CI
 mutation-summary.json
+# wygenerowane z web/openapi.json przy buildzie (npm run types); w repo tylko kontrakt, nie jego kopia
+web/src/api-types.ts
