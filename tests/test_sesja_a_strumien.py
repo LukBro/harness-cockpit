@@ -7,15 +7,17 @@ Limit kontroli sesji obnizamy na obiekcie `cockpit.settings.settings` (czytany p
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import time
-from contextlib import aclosing
+import re
+from contextlib import aclosing, contextmanager, suppress
 from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.api import bus
@@ -127,6 +129,28 @@ async def _zdarzenia_w_bazie(swiat) -> list[Event]:
         return list((await s.execute(select(Event).where(Event.run_id == swiat.run))).scalars().all())
 
 
+@contextmanager
+def _zlicz_instrukcje_sesji():
+    """Zlicza instrukcje SQL dotykajace tabeli sesji (UPDATE i SELECT osobno); listener zdejmowany w finally."""
+    licznik = {"update": 0, "select": 0}
+    silnik = db_session.engine.sync_engine
+
+    def nasluch(conn, cursor, statement, parameters, context, executemany):
+        sql = statement.lstrip().lower()
+        if not re.search(r"\bsesja\b", sql):
+            return
+        if sql.startswith("update"):
+            licznik["update"] += 1
+        elif sql.startswith("select"):
+            licznik["select"] += 1
+
+    event.listen(silnik, "before_cursor_execute", nasluch)
+    try:
+        yield licznik
+    finally:
+        event.remove(silnik, "before_cursor_execute", nasluch)
+
+
 async def _wyloguj_wszedzie(swiat, user) -> None:
     async with swiat.maker() as s:
         await sesje.wyloguj_wszedzie(s, user.id)
@@ -232,17 +256,20 @@ async def test_kontrola_sesji_idzie_takze_gdy_w_szynie_nie_ma_zadnego_zdarzenia(
     assert nazwa == "sesja_wygasla"
 
 
-async def test_zdarzenie_opublikowane_po_uniewaznieniu_sesji_nie_trafia_do_klienta(
+async def test_zdarzenie_opublikowane_po_uplywie_okna_kontroli_od_uniewaznienia_sesji_nie_trafia_do_klienta(
     swiat, monkeypatch
 ):
-    """Limit duzy, wiec zadziala wylacznie kontrola po zdarzeniu, i to przed jego wyslaniem."""
-    monkeypatch.setattr(settings, "sesja_kontrola_s", 3600)
+    """Okno kontroli minelo, zanim zdarzenie dotarlo do strumienia: kontrola idzie przed jego wyslaniem."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", KROTKI_LIMIT_KONTROLI_S)
     klient = await _zalogowany(swiat, swiat.wlasciciel)
 
     async with klient.stream("GET", _sciezka(swiat)) as odp:
         async with aclosing(_zdarzenia_sse(odp)) as strumien:
             await _poczekaj_na_subskrypcje(swiat.run)
             await _wyloguj_wszedzie(swiat, swiat.wlasciciel)
+            # Blokada petli zdarzen: okno mija, a strumien nie zdazyl go zauwazyc;
+            # zdarzenie trafia do kolejki razem z naleznym terminem kontroli.
+            time.sleep(3 * KROTKI_LIMIT_KONTROLI_S)
             await bus.publish_event(
                 swiat.run, {"seq": 1, "kind": "log", "text": "tresc-po-wylogowaniu"})
             zdarzenia = await _do_konca(strumien)
@@ -311,7 +338,10 @@ async def test_awaria_kontroli_sesji_nie_jest_zglaszana_jako_wygasniecie_sesji_a
     klient = await _zalogowany(swiat, swiat.wlasciciel)
     odebrane: list[str | None] = []
 
+    wywolania: list[str] = []
+
     async def awaria(s, identyfikator):
+        wywolania.append(identyfikator)
         raise RuntimeError("baza niedostepna")
 
     async def czytaj(strumien):
@@ -331,8 +361,239 @@ async def test_awaria_kontroli_sesji_nie_jest_zglaszana_jako_wygasniecie_sesji_a
     except Exception:  # noqa: BLE001 - j.w., przy zamykaniu odpowiedzi
         pass
 
+    assert wywolania, "kontrola sesji nie zostala wywolana"
     assert "sesja_wygasla" not in odebrane
     assert bus._run_subscribers.get(swiat.run, []) == []
+
+
+# --- kontrola co okno, nie przy kazdym zdarzeniu (HAR-199) ------------------------------------
+
+
+async def test_sto_zdarzen_w_oknie_kontroli_sesji_nie_powoduje_wiecej_niz_jednego_zapisu_sesji(
+    swiat, monkeypatch
+):
+    monkeypatch.setattr(settings, "sesja_kontrola_s", 3600)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+
+    async with klient.stream("GET", _sciezka(swiat)) as odp:
+        async with aclosing(_zdarzenia_sse(odp)) as strumien:
+            await _poczekaj_na_subskrypcje(swiat.run)
+            with _zlicz_instrukcje_sesji() as licznik:
+                for seq in range(1, 101):
+                    await bus.publish_event(swiat.run, {"seq": seq, "kind": "log", "text": f"z{seq}"})
+                odebrane = [(await _nastepne(strumien))[0] for _ in range(100)]
+
+    assert odebrane == ["run"] * 100
+    assert licznik["update"] <= 1
+    assert licznik["select"] <= 1
+
+
+async def test_uniewazniona_sesja_zamyka_strumien_w_oknie_kontroli_takze_przy_ciaglym_ruchu(
+    swiat, monkeypatch
+):
+    """Szyna dostaje zdarzenia czesciej niz co okno: cisza nie nadejdzie, kontrola idzie po zegarze."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", 0.2)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+
+    async def publikuj():
+        seq = 0
+        while True:
+            seq += 1
+            await bus.publish_event(swiat.run, {"seq": seq, "kind": "log", "text": "ruch"})
+            await asyncio.sleep(0.01)
+
+    async def czytaj_do_wygasniecia(strumien) -> list[str | None]:
+        nazwy = []
+        async for nazwa, _ in strumien:
+            nazwy.append(nazwa)
+            if nazwa == "sesja_wygasla":
+                break
+        return nazwy
+
+    zadanie = None
+    try:
+        async with klient.stream("GET", _sciezka(swiat)) as odp:
+            async with aclosing(_zdarzenia_sse(odp)) as strumien:
+                await _poczekaj_na_subskrypcje(swiat.run)
+                zadanie = asyncio.ensure_future(publikuj())
+                await _wyloguj_wszedzie(swiat, swiat.wlasciciel)
+                nazwy = await asyncio.wait_for(czytaj_do_wygasniecia(strumien), LIMIT_CZEKANIA_S)
+                zadanie.cancel()
+                reszta = await _do_konca(strumien)
+    finally:
+        if zadanie is not None:
+            zadanie.cancel()
+            with suppress(asyncio.CancelledError):
+                await zadanie
+
+    assert nazwy[-1] == "sesja_wygasla"
+    assert "sesja_wygasla" not in reszta
+
+
+async def test_zdarzenie_tuz_przed_koncem_okna_nie_odracza_kontroli_o_kolejne_pelne_okno(
+    swiat, monkeypatch
+):
+    """Okno liczone od ostatniej kontroli: zdarzenie w 0,6 s okna 1 s nie przesuwa kontroli na ok. 1,6 s."""
+    okno_s = 1.0
+    monkeypatch.setattr(settings, "sesja_kontrola_s", okno_s)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+
+    async with klient.stream("GET", _sciezka(swiat)) as odp:
+        poczatek = time.monotonic()
+        async with aclosing(_zdarzenia_sse(odp)) as strumien:
+            await _poczekaj_na_subskrypcje(swiat.run)
+            await _wyloguj_wszedzie(swiat, swiat.wlasciciel)
+            await asyncio.sleep(max(0.0, poczatek + 0.6 - time.monotonic()))
+            await bus.publish_event(swiat.run, {"seq": 1, "kind": "log", "text": "w-oknie"})
+
+            async def do_wygasniecia():
+                async for nazwa, _ in strumien:
+                    if nazwa == "sesja_wygasla":
+                        return time.monotonic()
+                raise AssertionError("strumien skonczyl sie bez sesja_wygasla")
+
+            moment = await asyncio.wait_for(do_wygasniecia(), LIMIT_CZEKANIA_S)
+
+    assert moment - poczatek < okno_s + 0.35
+
+
+def _licz_rozstrzygniecia_sesji(monkeypatch) -> list[str]:
+    """Podmienia `sesje.rozstrzygnij` na wersje liczaca wywolania i delegujaca do prawdziwej."""
+    wywolania: list[str] = []
+    oryginal = sesje.rozstrzygnij
+
+    async def liczaca(s, identyfikator):
+        wywolania.append(identyfikator)
+        return await oryginal(s, identyfikator)
+
+    monkeypatch.setattr(sesje, "rozstrzygnij", liczaca)
+    return wywolania
+
+
+async def test_strumien_nie_kontroluje_sesji_zaraz_po_otwarciu_bo_otwarcie_ja_juz_rozstrzygnelo(
+    swiat, monkeypatch
+):
+    """Jedyne rozstrzygniecie w oknie 3600 s to to z otwarcia strumienia; pierwsza kontrola po oknie."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", 3600)
+    # Zegar strumienia przesuniety daleko poza okno: okno liczone od zera (zamiast od otwarcia)
+    # daje kontrole od razu niezaleznie od czasu pracy maszyny (swiezy runner CI ma uptime < 1 h).
+    modul_app = importlib.import_module("cockpit.api.app")
+    zegar = time.monotonic
+    monkeypatch.setattr(
+        modul_app, "time", SimpleNamespace(monotonic=lambda: zegar() + 10 * 3600))
+    wywolania = _licz_rozstrzygniecia_sesji(monkeypatch)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+
+    async with klient.stream("GET", _sciezka(swiat)) as odp:
+        async with aclosing(_zdarzenia_sse(odp)) as strumien:
+            await _poczekaj_na_subskrypcje(swiat.run)
+            await bus.publish_event(swiat.run, {"seq": 1, "kind": "log", "text": "pierwsze"})
+            nazwa, _ = await _nastepne(strumien)
+
+    assert nazwa == "run"
+    assert len(wywolania) == 1
+
+
+async def test_ciagly_ruch_w_szynie_powoduje_kontrole_sesji_raz_na_okno_nie_przy_kazdym_zdarzeniu(
+    swiat, monkeypatch
+):
+    okno_s = 0.3
+    monkeypatch.setattr(settings, "sesja_kontrola_s", okno_s)
+    wywolania = _licz_rozstrzygniecia_sesji(monkeypatch)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+    odebrane: list[str | None] = []
+
+    async def publikuj():
+        seq = 0
+        while True:
+            seq += 1
+            await bus.publish_event(swiat.run, {"seq": seq, "kind": "log", "text": "ruch"})
+            await asyncio.sleep(0.01)
+
+    async def czytaj(strumien):
+        async for nazwa, _ in strumien:
+            odebrane.append(nazwa)
+
+    zadania: list[asyncio.Future] = []
+    kontrole = 0
+    czas_s = 0.0
+    try:
+        async with klient.stream("GET", _sciezka(swiat)) as odp:
+            async with aclosing(_zdarzenia_sse(odp)) as strumien:
+                await _poczekaj_na_subskrypcje(swiat.run)
+                poczatek = time.monotonic()
+                zadania.append(asyncio.ensure_future(publikuj()))
+                zadania.append(asyncio.ensure_future(czytaj(strumien)))
+                await asyncio.sleep(1.0)
+                czas_s = time.monotonic() - poczatek
+                kontrole = len(wywolania)
+                for z in zadania:
+                    z.cancel()
+                # Dokoncz anulowane zadania przed aclosing: inaczej aclose() trafia w generator,
+                # ktory czytaj() wciaz iteruje.
+                await asyncio.wait(zadania, timeout=LIMIT_CZEKANIA_S)
+                for z in zadania:
+                    with suppress(asyncio.CancelledError, Exception):
+                        z.result()
+    finally:
+        for z in zadania:
+            z.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await asyncio.wait_for(z, LIMIT_CZEKANIA_S)
+
+    assert len(odebrane) >= 20
+    # 1 rozstrzygniecie z otwarcia + co najwyzej jedna kontrola na okno (z zapasem na jitter)
+    assert kontrole <= 1 + int(czas_s / okno_s) + 2
+
+
+async def test_strumien_z_minionym_oknem_przed_pierwszym_obrotem_kontroluje_sesje_i_dostarcza_zdarzenie(
+    swiat, monkeypatch
+):
+    """Zegar skacze o 100 s zaraz po otwarciu: pierwszy obrot nie czeka na szyne, tylko kontroluje."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", 10)
+    odczyty: list[int] = []
+
+    def zegar() -> float:
+        odczyty.append(1)
+        return 0.0 if len(odczyty) == 1 else 100.0
+
+    modul = importlib.import_module("cockpit.api.app")
+    monkeypatch.setattr(modul, "time", SimpleNamespace(monotonic=zegar))
+    wywolania = _licz_rozstrzygniecia_sesji(monkeypatch)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+
+    async with klient.stream("GET", _sciezka(swiat)) as odp:
+        async with aclosing(_zdarzenia_sse(odp)) as strumien:
+            await _poczekaj_na_subskrypcje(swiat.run)
+            await bus.publish_event(swiat.run, {"seq": 1, "kind": "log", "text": "po-skoku"})
+            nazwa, dane = await _nastepne(strumien)
+
+    assert nazwa == "run"
+    assert json.loads(dane)["text"] == "po-skoku"
+    assert len(wywolania) == 2
+
+
+# --- reszta okna do nastepnej kontroli -----------------------------------------------------------
+
+
+def _pozostalo(ostatnia: float, teraz: float, okno_s: float) -> float:
+    return sesje.pozostalo_do_kontroli(ostatnia, teraz, okno_s)
+
+
+def test_przed_uplywem_okna_do_kontroli_zostaje_dokladnie_reszta_okna():
+    assert _pozostalo(10.0, 12.5, 5.0) == 2.5
+
+
+def test_tuz_po_kontroli_do_nastepnej_zostaje_cale_okno():
+    assert _pozostalo(10.0, 10.0, 5.0) == 5.0
+
+
+def test_dokladnie_na_granicy_okna_kontrola_jest_nalezna_od_zaraz():
+    assert _pozostalo(10.0, 15.0, 5.0) == 0.0
+
+
+def test_po_uplywie_okna_kontrola_jest_nalezna_od_zaraz_a_czas_oczekiwania_nie_jest_ujemny():
+    assert _pozostalo(10.0, 20.0, 5.0) == 0.0
 
 
 # --- ustawienie limitu kontroli ---------------------------------------------------------------

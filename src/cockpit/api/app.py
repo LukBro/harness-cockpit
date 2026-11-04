@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -332,24 +333,39 @@ async def run_stream(
         try:
             # Subskrypcja w try, bo niewystartowany generator nie wykona finally.
             q = bus.subscribe_run(run_id)
+            # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            ostatnia = time.monotonic()
             while True:
                 if await request.is_disconnected():
                     break
-                try:
-                    # Limit czytany przy kazdym obrocie: cisza w szynie nie moze odroczyc kontroli sesji.
-                    ev = await asyncio.wait_for(q.get(), settings.sesja_kontrola_s)
-                except TimeoutError:
-                    ev = None
-                # Kontrola przed wyslaniem: zdarzenie po uniewaznieniu sesji nie trafia do klienta.
-                try:
-                    async with db_session.SessionLocal() as s2:
-                        await sesje.rozstrzygnij(s2, identyfikator)
-                except BrakDostepu:
-                    yield {
-                        "event": "sesja_wygasla",
-                        "data": json.dumps({"komunikat": sesje.KOMUNIKAT_SESJI}),
-                    }
-                    break
+                # Kontrola raz na okno zamiast przy kazdym zdarzeniu (HAR-199): kazda to UPDATE
+                # + commit, a 2000 linii x 3 karty dawalo ~6000 UPDATE (audyt 2026-11-03).
+                # Czekamy tylko reszte okna i limit czytamy przy kazdym obrocie, wiec ani
+                # ciagly ruch, ani cisza w szynie nie odraczaja kontroli dluzej niz o okno.
+                pozostalo = sesje.pozostalo_do_kontroli(
+                    ostatnia, time.monotonic(), settings.sesja_kontrola_s)
+                ev = None
+                if pozostalo > 0:
+                    try:
+                        ev = await asyncio.wait_for(q.get(), pozostalo)
+                    except TimeoutError:
+                        # cisza przez reszte okna: ev zostaje None, nizej kontrola
+                        pass
+                if sesje.pozostalo_do_kontroli(
+                        ostatnia, time.monotonic(), settings.sesja_kontrola_s) <= 0:
+                    # Zdarzenie sprzed uplywu okna po uniewaznieniu sesji moze dotrzec do
+                    # klienta (decyzja HAR-199, zastepuje gwarancje HAR-70); strumien zamyka
+                    # sie najpozniej po oknie.
+                    try:
+                        async with db_session.SessionLocal() as s2:
+                            await sesje.rozstrzygnij(s2, identyfikator)
+                    except BrakDostepu:
+                        yield {
+                            "event": "sesja_wygasla",
+                            "data": json.dumps({"komunikat": sesje.KOMUNIKAT_SESJI}),
+                        }
+                        break
+                    ostatnia = time.monotonic()
                 if ev is None:
                     continue
                 yield {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
