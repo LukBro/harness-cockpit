@@ -18,8 +18,11 @@ NOWE_HASLO = "nowe-haslo-dluzsze-niz-8"
 
 
 @pytest.fixture
-def otworz_kontekst(browser):
-    """Fabryka kontekstow przegladarki (osobne ciasteczka); wszystkie zamykane po tescie."""
+def otworz_kontekst(browser, zdejmij_podstawione_trasy):
+    """Fabryka kontekstow przegladarki (osobne ciasteczka); wszystkie zamykane po tescie.
+
+    Trasy testu schodza przed zamknieciem kontekstu (HAR-185).
+    """
     otwarte = []
 
     def _otworz(**opcje):
@@ -29,6 +32,7 @@ def otworz_kontekst(browser):
 
     yield _otworz
     for kontekst in otwarte:
+        zdejmij_podstawione_trasy(kontekst)
         kontekst.close()
 
 

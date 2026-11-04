@@ -30,7 +30,7 @@ from cockpit.services.walidacja import (
     sprawdz_tylko_odczyt,
 )
 from runner.agent import SpecKroku
-from runner.straznik import ZMIENNA_PYTHONPATH_AGENTA
+from runner.straznik import ZMIENNA_BRAK_PYTHONPATH_AGENTA, ZMIENNA_PYTHONPATH_AGENTA
 
 # Katalog runu to jedyne miejsce, w ktorym rola bez zapisu moze pisac (werdykty).
 KATALOG_RUNU = Path(".cockpit") / "_run"
@@ -52,17 +52,23 @@ KATALOG_KORZENIA = KATALOG_PAKIETU.parent
 def _srodowisko_straznika() -> dict[str, str]:
     """Srodowisko runnera z pakietem biezacego drzewa przed istniejacym PYTHONPATH.
 
-    Dla straznika. Agent dostaje pierwotny PYTHONPATH przez ZMIENNA_PYTHONPATH_AGENTA.
+    Dla straznika. Agent dostaje pierwotny PYTHONPATH przez ZMIENNA_PYTHONPATH_AGENTA
+    (takze pusty); brak PYTHONPATH u runnera to ZMIENNA_BRAK_PYTHONPATH_AGENTA.
     """
     sciezki = [str(KATALOG_PAKIETU)]
     if istniejace := os.environ.get("PYTHONPATH"):
         sciezki.append(istniejace)
-    return {
-        **os.environ,
-        "PYTHONPATH": os.pathsep.join(sciezki),
-        # Straznik oddaje agentowi pierwotny PYTHONPATH (pusty = brak).
-        ZMIENNA_PYTHONPATH_AGENTA: os.environ.get("PYTHONPATH", ""),
+    srodowisko = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in (ZMIENNA_PYTHONPATH_AGENTA, ZMIENNA_BRAK_PYTHONPATH_AGENTA)
     }
+    srodowisko["PYTHONPATH"] = os.pathsep.join(sciezki)
+    if "PYTHONPATH" in os.environ:
+        srodowisko[ZMIENNA_PYTHONPATH_AGENTA] = os.environ["PYTHONPATH"]
+    else:
+        srodowisko[ZMIENNA_BRAK_PYTHONPATH_AGENTA] = "1"
+    return srodowisko
 
 
 @dataclass(frozen=True)

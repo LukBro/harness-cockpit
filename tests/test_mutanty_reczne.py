@@ -257,7 +257,8 @@ for _pole in POLA_TABELI:
     ZLE_TABELE[f"pole_{_pole}_jest_liczba"] = _wpis(**_pola(**{_pole: 5}))
     ZLE_TABELE[f"pole_{_pole}_jest_bool"] = _wpis(**_pola(**{_pole: True}))
     ZLE_TABELE[f"pole_{_pole}_jest_lista"] = _wpis(**_pola(**{_pole: ["x"]}))
-    ZLE_TABELE[f"pole_{_pole}_jest_pustym_napisem"] = _wpis(**_pola(**{_pole: ""}))
+    if _pole != "zamien":  # HAR-184: pusty `zamien` to usuniecie `szukaj`, nie zla tabela
+        ZLE_TABELE[f"pole_{_pole}_jest_pustym_napisem"] = _wpis(**_pola(**{_pole: ""}))
 
 
 @pytest.mark.parametrize(
@@ -267,6 +268,49 @@ def test_niepoprawna_tabela_konczy_sie_bledem_narzedzia(tmp_path, tresc):
     tabela = _zapisz_tabele(tmp_path, tresc)
 
     with pytest.raises(BladNarzedzia):
+        mutanty_reczne.wczytaj_tabele(tabela)
+
+
+def test_wiersz_z_pustym_zamien_jest_poprawnym_mutantem_usuwajacym_fragment(tmp_path):
+    tabela = _zapisz_tabele(tmp_path, _wpis(**_pola(zamien="")))
+
+    assert mutanty_reczne.wczytaj_tabele(tabela) == [
+        Mutant("src/a.py", "x = 1", "", "tests/test_a.py::test_x")
+    ]
+
+
+@pytest.mark.parametrize("pole", ["plik", "szukaj", "test"])
+def test_puste_pole_inne_niz_zamien_jest_bledem_wskazujacym_to_pole(tmp_path, pole):
+    # Pozostale trzy pola sa niepuste: tylko puste `pole` moze wywolac blad.
+    tabela = _zapisz_tabele(tmp_path, _wpis(**_pola(**{pole: ""})))
+
+    with pytest.raises(BladNarzedzia, match=f"pole '{pole}'"):
+        mutanty_reczne.wczytaj_tabele(tabela)
+
+
+@pytest.mark.parametrize(
+    "wartosc",
+    [
+        pytest.param(5, id="liczba"),
+        pytest.param(0, id="zero"),
+        pytest.param(True, id="bool_prawda"),
+        pytest.param(False, id="bool_falsz"),
+        pytest.param(["x"], id="lista"),
+        pytest.param([], id="pusta_lista"),
+    ],
+)
+def test_zamien_inne_niz_napis_jest_bledem_wskazujacym_to_pole(tmp_path, wartosc):
+    # `0`, `False` i `[]` sa "puste" w sensie Pythona: odrozniaja sprawdzanie typu od falsy.
+    tabela = _zapisz_tabele(tmp_path, _wpis(**_pola(zamien=wartosc)))
+
+    with pytest.raises(BladNarzedzia, match="pole 'zamien'"):
+        mutanty_reczne.wczytaj_tabele(tabela)
+
+
+def test_zamien_rowne_szukaj_jest_bledem_mutanta_tozsamosciowego(tmp_path):
+    tabela = _zapisz_tabele(tmp_path, _wpis(**_pola(szukaj="x = 1", zamien="x = 1")))
+
+    with pytest.raises(BladNarzedzia, match="tozsamosciowy"):
         mutanty_reczne.wczytaj_tabele(tabela)
 
 
@@ -320,6 +364,18 @@ def test_mutacja_zachowuje_konce_linii_i_znaki_spoza_ascii_w_reszcie_pliku(tmp_p
     mutanty_reczne.zastosuj_mutacje(kopia, Mutant("src/a.py", "b = 2", "b = 3", "t"))
 
     assert (kopia / "src" / "a.py").read_bytes() == "a = 'ą'\r\nb = 3\r\n".encode()
+
+
+def test_mutacja_z_pustym_zamien_usuwa_dokladnie_szukaj_z_kopii_a_oryginal_zostaje_bajt_w_bajt(
+    tmp_path,
+):
+    tresc = "a = 1\nb = 2\nc = 3\n".encode()
+    oryginal, kopia = _para_katalogow(tmp_path, tresc)
+
+    mutanty_reczne.zastosuj_mutacje(kopia, Mutant("src/a.py", "b = 2\n", "", "t"))
+
+    assert (kopia / "src" / "a.py").read_bytes() == "a = 1\nc = 3\n".encode()
+    assert (oryginal / "src" / "a.py").read_bytes() == tresc
 
 
 def test_mutacja_bez_wystapienia_szukaj_konczy_sie_bledem_i_nie_zmienia_pliku(tmp_path):
@@ -681,6 +737,32 @@ def test_mutant_ktorego_test_nie_oblewa_konczy_sie_kodem_1_i_wypisuje_wiersz(tmp
 
     assert kod == 1
     assert capsys.readouterr().out == f"{PLIK_MODULU}: {SZUKAJ} → {PRZEZYWA_A}\n"
+
+
+def test_mutant_usuwajacy_fragment_ktory_test_wykrywa_konczy_sie_kodem_0_i_niczego_nie_wypisuje(
+    tmp_path, capsys
+):
+    # Usuniecie " + b" zostawia poprawne `return a`, a test_dodawanie oblewa.
+    repo = _repo(tmp_path, _mutant(" + b", ""))
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_mutant_usuwajacy_fragment_ktorego_test_nie_wykrywa_konczy_sie_kodem_1_i_wypisuje_wiersz(
+    tmp_path, capsys
+):
+    # Import `odejmij` jest potrzebny tylko test_odejmowanie; test_dodawanie przechodzi dalej.
+    repo = _repo(
+        tmp_path, _mutant(", odejmij", "", test=TEST_DODAWANIE, plik="tests/test_modul.py")
+    )
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 1
+    assert capsys.readouterr().out == "tests/test_modul.py: , odejmij → \n"
 
 
 def test_przy_mieszanej_tabeli_wypisani_sa_tylko_przezywajacy_w_kolejnosci_wpisow(

@@ -120,8 +120,9 @@ def liczba_runow():
 def czysta_baza():
     if not URL_BAZY.startswith("postgresql"):
         pytest.skip(
-            "test e2e wymaga PostgreSQL: ustaw "
-            "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../cockpit_test"
+            "test e2e wymaga PostgreSQL: uruchom tools/testy_pelne.sh (baza "
+            "cockpit_test_<skrot> na worktree) albo ustaw jawnie "
+            "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../<baza>"
         )
     if not INDEX_FRONTU.is_file():
         pytest.fail("brak zbudowanego frontu: zbuduj front: npm ci && npm run build w web/")
@@ -195,6 +196,46 @@ def adres_kokpitu(czysta_baza, token_runnera, tmp_path, dodatkowe_env_kokpitu):
         yield adres
     finally:
         _zabij_grupe(proc)
+
+
+def zdejmij_podstawione_trasy_z_kontekstu(kontekst) -> None:
+    """Zdejmuje trasy testu (`page.route`, `context.route`) z kazdej strony kontekstu i z kontekstu.
+
+    HAR-185: zamkniecie kontekstu przy handlerze trasy w locie (`route.fetch()`) konczylo sie
+    `TargetClosedError` zglaszanym dopiero przy nastepnym wywolaniu sync API, czyli w
+    nastepnym tescie. `behavior="ignoreErrors"` nie czeka na handlery w locie i ignoruje
+    ich bledy, wiec handlery tras nie potrzebuja wlasnej obslugi zamkniecia kontekstu.
+    Kontekst zamkniety juz przez test (np. zapis profilu w tescie logowania) rzuca przy
+    zdejmowaniu `TargetClosedError` - sprzatanie go pomija, kazdy inny wyjatek (takze inny
+    blad Playwrighta, np. protokolu albo TimeoutError) leci dalej.
+    WHY import z `playwright._impl._errors`: `TargetClosedError` nie jest eksportowany z
+    `playwright.sync_api` (tam tylko Error, TimeoutError, WebError). Typ nie jest publiczny:
+    zmiana w Playwright da glosny ImportError, nie ciche przepuszczenie bledow.
+    Import jest leniwy: ten plik laduje sie takze bez przegladarki.
+    """
+    from playwright._impl._errors import TargetClosedError
+
+    for cel in (*kontekst.pages, kontekst):
+        try:
+            cel.unroute_all(behavior="ignoreErrors")
+        except TargetClosedError:
+            pass
+
+
+@pytest.fixture
+def context(context):
+    """Kontekst z pluginu playwrighta; trasy testu zdejmowane tuz przed jego zamknieciem.
+
+    Teardown tego nadpisania biegnie przed teardownem fixture'a z pluginu, ktory zamyka kontekst.
+    """
+    yield context
+    zdejmij_podstawione_trasy_z_kontekstu(context)
+
+
+@pytest.fixture
+def zdejmij_podstawione_trasy():
+    """Funkcja sprzatajaca trasy kontekstu, dla fixture'ow tworzacych wlasne konteksty."""
+    return zdejmij_podstawione_trasy_z_kontekstu
 
 
 @pytest.fixture

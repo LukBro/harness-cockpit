@@ -812,6 +812,7 @@ ZLE_ODPOWIEDZI = {
         {"projekt": "/p", "skille": [], "workflow": ["wf.yaml"]}]}},
     "drugi_projekt_zepsuty_po_poprawnym_pierwszym": {"ok": True, "wynik": {"projekty": [
         _wpis("/p/dobry", skille=[_skill("nowy", _fm("nowy"))]), "zepsuty"]}},
+    "lista_projektow_pusta": {"ok": True, "wynik": {"projekty": []}},
     "runner_zglosil_blad": {"ok": False, "blad": "za duzo pozycji", "kod": "za_duzo"},
     "runner_zglosil_blad_bez_kodu": {"ok": False},
     "skill_bez_klucza_frontmatter": {"ok": True, "wynik": {"projekty": [
@@ -1389,6 +1390,8 @@ ZLY_KSZTALT_Z_POWODEM = {
     "projekt_nie_napis": (
         {"ok": True, "wynik": {"projekty": [{"projekt": 5, "skille": [], "workflow": []}]}},
         "pole projekt nie jest napisem"),
+    "lista_projektow_pusta": (
+        {"ok": True, "wynik": {"projekty": []}}, "lista projektow jest pusta"),
     "ten_sam_projekt_dwa_razy": (_odp(_wpis("/p"), _wpis("/p")), "projekt wystepuje dwa razy"),
     "skille_nie_lista": (
         {"ok": True, "wynik": {"projekty": [{"projekt": "/p", "skille": "x", "workflow": []}]}},
@@ -1688,3 +1691,83 @@ async def test_skill_z_niepoprawna_data_we_frontmatterze_jest_pominiety_a_reszta
 
     assert [w["klucz"] for w in await _wiersze(zespoly)] == ["dobry"]
     assert wynik["pominiete"] == 1
+
+
+# =================================================================================
+# 5. Pusty albo nieczytelny runner.json to blad, nie pusty katalog (HAR-183)
+# =================================================================================
+
+KOMUNIKAT_ZLEJ_KONFIGURACJI = "konfiguracja zakresu runnera jest nieczytelna albo ma złą strukturę"
+
+USZKODZONE_KONFIGURACJE = {
+    "pusty_plik": "",
+    "zly_json": "{projekty: nie json",
+    "projekty_nie_lista": '{"projekty": "/tmp"}',
+    "korzen_nie_slownik": '["/tmp"]',
+}
+
+
+@pytest.mark.parametrize("tresc", USZKODZONE_KONFIGURACJE.values(),
+                         ids=USZKODZONE_KONFIGURACJE.keys())
+async def test_runner_z_uszkodzonym_runner_json_odpowiada_bledem_zlej_konfiguracji_zakresu(
+    projekt, tresc,
+):
+    projekt.konfig.write_text(tresc, encoding="utf-8")
+
+    odp = await _wyk()
+
+    assert odp == {"req_id": "r-1", "ok": False, "kod": "zla_konfiguracja_zakresu",
+                   "blad": KOMUNIKAT_ZLEJ_KONFIGURACJI}
+
+
+async def test_runner_z_runner_json_bedacym_katalogiem_odpowiada_bledem_zlej_konfiguracji_zakresu(
+    projekt, monkeypatch,
+):
+    katalog = projekt.baza / "konfig-jako-katalog"
+    katalog.mkdir()
+    monkeypatch.setenv("COCKPIT_RUNNER_CONFIG", str(katalog))
+
+    odp = await _wyk()
+
+    assert odp["ok"] is False
+    assert odp["kod"] == "zla_konfiguracja_zakresu"
+    assert odp["blad"] == KOMUNIKAT_ZLEJ_KONFIGURACJI
+    assert str(katalog) not in odp["blad"]   # komunikat staly, bez sciezki
+
+
+async def test_runner_bez_pliku_runner_json_odpowiada_sukcesem_z_pusta_lista_projektow(
+    projekt, monkeypatch,
+):
+    monkeypatch.setenv("COCKPIT_RUNNER_CONFIG", str(projekt.baza / "nie-ma.json"))
+
+    odp = await _wyk()
+
+    assert odp["ok"] is True
+    assert odp["wynik"]["projekty"] == []
+
+
+async def test_uszkodzony_runner_json_nie_zmienia_odmowy_operacji_plikowej_na_blad_konfiguracji(
+    projekt,
+):
+    cel = _pisz(projekt.korzen / "a.txt", "tresc")
+    projekt.konfig.write_text("{nie json", encoding="utf-8")
+
+    odp = await operacje.wykonaj({"type": "read_file", "req_id": "r-1", "sciezka": str(cel)})
+
+    assert odp["ok"] is False
+    assert odp["kod"] == "poza_zakresem"   # fail-closed jak dotad, nie zla_konfiguracja_zakresu
+
+
+@pytest.mark.parametrize("tresc", ["", "{nie json"], ids=["pusty_plik", "zly_json"])
+async def test_pusty_albo_nieczytelny_runner_json_nie_kasuje_katalogu_i_daje_409(
+    kokpit, zespol, projekt, tresc,
+):
+    await _wstaw_http(kokpit, zespol.tenant_id, "runner-alfa")
+    przed = await _wiersze_http(kokpit)
+    assert len(przed) == 1
+    projekt.konfig.write_text(tresc, encoding="utf-8")
+
+    odp = await zespol.http.post("/api/katalog/odswiez", headers=zespol.csrf)
+
+    assert odp.status_code == 409
+    assert await _wiersze_http(kokpit) == przed   # katalog w bazie nietkniety
