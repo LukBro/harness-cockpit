@@ -195,9 +195,10 @@ def test_zmiana_w_pustej_linii_miedzy_funkcjami_nie_daje_wzorca():
     assert _wzorce(DWIE_FUNKCJE, 8) == []
 
 
-def test_zmiana_w_linii_dekoratora_daje_wzorzec_funkcji():
-    zrodlo = "import functools\n\n@functools.cache\ndef f():\n    return 1\nx = 2\n"
-    assert _wzorce(zrodlo, 3) == [f"{MODUL}.x_f__mutmut_*"]
+def test_zmiana_w_linii_dekoratora_staticmethod_daje_wzorzec_metody():
+    # HAR-152: mutmut mutuje tylko funkcje bez dekoratora albo z samym staticmethod/classmethod.
+    zrodlo = "class K:\n    @staticmethod\n    def m():\n        return 1\n"
+    assert _wzorce(zrodlo, 2) == [f"{MODUL}.x{ZNAK}K{ZNAK}m__mutmut_*"]
 
 
 def test_zmiana_w_linii_przed_dekoratorem_nie_daje_wzorca():
@@ -1178,3 +1179,727 @@ def test_blad_skladni_w_zmienionym_pliku_daje_kod_2(monkeypatch, tmp_path):
     monkeypatch.setattr(mutanty_zmian, "uruchom", s)
     assert mutanty_zmian.main(["--korzen", str(tmp_path)]) == 2
     assert s.mutmut("run") == []
+
+
+# --- HAR-152: __new__, __setattr__, __getattribute__, dekoratory i pragma no mutate --
+
+NAZWY_POMIJANE_PRZEZ_MUTMUTA = ["__new__", "__setattr__", "__getattribute__"]
+
+
+@pytest.mark.parametrize("nazwa", NAZWY_POMIJANE_PRZEZ_MUTMUTA)
+def test_zmieniona_metoda_pomijana_przez_mutmuta_jest_zgloszona_bez_docstringu_i_komentarza(nazwa):
+    zrodlo = (
+        "class K:\n"
+        f"    def {nazwa}(self):\n"
+        '        """Opis."""\n'
+        "        # komentarz\n"
+        "        x = 1\n"
+        "        return x\n"
+    )
+    assert _bez(zrodlo, 2, 3, 4, 5, 6) == [2, 5, 6]
+
+
+@pytest.mark.parametrize("nazwa", NAZWY_POMIJANE_PRZEZ_MUTMUTA)
+def test_zmieniona_funkcja_modulu_o_nazwie_pomijanej_przez_mutmuta_jest_zgloszona(nazwa):
+    assert _bez(f"def {nazwa}(a):\n    return 1\n", 1, 2) == [1, 2]
+
+
+@pytest.mark.parametrize("nazwa", ["__init__", "__call__", "__new", "new__", "__getattr__"])
+def test_zmieniona_metoda_dunder_spoza_listy_pomijanej_przez_mutmuta_ma_mutanty(nazwa):
+    zrodlo = f"class K:\n    def {nazwa}(self):\n        return 1\n"
+    assert _bez(zrodlo, 2, 3) == []
+
+
+@pytest.mark.parametrize("nazwa", NAZWY_POMIJANE_PRZEZ_MUTMUTA)
+def test_metoda_pomijana_przez_mutmuta_nie_zglasza_linii_sasiedniej_zwyklej_metody(nazwa):
+    zrodlo = (
+        f"class K:\n    def {nazwa}(self):\n        return 1\n\n    def m(self):\n        return 2\n"
+    )
+    assert _bez(zrodlo, 3, 6) == [3]
+
+
+def test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie():
+    zrodlo = "def f():\n    a = 1\n    x = 2  # pragma: no mutate\n    return a\n"
+    assert _bez(zrodlo, 2, 3, 4) == [3]
+
+
+@pytest.mark.parametrize(
+    ("zmienione", "oczekiwane"),
+    [
+        pytest.param((3,), [3], id="linia_startu_instrukcji"),
+        pytest.param((4,), [], id="linia_wewnatrz_instrukcji_ma_mutant"),
+        pytest.param((2, 3, 4, 6), [3], id="tylko_linia_startu_bez_sasiadow"),
+    ],
+)
+def test_pragma_na_ostatniej_linii_instrukcji_wieloliniowej_wylacza_tylko_linie_startu(
+    zmienione, oczekiwane
+):
+    # mutmut: pragma na koncu instrukcji liczy sie dla linii, w ktorej instrukcja startuje;
+    # `a + 1` w linii 4 ma mutant (zweryfikowane przez create_mutations).
+    zrodlo = (
+        "def f():\n"
+        "    a = 1\n"
+        "    wynik = g(\n"
+        "        a + 1,\n"
+        "    )  # pragma: no mutate\n"
+        "    return wynik + 1\n"
+    )
+    assert _bez(zrodlo, *zmienione) == oczekiwane
+
+
+def test_komentarz_pragma_wewnatrz_nawiasow_nie_jest_pragma_wiec_linie_maja_mutanty():
+    zrodlo = (
+        "def f():\n"
+        "    wynik = g(  # pragma: no mutate\n"
+        "        1 + 1,\n"
+        "    )\n"
+        "    return wynik + 1\n"
+    )
+    assert _bez(zrodlo, 2, 3, 5) == []
+
+
+def test_pragma_z_dopiskiem_po_tokenie_nadal_liczy_sie():
+    zrodlo = "def f():\n    a = 1  # pragma: no mutate (uzasadnienie)\n    return a\n"
+    assert _bez(zrodlo, 2, 3) == [2]
+
+
+def test_pragma_block_na_linii_def_zglasza_cala_funkcje_bez_docstringu_i_nie_sasiednia():
+    zrodlo = (
+        "class K:\n"
+        "    def m(self):  # pragma: no mutate block\n"
+        '        """Opis."""\n'
+        "        a = 1\n"
+        "        return a\n"
+        "\n"
+        "    def n(self):\n"
+        "        return 2\n"
+    )
+    assert _bez(zrodlo, 2, 3, 4, 5, 6, 7, 8) == [2, 4, 5]
+
+
+def test_pragma_block_na_def_funkcji_modulu_zglasza_jej_linie():
+    zrodlo = "def f():  # pragma: no mutate block\n    a = 1\n    return a\n\n\ndef g():\n    return 2\n"
+    assert _bez(zrodlo, 1, 2, 3, 6, 7) == [1, 2, 3]
+
+
+def test_pragma_block_na_naglowku_if_zglasza_caly_if_a_nie_linie_po_nim():
+    zrodlo = (
+        "def f(x):\n"
+        "    a = 0\n"
+        "    if x:  # pragma: no mutate block\n"
+        "        a = 1\n"
+        "        a += 1\n"
+        "    return a\n"
+    )
+    assert _bez(zrodlo, 2, 3, 4, 5, 6) == [3, 4, 5]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param(
+            "def f(x):\n    a = 0\n    if x:  # pragma: no mutate\n        a = 1\n    return a\n",
+            id="if",
+        ),
+        pytest.param(
+            "def f(x):\n    a = 0\n    for i in x:  # pragma: no mutate\n        a = i\n    return a\n",
+            id="for",
+        ),
+    ],
+)
+def test_pragma_bez_block_na_naglowku_zglasza_tylko_naglowek_a_nie_cialo(zrodlo):
+    assert _bez(zrodlo, 2, 3, 4, 5) == [3]
+
+
+def test_osobna_linia_pragma_block_zglasza_kolejne_instrukcje_bloku_a_poprzednie_nie():
+    zrodlo = (
+        "def f():\n"
+        "    a = 1\n"
+        "    # pragma: no mutate block\n"
+        "    b = 2\n"
+        "    c = 3\n"
+        "    return a + b + c\n"
+    )
+    assert _bez(zrodlo, 2, 3, 4, 5, 6) == [3, 4, 5, 6]
+
+
+def test_osobna_linia_pragma_block_w_ciele_if_nie_siega_poza_ten_blok():
+    zrodlo = (
+        "def f(x):\n"
+        "    if x:\n"
+        "        # pragma: no mutate block\n"
+        "        a = 1\n"
+        "    b = 2\n"
+        "    return b\n"
+    )
+    assert _bez(zrodlo, 2, 3, 4, 5, 6) == [3, 4]
+
+
+def test_pragma_start_end_zglasza_linie_miedzy_znacznikami_a_nie_poza_nimi():
+    zrodlo = (
+        "def f():\n"
+        "    a = 1\n"
+        "    # pragma: no mutate start\n"
+        "    b = 2\n"
+        "    c = 3\n"
+        "    # pragma: no mutate end\n"
+        "    d = 4\n"
+        "    return a\n"
+    )
+    assert _bez(zrodlo, 2, 3, 4, 5, 6, 7, 8) == [3, 4, 5, 6]
+
+
+def test_osobna_linia_pragma_bez_tokenu_nie_obejmuje_nastepnej_linii_kodu():
+    zrodlo = "def f():\n    a = 1\n    # pragma: no mutate\n    b = 2\n"
+    # sama linia pragmy jest u mutmuta pomijana, wiec jej zmiana idzie do "sprawdz recznie";
+    # nastepna linia kodu (4) nadal ma mutanty
+    assert _bez(zrodlo, 2, 3, 4) == [3]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("def f():\n    a = 1  # pragma: no cover\n    return a\n", id="no_cover"),
+        pytest.param("def f():\n    a = 1  # no mutate\n    return a\n", id="bez_slowa_pragma"),
+        pytest.param('def f():\n    a = "# pragma: no mutate"\n    return a\n', id="w_literale"),
+        pytest.param(
+            'def f():\n    a = """\n# pragma: no mutate block\n"""\n    b = 2\n    return b\n',
+            id="w_wieloliniowym_literale",
+        ),
+    ],
+)
+def test_tekst_ktory_nie_jest_komentarzem_pragma_no_mutate_nie_wylacza_mutantow(zrodlo):
+    ostatnia = len(zrodlo.splitlines())
+    assert _bez(zrodlo, *range(2, ostatnia + 1)) == []
+
+
+def test_pragma_w_niezmienionej_linii_nie_zglasza_zmienionej_linii_innej_instrukcji():
+    zrodlo = "def f():\n    a = 1\n    b = 2  # pragma: no mutate\n    c = 3\n"
+    assert _bez(zrodlo, 4) == []
+
+
+# --- wzorce_dla_pliku: miejsca, ktorych mutmut nie mutuje --------------------
+
+
+@pytest.mark.parametrize("nazwa", NAZWY_POMIJANE_PRZEZ_MUTMUTA)
+def test_zmieniona_metoda_pomijana_przez_mutmuta_nie_daje_wzorca(nazwa):
+    assert _wzorce(f"class K:\n    def {nazwa}(self):\n        return 1\n", 3) == []
+
+
+@pytest.mark.parametrize("nazwa", NAZWY_POMIJANE_PRZEZ_MUTMUTA)
+def test_zmieniona_funkcja_modulu_pomijana_przez_mutmuta_nie_daje_wzorca(nazwa):
+    assert _wzorce(f"def {nazwa}(a):\n    return 1\n", 2) == []
+
+
+def test_zmieniony_init_obok_new_daje_wzorzec_tylko_init():
+    zrodlo = (
+        "class K:\n    def __new__(cls):\n        return 1\n\n    def __init__(self):\n        self.x = 1\n"
+    )
+    assert _wzorce(zrodlo, 3, 6) == [f"{MODUL}.x{ZNAK}K{ZNAK}__init____mutmut_*"]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("@functools.cache\ndef f():\n    return 1\n", id="funkcja_modulu_z_cache"),
+        pytest.param("class K:\n    @property\n    def m(self):\n        return 1\n", id="property"),
+        pytest.param("@a\n@b\ndef f():\n    return 1\n", id="dwa_dekoratory"),
+        pytest.param(
+            "class K:\n    @staticmethod\n    @other\n    def m():\n        return 1\n",
+            id="staticmethod_z_drugim_dekoratorem",
+        ),
+        pytest.param(
+            "class K:\n    @pkg.staticmethod\n    def m():\n        return 1\n",
+            id="staticmethod_jako_atrybut",
+        ),
+    ],
+)
+def test_zmieniona_funkcja_z_dekoratorem_innym_niz_goly_staticmethod_nie_daje_wzorca(zrodlo):
+    ostatnia = len(zrodlo.splitlines())
+    assert _wzorce(zrodlo, *range(1, ostatnia + 1)) == []
+
+
+@pytest.mark.parametrize("dekorator", ["staticmethod", "classmethod"])
+def test_zmieniona_metoda_z_golym_staticmethod_lub_classmethod_daje_wzorzec(dekorator):
+    zrodlo = f"class K:\n    @{dekorator}\n    def m(*a):\n        return 1\n"
+    assert _wzorce(zrodlo, 4) == [f"{MODUL}.x{ZNAK}K{ZNAK}m__mutmut_*"]
+
+
+def test_zmieniona_funkcja_z_dekoratorem_nie_odbiera_wzorca_sasiedniej_zwyklej_funkcji():
+    zrodlo = "@functools.cache\ndef f():\n    return 1\n\n\ndef g():\n    return 2\n"
+    assert _wzorce(zrodlo, 3, 7) == [f"{MODUL}.x_g__mutmut_*"]
+
+
+# --- main: zmiany poza zasiegiem mutmuta (HAR-152) ---------------------------
+
+NOWY = "src/cockpit/services/nowy.py"
+KLUCZ_G = "cockpit.services.nowy.x_g__mutmut_1"
+
+
+def test_zmiana_w_metodzie_new_w_source_paths_daje_kod_3_bez_wolania_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    zrodlo = "class K:\n    def __new__(cls):\n        return super().__new__(cls)\n"
+    s = _Srodowisko(diff=_diff_linii(NOWY, 3))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 3
+    assert s.mutmut("run") == []
+    assert s.mutmut("results") == []
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{NOWY}:3"]
+
+
+@pytest.mark.parametrize("nazwa", ["__setattr__", "__getattribute__"])
+def test_zmiana_w_pozostalych_metodach_pomijanych_przez_mutmuta_daje_kod_3(
+    monkeypatch, tmp_path, capsys, nazwa
+):
+    zrodlo = f"class K:\n    def {nazwa}(self, k):\n        return 1\n"
+    s = _Srodowisko(diff=_diff_linii(NOWY, 3))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 3
+    assert s.mutmut("run") == []
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{NOWY}:3"]
+
+
+def test_zmieniona_linia_z_pragma_no_mutate_w_funkcji_z_zabitymi_mutantami_daje_kod_3(
+    monkeypatch, tmp_path, capsys
+):
+    zrodlo = "def g():\n    a = 1\n    b = 2  # pragma: no mutate\n    return a\n"
+    s = _Srodowisko(diff=_diff_linii(NOWY, 3), results=_wyniki((KLUCZ_G, "killed")))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 3
+    assert len(s.mutmut("run")) == 1
+    assert capsys.readouterr().out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{NOWY}:3"]
+
+
+def test_zmieniona_linia_bez_pragmy_w_tej_samej_funkcji_z_zabitymi_mutantami_daje_kod_0(
+    monkeypatch, tmp_path, capsys
+):
+    zrodlo = "def g():\n    a = 1\n    b = 2  # pragma: no mutate\n    return a\n"
+    s = _Srodowisko(diff=_diff_linii(NOWY, 4), results=_wyniki((KLUCZ_G, "killed")))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 0
+    assert NAGLOWEK_BEZ_MUTANTOW not in capsys.readouterr().out
+
+
+def test_zmiana_w_zwyklym_init_z_zabitymi_mutantami_daje_kod_0_nie_3(
+    monkeypatch, tmp_path, capsys
+):
+    zrodlo = "class Klasa:\n    def __init__(self):\n        self.x = 1\n"
+    klucz = f"cockpit.services.nowy.x{ZNAK}Klasa{ZNAK}__init____mutmut_1"
+    s = _Srodowisko(diff=_diff_linii(NOWY, 3), results=_wyniki((klucz, "killed")))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 0
+    assert len(s.mutmut("run")) == 1
+    assert s.mutmut("run")[0][4:] == [f"cockpit.services.nowy.x{ZNAK}Klasa{ZNAK}__init____mutmut_*"]
+    assert NAGLOWEK_BEZ_MUTANTOW not in capsys.readouterr().out
+
+
+def test_zmiana_w_new_i_przezywajacy_mutant_w_innej_funkcji_daja_kod_1_a_lista_na_stderr(
+    monkeypatch, tmp_path, capsys
+):
+    zrodlo = (
+        "class K:\n    def __new__(cls):\n        return super().__new__(cls)\n\n\n"
+        "def g():\n    return 1\n"
+    )
+    diff = _diff(NOWY, "@@ -1 +3 @@", "@@ -1 +7 @@")
+    s = _Srodowisko(diff=diff, results=_wyniki((KLUCZ_G, "survived")))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 1
+    wyjscie = capsys.readouterr()
+    assert wyjscie.out.splitlines() == [KLUCZ_G]
+    assert NAGLOWEK_BEZ_MUTANTOW in wyjscie.err
+    assert f"{NOWY}:3" in wyjscie.err
+    assert f"{NOWY}:7" not in wyjscie.err
+
+
+def test_zmieniony_plik_z_pragma_start_bez_end_daje_kod_2_ze_sciezka_pliku_a_nie_kod_0_ani_3(
+    monkeypatch, tmp_path, capsys
+):
+    zrodlo = "def g():\n    # pragma: no mutate start\n    return 1\n"
+    s = _Srodowisko(diff=_diff_linii(NOWY, 3), results=_wyniki((KLUCZ_G, "killed")))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: zrodlo}) == 2
+    wyjscie = capsys.readouterr()
+    assert NAGLOWEK_BEZ_MUTANTOW not in wyjscie.out
+    assert NOWY in wyjscie.err
+    assert "bledna pragma no mutate" in wyjscie.err
+
+
+def test_brak_mutmuta_w_interpreterze_przy_zmianie_funkcji_daje_kod_2_bez_wolania_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setitem(sys.modules, "mutmut.mutation.file_mutation", None)
+    s = _Srodowisko(diff=_diff_linii(NOWY, 2))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: "def g():\n    return 1\n"}) == 2
+    assert s.mutmut("run") == []
+    assert "brak mutmuta w interpreterze" in capsys.readouterr().err
+
+
+# --- HAR-152: zakres `# pragma: no mutate` liczy PragmaVisitor mutmuta -----------
+#
+# Oczekiwania zweryfikowane niezaleznie od skryptu: `mutmut.mutation.file_mutation.create_mutations`
+# nie tworzy mutantow w zglaszanych liniach, a w niezglaszanych liniach kodu je tworzy.
+
+
+def test_pragma_start_na_koncu_linii_kodu_dziala_jak_zwykla_pragma_i_nie_otwiera_zakresu():
+    zrodlo = "def f():\n    a = 1  # pragma: no mutate start\n    b = 2\n    return b + 1\n"
+    assert _bez(zrodlo, 2, 3, 4) == [2]
+
+
+def test_pragma_end_na_koncu_linii_kodu_nie_zamyka_zakresu_start_z_osobnej_linii():
+    # `end` w linii z kodem to zwykla pragma; zakres konczy dopiero `end` w osobnej linii (6)
+    zrodlo = (
+        "def f(x):\n"
+        "    # pragma: no mutate start\n"
+        "    a = x + 1\n"
+        "    b = x + 2  # pragma: no mutate end\n"
+        "    c = x + 3\n"
+        "    # pragma: no mutate end\n"
+        "    return a + b + c\n"
+    )
+    assert _bez(zrodlo, 3, 4, 5, 7) == [3, 4, 5]
+
+
+def test_pragma_end_w_poprzedzajacych_liniach_else_nie_zamyka_zakresu_start():
+    # `end` w linii 5 stoi przed `else:` i mutmut go nie widzi; zakres konczy dopiero `end` w linii 9
+    zrodlo = (
+        "def f(a):\n"
+        "    # pragma: no mutate start\n"
+        "    if a:\n"
+        "        x = 1\n"
+        "    # pragma: no mutate end\n"
+        "    else:\n"
+        "        y = 2\n"
+        "    z = 3\n"
+        "    # pragma: no mutate end\n"
+        "    return 4 + 1\n"
+    )
+    assert _bez(zrodlo, *range(2, 11)) == [2, 3, 4, 5, 6, 7, 8, 9]
+
+
+def test_komentarze_start_i_end_wewnatrz_nawiasow_nie_sa_pragma_wiec_wartosci_maja_mutanty():
+    zrodlo = (
+        "def f():\n"
+        "    a = g(\n"
+        "        1,\n"
+        "        # pragma: no mutate start\n"
+        "        2,\n"
+        "        # pragma: no mutate end\n"
+        "    )\n"
+        "    return a + 1\n"
+    )
+    assert _bez(zrodlo, 3, 5, 8) == []
+
+
+_BLEDNE_PRAGMY = [
+    pytest.param(
+        "def f():\n    # pragma: no mutate start\n    a = 1\n    return a + 1\n",
+        "<zrodlo>:2",
+        id="start_bez_end",
+    ),
+    pytest.param(
+        "def f():\n    a = 1\n    # pragma: no mutate end\n    return a + 1\n",
+        "<zrodlo>:3",
+        id="end_bez_start",
+    ),
+    pytest.param(
+        "def f():\n    # pragma: no mutate start\n    a = 1\n    # pragma: no mutate end\n"
+        "    b = 2\n    # pragma: no mutate end\n    return b + 1\n",
+        "<zrodlo>:6",
+        id="drugi_end_po_zamknietym_zakresie",
+    ),
+    pytest.param(
+        "def f():\n    # pragma: no mutate start\n    a = 1\n    # pragma: no mutate start\n"
+        "    return a + 1\n",
+        "<zrodlo>:4",
+        id="start_w_otwartym_start",
+    ),
+    pytest.param(
+        "def f():\n    # pragma: no mutate start\n    a = 1\n    # pragma: no mutate block\n"
+        "    return a + 1\n",
+        "<zrodlo>:4",
+        id="block_w_otwartym_start",
+    ),
+    pytest.param(
+        "def f():\n    # pragma: no mutate start\n    a = g(\n        1,\n"
+        "        # pragma: no mutate end\n    )\n    return a + 1\n",
+        "<zrodlo>:2",
+        id="end_w_nawiasach_nie_zamyka_start",
+    ),
+]
+
+
+@pytest.mark.parametrize(("zrodlo", "polozenie"), _BLEDNE_PRAGMY)
+def test_bledna_para_pragm_start_end_to_blad_narzedzia_z_polozeniem_w_zrodle(zrodlo, polozenie):
+    # mutmut sam rzuca PragmaParseError na takim pliku, wiec brak dowodu nie moze byc "czysto"
+    with pytest.raises(BladNarzedzia, match="bledna pragma no mutate") as blad:
+        _bez(zrodlo, 2, 3)
+    assert polozenie in str(blad.value)
+    assert type(blad.value.__cause__).__name__ == "PragmaParseError"
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("def f(:\n", id="blad_skladni"),
+        pytest.param("x = 1\x0b\n", id="znak_sterujacy"),
+    ],
+)
+def test_zrodlo_odrzucone_przez_parser_libcst_to_blad_narzedzia(zrodlo):
+    # Wywolanie prawdziwej `_linie_pragmy`: kazde znalezione zrodlo odrzucane przez libcst
+    # odrzuca tez `ast.parse` w `linie_bez_mutantow`, wiec ta galaz nie ma wejscia z tej sciezki.
+    import libcst
+
+    with pytest.raises(BladNarzedzia, match="nie da sie sparsowac: Syntax Error") as blad:
+        mutanty_zmian._linie_pragmy(zrodlo)
+    assert isinstance(blad.value.__cause__, libcst.ParserSyntaxError)
+
+
+@pytest.mark.parametrize(
+    "modul", ["mutmut.mutation.file_mutation", "mutmut.mutation.pragma_handling"]
+)
+def test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_z_podpowiedzia_o_interpreterze(
+    monkeypatch, modul
+):
+    monkeypatch.setitem(sys.modules, modul, None)
+    komunikat = "brak mutmuta w interpreterze.*uruchom interpreterem"
+    with pytest.raises(BladNarzedzia, match=komunikat) as blad:
+        _bez("def f():\n    return 1\n", 2)
+    assert modul in str(blad.value)
+    assert isinstance(blad.value.__cause__, ImportError)
+
+
+def test_brak_libcst_w_interpreterze_to_blad_narzedzia_a_nie_wyjatek_importu(monkeypatch):
+    mutanty_zmian._reguly_mutmuta()   # mutmut zaladowany: brakuje tylko libcst
+    monkeypatch.setitem(sys.modules, "libcst", None)
+    with pytest.raises(BladNarzedzia, match="brak libcst w interpreterze.*uruchom interpreterem") as blad:
+        _bez("def f():\n    return 1\n", 2)
+    assert isinstance(blad.value.__cause__, ImportError)
+
+
+def test_brak_libcst_przy_zmianie_pliku_bez_funkcji_daje_kod_2_nie_1(monkeypatch, tmp_path, capsys):
+    mutanty_zmian._reguly_mutmuta()   # mutmut zaladowany: brakuje tylko libcst
+    monkeypatch.setitem(sys.modules, "libcst", None)
+    s = _Srodowisko(diff=_diff_linii(NOWY, 1))
+    assert _main(monkeypatch, tmp_path, s, pliki={NOWY: "X = 1\n"}) == 2
+    assert "brak libcst w interpreterze" in capsys.readouterr().err
+
+
+def test_zmieniona_osobna_linia_pragmy_bez_zmiany_kodu_jest_zgloszona_do_sprawdzenia():
+    # dodanie samej linii `# pragma: no mutate block` wylacza mutacje niezmienionego kodu pod nia;
+    # bez zgloszenia tej linii wynik bylby "czysto" (kod 0), a mutmut niczego by nie sprawdzil
+    zrodlo = (
+        "def f():\n"
+        "    a = 1\n"
+        "    # pragma: no mutate block\n"
+        "    b = 2\n"
+        "    return a + b\n"
+    )
+    assert _bez(zrodlo, 3) == [3]
+
+
+def test_zwykly_komentarz_w_funkcji_nadal_nie_jest_zgloszony():
+    zrodlo = "def f():\n    a = 1\n    # zwykly komentarz\n    return a\n"
+    assert _bez(zrodlo, 3) == []
+
+
+def test_nazwy_niemutowanych_funkcji_pochodza_z_zainstalowanego_mutmuta(monkeypatch):
+    from mutmut.mutation import file_mutation
+
+    monkeypatch.setattr(file_mutation, "NEVER_MUTATE_FUNCTION_NAMES", {"pomijana_przez_mutmuta"})
+    zrodlo = "def pomijana_przez_mutmuta():\n    return 1\n\n\ndef __new__():\n    return 2\n"
+    assert _bez(zrodlo, 2, 5, 6) == [2]
+
+
+@pytest.mark.parametrize("nazwa", NAZWY_POMIJANE_PRZEZ_MUTMUTA)
+def test_zmieniona_zagniezdzona_metoda_pomijana_przez_mutmuta_jest_zgloszona_a_kod_obok_nie(nazwa):
+    zrodlo = (
+        "def f():\n"
+        "    class X:\n"
+        f"        def {nazwa}(cls):\n"
+        "            return 1 + 1\n"
+        "    return X + 2\n"
+    )
+    assert _bez(zrodlo, 3, 4, 5) == [3, 4]
+
+
+def test_zmieniona_zagniezdzona_funkcja_z_dekoratorem_jest_zgloszona_a_kod_obok_nie():
+    zrodlo = "def f():\n    @dec\n    def g():\n        return 1 + 1\n    return g + 1\n"
+    assert _bez(zrodlo, 2, 3, 4, 5) == [2, 3, 4]
+
+
+def test_zmieniona_zagniezdzona_funkcja_async_z_dekoratorem_jest_zgloszona_a_kod_obok_nie():
+    zrodlo = "def f():\n    @dec\n    async def g():\n        return 1 + 1\n    return g + 1\n"
+    assert _bez(zrodlo, 2, 3, 4, 5) == [2, 3, 4]
+
+
+def test_zmieniona_zagniezdzona_zwykla_funkcja_ma_mutanty_wiec_nie_jest_zgloszona():
+    zrodlo = "def f():\n    def g():\n        return 1 + 1\n    return g + 1\n"
+    assert _bez(zrodlo, 2, 3, 4) == []
+
+
+@pytest.mark.parametrize(
+    ("zrodlo", "zmienione", "oczekiwane"),
+    [
+        pytest.param(
+            "def f(x):\n    if x:\n        a = 1\n    else:  # pragma: no mutate block\n"
+            "        a = 2\n    return a + 1\n",
+            (2, 3, 4, 5, 6),
+            [4, 5],
+            id="block_na_else_obejmuje_tylko_galaz_else",
+        ),
+        pytest.param(
+            "def f(x):\n    if x:\n        a = 1\n    else:  # pragma: no mutate\n"
+            "        a = 2\n    return a + 1\n",
+            (2, 3, 4, 5, 6),
+            [4],
+            id="bare_na_else_tylko_naglowek",
+        ),
+        pytest.param(
+            "def f():\n    try:\n        a = 1\n    except ValueError:  # pragma: no mutate\n"
+            "        a = 2\n    return a + 1\n",
+            (2, 3, 4, 5, 6),
+            [4],
+            id="bare_na_except_tylko_naglowek",
+        ),
+        pytest.param(
+            "def f():\n    try:\n        a = 1\n    finally:  # pragma: no mutate\n"
+            "        a = 2\n    return a + 1\n",
+            (2, 3, 4, 5, 6),
+            [4],
+            id="bare_na_finally_tylko_naglowek",
+        ),
+        pytest.param(
+            "def f(x):\n    match x:  # pragma: no mutate block\n        case 1:\n"
+            "            return 2\n    return 3\n",
+            (2, 3, 4, 5),
+            [2, 3, 4],
+            id="block_na_match_obejmuje_wszystkie_case",
+        ),
+        pytest.param(
+            "def f(x):\n    match x:  # pragma: no mutate\n        case 1:\n"
+            "            return 2\n    return 3\n",
+            (2, 3, 4, 5),
+            [2],
+            id="bare_na_match_tylko_naglowek",
+        ),
+        pytest.param(
+            "def f(x):\n    match x:\n        case 1:  # pragma: no mutate\n"
+            "            return 2\n    return 3\n",
+            (2, 3, 4, 5),
+            [3],
+            id="bare_na_case_tylko_ta_linia",
+        ),
+    ],
+)
+def test_pragma_na_naglowku_galezi_i_match_obejmuje_zakres_wedlug_rodzaju_tokenu(
+    zrodlo, zmienione, oczekiwane
+):
+    assert _bez(zrodlo, *zmienione) == oczekiwane
+
+
+def test_osobna_linia_pragma_block_przed_funkcja_modulu_zglasza_ja_a_poprzednia_nie():
+    zrodlo = "def g():\n    return 1 + 1\n\n\n# pragma: no mutate block\ndef f():\n    return 2 + 1\n"
+    assert _bez(zrodlo, 2, 6, 7) == [6, 7]
+
+
+def test_osobna_linia_pragma_block_przed_metoda_zglasza_ja_a_poprzednia_nie():
+    zrodlo = (
+        "class K:\n"
+        "    def a(self):\n"
+        "        return 1 + 1\n"
+        "\n"
+        "    # pragma: no mutate block\n"
+        "    def b(self):\n"
+        "        return 2 + 1\n"
+    )
+    assert _bez(zrodlo, 3, 6, 7) == [6, 7]
+
+
+def test_pragma_block_w_ciele_except_zmienionej_funkcji_zglasza_tylko_to_cialo():
+    zrodlo = (
+        "def f():\n"
+        "    try:\n"
+        "        a = 1\n"
+        "    except ValueError:\n"
+        "        # pragma: no mutate block\n"
+        "        b = 2\n"
+        "    return a\n"
+    )
+    assert _bez(zrodlo, 3, 6, 7) == [6]
+
+
+@pytest.mark.parametrize("token", ["", " block"])
+def test_osobna_linia_pragma_wewnatrz_nawiasow_nie_jest_pragma_wiec_wartosc_ma_mutant(token):
+    zrodlo = (
+        "def f():\n"
+        "    a = g(\n"
+        f"        # pragma: no mutate{token}\n"
+        "        1,\n"
+        "    )\n"
+        "    return a + 1\n"
+    )
+    assert _bez(zrodlo, 2, 4, 6) == []
+
+
+# --- HAR-152: osobna linia `block` przed `case` obejmuje kolejne przypadki `match` ---
+
+ZRODLO_MATCH_Z_PRAGMA_BLOCK = (
+    "def f(x):\n"
+    "    match x:\n"
+    "        case 1:\n"
+    '            return "a"\n'
+    "        # pragma: no mutate block\n"
+    "        case 2 if x > 1:\n"
+    '            return "b"\n'
+    "        case 3:\n"
+    '            return "d"\n'
+    '    return "c"\n'
+)
+
+
+def test_zmieniony_wzorzec_przypadku_po_osobnej_pragmie_block_jest_zgloszony_a_przed_pragma_nie():
+    zrodlo = (
+        "def f(x):\n"
+        "    match x:\n"
+        "        case 1:\n"
+        '            return "a"\n'
+        "        # pragma: no mutate block\n"
+        "        case 2 if x > 1:\n"
+        '            return "b"\n'
+        '    return "c"\n'
+    )
+    assert _bez(zrodlo, 3, 6) == [6]
+
+
+def test_zmieniony_drugi_przypadek_po_pragmie_block_jest_zgloszony_a_linia_po_match_nie():
+    assert _bez(ZRODLO_MATCH_Z_PRAGMA_BLOCK, 8, 10) == [8]
+
+
+def test_pragma_block_przed_przypadkiem_zglasza_wzorzec_i_cialo_kazdego_kolejnego_przypadku():
+    assert _bez(ZRODLO_MATCH_Z_PRAGMA_BLOCK, 4, 6, 7, 8, 9, 10) == [6, 7, 8, 9]
+
+
+def test_pragma_block_przed_przypadkiem_zglasza_wszystkie_linie_wieloliniowej_instrukcji_ciala():
+    zrodlo = (
+        "def f(x):\n"
+        "    match x:\n"
+        "        case 1:\n"
+        "            a = 1\n"
+        "        # pragma: no mutate block\n"
+        "        case 2:\n"
+        "            b = 2\n"
+        "            c = (\n"
+        "                3,\n"
+        "            )\n"
+        "    return 0 + 1\n"
+    )
+    assert _bez(zrodlo, 4, 6, 7, 8, 9, 11) == [6, 7, 8, 9]
+
+
+def test_pragma_block_w_ciele_przypadku_zglasza_dalsze_instrukcje_ciala_ale_nie_nastepny_przypadek():
+    zrodlo = (
+        "def f(x):\n"
+        "    match x:\n"
+        "        case 1:\n"
+        "            a = 1\n"
+        "            # pragma: no mutate block\n"
+        "            b = 2\n"
+        "        case 2:\n"
+        "            c = 3\n"
+        "    return 0 + 1\n"
+    )
+    assert _bez(zrodlo, 4, 6, 8, 9) == [6]
