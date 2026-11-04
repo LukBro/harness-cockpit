@@ -1030,6 +1030,7 @@ KROK_FRONT = "front dla mutantów ręcznych"
 KROK_PRZEGLADARKA = "przeglądarka dla mutantów ręcznych"
 KROK_POSTGRES = "PostgreSQL dla mutantów ręcznych"
 WARUNEK_FRONTU = "steps.front.outputs.front == '1'"
+WARUNEK_TABEL = "steps.front.outputs.tabele == '1'"
 URL_BAZY = "postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test"
 PLAYWRIGHT_INSTALL = "playwright install --with-deps chromium"
 
@@ -1098,9 +1099,13 @@ def test_krok_wykrycia_frontu_ma_id_front_i_galaz_docelowa_w_env_a_nie_warunek_i
     assert "if" not in krok
 
 
-@pytest.mark.parametrize("nazwa", ["setup-node", KROK_PRZEGLADARKA, KROK_POSTGRES])
-def test_krok_instalujacy_srodowisko_frontu_wykonuje_sie_tylko_gdy_wykrycie_zwrocilo_front_1(nazwa):
+@pytest.mark.parametrize("nazwa", ["setup-node", KROK_PRZEGLADARKA])
+def test_node_i_przegladarka_instaluja_sie_tylko_gdy_wykrycie_zwrocilo_front_1(nazwa):
     assert _kroki_srodowiska()[nazwa]["if"] == WARUNEK_FRONTU
+
+
+def test_baza_dla_mutantow_recznych_startuje_gdy_pr_zmienia_tabele_a_nie_tylko_gdy_ma_wiersze_frontu():
+    assert _kroki_srodowiska()[KROK_POSTGRES]["if"] == WARUNEK_TABEL
 
 
 def test_node_22_z_cache_npm_wedlug_lockfile_frontu():
@@ -1117,20 +1122,27 @@ def test_przegladarka_dla_mutantow_recznych_to_chromium_z_zaleznosciami_systemow
     assert PLAYWRIGHT_INSTALL in linie
 
 
-def test_kazdy_krok_zadania_instalujacy_node_playwrighta_albo_baze_ma_warunek_front_1():
+def test_kazdy_krok_zadania_instalujacy_node_albo_playwrighta_ma_warunek_front_1():
     # Dla PR bez wierszy web/e2e (front=0) zadne z tych polecen nie moze sie wykonac.
-    kroki_srodowiska = []
+    kroki_frontu = []
     for krok in _kroki_pr():
         tresc = krok.get("run", "")
-        if (
-            str(krok.get("uses", "")).startswith("actions/setup-node")
-            or "playwright install" in tresc
-            or "docker run" in tresc
-        ):
-            kroki_srodowiska.append(krok)
+        if str(krok.get("uses", "")).startswith("actions/setup-node") or "playwright install" in tresc:
+            kroki_frontu.append(krok)
             assert krok.get("if") == WARUNEK_FRONTU, krok.get("name", krok.get("uses"))
 
-    assert len(kroki_srodowiska) >= 3
+    assert len(kroki_frontu) >= 2
+
+
+def test_kazdy_krok_zadania_uruchamiajacy_baze_ma_warunek_zmienionej_tabeli():
+    # Baza nie zalezy od frontu: dostaje ja kazdy PR ze zmieniona tabela recznych mutantow.
+    kroki_bazy = []
+    for krok in _kroki_pr():
+        if "docker run" in krok.get("run", ""):
+            kroki_bazy.append(krok)
+            assert krok.get("if") == WARUNEK_TABEL, krok.get("name", krok.get("uses"))
+
+    assert len(kroki_bazy) >= 1
 
 
 @pytest.mark.parametrize("nazwa", [KROK_FRONT, KROK_PRZEGLADARKA, KROK_POSTGRES])
@@ -1233,7 +1245,7 @@ def test_pr_bez_zmienionej_tabeli_ma_front_0_w_wyjsciu_kroku_i_nie_wola_skryptu(
     przebieg = uruchom_krok_frontu(tmp_path)
 
     assert przebieg.kod == 0, przebieg.wyjscie
-    assert przebieg.github_output.splitlines() == ["front=0"]
+    assert sorted(przebieg.github_output.splitlines()) == ["front=0", "tabele=0"]
     assert przebieg.wywolania_skryptu == []
 
 
@@ -1241,7 +1253,7 @@ def test_pr_z_usunieta_tabela_ma_front_0_bo_usunieta_tabela_nie_jest_dowodem(tmp
     przebieg = uruchom_krok_frontu(tmp_path, usuniete_tabele=(TABELA_A,))
 
     assert przebieg.kod == 0, przebieg.wyjscie
-    assert przebieg.github_output.splitlines() == ["front=0"]
+    assert sorted(przebieg.github_output.splitlines()) == ["front=0", "tabele=0"]
     assert przebieg.wywolania_skryptu == []
 
 
@@ -1251,7 +1263,47 @@ def test_pr_ze_zmieniona_tabela_przekazuje_wyjscie_skryptu_do_github_output(tmp_
     przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A,), stdout_skryptu=odpowiedz + "\n")
 
     assert przebieg.kod == 0, przebieg.wyjscie
-    assert przebieg.github_output.splitlines() == [odpowiedz]
+    assert sorted(przebieg.github_output.splitlines()) == sorted([odpowiedz, "tabele=1"])
+
+
+def test_pr_z_tabela_bez_wierszy_frontu_ma_front_0_ale_tabele_1_wiec_baza_wystartuje(tmp_path):
+    # Sedno HAR-221: tabela testow bazy (np. migracje) nie ma wierszy frontu, a potrzebuje bazy.
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A,), stdout_skryptu="front=0\n")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    linie = przebieg.github_output.splitlines()
+    assert "front=0" in linie
+    assert "tabele=1" in linie
+    assert "tabele=0" not in linie
+
+
+def test_pr_z_tabela_i_wierszem_frontu_ma_front_1_i_tabele_1(tmp_path):
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A, TABELA_B), stdout_skryptu="front=1\n")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    linie = przebieg.github_output.splitlines()
+    assert "front=1" in linie
+    assert "tabele=1" in linie
+    assert "tabele=0" not in linie
+
+
+def test_pr_bez_tabeli_nie_ma_front_1_ani_tabele_1_w_wyjsciu_kroku(tmp_path):
+    # Skrypt odpowiadalby front=1, ale bez zmienionej tabeli nie jest wolany.
+    przebieg = uruchom_krok_frontu(tmp_path, stdout_skryptu="front=1\n")
+
+    linie = przebieg.github_output.splitlines()
+    assert "tabele=1" not in linie
+    assert "front=1" not in linie
+    assert "tabele=0" in linie
+
+
+def test_blad_skryptu_wykrycia_nie_zostawia_tabele_1_wiec_baza_nie_startuje(tmp_path):
+    przebieg = uruchom_krok_frontu(tmp_path, tabele=(TABELA_A,), kod_skryptu=2, stdout_skryptu="")
+    linie = przebieg.github_output.splitlines()
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "tabele=1" not in linie
+    assert "tabele=0" not in linie
 
 
 def test_skrypt_wykrycia_dostaje_opcje_czy_front_i_sciezki_wszystkich_zmienionych_tabel(tmp_path):
@@ -1534,6 +1586,12 @@ def test_adres_bazy_testowej_widzi_tylko_krok_mutanty_reczne_a_mutmut_go_nie_dos
 
     assert kroki_z_adresem == [KROK_RECZNE]
     assert "COCKPIT_TEST_DATABASE_URL" not in (_krok(ZADANIE_PR, KROK_PR).get("env") or {})
+
+
+def test_adres_bazy_testowej_nie_trafia_do_srodowiska_joba_ani_calego_workflow():
+    # Srodowisko joba trafiloby tez do mutmuta: testy z baza biegly pod nim rownolegle.
+    assert "COCKPIT_TEST_DATABASE_URL" not in (_zadanie(ZADANIE_PR).get("env") or {})
+    assert "COCKPIT_TEST_DATABASE_URL" not in (_workflow().get("env") or {})
 
 
 def test_zaden_krok_zadania_mutation_nie_pisze_do_srodowiska_calego_joba():
