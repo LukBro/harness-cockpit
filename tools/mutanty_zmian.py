@@ -7,7 +7,11 @@ funkcji) i brak zmian poza zasiegiem mutmuta, 1 - sa survivory, 2 - blad narzedz
 3 - zmiany poza zasiegiem mutmuta (lista plik:linia; to nie jest "czysto": dopisz reczny
 mutant i test). Poza zasiegiem: pliki `.py` pod `src/` spoza `source_paths` oraz linie
 kodu poza funkcjami i metodami w `source_paths` (bez pustych linii, komentarzy,
-docstringow i importow). Priorytet kodow: 2 > 1 > 3 > 0.
+docstringow i importow), funkcje i metody (takze zagniezdzone, takze w mutowanej funkcji) o
+nazwie z `NEVER_MUTATE_FUNCTION_NAMES` mutmuta albo z dekoratorem innym niz pojedynczy goly
+staticmethod/classmethod, oraz linie wylaczone pragma `# pragma: no mutate` wedlug
+`PragmaVisitor` mutmuta (zbior i nazwy czytane z zainstalowanego mutmuta, nie z kopii).
+Priorytet kodow: 2 > 1 > 3 > 0.
 Skrypt niczego nie usuwa ani nie czysci cache `mutants/`.
 """
 from __future__ import annotations
@@ -91,11 +95,11 @@ def wzorce_dla_pliku(sciezka: str, zrodlo: str, linie: set[int]) -> list[str]:
 
     for wezel in drzewo.body:
         if isinstance(wezel, funkcje):
-            if dotkniete(wezel):
+            if _mutowana(wezel) and dotkniete(wezel):
                 wynik.add(f"{modul}.x_{wezel.name}__mutmut_*")
         elif isinstance(wezel, ast.ClassDef):
             for metoda in wezel.body:
-                if isinstance(metoda, funkcje) and dotkniete(metoda):
+                if isinstance(metoda, funkcje) and _mutowana(metoda) and dotkniete(metoda):
                     wynik.add(f"{modul}.x{ZNAK}{wezel.name}{ZNAK}{metoda.name}__mutmut_*")
     return sorted(wynik)
 
@@ -124,6 +128,8 @@ def wzorce(zmiany: dict[str, set[int]], source_paths: list[str], korzen: Path) -
 
 
 def _mutowana(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    if wezel.name in _reguly_mutmuta()[0]:
+        return False
     # mutmut 3.8.0 pomija funkcje z dekoratorem, chyba ze jest nim goly staticmethod/classmethod
     # (mutmut/mutation/file_mutation.py, "ignore decorated functions").
     if not wezel.decorator_list:
@@ -136,6 +142,42 @@ def _mutowana(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     )
 
 
+def _reguly_mutmuta():
+    """Zbior nazw, klasa wizytatora i wyjatek pragm z zainstalowanego mutmuta (zrodlo prawdy)."""
+    try:
+        from mutmut.mutation.file_mutation import NEVER_MUTATE_FUNCTION_NAMES
+        from mutmut.mutation.pragma_handling import PragmaParseError, PragmaVisitor
+    except ImportError as blad:
+        raise BladNarzedzia(
+            f"brak mutmuta w interpreterze ({blad}): uruchom interpreterem z mutmut"
+        ) from blad
+    return NEVER_MUTATE_FUNCTION_NAMES, PragmaVisitor, PragmaParseError
+
+
+def _linie_pragmy(zrodlo: str) -> set[int]:
+    """Linie, w ktorych mutmut nie mutuje wezlow startujacych (`# pragma: no mutate`).
+
+    Wprost z `PragmaVisitor` mutmuta: `no_mutate_lines | ignore_node_lines`, jak w
+    `FileMutationVisitor._should_mutate_node`. Wzorce `do_not_mutate` z konfiguracji sa poza
+    tym zbiorem (nie dotycza pragmy).
+    """
+    _, odwiedzajacy_klasa, blad_pragmy = _reguly_mutmuta()
+    try:
+        import libcst
+    except ImportError as blad:
+        raise BladNarzedzia(
+            f"brak libcst w interpreterze: uruchom interpreterem z mutmut i libcst ({blad})"
+        ) from blad
+    odwiedzajacy = odwiedzajacy_klasa("<zrodlo>")
+    try:
+        libcst.MetadataWrapper(libcst.parse_module(zrodlo)).visit(odwiedzajacy)
+    except libcst.ParserSyntaxError as blad:
+        raise BladNarzedzia(f"nie da sie sparsowac: {blad}") from blad
+    except blad_pragmy as blad:
+        raise BladNarzedzia(f"bledna pragma no mutate: {blad}") from blad
+    return odwiedzajacy.no_mutate_lines | odwiedzajacy.ignore_node_lines
+
+
 def linie_bez_mutantow(zrodlo: str, linie: set[int], *, w_zrodlach: bool) -> list[int]:
     """Zmienione linie kodu, dla ktorych mutmut nie ma mutantow (posortowane)."""
     try:
@@ -144,8 +186,12 @@ def linie_bez_mutantow(zrodlo: str, linie: set[int], *, w_zrodlach: bool) -> lis
         raise BladNarzedzia(f"nie da sie sparsowac: {blad}") from blad
     funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)
     pominiete: list[tuple[int, int]] = []
+    mutowane: list[tuple[int, int]] = []
+    nie_mutowane: list[tuple[int, int]] = []
 
     for wezel in ast.walk(drzewo):
+        if isinstance(wezel, funkcje) and not _mutowana(wezel):
+            nie_mutowane.append(_zakres(wezel))
         if isinstance(wezel, (ast.Import, ast.ImportFrom)):
             pominiete.append((wezel.lineno, wezel.end_lineno or wezel.lineno))
         if isinstance(wezel, (ast.Module, ast.ClassDef, *funkcje)) and wezel.body:
@@ -159,11 +205,12 @@ def linie_bez_mutantow(zrodlo: str, linie: set[int], *, w_zrodlach: bool) -> lis
     if w_zrodlach:
         for wezel in drzewo.body:
             if isinstance(wezel, funkcje) and _mutowana(wezel):
-                pominiete.append(_zakres(wezel))
+                mutowane.append(_zakres(wezel))
             elif isinstance(wezel, ast.ClassDef):
-                pominiete.extend(
+                mutowane.extend(
                     _zakres(m) for m in wezel.body if isinstance(m, funkcje) and _mutowana(m)
                 )
+    bez_pragmy = _linie_pragmy(zrodlo)
 
     fizyczne = zrodlo.splitlines()
     wynik: list[int] = []
@@ -171,9 +218,18 @@ def linie_bez_mutantow(zrodlo: str, linie: set[int], *, w_zrodlach: bool) -> lis
         if not 1 <= numer <= len(fizyczne):
             continue
         tekst = fizyczne[numer - 1].strip()
-        if not tekst or tekst.startswith("#"):
+        if not tekst:
+            continue
+        # sam komentarz nie ma kodu, chyba ze mutmut wpisal te linie do pomijanych (osobna
+        # linia `# pragma: no mutate block|start|end`): zmiana takiej linii wylacza mutacje
+        # kodu obok, wiec idzie do "sprawdz recznie"
+        if tekst.startswith("#") and numer not in bez_pragmy:
             continue
         if any(start <= numer <= koniec for start, koniec in pominiete):
+            continue
+        w_mutowanej = any(start <= numer <= koniec for start, koniec in mutowane)
+        w_nie_mutowanej = any(start <= numer <= koniec for start, koniec in nie_mutowane)
+        if w_mutowanej and numer not in bez_pragmy and not w_nie_mutowanej:
             continue
         wynik.append(numer)
     return wynik
