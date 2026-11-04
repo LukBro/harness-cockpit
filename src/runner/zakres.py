@@ -27,6 +27,10 @@ def _ostrzez(tekst: str) -> None:
     sys.stderr.write(f"{czas} runner zakres: {tekst}\n")
 
 
+class ZlaKonfiguracjaZakresu(Exception):
+    """Konfiguracja zakresu (`runner.json`) jest nieczytelna albo ma zla strukture (tryb scisly)."""
+
+
 class PozaZakresem(BladDziedziny):
     """Sciezka poza zakresem albo objeta zakazem (.git, sekrety). Bez tresci pliku."""
 
@@ -70,18 +74,25 @@ class Zakres:
         return self._projekty
 
     @classmethod
-    def z_konfiguracji(cls, plik: Path | str | None = None) -> Zakres:
+    def z_konfiguracji(cls, plik: Path | str | None = None, *, scisle: bool = False) -> Zakres:
+        """Zakres z pliku. Tryb scisly: brak pliku to ostrzezenie, uszkodzenie to wyjatek."""
         sciezka = Path(plik) if plik is not None else _plik_konfiguracji()
         try:
             dane = json.loads(sciezka.read_text(encoding="utf-8"))
         except FileNotFoundError:
+            if scisle:
+                _ostrzez("konfiguracja zakresu: brak pliku, zakres pusty")
             return cls([])  # brak pliku = brak zakresu, to nie awaria
         except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError to ValueError
             _ostrzez(f"konfiguracja {str(sciezka)!r} nieczytelna ({type(e).__name__}), zakres pusty")
+            if scisle:
+                raise ZlaKonfiguracjaZakresu("konfiguracja zakresu jest nieczytelna") from None
             return cls([])
         projekty = dane.get("projekty") if isinstance(dane, dict) else None
         if not isinstance(projekty, list):
             _ostrzez(f"konfiguracja {str(sciezka)!r} ma zla strukture, zakres pusty")
+            if scisle:
+                raise ZlaKonfiguracjaZakresu("konfiguracja zakresu ma zla strukture")
             return cls([])
         korzenie: list[Path] = []
         for wpis in projekty:
