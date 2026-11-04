@@ -1,0 +1,32 @@
+# Tabela recznych mutantow HAR-206: blokada wierszy wlascicieli w dostep.py. Testy SQLite
+# widza te elementy tylko w zapytaniu skompilowanym dialektem PostgreSQL; `.with_for_update()`
+# zamieniamy na neutralne `.execution_options()` (to samo zapytanie, bez FOR UPDATE).
+
+# Bez blokady dwie przeplecione degradacje zostawiaja zespol bez wlasciciela.
+[[mutant]]
+plik = "src/cockpit/services/dostep.py"
+szukaj = ".with_for_update()"
+zamien = ".execution_options()"
+test = "tests/test_dostep.py::test_degradacja_wlasciciela_blokuje_wiersze_wlascicieli_for_update_w_postgresql"
+
+# To samo przy usuwaniu wlasciciela (wspolny helper, osobny test na sciezce usun_czlonka).
+[[mutant]]
+plik = "src/cockpit/services/dostep.py"
+szukaj = ".with_for_update()"
+zamien = ".execution_options()"
+test = "tests/test_dostep.py::test_usuniecie_wlasciciela_blokuje_wiersze_wlascicieli_for_update_w_postgresql"
+
+# Bez ORDER BY dwie transakcje blokuja wiersze wlascicieli w roznej kolejnosci i moga sie zakleszczyc;
+# testy FOR UPDATE tego nie widza (sprawdzaja tylko koncowke zapytania).
+[[mutant]]
+plik = "src/cockpit/services/dostep.py"
+szukaj = ".order_by(Membership.id)"
+zamien = ".order_by(None)"
+test = "tests/test_dostep.py::test_degradacja_wlasciciela_blokuje_wiersze_wlascicieli_w_stalej_kolejnosci"
+
+# To samo na sciezce usun_czlonka.
+[[mutant]]
+plik = "src/cockpit/services/dostep.py"
+szukaj = ".order_by(Membership.id)"
+zamien = ".order_by(None)"
+test = "tests/test_dostep.py::test_usuniecie_wlasciciela_blokuje_wiersze_wlascicieli_w_stalej_kolejnosci"
