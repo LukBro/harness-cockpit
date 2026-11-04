@@ -1,0 +1,100 @@
+# Tabela recznych mutantow HAR-186: osobna baza testowa na worktree w tools/testy_pelne.sh.
+# Wykonywana w CI na tym PR (diff dotyka tools/).
+
+# Stala nazwa zamiast skrotu: wszystkie worktree wracaja do jednej wspolnej bazy.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'BAZA_TESTOWA="cockpit_test_$SKROT"'
+zamien = 'BAZA_TESTOWA="cockpit_test"'
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_testowej_to_skrot_cksum_sciezki_korzenia_worktree"
+
+# Skrot niezalezny od sciezki korzenia: dwa worktree dostaja te sama baze.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "printf '%s' \"$KORZEN_REPO\""
+zamien = "printf '%s' \"stala\""
+test = "tests/test_testy_pelne.py::test_dwa_worktree_o_roznych_sciezkach_dostaja_rozne_bazy_testowe"
+
+# Galaz pierwszenstwa: jawny URL jest ignorowany i nadpisywany baza wyliczona.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'if [ -z "$JAWNY_URL_BAZY" ]; then'
+zamien = "if true; then"
+test = "tests/test_testy_pelne.py::test_jawny_url_bazy_ma_pierwszenstwo_przed_nazwa_wyliczona"
+
+# Pominiete CREATE DATABASE: brakujaca baza worktree nie powstaje.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'psql_db "CREATE DATABASE $BAZA_TESTOWA OWNER cockpit" >/dev/null'
+zamien = "true"
+test = "tests/test_testy_pelne.py::test_brak_bazy_testowej_worktree_skrypt_ja_tworzy_na_tym_samym_serwerze"
+
+# Odwrocony warunek istnienia: tworzenie przy istniejacej bazie, brak tworzenia przy brakujacej.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "datname='$BAZA_TESTOWA'\")\" ]; then"
+zamien = "datname='$BAZA_TESTOWA'\")\" ] || true; then"
+test = "tests/test_testy_pelne.py::test_istniejaca_baza_testowa_worktree_nie_jest_tworzona_drugi_raz"
+
+# Odwrocony warunek istnienia (druga strona): brak tworzenia przy brakujacej bazie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ -z \"$(psql_db \"SELECT 1 FROM pg_database WHERE datname='$BAZA_TESTOWA'\")\" ]; then"
+zamien = "if [ -n \"$(psql_db \"SELECT 1 FROM pg_database WHERE datname='$BAZA_TESTOWA'\")\" ]; then"
+test = "tests/test_testy_pelne.py::test_brak_bazy_testowej_worktree_skrypt_ja_tworzy_na_tym_samym_serwerze"
+
+# Zapytanie o istnienie dotyczy bazy worktree, nie bazy aplikacji `cockpit`.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "WHERE datname='$BAZA_TESTOWA'"
+zamien = "WHERE datname='cockpit'"
+test = "tests/test_testy_pelne.py::test_istniejaca_baza_testowa_worktree_nie_jest_tworzona_drugi_raz"
+
+# Wlasciciel nowej bazy: OWNER cockpit.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'CREATE DATABASE $BAZA_TESTOWA OWNER cockpit"'
+zamien = 'CREATE DATABASE $BAZA_TESTOWA"'
+test = "tests/test_testy_pelne.py::test_brak_bazy_testowej_worktree_skrypt_ja_tworzy_na_tym_samym_serwerze"
+
+# URL przekazany pytestowi wskazuje baze worktree, nie stala cockpit_test.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'localhost:$PORT/$BAZA_TESTOWA"'
+zamien = 'localhost:$PORT/cockpit_test"'
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_testowej_to_skrot_cksum_sciezki_korzenia_worktree"
+
+# Korzen liczony bez rozwiazywania dowiazan: baza zalezy od sciezki przez symlink.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'KORZEN_REPO="$(pwd -P)"'
+zamien = 'KORZEN_REPO="$(pwd)"'
+test = "tests/test_testy_pelne.py::test_worktree_dostepny_przez_dowiazanie_dostaje_baze_ze_sciezki_fizycznej"
+
+# Straznik skrotu bez wariantu pustego: pusty skrot przechodzi.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "''|*[!0-9]*) blad \"nie udalo"
+zamien = "*[!0-9]*) blad \"nie udalo"
+test = "tests/test_testy_pelne.py::test_skrot_sciezki_pusty_albo_nieliczbowy_to_blad_bez_tworzenia_bazy_i_testow[pusty]"
+
+# Straznik skrotu tylko dla pustego: skrot nieliczbowy przechodzi.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "''|*[!0-9]*) blad \"nie udalo"
+zamien = "'') blad \"nie udalo"
+test = "tests/test_testy_pelne.py::test_skrot_sciezki_pusty_albo_nieliczbowy_to_blad_bez_tworzenia_bazy_i_testow[nieliczbowy]"
+
+# Brak linii informacyjnej o bazie worktree na stderr (echo zamienione na no-op).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'echo "Baza testowa tego worktree: $BAZA_TESTOWA'
+zamien = ': "Baza testowa tego worktree: $BAZA_TESTOWA'
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_testowej_to_skrot_cksum_sciezki_korzenia_worktree"
+
+# Pusty jawny URL liczony jako ustawiony: pytest dostaje pusty URL zamiast wyliczonego.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = 'if [ -z "$JAWNY_URL_BAZY" ]; then'
+zamien = 'if [ -z "${COCKPIT_TEST_DATABASE_URL+x}" ]; then'
+test = "tests/test_testy_pelne.py::test_pusty_jawny_url_bazy_jest_traktowany_jak_brak_i_dostaje_nazwe_wyliczona"

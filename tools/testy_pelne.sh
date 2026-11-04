@@ -3,8 +3,12 @@
 # bez bazy i e2e rownolegle (-n 4), testy bazy sekwencyjnie, pytest -m e2e.
 # Zmienne: PYTHON (interpreter z pytest, playwright i pytest-xdist), COCKPIT_PG_PORT (port hosta, domyslnie 5432).
 #
-# Wszystkie pelne przebiegi uzywaja jednej bazy cockpit_test, wiec skrypt sam je serializuje
-# blokada katalogowa (mkdir jest atomowe; dziala tez w bashu 3.2 z macOS). W pliku pid
+# Kazdy worktree ma wlasna baze testowa cockpit_test_<skrot sciezki korzenia repo> (cksum) na tym samym
+# serwerze; skrypt tworzy ja, jesli nie istnieje. Usuwa ja tylko reczny DROP DATABASE.
+#   COCKPIT_TEST_DATABASE_URL    jawny URL ma pierwszenstwo: pytest dostaje dokladnie ten URL,
+#                                a skrypt nie sprawdza ani nie tworzy bazy wyliczonej (CI bez zmian)
+# Pelne przebiegi roznych worktree dziela kontener, serwer i port 8799 w demo, wiec skrypt nadal je
+# serializuje blokada katalogowa (mkdir jest atomowe; dziala tez w bashu 3.2 z macOS). W pliku pid
 # w katalogu blokady jest PID wlasciciela; blokada martwego procesu jest przejmowana od razu.
 # Do oceny, czy wlasciciel zyje, potrzebne jest ps; jego brak to blad (kod 1), nie zgoda na przejecie.
 # Czekanie na przejecie blokady (katalog .przejecie) liczy sie do tego samego limitu.
@@ -15,6 +19,9 @@
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+KORZEN_REPO="$(pwd -P)"
+# Jawny URL zapamietujemy przed jakimkolwiek eksportem: pusty znaczy brak.
+JAWNY_URL_BAZY="${COCKPIT_TEST_DATABASE_URL:-}"
 
 blad() { echo "BLAD: $*" >&2; exit 1; }
 
@@ -168,7 +175,19 @@ if [ -z "$(psql_db "SELECT 1 FROM pg_database WHERE datname='cockpit'")" ]; then
   psql_db "CREATE DATABASE cockpit OWNER cockpit" >/dev/null
 fi
 
-export COCKPIT_TEST_DATABASE_URL="postgresql+asyncpg://cockpit:cockpit@localhost:$PORT/cockpit_test"
+# Baza testowa worktree: nazwa z cksum sciezki korzenia (POSIX, bash 3.2 i Linux). Jawny URL wygrywa.
+if [ -z "$JAWNY_URL_BAZY" ]; then
+  SKROT="$(printf '%s' "$KORZEN_REPO" | cksum | cut -d' ' -f1)"
+  case "$SKROT" in
+    ''|*[!0-9]*) blad "nie udalo sie wyliczyc skrotu sciezki korzenia repo ('$SKROT')" ;;
+  esac
+  BAZA_TESTOWA="cockpit_test_$SKROT"
+  if [ -z "$(psql_db "SELECT 1 FROM pg_database WHERE datname='$BAZA_TESTOWA'")" ]; then
+    psql_db "CREATE DATABASE $BAZA_TESTOWA OWNER cockpit" >/dev/null
+  fi
+  echo "Baza testowa tego worktree: $BAZA_TESTOWA (usunie ja tylko reczny DROP DATABASE)" >&2
+  export COCKPIT_TEST_DATABASE_URL="postgresql+asyncpg://cockpit:cockpit@localhost:$PORT/$BAZA_TESTOWA"
+fi
 
 # Jak w CI (npm ci); pomijamy tylko gdy node_modules juz jest, zeby powtorki byly szybkie.
 (
@@ -184,8 +203,8 @@ LOG_BAZA="$(mktemp)"
 LOG_E2E="$(mktemp)"
 
 # Wszystkie przebiegi leca zawsze; kod pytest zachowujemy mimo tee.
-# Bez bazy i e2e rownolegle (-n 4). Testy bazy ida sekwencyjnie: dziela jedna baze
-# cockpit_test (alembic downgrade base) i port 8799 w demo (straznik w tests/conftest.py).
+# Bez bazy i e2e rownolegle (-n 4). Testy bazy ida sekwencyjnie: dziela jedna baze worktree
+# (cockpit_test_<skrot>, alembic downgrade base) i port 8799 w demo (straznik w tests/conftest.py).
 rc_pel=0
 "$PY" -m pytest -q -rs -n 4 -m "not baza and not e2e" 2>&1 | tee "$LOG_PEL" || rc_pel=$?
 rc_baza=0

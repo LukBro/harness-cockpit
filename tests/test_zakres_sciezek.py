@@ -11,7 +11,7 @@ import pytest
 
 from cockpit.services.errors import BladDziedziny
 from cockpit.services.skills import ZRODLA
-from runner.zakres import PozaZakresem, Zakres
+from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu
 
 LINIA_ODMOWY = re.compile(r"^(\S+) runner zakres: odmowa powod=(\S+) sciezka=(.*)$")
 
@@ -723,3 +723,114 @@ def test_kazda_odmowa_zostawia_osobny_wpis_w_logu(swiat, capsys):
     _powod(swiat.zakres, swiat.projekt / ".env")
     linie = capsys.readouterr().err.splitlines()
     assert [LINIA_ODMOWY.match(wiersz).group(2) for wiersz in linie] == ["poza_zakresem", "sekret"]
+
+
+# --- tryb scisly: uszkodzona konfiguracja to blad, nie pusty zakres (HAR-183) ----------
+
+def _linie_ostrzezen(capsys) -> list[str]:
+    return [w for w in capsys.readouterr().err.splitlines() if w.strip()]
+
+
+def _uszkodzone_scisle(tmp_path):
+    return {**_uszkodzone(tmp_path), "pusty-plik": _konfig(tmp_path / "pusty.json", "")}
+
+
+def test_wyjatek_zlej_konfiguracji_zakresu_nie_jest_bledem_dziedziny():
+    assert issubclass(ZlaKonfiguracjaZakresu, Exception)
+    assert not issubclass(ZlaKonfiguracjaZakresu, BladDziedziny)
+
+
+NIECZYTELNA = "konfiguracja zakresu jest nieczytelna"
+ZLA_STRUKTURA = "konfiguracja zakresu ma zla strukture"
+
+
+@pytest.mark.parametrize(
+    ("rodzaj", "komunikat"),
+    [("pusty-plik", NIECZYTELNA), ("zly-json", NIECZYTELNA), ("zly-utf8", NIECZYTELNA),
+     ("katalog-zamiast-pliku", NIECZYTELNA), ("zbyt-glebokie-zagniezdzenie", NIECZYTELNA),
+     ("korzen-nie-jest-obiektem", ZLA_STRUKTURA), ("projekty-nie-sa-lista", ZLA_STRUKTURA),
+     ("projekty-sa-obiektem", ZLA_STRUKTURA)],
+)
+def test_uszkodzona_konfiguracja_w_trybie_scislym_jest_bledem_a_nie_pustym_zakresem(
+    swiat, tmp_path, capsys, rodzaj, komunikat,
+):
+    plik = _uszkodzone_scisle(tmp_path)[rodzaj]
+    capsys.readouterr()
+
+    with pytest.raises(ZlaKonfiguracjaZakresu) as wyjatek:
+        Zakres.z_konfiguracji(plik, scisle=True)
+
+    assert str(wyjatek.value) == komunikat
+    assert len(_linie_ostrzezen(capsys)) == 1   # nadal slad w logu runnera, dokladnie jeden
+
+
+@pytest.mark.parametrize(
+    "rodzaj", ["pusty-plik", "zly-json", "katalog-zamiast-pliku", "projekty-nie-sa-lista"],
+)
+def test_ta_sama_uszkodzona_konfiguracja_w_trybie_domyslnym_daje_pusty_zakres_bez_wyjatku(
+    swiat, tmp_path, capsys, rodzaj,
+):
+    plik = _uszkodzone_scisle(tmp_path)[rodzaj]
+    capsys.readouterr()
+
+    zakres = Zakres.z_konfiguracji(plik)   # bez scisle: zachowanie sprzed HAR-183
+
+    assert zakres.korzenie == ()
+    assert zakres.projekty == ()
+    assert len(_linie_ostrzezen(capsys)) == 1
+
+
+def test_brak_pliku_konfiguracji_w_trybie_scislym_daje_pusty_zakres_i_jedno_ostrzezenie(
+    swiat, tmp_path, capsys,
+):
+    capsys.readouterr()
+
+    zakres = Zakres.z_konfiguracji(tmp_path / "nie-ma.json", scisle=True)
+
+    assert zakres.projekty == ()
+    assert zakres.korzenie == ()
+    linie = _linie_ostrzezen(capsys)
+    assert len(linie) == 1
+    assert linie[0].split(" runner zakres: ", 1)[1] == "konfiguracja zakresu: brak pliku, zakres pusty"
+
+
+def test_brak_pliku_konfiguracji_w_trybie_domyslnym_jest_cichy(swiat, tmp_path, capsys):
+    capsys.readouterr()
+
+    zakres = Zakres.z_konfiguracji(tmp_path / "nie-ma.json")
+
+    assert zakres.korzenie == ()
+    assert _linie_ostrzezen(capsys) == []
+
+
+def test_poprawna_konfiguracja_w_trybie_scislym_daje_ten_sam_zakres_co_w_domyslnym(
+    swiat, tmp_path, capsys,
+):
+    plik = _konfig(tmp_path / "cfg.json", {"projekty": [str(swiat.projekt)]})
+    capsys.readouterr()
+
+    scisly = Zakres.z_konfiguracji(plik, scisle=True)
+
+    assert scisly.projekty == (swiat.projekt,)
+    assert scisly.korzenie == Zakres.z_konfiguracji(plik).korzenie
+    assert scisly.rozwiaz(swiat.projekt / "a") == swiat.projekt / "a"
+    assert _linie_ostrzezen(capsys) == []
+
+
+def test_pusta_lista_projektow_w_poprawnym_pliku_nie_jest_bledem_zakresu_nawet_w_trybie_scislym(
+    swiat, tmp_path,
+):
+    # Pusta lista to poprawna struktura; odrzuca ja dopiero kokpit (_sprawdz_ksztalt).
+    plik = _konfig(tmp_path / "cfg.json", {"projekty": []})
+
+    assert Zakres.z_konfiguracji(plik, scisle=True).projekty == ()
+
+
+def test_domyslna_sciezka_konfiguracji_w_trybie_scislym_jest_czytana_ze_zmiennej_srodowiska(
+    swiat, tmp_path, monkeypatch,
+):
+    plik = _konfig(tmp_path / "gdzies" / "zly.json", "{nie json")
+    monkeypatch.setenv("COCKPIT_RUNNER_CONFIG", str(plik))
+
+    with pytest.raises(ZlaKonfiguracjaZakresu):
+        Zakres.z_konfiguracji(scisle=True)
