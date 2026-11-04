@@ -16,7 +16,8 @@ Blad startu agenta nie idzie kodem wyjscia (agent tez moglby go zwrocic): gdy po
 bez danych. Bez `--status-fd` blad idzie na stderr i kod 127.
 
 Srodowisko agenta: to, ktore mial runner przed dodaniem PYTHONPATH kokpitu
-(`_srodowisko_agenta`, zmienna `RUNNER_PYTHONPATH_AGENTA`).
+(`_srodowisko_agenta`): wartosc w `RUNNER_PYTHONPATH_AGENTA` (takze pusta), a brak
+PYTHONPATH u runnera oznacza `RUNNER_BRAK_PYTHONPATH_AGENTA`.
 
 Tylko stdlib, bez logging. Nie uruchamiac jako `python src/runner/straznik.py`:
 sys.path[0] = src/runner zasloniloby stdlib modulem runner/secrets.py.
@@ -45,21 +46,25 @@ FD_WEJSCIA = 0  # potok od runnera: jego EOF oznacza smierc runnera
 # inaczej narzedzia Pythona w repozytorium uzytkownika widzialyby pakiety kokpitu,
 # a wyjscie kroku roznilby sie od uruchomienia bez straznika.
 ZMIENNA_PYTHONPATH_AGENTA = "RUNNER_PYTHONPATH_AGENTA"
+# Znacznik braku: runner nie mial PYTHONPATH w ogole (pusta wartosc to co innego).
+ZMIENNA_BRAK_PYTHONPATH_AGENTA = "RUNNER_BRAK_PYTHONPATH_AGENTA"
 
 
 def _srodowisko_agenta(srodowisko: Mapping[str, str]) -> dict[str, str]:
     """Kopia srodowiska dla agenta: PYTHONPATH sprzed dodania katalogu kokpitu.
 
-    Bez zmiennej ZMIENNA_PYTHONPATH_AGENTA (straznik uruchomiony recznie) srodowisko
-    zostaje bez zmian. Pusta wartosc = runner nie mial PYTHONPATH.
+    Znacznik wartosci (ZMIENNA_PYTHONPATH_AGENTA) odtwarza PYTHONPATH, takze pusty,
+    i ma pierwszenstwo. Sam znacznik braku (ZMIENNA_BRAK_PYTHONPATH_AGENTA) usuwa
+    PYTHONPATH. Bez obu znacznikow (straznik uruchomiony recznie) srodowisko zostaje
+    bez zmian. Znaczniki nie trafiaja do agenta.
     """
     kopia = dict(srodowisko)
-    if ZMIENNA_PYTHONPATH_AGENTA not in kopia:
-        return kopia
-    pierwotny = kopia.pop(ZMIENNA_PYTHONPATH_AGENTA)
-    if pierwotny:
-        kopia["PYTHONPATH"] = pierwotny
-    else:
+    wartosc = kopia.pop(ZMIENNA_PYTHONPATH_AGENTA, None)
+    brak = ZMIENNA_BRAK_PYTHONPATH_AGENTA in kopia
+    kopia.pop(ZMIENNA_BRAK_PYTHONPATH_AGENTA, None)
+    if wartosc is not None:
+        kopia["PYTHONPATH"] = wartosc
+    elif brak:
         kopia.pop("PYTHONPATH", None)
     return kopia
 

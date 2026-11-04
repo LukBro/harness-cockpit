@@ -1207,30 +1207,89 @@ def test_straznik_dostaje_pierwotny_pythonpath_runnera_w_zmiennej_dla_agenta(mon
     assert krok._srodowisko_straznika()["RUNNER_PYTHONPATH_AGENTA"] == "/x-har85"
 
 
-def test_bez_pythonpath_runnera_zmienna_dla_agenta_jest_pusta_ale_obecna(monkeypatch):
-    monkeypatch.delenv("PYTHONPATH", raising=False)
+def test_pusty_pythonpath_runnera_straznik_dostaje_jako_pusta_wartosc_a_nie_brak(monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "")
+    monkeypatch.delenv("RUNNER_BRAK_PYTHONPATH_AGENTA", raising=False)
 
     srodowisko_straznika = krok._srodowisko_straznika()
 
     assert srodowisko_straznika["RUNNER_PYTHONPATH_AGENTA"] == ""
+    assert "RUNNER_BRAK_PYTHONPATH_AGENTA" not in srodowisko_straznika
 
 
-def test_zmienna_dla_agenta_odziedziczona_z_otoczenia_nie_przeslania_pierwotnego_pythonpath(
+def test_bez_pythonpath_runnera_straznik_dostaje_znacznik_braku_a_nie_wartosc(monkeypatch):
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.delenv("RUNNER_PYTHONPATH_AGENTA", raising=False)
+
+    srodowisko_straznika = krok._srodowisko_straznika()
+
+    assert srodowisko_straznika["RUNNER_BRAK_PYTHONPATH_AGENTA"] == "1"
+    assert "RUNNER_PYTHONPATH_AGENTA" not in srodowisko_straznika
+
+
+def test_wartosc_odziedziczona_z_otoczenia_nie_przeslania_braku_pythonpath_runnera(
     monkeypatch,
 ):
-    monkeypatch.setenv("RUNNER_PYTHONPATH_AGENTA", "/stary-har85")
+    monkeypatch.setenv("RUNNER_PYTHONPATH_AGENTA", "/stary-har157")
     monkeypatch.delenv("PYTHONPATH", raising=False)
 
-    assert krok._srodowisko_straznika()["RUNNER_PYTHONPATH_AGENTA"] == ""
+    srodowisko_straznika = krok._srodowisko_straznika()
+
+    assert "RUNNER_PYTHONPATH_AGENTA" not in srodowisko_straznika
+    assert srodowisko_straznika["RUNNER_BRAK_PYTHONPATH_AGENTA"] == "1"
+
+
+def test_wartosc_odziedziczona_z_otoczenia_nie_przeslania_pierwotnego_pythonpath(
+    monkeypatch,
+):
+    monkeypatch.setenv("RUNNER_PYTHONPATH_AGENTA", "/stary-har157")
+    monkeypatch.setenv("PYTHONPATH", "/nowy-har157")
+
+    assert krok._srodowisko_straznika()["RUNNER_PYTHONPATH_AGENTA"] == "/nowy-har157"
+
+
+def test_znacznik_braku_odziedziczony_z_otoczenia_znika_gdy_runner_ma_pythonpath(
+    monkeypatch,
+):
+    monkeypatch.setenv("RUNNER_BRAK_PYTHONPATH_AGENTA", "1")
+    monkeypatch.setenv("PYTHONPATH", "/x-har157")
+
+    srodowisko_straznika = krok._srodowisko_straznika()
+
+    assert "RUNNER_BRAK_PYTHONPATH_AGENTA" not in srodowisko_straznika
+    assert srodowisko_straznika["RUNNER_PYTHONPATH_AGENTA"] == "/x-har157"
+
+
+def test_znacznik_braku_odziedziczony_z_otoczenia_znika_gdy_runner_ma_pusty_pythonpath(
+    monkeypatch,
+):
+    monkeypatch.setenv("RUNNER_BRAK_PYTHONPATH_AGENTA", "1")
+    monkeypatch.setenv("PYTHONPATH", "")
+
+    srodowisko_straznika = krok._srodowisko_straznika()
+
+    assert "RUNNER_BRAK_PYTHONPATH_AGENTA" not in srodowisko_straznika
+    assert srodowisko_straznika["RUNNER_PYTHONPATH_AGENTA"] == ""
 
 
 def test_nazwa_zmiennej_z_pythonpath_dla_agenta_jest_stala_i_jawna():
     assert straznik.ZMIENNA_PYTHONPATH_AGENTA == "RUNNER_PYTHONPATH_AGENTA"
 
 
+def test_nazwa_zmiennej_z_brakiem_pythonpath_dla_agenta_jest_stala_i_jawna():
+    assert straznik.ZMIENNA_BRAK_PYTHONPATH_AGENTA == "RUNNER_BRAK_PYTHONPATH_AGENTA"
+
+
+def test_krok_oznacza_brak_pythonpath_ta_sama_zmienna_ktora_czyta_straznik(monkeypatch):
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    assert straznik.ZMIENNA_BRAK_PYTHONPATH_AGENTA in krok._srodowisko_straznika()
+
+
 # --- srodowisko agenta (straznik.py) --------------------------------------------
 
 M = "RUNNER_PYTHONPATH_AGENTA"
+B = "RUNNER_BRAK_PYTHONPATH_AGENTA"
 
 
 @pytest.mark.parametrize(
@@ -1240,26 +1299,42 @@ M = "RUNNER_PYTHONPATH_AGENTA"
         ({"A": "1", "PYTHONPATH": "/p"}, {"A": "1", "PYTHONPATH": "/p"}),
         ({"A": "1", "PYTHONPATH": "/p", M: "/m"}, {"A": "1", "PYTHONPATH": "/m"}),
         ({"A": "1", M: "/m"}, {"A": "1", "PYTHONPATH": "/m"}),
-        ({"A": "1", "PYTHONPATH": "/p", M: ""}, {"A": "1"}),
-        ({"A": "1", M: ""}, {"A": "1"}),
+        ({"A": "1", "PYTHONPATH": "/p", M: ""}, {"A": "1", "PYTHONPATH": ""}),
+        ({"A": "1", M: ""}, {"A": "1", "PYTHONPATH": ""}),
+        ({"A": "1", "PYTHONPATH": "/p", B: "1"}, {"A": "1"}),
+        ({"A": "1", B: "1"}, {"A": "1"}),
+        ({"A": "1", "PYTHONPATH": "/p", B: ""}, {"A": "1"}),
+        ({"A": "1", "PYTHONPATH": "/p", M: "/m", B: "1"}, {"A": "1", "PYTHONPATH": "/m"}),
+        ({"A": "1", "PYTHONPATH": "/p", M: "", B: "1"}, {"A": "1", "PYTHONPATH": ""}),
+        ({"A": "1", M: "/m", B: "1"}, {"A": "1", "PYTHONPATH": "/m"}),
     ],
     ids=[
-        "bez_znacznika_bez_pythonpath",
-        "bez_znacznika_pythonpath_zostaje",
+        "bez_znacznikow_bez_pythonpath",
+        "bez_znacznikow_pythonpath_zostaje",
         "znacznik_zastepuje_pythonpath",
         "znacznik_ustawia_brakujacy_pythonpath",
-        "pusty_znacznik_usuwa_pythonpath",
-        "pusty_znacznik_bez_pythonpath",
+        "pusty_znacznik_ustawia_pusty_pythonpath",
+        "pusty_znacznik_bez_pythonpath_ustawia_pusty",
+        "znacznik_braku_usuwa_pythonpath",
+        "znacznik_braku_bez_pythonpath",
+        "pusty_znacznik_braku_tez_usuwa_pythonpath",
+        "wartosc_ma_pierwszenstwo_przed_brakiem",
+        "pusta_wartosc_ma_pierwszenstwo_przed_brakiem",
+        "wartosc_i_brak_bez_pythonpath",
     ],
 )
 def test_srodowisko_agenta_przywraca_pierwotny_pythonpath_runnera_a_reszte_zostawia(
     wejscie, oczekiwane
 ):
-    assert straznik._srodowisko_agenta(wejscie) == oczekiwane
+    wynik = straznik._srodowisko_agenta(wejscie)
+
+    assert wynik == oczekiwane
+    assert M not in wynik
+    assert B not in wynik
 
 
 def test_srodowisko_agenta_to_kopia_a_wejscie_zostaje_nietkniete():
-    wejscie = {"A": "1", "PYTHONPATH": "/p", M: "/m"}
+    wejscie = {"A": "1", "PYTHONPATH": "/p", M: "/m", B: "1"}
     migawka_wejscia = dict(wejscie)
 
     wynik = straznik._srodowisko_agenta(wejscie)
@@ -1284,11 +1359,13 @@ def test_straznik_daje_agentowi_pierwotny_pythonpath_runnera_a_nie_swoj(
 ):
     # U rodzica PYTHONPATH (to, co dostaje straznik) rozni sie od oczekiwanego u agenta.
     monkeypatch.setenv("RUNNER_PYTHONPATH_AGENTA", "/y-har85")
+    monkeypatch.setenv("RUNNER_BRAK_PYTHONPATH_AGENTA", "1")
     monkeypatch.setenv("PYTHONPATH", "/z-inny-har85")
     kod = (
         "import os, sys\n"
         "ok = (os.environ.get('PYTHONPATH') == '/y-har85'\n"
-        "      and 'RUNNER_PYTHONPATH_AGENTA' not in os.environ)\n"
+        "      and 'RUNNER_PYTHONPATH_AGENTA' not in os.environ\n"
+        "      and 'RUNNER_BRAK_PYTHONPATH_AGENTA' not in os.environ)\n"
         "sys.exit(0 if ok else 5)\n"
     )
 
@@ -1301,10 +1378,29 @@ def test_straznik_daje_agentowi_pierwotny_pythonpath_runnera_a_nie_swoj(
     assert wynik == 0
 
 
+KOD_WYPISUJACY_PYTHONPATH = "import os; print(repr(os.environ.get('PYTHONPATH')))"
+
+
+async def _wyjscie_agenta_bez_straznika(srodowisko: dict[str, str]) -> str:
+    proc = await uruchom_proces(
+        sys.executable,
+        "-I",
+        "-c",
+        KOD_WYPISUJACY_PYTHONPATH,
+        env=srodowisko,
+        cwd=str(KORZEN),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    wyjscie, _ = await czekaj(proc.communicate(), 20, "agent bez straznika")
+    assert proc.returncode == 0
+    return wyjscie.decode().strip()
+
+
 @pytest.mark.parametrize(
     ("pythonpath_runnera", "oczekiwane_wyjscie"),
-    [("/x-har85", "/x-har85"), (None, "None")],
-    ids=["ustawiony", "nieustawiony"],
+    [("/x-har85", "'/x-har85'"), (None, "None"), ("", "''")],
+    ids=["ustawiony", "nieustawiony", "pusty_a_nie_brak"],
 )
 async def test_agent_pod_straznikiem_widzi_pythonpath_runnera_jak_bez_straznika(
     monkeypatch, katalog_kroku, pythonpath_runnera, oczekiwane_wyjscie
@@ -1313,6 +1409,8 @@ async def test_agent_pod_straznikiem_widzi_pythonpath_runnera_jak_bez_straznika(
         monkeypatch.delenv("PYTHONPATH", raising=False)
     else:
         monkeypatch.setenv("PYTHONPATH", pythonpath_runnera)
+    monkeypatch.delenv("RUNNER_PYTHONPATH_AGENTA", raising=False)
+    monkeypatch.delenv("RUNNER_BRAK_PYTHONPATH_AGENTA", raising=False)
     zdarzenia: list[dict] = []
 
     async def emit(zdarzenie: dict) -> None:
@@ -1321,16 +1419,18 @@ async def test_agent_pod_straznikiem_widzi_pythonpath_runnera_jak_bez_straznika(
     wynik = await czekaj(
         wykonaj_krok(
             spec(),
-            [sys.executable, "-I", "-c", "import os; print(os.environ.get('PYTHONPATH'))"],
+            [sys.executable, "-I", "-c", KOD_WYPISUJACY_PYTHONPATH],
             katalog_kroku,
             emit,
         ),
         30,
         "krok wypisujacy PYTHONPATH",
     )
+    bez_straznika = await _wyjscie_agenta_bez_straznika(dict(os.environ))
 
     assert wynik == WynikKroku("zakonczony", None, 0)
     assert [z["text"] for z in zdarzenia] == [oczekiwane_wyjscie]
+    assert bez_straznika == oczekiwane_wyjscie
 
 
 def test_katalog_pakietu_to_drzewo_z_pakietem_runner_a_korzen_to_jego_rodzic():
