@@ -7,25 +7,36 @@ pozwala `needs`. Krok z `approval: true` zawiesza run na bramce BEZ procesu agen
 zdarzenia), kroki niezalezne od bramki dochodza do konca, potem drugi zapis, pauza testowa
 i `step_waiting` jako ostatnie zdarzenie runu. Wszystkie odczyty (rejestr skilli,
 workflow, project.yaml) ida z worktree (stan z commita), nie z repozytorium uzytkownika.
-Silnik nie sprzata worktree: zostaje do odbioru. Fan-out, konsensus, foreach, wznowienie
-po decyzji i petla naprawcza to osobne tickety.
+Silnik nie sprzata worktree: zostaje do odbioru. Fan-out, konsensus, foreach i petla
+naprawcza to osobne tickety.
+
+Wznowienie po decyzji (HAR-173): `wznow_run` czyta WYLACZNIE checkpoint z dysku i kopie
+workflow w katalogu runu, wiec dziala w nowej instancji runnera. `approve` zapisuje decyzje
+jako artefakt wejsciowy kroku za bramka, zeruje `waiting_on` w checkpoincie i dopiero potem
+rusza petla planu (ta sama co w `wykonaj_run`) od stanow z checkpointu; `reject` zamyka
+checkpoint i konczy run bez startu kroku. Polecenie, ktore nie pasuje do oczekiwania
+(powtorzone, dla innego kroku, nieznana decyzja), jest ignorowane zdarzeniem `resume_ignored`.
+Kroki zabite przy smierci runnera (stan `w_toku`) nie sa wznawiane: dostaja `step_failed`.
 
 Kazda sciezka konczy sie zdarzeniem `run_finished`. Wyjatki: zawieszenie na bramce (ostatnie
 zdarzenie to `step_waiting`; `run_finished` zmienilby w kokpicie `waiting` na "do odbioru"),
 anulowanie (`CancelledError`, po anulowaniu zadan krokow) i bledy samego `emit`
 (np. `BrakMiejsca`) - decyduje o nich wolajacy. Nieudany zapis checkpointu to `step_failed`
-kroku bramki (bez `step_waiting`) i `run_finished`.
+kroku bramki (bez `step_waiting`) i `run_finished`. Wyjatek wznowienia: polecenie ignorowane
+konczy sie samym `resume_ignored`.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
 import sys
 import time
+import weakref
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,11 +53,12 @@ from runner.checkpoint import (
     Checkpoint,
     Oczekiwanie,
     StanKrokuCheckpointu,
+    wczytaj_checkpoint,
     zapisz_checkpoint,
 )
 from runner.graf import StanKroku, nastepne
-from runner.krok import WynikKroku, wykonaj_krok
-from runner.worktree import WorktreeRunu, utworz_worktree
+from runner.krok import KATALOG_RUNU, WynikKroku, _zapisz_atomowo, wykonaj_krok
+from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
 from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
 
 Emit = Callable[[dict], Awaitable[None]]
@@ -58,10 +70,20 @@ NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 KATALOG_WORKFLOW = Path(".cockpit") / "workflows"
 KROK_WALIDACJI = "walidacja"   # krok, na ktorym kokpit widzi blad przed startem krokow
 TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"
+TEKST_PRZERWANIA = "przerwany przy śmierci runnera — nie wznawiamy"
+DECYZJE = ("approve", "reject")
+KATALOG_ARTEFAKTOW = KATALOG_RUNU / "artifacts"   # decyzje czlowieka jako wejscia krokow
+# blokada per run: sprawdzenie oczekiwania i zapis checkpointu bez `waiting_on` sa atomowe
+# wzgledem drugiego polecenia `resume`; slaba mapa nie trzyma blokad zakonczonych runow
+_BLOKADY: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 
 
 class BladStartu(Exception):
     """Run nie moze ruszyc: tekst to lista problemow, jeden w linii (D4)."""
+
+
+class BladWznowienia(BladDziedziny):
+    """Run nie da sie wznowic z checkpointu (worktree, workflow, stan); tekst to powod."""
 
 
 class PorazkaKroku(Exception):
@@ -123,6 +145,11 @@ def _przygotuj(
     return Przygotowany(wt, workflow, rejestr, projekt, repo)
 
 
+def _sciezka_decyzji(step_id: str) -> Path:
+    """Sciezka artefaktu decyzji wzgledem worktree."""
+    return KATALOG_ARTEFAKTOW / f"decyzja_{step_id}.json"
+
+
 def _zdarzenie(run_id: str, kind: str, step_id: str, agent_id: str, text: str, **reszta) -> dict:
     return {
         "kind": kind, "run_id": run_id, "step_id": step_id, "agent_id": agent_id,
@@ -132,14 +159,19 @@ def _zdarzenie(run_id: str, kind: str, step_id: str, agent_id: str, text: str, *
 
 async def _krok(
     run_id: str, id_kroku: str, p: Przygotowany, profil: ProfilBackendu,
-    uruchom_agenta: UruchomAgenta, emit: Emit,
+    uruchom_agenta: UruchomAgenta, emit: Emit, zatwierdzone: frozenset[str] = frozenset(),
 ) -> WynikKroku:
-    """Jeden krok: specyfikacja agenta, prompt, polecenie; blad budowy to `PorazkaKroku`."""
+    """Jeden krok: specyfikacja agenta, prompt, polecenie; blad budowy to `PorazkaKroku`.
+
+    Krok zatwierdzony na bramce dostaje artefakt decyzji jako ostatnie wejscie."""
     krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
     skill = p.rejestr.skille[krok.skill]
+    wejscia = list(skill.consumes)
+    if id_kroku in zatwierdzone:
+        wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
     spec = SpecKroku(
         run_id=run_id, step_id=krok.id, agent_id=krok.id, skill_id=krok.skill,
-        rola=skill.role, wejscia=list(skill.consumes), wyjscia=list(skill.produces),
+        rola=skill.role, wejscia=wejscia, wyjscia=list(skill.produces),
         komendy={n: p.projekt.capabilities[n] for n in skill.needs if n in p.projekt.capabilities},
     )
     try:
@@ -181,7 +213,7 @@ async def _zapisz(p: Przygotowany, cp: Checkpoint) -> BladCheckpointu | None:
 
 def _checkpoint(
     run_id: str, nazwa: str, p: Przygotowany, stany: Mapping[str, StanKroku],
-    startowane: set[str], czeka: Oczekiwanie,
+    startowane: set[str], czeka: Oczekiwanie | None,
 ) -> Checkpoint:
     return Checkpoint(
         run_id=run_id, repozytorium=str(p.repozytorium), workflow=nazwa,
@@ -226,15 +258,27 @@ async def wykonaj_run(
         await _blad_przed_startem(emit, run_id, str(e))
         return
 
+    await _wykonaj_plan(
+        run_id, polecenie["workflow"],     # nazwa sprawdzona w `_przygotuj`
+        p, {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}, set(), frozenset(),
+        profil, uruchom_agenta, emit)
+
+
+async def _wykonaj_plan(
+    run_id: str, nazwa: str, p: Przygotowany, stany: dict[str, StanKroku],
+    startowane: set[str], zatwierdzone: frozenset[str], profil: ProfilBackendu,
+    uruchom_agenta: UruchomAgenta, emit: Emit,
+) -> None:
+    """Petla planu wspolna dla `wykonaj_run` i `wznow_run`: rusza od podanych stanow krokow.
+
+    `zatwierdzone` to kroki z bramka, ktorych decyzja juz zapadla: nie zatrzymuja sie drugi
+    raz, a ich agent dostaje artefakt decyzji wsrod wejsc."""
     capabilities = p.projekt.capabilities
-    stany = {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}
     w_toku: dict[asyncio.Task, tuple[str, float]] = {}
     ostatni = "run"
-    bramki = {k.id for k in p.workflow.kroki if k.approval}
-    startowane: set[str] = set()
+    bramki = {k.id for k in p.workflow.kroki if k.approval and k.id not in zatwierdzone}
     oczekiwanie: Oczekiwanie | None = None     # najwyzej jedna zawieszona bramka naraz
     blad_zapisu: BladCheckpointu | None = None
-    nazwa = polecenie["workflow"]              # sprawdzone w `_przygotuj`
     try:
         while True:
             plan = nastepne(p.workflow, p.rejestr, capabilities, stany)
@@ -264,7 +308,7 @@ async def wykonaj_run(
                 stany[id_kroku] = StanKroku.W_TOKU  # pragma: no mutate
                 await emit(_zdarzenie(run_id, "step_started", id_kroku, id_kroku, ""))
                 zadanie = asyncio.create_task(
-                    _krok(run_id, id_kroku, p, profil, uruchom_agenta, emit))
+                    _krok(run_id, id_kroku, p, profil, uruchom_agenta, emit, zatwierdzone))
                 w_toku[zadanie] = (id_kroku, time.monotonic())
             if not w_toku:
                 break
@@ -306,3 +350,127 @@ async def wykonaj_run(
             f"zapis checkpointu nieudany: {blad_zapisu}"))
     await emit(_zdarzenie(
         run_id, "run_finished", ostatni, "", "", cost_usd=None, cost_source="unavailable"))
+
+
+def _zapisz_decyzje(
+    p: Przygotowany, run_id: str, step_id: str, decyzja: str, powod: str | None,
+) -> None:
+    """Artefakt decyzji w worktree (atomowo); blad dysku to `BladWznowienia`."""
+    tresc = json.dumps({
+        "run_id": run_id, "step_id": step_id, "decyzja": decyzja, "powod": powod,
+        "czas": datetime.now(timezone.utc).isoformat(),
+    }, ensure_ascii=False)
+    try:
+        _zapisz_atomowo(p.worktree.sciezka / _sciezka_decyzji(step_id), tresc.encode("utf-8"))
+    except OSError as e:
+        raise BladWznowienia(f"zapis artefaktu decyzji dla kroku {step_id}: {e}") from e
+
+
+def _przygotuj_wznowienie(cp: Checkpoint, katalog: Path, dom: Path) -> Przygotowany:
+    """Workflow z kopii w katalogu runu, rejestr i projekt z worktree z checkpointu."""
+    worktree = Path(cp.worktree)
+    if not worktree.is_dir():
+        raise BladWznowienia(f"brak worktree runu: {worktree}")
+    workflow, problemy = wczytaj_workflow(katalog / "workflow.yaml")
+    rejestr = rozstrzygnij_rejestr(worktree, dom)
+    if workflow is not None:
+        # ta sama walidacja co przy starcie: skill kroku mogl zniknac miedzy bramka a decyzja
+        problemy += waliduj_workflow(workflow, rejestr, dom)
+    if workflow is None or ma_bledy(problemy):
+        raise BladWznowienia(_bledy([p for p in problemy if ma_bledy([p])]))
+    projekt, problemy_projektu = wczytaj_projekt(worktree)
+    if projekt is None:
+        raise BladWznowienia(_bledy(problemy_projektu))
+    return Przygotowany(
+        WorktreeRunu(worktree, cp.base_commit, katalog), workflow, rejestr, projekt,
+        Path(cp.repozytorium))
+
+
+def _stany_z_checkpointu(cp: Checkpoint) -> dict[str, StanKroku]:
+    try:
+        return {i: StanKroku(k.stan) for i, k in cp.kroki.items()}
+    except ValueError as e:
+        raise BladWznowienia(f"checkpoint: nieznany stan kroku: {e}") from e
+
+
+def _powod_ignorowania(cp: Checkpoint, step_id: str, decyzja: str) -> str | None:
+    if cp.waiting_on is None:
+        return "run nie czeka na decyzję (polecenie powtórzone albo run już zakończony)"
+    if cp.waiting_on.step_id != step_id:
+        return f"run czeka na decyzję dla kroku {cp.waiting_on.step_id}, nie {step_id}"
+    if decyzja not in DECYZJE:
+        return f"nieznana decyzja: {decyzja!r}"
+    return None
+
+
+async def _porazka_wznowienia(emit: Emit, run_id: str, step_id: str, tekst: str) -> None:
+    """`step_failed` kroku z polecenia i `run_finished`: bez pierwszego kokpit wyliczylby
+    z samego `run_finished` falszywe "do odbioru" (evidence_required)."""
+    await emit(_zdarzenie(run_id, "step_failed", step_id, step_id, tekst))
+    await emit(_zdarzenie(
+        run_id, "run_finished", step_id, "", tekst, cost_usd=None, cost_source="unavailable"))
+
+
+async def _przyjmij_decyzje(
+    run_id: str, step_id: str, decyzja: str, powod: str | None, dom: Path, root: Path | None,
+    emit: Emit,
+) -> tuple[str, Przygotowany, dict[str, StanKroku], set[str], list[str]] | None:
+    """Pod blokadą runu: odczyt checkpointu, decyzja i zapis checkpointu bez `waiting_on`.
+
+    `None` gdy polecenie ignorowane albo run odrzucony (zdarzenia juz poszly); inaczej
+    stan do dalszego wykonania i kroki przerwane przy smierci runnera (juz `nieudany`)."""
+    katalog = katalog_runu(run_id, root)
+    cp = await asyncio.to_thread(wczytaj_checkpoint, katalog)
+    ignorowane = _powod_ignorowania(cp, step_id, decyzja)
+    if ignorowane is not None:
+        await emit(_zdarzenie(run_id, "resume_ignored", step_id, step_id, ignorowane))
+        return None
+    if decyzja == "reject":
+        await asyncio.to_thread(zapisz_checkpoint, katalog, replace(cp, waiting_on=None))
+        await emit(_zdarzenie(
+            run_id, "run_finished", step_id, "", powod or "",
+            cost_usd=None, cost_source="unavailable"))
+        return None
+    p = await asyncio.to_thread(_przygotuj_wznowienie, cp, katalog, dom)
+    stany = _stany_z_checkpointu(cp)
+    if set(stany) != {k.id for k in p.workflow.kroki}:
+        raise BladWznowienia("checkpoint nie pasuje do kopii workflow: inne kroki")
+    startowane = {i for i, k in cp.kroki.items() if k.proby > 0}
+    przerwane = [i for i, stan in stany.items() if stan is StanKroku.W_TOKU]
+    for id_kroku in przerwane:
+        stany[id_kroku] = StanKroku.NIEUDANY
+    await asyncio.to_thread(_zapisz_decyzje, p, run_id, step_id, decyzja, powod)
+    await asyncio.to_thread(
+        zapisz_checkpoint, katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))
+    return cp.workflow, p, stany, startowane, przerwane
+
+
+async def wznow_run(
+    run_id: str,
+    step_id: str,
+    decyzja: str,
+    emit: Emit,
+    uruchom_agenta: UruchomAgenta = wykonaj_krok,
+    *,
+    powod: str | None = None,
+    profil: ProfilBackendu | None = None,
+    dom: Path | None = None,
+    root: Path | None = None,
+) -> None:
+    """Wznawia run zawieszony na bramce `step_id` decyzja czlowieka, wylacznie z checkpointu."""
+    profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    dom = dom if dom is not None else Path.home()
+    try:
+        async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+            start = await _przyjmij_decyzje(run_id, step_id, decyzja, powod, dom, root, emit)
+    except (BladDziedziny, OSError) as e:      # BladCheckpointu, BladWznowienia, katalog runu
+        await _porazka_wznowienia(emit, run_id, step_id, str(e))
+        return
+    if start is None:
+        return
+    nazwa, p, stany, startowane, przerwane = start
+    for id_kroku in przerwane:
+        await emit(_zdarzenie(run_id, "step_failed", id_kroku, id_kroku, TEKST_PRZERWANIA))
+    await _wykonaj_plan(
+        run_id, nazwa, p, stany, startowane, frozenset({step_id}), profil, uruchom_agenta,
+        emit)

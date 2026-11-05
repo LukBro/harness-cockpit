@@ -407,6 +407,41 @@ class Runner:
                 )
 
     @staticmethod
+    def _decyzje_z_polecenia(cmd: dict) -> tuple[str, str, str, str | None] | None:
+        """(run_id, step_id, decyzja, powod) z polecenia `resume`; zle polecenie to `None`."""
+        run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
+        decyzja, powod = cmd.get("decyzja"), cmd.get("powod")
+        if (
+            not isinstance(run_id, str) or not run_id
+            or not isinstance(step_id, str) or not step_id
+            or decyzja not in ("approve", "reject")
+            or not (powod is None or isinstance(powod, str))
+        ):
+            return None
+        return run_id, step_id, decyzja, powod
+
+    async def _resume(self, cmd: dict) -> None:
+        """Wznowienie runu po decyzji (HAR-173) w wlasnym kliencie HTTP, jak `_run_workflow`."""
+        parametry = self._decyzje_z_polecenia(cmd)
+        if parametry is None:
+            print(f"resume odrzucone: niepoprawne polecenie {cmd!r}", file=sys.stderr)
+            return
+        run_id, step_id, decyzja, powod = parametry
+        async with self._klient_http() as client:
+
+            async def emit(zdarzenie: dict) -> None:
+                async with self._zapis_zdarzen:
+                    await self.send_event(client, **zdarzenie)
+
+            try:
+                await silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)
+            except BrakMiejsca:
+                await self._wyslij_bezposrednio(
+                    client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                    text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
+
+    @staticmethod
     def _zabij_grupe(proc: asyncio.subprocess.Process, sygnal: signal.Signals) -> None:
         if proc.returncode is not None:
             return                          # odebrany: pid moze nalezec juz do obcej grupy
@@ -540,6 +575,10 @@ class Runner:
                             run = asyncio.create_task(self._run_workflow(cmd))
                             self._runy.add(run)
                             run.add_done_callback(self._runy.discard)
+                        elif cmd.get("type") == "resume":
+                            wznowienie = asyncio.create_task(self._resume(cmd))
+                            self._runy.add(wznowienie)
+                            wznowienie.add_done_callback(self._runy.discard)
                         elif "req_id" in cmd:
                             # osobne zadanie: wolna operacja nie wstrzymuje czytania strumienia
                             zadanie = asyncio.create_task(

@@ -12,3 +12,5 @@ export type DefinicjaKatalogu = Schemat["DefinicjaKatalogu"];
 export type KrokRunu = Schemat["KrokRunu"];
 export type RunStatus = Schemat["RunStatus"];
 export type Profil = Schemat["Profil"];
+export type DecyzjaIn = Schemat["DecyzjaIn"];
+export type DecyzjaPrzyjeta = Schemat["DecyzjaPrzyjeta"];
