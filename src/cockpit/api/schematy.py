@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cockpit.db.models import RunnerKind, RunStatus
 
@@ -30,6 +30,19 @@ class RunnerZameldowany(BaseModel):
 
 class RunUtworzony(BaseModel):
     run_id: str
+
+
+class DecyzjaIn(BaseModel):
+    """Decyzja czlowieka na bramce; powod wymagany przy odrzuceniu (sprawdza serwis)."""
+    decyzja: Literal["approve", "reject"]
+    powod: str | None = Field(None, max_length=2000)
+
+
+class DecyzjaPrzyjeta(BaseModel):
+    run_id: str
+    status: RunStatus
+    step_id: str
+    reason: str | None
 
 
 class ZdarzeniePrzyjete(BaseModel):

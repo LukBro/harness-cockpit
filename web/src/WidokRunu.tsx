@@ -29,6 +29,7 @@ const STATUS_RUNU: Record<RunStatus, string> = {
   failed: "nieudany",
   skipped: "pominięty",
   aborted: "przerwany",
+  rejected: "odrzucony",
 };
 
 // Nieznana wartosc w runtime (nowszy backend): pokazujemy surowa, nigdy jako sukces.

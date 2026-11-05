@@ -105,4 +105,7 @@ also_copy = [
   # pliki (HAR-87); .ai/ jako katalog z tego samego powodu co web/.
   "CLAUDE.md",
   ".ai/",
+  # .gitignore: test typow frontu (HAR-84) kopiuje .gitignore korzenia do swiezego repo;
+  # bez niego faza statystyk mutmuta pada (mutation-main po merge #142).
+  ".gitignore",
 ]
