@@ -317,7 +317,10 @@ jobs:
   mutation-main:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # Udane przebiegi z cache trwaly 104-119 min; przebieg bez cache (zmiana testow zmienia
+    # klucz) przekroczyl 120 min i zostal anulowany, a anulowany nie zapisuje cache - kazdy
+    # nastepny zaczynalby od zera i tez by sie nie zmiescil.
+    timeout-minutes: 240
     # Dwa pelne przebiegi naraz tylko walcza o CPU i cache; nie przerywamy trwajacego,
     # bo jego wynik trafia do baseline.
     concurrency:
