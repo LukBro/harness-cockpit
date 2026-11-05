@@ -2532,7 +2532,14 @@ def _git_w_korzeniu(*argv: str) -> tuple[int, bytes, str]:
 
 def _wypakuj_commit(commit: str, cel: Path, tabele: set[str]) -> None:
     """Wypakowuje pliki commitu do `cel`; z `tests/mutanty_reczne/` tylko wskazane tabele."""
-    kod, tar_bajty, blad = _git_w_korzeniu("archive", "--format=tar", commit)
+    # git archive uruchomiony w podkatalogu repozytorium pakuje tylko ten podkatalog. Pod mutmut
+    # KORZEN to mutants/, ktorego w starym commicie nie ma - tar bylby pusty. Archiwum robimy
+    # z korzenia repozytorium gita.
+    kod, korzen_gita, blad = _git_w_korzeniu("rev-parse", "--show-toplevel")
+    assert kod == 0, blad
+    kod, tar_bajty, blad = _git_w_korzeniu(
+        "-C", korzen_gita.decode("utf-8").strip(), "archive", "--format=tar", commit
+    )
     assert kod == 0, blad
     with tarfile.open(fileobj=io.BytesIO(tar_bajty)) as archiwum:
         for czlonek in archiwum.getmembers():
