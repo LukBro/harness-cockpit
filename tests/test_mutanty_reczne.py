@@ -2881,5 +2881,10 @@ def test_stan_sprzed_naprawy_zbudowany_z_aktualnych_plikow_daje_kod_2_z_dokladni
     ), zrzut.err
     assert "wystepuje 0 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #2"]
     assert "wystepuje 0 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #7"]
-    assert "wystepuje 2 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #10"]
-    assert "wystepuje 2 razy" in linie[f"{PREFIKS_TABEL}HAR-79.toml #35"]
+    # Liczba wystapien rosnie z kazda nowa trasa o tej samej linii (HAR-172 dodal trzecia),
+    # wiec oczekiwanie liczymy z aktualnego pliku; wiersz psuje sie, gdy wystapien jest wiecej niz jedno.
+    for klucz in (("HAR-0.toml", 10), ("HAR-79.toml", 35)):
+        pola = STARE_WIERSZE[klucz]
+        ile = (KORZEN / pola["plik"]).read_text(encoding="utf-8").count(pola["szukaj"])
+        assert ile > 1, pola
+        assert f"wystepuje {ile} razy" in linie[f"{PREFIKS_TABEL}{klucz[0]} #{klucz[1]}"]
