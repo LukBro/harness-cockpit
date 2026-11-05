@@ -30,7 +30,8 @@ TRESC_BEZ_TABELI = (
 )
 
 
-STATUSY_RUNU = ("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")
+STATUSY_RUNU = ("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted",
+                "rejected")
 
 
 def _utworz_run_w_toku(status: str = "running") -> str:
@@ -437,7 +438,8 @@ def test_krok_bez_subagenta_ma_w_kolumnie_agenta_kreske(
     ("waiting", "czeka"),
     ("skipped", "pominięty"),
     ("aborted", "przerwany"),
-], ids=["pending", "waiting", "skipped", "aborted"])
+    ("rejected", "odrzucony"),
+], ids=["pending", "waiting", "skipped", "aborted", "rejected"])
 def test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe(
     zalogowana_strona, adres_kokpitu, status, napis
 ):

@@ -1,6 +1,6 @@
 # Tabela recznych mutantow HAR-80: silnik runu u runnera (`runner.silnik`) i polecenie
 # `run_workflow` w kokpicie. Elementy, ktorych mutmut nie mutuje: stale modulu silnika (wzorzec
-# nazwy workflow, katalog workflow, krok walidacji, powod approval), aliasy typow, klasy wyjatkow
+# nazwy workflow, katalog workflow, krok walidacji), aliasy typow, klasy wyjatkow
 # i dataclass, typy w `except`, linia `W_TOKU` z `# pragma: no mutate`, pole `project_id` modelu
 # wejscia, lista odpowiedzi trasy, polecenie runu w `create_run`, zbior `_POLECENIA_RUNU`,
 # schemat `web/openapi.json`.
@@ -118,31 +118,8 @@ szukaj = 'KROK_WALIDACJI = "walidacja"'
 zamien = 'KROK_WALIDACJI = "walidacja_x"'
 test = "tests/test_silnik_runu.py::test_brak_pliku_workflow_konczy_run_bledem_bez_startu_krokow"
 
-# --- POWOD_APPROVAL: tekst porazki kroku z approval (kazdy fragment) ---
-
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'krok wymaga decyzji człowieka'
-zamien = 'krok wymaga decyzji'
-test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
-
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'człowieka (approval)'
-zamien = 'człowieka (aprobata)'
-test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
-
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'bramka nie jest jeszcze obsługiwana'
-zamien = 'bramka jest obsługiwana'
-test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
-
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'obsługiwana (HAR-172)'
-zamien = 'obsługiwana (HAR-173)'
-test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+# (Stala POWOD_APPROVAL zniknela w HAR-172: krok z approval nie konczy sie juz porazka, tylko
+# zawiesza run na bramce. Tekst czekania `TEKST_CZEKANIA` ma wiersz w tests/mutanty_reczne/HAR-172.toml.)
 
 # --- aliasy typow: wyliczane przy imporcie modulu, zly alias przewraca import ---
 
@@ -171,7 +148,7 @@ test = "tests/test_silnik_runu.py::test_workflow_z_bledami_konczy_run_bez_startu
 plik = "src/runner/silnik.py"
 szukaj = 'class PorazkaKroku(Exception):'
 zamien = 'class PorazkaKroku:'
-test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej"
 
 # Przygotowany run jest niezmienny.
 [[mutant]]
@@ -203,12 +180,12 @@ szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
 zamien = 'except (BladDziedziny, ZlaKonfiguracjaZakresu) as e:'
 test = "tests/test_silnik_runu.py::test_blad_zapisu_kopii_workflow_konczy_run_bledem_przed_startem_krokow"
 
-# Porazka kroku zbudowanego przez silnik (approval) konczy krok, nie run.
+# Porazka kroku zbudowanego przez silnik (prompt, model) konczy krok, nie run.
 [[mutant]]
 plik = "src/runner/silnik.py"
 szukaj = 'except PorazkaKroku as e:'
 zamien = 'except KeyError as e:'
-test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej"
 
 # Znak sterujacy w prompcie (ValueError) konczy krok porazka.
 [[mutant]]

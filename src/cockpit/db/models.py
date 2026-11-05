@@ -32,6 +32,7 @@ class RunStatus(str, enum.Enum):
     failed = "failed"
     skipped = "skipped"
     aborted = "aborted"        # runner offline, brak miejsca (BRO-109)
+    rejected = "rejected"      # odrzucony przez czlowieka na bramce (HAR-172)
 
 
 class StepStatus(str, enum.Enum):
