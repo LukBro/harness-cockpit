@@ -85,3 +85,25 @@ istnieje i nadal jest łamana, w nowych kształtach:
 
 Co sprawdzić w review: każdy z powyższych kształtów = **-25**; każdy typ w krotce `except`
 ma test (zob. [test-odroznia-regule](test-odroznia-regule.md)).
+
+## Regresja (retro M1.7)
+
+Źródło: HAR-80, HAR-146, HAR-150, HAR-175 (-10 każdy), HAR-185 (-25). Nowe kształty:
+
+- **Konfiguracja ze zmiennej środowiskowej to wejście z granicy** — `int(os.environ[...])`
+  przy `abc`, `0` albo pustym napisie rzuca `ValueError` z konstruktora; tłumaczysz go na
+  błąd dziedziny z nazwą zmiennej, zanim proces wystartuje (HAR-146).
+- **Katalog i plik tymczasowy** — `tempfile.TemporaryDirectory()`/`mkdtemp` rzuca `OSError`
+  (pełny dysk, brak praw do `TMPDIR`) jak każdy inny zapis (HAR-150).
+- **Typ przyczyny, nie klasa bazowa biblioteki** — gdy biblioteka ma osobny typ dla
+  obsługiwanej przyczyny (`TargetClosedError` Playwrighta), `except` łapie ten typ, a test
+  sprawdza, że błąd tej samej biblioteki innego rodzaju (bazowy `Error`) leci dalej (HAR-185).
+- **Awaria strażnika przy starcie to odmowa** — hook albo strażnik, który pada przy imporcie
+  lub starcie, nie przepuszcza narzędzia (fail-closed); test wywołuje prawdziwy punkt wejścia
+  z zepsutym startem (HAR-175).
+- **Wyjątek zadania w pętli współbieżnej** — pętla czekająca na zadania kroków
+  (`asyncio.wait`) zamienia każdy wyjątek zadania poza anulowaniem na zdarzenie końca kroku
+  albo runu; run nigdy nie zostaje bez `run_finished` (HAR-80).
+
+Co sprawdzić w review: każdy z powyższych kształtów = **-25**; każda gałąź tłumaczenia ma test
+na prawdziwej funkcji (zob. [test-odroznia-regule](test-odroznia-regule.md)).
