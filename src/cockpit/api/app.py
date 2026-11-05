@@ -29,7 +29,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import dostep, katalog, kroki, odbior, pliki_runnera, projekty, sesje
+from cockpit.services import decyzje, dostep, katalog, kroki, odbior, pliki_runnera, projekty, sesje
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import BrakDostepu, NieZnaleziono
@@ -38,6 +38,8 @@ from cockpit.settings import settings
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
+    DecyzjaIn,
+    DecyzjaPrzyjeta,
     DiffRunu,
     Katalog,
     KatalogOdswiezony,
@@ -263,6 +265,27 @@ async def create_run(
         }
     await bus.send_to_runner(run.runner_id, polecenie)
     return RunUtworzony(run_id=run.id)
+
+
+@app.post("/api/runs/{run_id}/decision", response_model=DecyzjaPrzyjeta,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def podejmij_decyzje(
+    run_id: str,
+    body: DecyzjaIn,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> DecyzjaPrzyjeta:
+    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    wynik = await decyzje.podejmij_decyzje(s, run_id, k.tenant_id, body.decyzja, body.powod)
+    ev = wynik.zdarzenie
+    if wynik.polecenie is not None:
+        await bus.send_to_runner(wynik.run.runner_id, wynik.polecenie)
+    await bus.publish_event(wynik.run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
+                                           "step_id": ev.step_id,
+                                           "text_truncated": ev.text_truncated,
+                                           "text_full_len": ev.text_full_len})
+    return DecyzjaPrzyjeta(run_id=wynik.run.id, status=wynik.run.status,
+                           step_id=wynik.step_id, reason=wynik.run.reason)
 
 
 @app.post("/api/events", response_model=ZdarzeniePrzyjete,

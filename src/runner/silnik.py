@@ -2,23 +2,31 @@
 
 Petla wykonania zyje w runnerze, a kokpit wylicza stan runu ze zdarzen. Silnik waliduje
 workflow, tworzy worktree, materializuje skille i uruchamia kroki rownolegle tam, gdzie
-pozwala `needs`. Wszystkie odczyty (rejestr skilli, workflow, project.yaml) ida z worktree
-(stan z commita), nie z repozytorium uzytkownika. Silnik nie sprzata worktree: zostaje do
-odbioru. Fan-out, konsensus, foreach, bramka i petla naprawcza to osobne tickety.
+pozwala `needs`. Krok z `approval: true` zawiesza run na bramce BEZ procesu agenta
+(HAR-172): silnik zapisuje checkpoint z `waiting_on` w chwili trafienia na bramke (bez
+zdarzenia), kroki niezalezne od bramki dochodza do konca, potem drugi zapis, pauza testowa
+i `step_waiting` jako ostatnie zdarzenie runu. Wszystkie odczyty (rejestr skilli,
+workflow, project.yaml) ida z worktree (stan z commita), nie z repozytorium uzytkownika.
+Silnik nie sprzata worktree: zostaje do odbioru. Fan-out, konsensus, foreach, wznowienie
+po decyzji i petla naprawcza to osobne tickety.
 
-Kazda sciezka konczy sie zdarzeniem `run_finished`. Wyjatki: anulowanie (`CancelledError`,
-po anulowaniu zadan krokow) i bledy samego `emit` (np. `BrakMiejsca`) - decyduje o nich
-wolajacy.
+Kazda sciezka konczy sie zdarzeniem `run_finished`. Wyjatki: zawieszenie na bramce (ostatnie
+zdarzenie to `step_waiting`; `run_finished` zmienilby w kokpicie `waiting` na "do odbioru"),
+anulowanie (`CancelledError`, po anulowaniu zadan krokow) i bledy samego `emit`
+(np. `BrakMiejsca`) - decyduje o nich wolajacy. Nieudany zapis checkpointu to `step_failed`
+kroku bramki (bez `step_waiting`) i `run_finished`.
 """
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 import sys
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +36,14 @@ from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Problem, Workflow, ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
 from runner.agent import BrakModelu, ProfilBackendu, SpecKroku, polecenie_agenta, zbuduj_prompt
+from runner.checkpoint import (
+    BladCheckpointu,
+    ZMIENNA_PAUZY,
+    Checkpoint,
+    Oczekiwanie,
+    StanKrokuCheckpointu,
+    zapisz_checkpoint,
+)
 from runner.graf import StanKroku, nastepne
 from runner.krok import WynikKroku, wykonaj_krok
 from runner.worktree import WorktreeRunu, utworz_worktree
@@ -41,9 +57,7 @@ NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # w funkcji przezywa mutacje wielkosci liter na systemach plikow bez jej rozrozniania (macOS).
 KATALOG_WORKFLOW = Path(".cockpit") / "workflows"
 KROK_WALIDACJI = "walidacja"   # krok, na ktorym kokpit widzi blad przed startem krokow
-POWOD_APPROVAL = (
-    "krok wymaga decyzji człowieka (approval) - bramka nie jest jeszcze obsługiwana (HAR-172)"
-)
+TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"
 
 
 class BladStartu(Exception):
@@ -51,7 +65,7 @@ class BladStartu(Exception):
 
 
 class PorazkaKroku(Exception):
-    """Krok zbudowany przez silnik nie ruszyl (approval, prompt, model); tekst to powod."""
+    """Krok zbudowany przez silnik nie ruszyl (prompt, model); tekst to powod."""
 
 
 @dataclass(frozen=True)
@@ -60,6 +74,7 @@ class Przygotowany:
     workflow: Workflow
     rejestr: Rejestr
     projekt: Projekt
+    repozytorium: Path
 
 
 def _linia(problem: Problem) -> str:
@@ -105,7 +120,7 @@ def _przygotuj(
         materializuj({k.skill for k in workflow.kroki}, rejestr, wt.sciezka)
     except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:
         raise BladStartu(str(e)) from e
-    return Przygotowany(wt, workflow, rejestr, projekt)
+    return Przygotowany(wt, workflow, rejestr, projekt, repo)
 
 
 def _zdarzenie(run_id: str, kind: str, step_id: str, agent_id: str, text: str, **reszta) -> dict:
@@ -121,9 +136,6 @@ async def _krok(
 ) -> WynikKroku:
     """Jeden krok: specyfikacja agenta, prompt, polecenie; blad budowy to `PorazkaKroku`."""
     krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
-    if krok.approval:
-        # approval_required: bez bramki (HAR-172) nikt nie podejmie decyzji czlowieka
-        raise PorazkaKroku(POWOD_APPROVAL)
     skill = p.rejestr.skille[krok.skill]
     spec = SpecKroku(
         run_id=run_id, step_id=krok.id, agent_id=krok.id, skill_id=krok.skill,
@@ -140,6 +152,46 @@ async def _krok(
         raise PorazkaKroku(str(e)) from e
     return await uruchom_agenta(
         spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu)
+
+
+async def _pauza_testowa() -> None:
+    """Pauza miedzy zapisem checkpointu a `step_waiting` (test zabicia silnika w oknie).
+
+    Tylko dla dodatniej liczby sekund; wartosc nieliczbowa zostawia komunikat i nie czeka."""
+    surowa = os.environ.get(ZMIENNA_PAUZY)
+    if surowa is None:
+        return
+    try:
+        sekundy = float(surowa)
+    except ValueError:
+        print(f"{ZMIENNA_PAUZY}={surowa!r} nie jest liczba, pauza pominieta", file=sys.stderr)
+        return
+    if sekundy > 0:
+        await asyncio.sleep(sekundy)
+
+
+async def _zapisz(p: Przygotowany, cp: Checkpoint) -> BladCheckpointu | None:
+    """Zapis checkpointu w watku; blad dysku wraca jako wartosc (silnik konczy run bledem)."""
+    try:
+        await asyncio.to_thread(zapisz_checkpoint, p.worktree.katalog_runu, cp)
+    except BladCheckpointu as e:
+        return e
+    return None
+
+
+def _checkpoint(
+    run_id: str, nazwa: str, p: Przygotowany, stany: Mapping[str, StanKroku],
+    startowane: set[str], czeka: Oczekiwanie,
+) -> Checkpoint:
+    return Checkpoint(
+        run_id=run_id, repozytorium=str(p.repozytorium), workflow=nazwa,
+        base_commit=p.worktree.base_commit, worktree=str(p.worktree.sciezka),
+        kroki={
+            i: StanKrokuCheckpointu(stan.value, 1 if i in startowane else 0)
+            for i, stan in stany.items()
+        },
+        waiting_on=czeka,
+    )
 
 
 async def _blad_przed_startem(emit: Emit, run_id: str, tekst: str) -> None:
@@ -178,6 +230,11 @@ async def wykonaj_run(
     stany = {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}
     w_toku: dict[asyncio.Task, tuple[str, float]] = {}
     ostatni = "run"
+    bramki = {k.id for k in p.workflow.kroki if k.approval}
+    startowane: set[str] = set()
+    oczekiwanie: Oczekiwanie | None = None     # najwyzej jedna zawieszona bramka naraz
+    blad_zapisu: BladCheckpointu | None = None
+    nazwa = polecenie["workflow"]              # sprawdzone w `_przygotuj`
     try:
         while True:
             plan = nastepne(p.workflow, p.rejestr, capabilities, stany)
@@ -187,6 +244,21 @@ async def wykonaj_run(
                     run_id, "step_skipped", id_kroku, id_kroku,
                     f"{plan.powody[id_kroku].value}: {powod}"))
             for id_kroku in plan.do_startu:
+                if blad_zapisu is not None:
+                    break      # bez dalszych startow; kroki w toku dobiegaja konca
+                if id_kroku in bramki:
+                    # bramka stoi PRZED krokiem: bez step_started, zadania i procesu agenta;
+                    # krok zostaje OCZEKUJE, wiec `nastepne` zwraca go w kazdej iteracji.
+                    # Zapis nr 1 (bezpieczenstwo przy smierci procesu), bez zdarzenia: gdyby
+                    # `step_waiting` poszlo przed krokami niezaleznymi, ich `step_started`
+                    # przestawilby run z `waiting` na `running`.
+                    if oczekiwanie is None:
+                        oczekiwanie = Oczekiwanie(
+                            id_kroku, datetime.now(timezone.utc).isoformat())
+                        blad_zapisu = await _zapisz(
+                            p, _checkpoint(run_id, nazwa, p, stany, startowane, oczekiwanie))
+                    continue
+                startowane.add(id_kroku)
                 # mutant None jest rownowazny dla `nastepne` (planuje tylko OCZEKUJE, a `needs`
                 # spelnia tylko ZAKONCZONY/POMINIETY); chroni go reczny mutant W_TOKU -> OCZEKUJE
                 stany[id_kroku] = StanKroku.W_TOKU  # pragma: no mutate
@@ -218,5 +290,19 @@ async def wykonaj_run(
         for zadanie in zadania:
             zadanie.cancel()
         await asyncio.gather(*zadania, return_exceptions=True)
+    if oczekiwanie is not None:
+        if blad_zapisu is None:
+            # zapis nr 2: stany krokow poszly dalej od pierwszego zapisu
+            blad_zapisu = await _zapisz(
+                p, _checkpoint(run_id, nazwa, p, stany, startowane, oczekiwanie))
+        if blad_zapisu is None:
+            # run czeka na czlowieka: `step_waiting` jest ostatnim zdarzeniem, bez `run_finished`
+            await _pauza_testowa()
+            await emit(_zdarzenie(
+                run_id, "step_waiting", oczekiwanie.step_id, oczekiwanie.step_id, TEKST_CZEKANIA))
+            return
+        await emit(_zdarzenie(
+            run_id, "step_failed", oczekiwanie.step_id, oczekiwanie.step_id,
+            f"zapis checkpointu nieudany: {blad_zapisu}"))
     await emit(_zdarzenie(
         run_id, "run_finished", ostatni, "", "", cost_usd=None, cost_source="unavailable"))

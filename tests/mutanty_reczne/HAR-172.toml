@@ -1,0 +1,746 @@
+# Tabela recznych mutantow HAR-172: elementy, ktorych mutmut nie mutuje (stale modulu, argumenty
+# dekoratora dataclass, wartosci enuma, ograniczenia pol Pydantica, wartosci w SQL migracji).
+# Kazde `szukaj` wystepuje w pliku dokladnie raz; kazdy wiersz zostal zweryfikowany skryptem
+# (liczba wystapien, zamien != szukaj, istnienie testu, skladnia pliku po mutacji).
+#
+# Wiersze z testami z tests/test_migracje.py wymagaja PostgreSQL (COCKPIT_TEST_DATABASE_URL);
+# bez bazy test jest pominiety i mutant "przezywa" - uruchamiaj z baza (tools/testy_pelne.sh).
+
+# --- model: wartosc statusu `rejected` ------------------------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = 'rejected = "rejected"'
+zamien = 'rejected = "odrzucony"'
+test = "tests/test_decyzja_na_bramce.py::test_status_odrzucony_na_bramce_ma_wartosc_rejected"
+
+# --- migracja 0011 ---------------------------------------------------------------------------
+
+# Bez IF NOT EXISTS migracja pada, gdy wartosc jest juz w typie.
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = "ADD VALUE IF NOT EXISTS 'rejected'"
+zamien = "ADD VALUE 'rejected'"
+test = "tests/test_migracje.py::test_migracja_run_odrzucony_przechodzi_gdy_wartosc_rejected_juz_istnieje_w_typie"
+
+# Downgrade zostawia stary typ (DROP TYPE zamieniony na zapytanie bez skutku).
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = "DROP TYPE runstatus_old"
+zamien = "SELECT 1 -- DROP TYPE runstatus_old"
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+# Downgrade nie zamienia odrzuconych runow na failed (warunek nigdy nie prawdziwy).
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = "WHERE status = 'rejected'"
+zamien = "WHERE status = 'nie_ma_takiego'"
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+# --- schemat wejscia trasy decyzji ----------------------------------------------------------------
+
+# Limit powodu o 1 wyzszy: powod 2001 znakow przechodzi.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "max_length=2000"
+zamien = "max_length=2001"
+test = "tests/test_decyzja_na_bramce.py::test_powod_dluzszy_niz_2000_znakow_to_422_i_baza_sie_nie_zmienia[approve]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "max_length=2000"
+zamien = "max_length=2001"
+test = "tests/test_decyzja_na_bramce.py::test_powod_dluzszy_niz_2000_znakow_to_422_i_baza_sie_nie_zmienia[reject]"
+
+# Limit powodu o 1 nizszy: powod 2000 znakow jest odrzucony.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "max_length=2000"
+zamien = "max_length=1999"
+test = "tests/test_decyzja_na_bramce.py::test_powod_o_dokladnie_2000_znakach_jest_przyjety_w_calosci"
+
+# Literal decyzji bez `reject`: odrzucenie dostaje 422.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'Literal["approve", "reject"]'
+zamien = 'Literal["approve"]'
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_przez_api_konczy_run_rejected_z_powodem_i_nie_wysyla_polecenia"
+
+# Literal decyzji bez `approve`: zatwierdzenie dostaje 422.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'Literal["approve", "reject"]'
+zamien = 'Literal["reject"]'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# --- trasa: uprawnienie ----------------------------------------------------------------------------
+
+# Obserwator (tylko `podglad`) zatwierdza bramke.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.zatwierdzanie)"
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)"
+test = "tests/test_decyzja_na_bramce.py::test_obserwator_nie_moze_podjac_decyzji_403_baza_i_kolejka_bez_zmian"
+
+# --- serwis decyzji: stala listy decyzji -------------------------------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = 'DECYZJE = ("approve", "reject")'
+zamien = 'DECYZJE = ("approve",)'
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_konczy_run_statusem_rejected_z_powodem"
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = 'DECYZJE = ("approve", "reject")'
+zamien = 'DECYZJE = ("reject",)'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_zmienia_run_czekajacy_na_bramce_na_running"
+
+# --- checkpoint: stale i niezmiennosc danych ---------------------------------------------------------
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = 'PLIK_CHECKPOINTU = "checkpoint.json"'
+zamien = 'PLIK_CHECKPOINTU = "checkpoint_v2.json"'
+test = "tests/test_bramka_zatwierdzenia.py::test_zmienna_pauzy_i_plik_checkpointu_maja_nazwy_z_kontraktu"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = 'PLIK_CHECKPOINTU = "checkpoint.json"'
+zamien = 'PLIK_CHECKPOINTU = "checkpoint_v2.json"'
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_na_dysku_ma_dokladnie_klucze_z_kontraktu"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = 'ZMIENNA_PAUZY = "COCKPIT_TEST_PAUSE_AFTER_CHECKPOINT"'
+zamien = 'ZMIENNA_PAUZY = "COCKPIT_TEST_PAUSE_AFTER_CHECKPOINT_X"'
+test = "tests/test_bramka_zatwierdzenia.py::test_zmienna_pauzy_wstrzymuje_silnik_po_zapisie_checkpointu_i_przed_step_waiting"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "@dataclass(frozen=True)\nclass Oczekiwanie:"
+zamien = "@dataclass\nclass Oczekiwanie:"
+test = "tests/test_bramka_zatwierdzenia.py::test_dane_checkpointu_sa_niezmienne[oczekiwanie]"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "@dataclass(frozen=True)\nclass StanKrokuCheckpointu:"
+zamien = "@dataclass\nclass StanKrokuCheckpointu:"
+test = "tests/test_bramka_zatwierdzenia.py::test_dane_checkpointu_sa_niezmienne[stan_kroku]"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "@dataclass(frozen=True)\nclass Checkpoint:"
+zamien = "@dataclass\nclass Checkpoint:"
+test = "tests/test_bramka_zatwierdzenia.py::test_dane_checkpointu_sa_niezmienne[checkpoint]"
+
+# --- silnik: tekst czekania na bramce (stala zastapila POWOD_APPROVAL z HAR-80) -----------------
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"'
+zamien = 'TEKST_CZEKANIA = "czeka na decyzję człowieka (aprobata)"'
+test = "tests/test_bramka_zatwierdzenia.py::test_step_waiting_niesie_run_krok_agenta_i_informacje_na_co_czeka"
+
+# --- checkpoint: sprzatanie pliku tymczasowego i prefiks ---------------------------------------
+
+# Bez sprzatania po nieudanej podmianie w katalogu runu zostaje plik tymczasowy.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "os.unlink(tymczasowy)"
+zamien = "pass"
+test = "tests/test_bramka_zatwierdzenia.py::test_nieudana_podmiana_nie_zostawia_pliku_tymczasowego_w_katalogu_runu"
+
+# To samo po nieudanej synchronizacji (zapis przerwany przed podmiana).
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "os.unlink(tymczasowy)"
+zamien = "pass"
+test = "tests/test_bramka_zatwierdzenia.py::test_nieudana_synchronizacja_na_dysk_nie_zostawia_pliku_tymczasowego_w_katalogu_runu"
+
+# Blad usuniecia pliku tymczasowego nie moze zastapic bledu zapisu.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "with contextlib.suppress(OSError):"
+zamien = "if True:"
+test = "tests/test_bramka_zatwierdzenia.py::test_blad_sprzatania_pliku_tymczasowego_nie_zastepuje_bledu_zapisu_checkpointu"
+
+# --- checkpoint: klasa bledu i straznik typu `proby` (retro: elementy, ktorych mutmut nie mutuje) ---
+
+# Blad checkpointu poza hierarchia bledow dziedziny.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "class BladCheckpointu(BladDziedziny):"
+zamien = "class BladCheckpointu(Exception):"
+test = "tests/test_bramka_zatwierdzenia.py::test_blad_checkpointu_jest_bledem_dziedziny"
+
+# Bez wykluczenia `bool` (podklasa `int`) `proby: true` jest przyjete jako liczba.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "if not isinstance(proby, int) or isinstance(proby, bool):"
+zamien = "if not isinstance(proby, int):"
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_o_zlym_ksztalcie_to_blad_checkpointu_ze_wskazaniem_pola[proby_jako_prawda]"
+
+# Bez sprawdzenia typu calkowitego napis albo ulamek przechodzi jako `proby`.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "if not isinstance(proby, int) or isinstance(proby, bool):"
+zamien = "if isinstance(proby, bool):"
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_o_zlym_ksztalcie_to_blad_checkpointu_ze_wskazaniem_pola[proby_jako_napis]"
+
+# --- serwis decyzji: niezmiennosc wyniku -------------------------------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = "@dataclass(frozen=True)\nclass Decyzja:"
+zamien = "@dataclass\nclass Decyzja:"
+test = "tests/test_decyzja_na_bramce.py::test_wynik_decyzji_jest_niezmienny"
+
+# Powod w poleceniu `resume` bez przyciecia: test porownuje dokladna wartosc.
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = '"decyzja": "approve", "powod": powod_czysty or None,'
+zamien = '"decyzja": "approve", "powod": powod,'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_z_powodem_zapisuje_powod_bez_spacji_w_zdarzeniu_decision"
+
+# Powod z samych bialych znakow w poleceniu zamiast `None`.
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = '"decyzja": "approve", "powod": powod_czysty or None,'
+zamien = '"decyzja": "approve", "powod": powod_czysty,'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_z_samymi_bialymi_znakami_w_powodzie_daje_polecenie_bez_powodu"
+
+# --- schemat wejscia i odpowiedzi trasy decyzji --------------------------------------------------------
+
+# Powod domyslnie wymagany: zatwierdzenie bez pola `powod` dostaje 422.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "powod: str | None = Field(None, max_length=2000)"
+zamien = "powod: str | None = Field(..., max_length=2000)"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_bez_powodu_przechodzi_a_odpowiedz_ma_reason_null[bez_pola]"
+
+# Powod domyslnie napis: polecenie `resume` niesie powod, ktorego nikt nie podal.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "powod: str | None = Field(None, max_length=2000)"
+zamien = 'powod: str | None = Field("domyslny", max_length=2000)'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_bez_powodu_przechodzi_a_odpowiedz_ma_reason_null[bez_pola]"
+
+# Typ powodu bez `None`: jawny null dostaje 422.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "powod: str | None = Field(None, max_length=2000)"
+zamien = "powod: str = Field(None, max_length=2000)"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_bez_powodu_przechodzi_a_odpowiedz_ma_reason_null[jawny_null]"
+
+# Pola odpowiedzi `DecyzjaPrzyjeta`: kazde ma wlasna zmiane typu albo wartosci.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class DecyzjaPrzyjeta(BaseModel):\n    run_id: str\n"
+zamien = "class DecyzjaPrzyjeta(BaseModel):\n    run_id: int\n"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    status: RunStatus\n    step_id: str\n    reason: str | None"
+zamien = "    status: int\n    step_id: str\n    reason: str | None"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    status: RunStatus\n    step_id: str\n    reason: str | None"
+zamien = "    status: RunStatus\n    step_id: int\n    reason: str | None"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# `reason` bez `None`: odpowiedz na zatwierdzenie (reason null) rozbija walidacje odpowiedzi.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    status: RunStatus\n    step_id: str\n    reason: str | None"
+zamien = "    status: RunStatus\n    step_id: str\n    reason: str"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# `reason` o innym typie: odpowiedz na odrzucenie (reason tekstowy) rozbija walidacje odpowiedzi.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    status: RunStatus\n    step_id: str\n    reason: str | None"
+zamien = "    status: RunStatus\n    step_id: str\n    reason: int | None"
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_przez_api_konczy_run_rejected_z_powodem_i_nie_wysyla_polecenia"
+
+# --- trasa decyzji: ciało (dekorator => mutmut pomija) -------------------------------------------
+
+# Odwrocony warunek: approve nie trafia do runnera, reject wysyla `None`.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if wynik.polecenie is not None:"
+zamien = "if wynik.polecenie is None:"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_kolejkuje_runnerowi_runu_polecenie_resume_z_id_kroku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if wynik.polecenie is not None:"
+zamien = "if wynik.polecenie is None:"
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_przez_api_konczy_run_rejected_z_powodem_i_nie_wysyla_polecenia"
+
+# Brak wyslania polecenia.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.send_to_runner(wynik.run.runner_id, wynik.polecenie)"
+zamien = "pass"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_kolejkuje_runnerowi_runu_polecenie_resume_z_id_kroku"
+
+# Polecenie do kolejki innego klucza niz runner runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.send_to_runner(wynik.run.runner_id, wynik.polecenie)"
+zamien = "await bus.send_to_runner(wynik.run.id, wynik.polecenie)"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_kolejkuje_runnerowi_runu_polecenie_resume_z_id_kroku"
+
+# Zdarzenie `decision` nie trafia na szyne albo trafia do innego runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(wynik.run.id, {"
+zamien = "await bus.publish_event(wynik.run.id + 'x', {"
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'await bus.publish_event(wynik.run.id, {"seq": ev.seq,'
+zamien = 'await bus.publish_event(wynik.run.id, {"seq": 0,'
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
+zamien = "\"kind\": \"x\", \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
+zamien = "\"kind\": ev.kind, \"text\": \"\",\n                                           \"step_id\": ev.step_id,"
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
+zamien = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": \"\","
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
+zamien = "                                           \"text_truncated\": True,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
+zamien = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": 0})\n    return DecyzjaPrzyjeta("
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+# Klucze zdarzenia na szynie: zmieniona nazwa klucza.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
+zamien = "                                           \"text_truncated_\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+# Deklaracja odpowiedzi bledow trasy: brak kodu 401, 403, 404, 409 albo 422 w schemacie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def podejmij_decyzje("
+zamien = "responses=odpowiedzi_bledow(403, 404, 409, 422))\nasync def podejmij_decyzje("
+test = "tests/test_decyzja_na_bramce.py::test_trasa_decyzji_deklaruje_w_schemacie_odpowiedzi_bledow_z_kontraktu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def podejmij_decyzje("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def podejmij_decyzje("
+test = "tests/test_decyzja_na_bramce.py::test_trasa_decyzji_deklaruje_w_schemacie_odpowiedzi_bledow_z_kontraktu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def podejmij_decyzje("
+zamien = "responses=odpowiedzi_bledow(401, 403, 409, 422))\nasync def podejmij_decyzje("
+test = "tests/test_decyzja_na_bramce.py::test_trasa_decyzji_deklaruje_w_schemacie_odpowiedzi_bledow_z_kontraktu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def podejmij_decyzje("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 422))\nasync def podejmij_decyzje("
+test = "tests/test_decyzja_na_bramce.py::test_trasa_decyzji_deklaruje_w_schemacie_odpowiedzi_bledow_z_kontraktu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def podejmij_decyzje("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 409))\nasync def podejmij_decyzje("
+test = "tests/test_decyzja_na_bramce.py::test_trasa_decyzji_deklaruje_w_schemacie_odpowiedzi_bledow_z_kontraktu"
+
+# Budowa odpowiedzi `DecyzjaPrzyjeta`: kazde pole z innego zrodla.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return DecyzjaPrzyjeta(run_id=wynik.run.id, status=wynik.run.status,"
+zamien = "return DecyzjaPrzyjeta(run_id=run_id + 'x', status=wynik.run.status,"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return DecyzjaPrzyjeta(run_id=wynik.run.id, status=wynik.run.status,"
+zamien = "return DecyzjaPrzyjeta(run_id=wynik.run.id, status='running',"
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_przez_api_konczy_run_rejected_z_powodem_i_nie_wysyla_polecenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "step_id=wynik.step_id, reason=wynik.run.reason)"
+zamien = "step_id='', reason=wynik.run.reason)"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "step_id=wynik.step_id, reason=wynik.run.reason)"
+zamien = "step_id=wynik.step_id, reason=None)"
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_przez_api_konczy_run_rejected_z_powodem_i_nie_wysyla_polecenia"
+
+# --- migracja 0011: identyfikatory, status zastepczy, przebudowa typu ------------------------------
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = 'revision: str = "0011"'
+zamien = 'revision: str = "0012"'
+test = "tests/test_bramka_zatwierdzenia.py::test_migracje_alembica_tworza_jeden_lancuch_z_0011_po_0010"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = 'down_revision: Union[str, None] = "0010"'
+zamien = 'down_revision: Union[str, None] = "0009"'
+test = "tests/test_bramka_zatwierdzenia.py::test_migracje_alembica_tworza_jeden_lancuch_z_0011_po_0010"
+
+# Odrzucone runy dostaja po cofnieciu inny status niz `failed`.
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = "UPDATE run SET status = 'failed'"
+zamien = "UPDATE run SET status = 'aborted'"
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+# Stary typ dostaje inna nazwe niz ta, ktora potem usuwa `DROP TYPE`.
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = "RENAME TO runstatus_old"
+zamien = "RENAME TO runstatus_zly"
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+# Kolumna przepisana bez rzutowania przez tekst.
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '"USING status::text::runstatus"'
+zamien = '"USING status::text"'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+# Kazdy element `_STATUSY_PRZED`: typ po cofnieciu traci wartosc.
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("pending", "waiting", "to_accept", "failed", "skipped", "aborted")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("pending", "running", "to_accept", "failed", "skipped", "aborted")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("pending", "running", "waiting", "failed", "skipped", "aborted")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("pending", "running", "waiting", "to_accept", "skipped", "aborted")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("pending", "running", "waiting", "to_accept", "failed", "aborted")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+[[mutant]]
+plik = "alembic/versions/0011_run_odrzucony.py"
+szukaj = '("pending", "running", "waiting", "to_accept", "failed", "skipped", "aborted")'
+zamien = '("pending", "running", "waiting", "to_accept", "failed", "skipped")'
+test = "tests/test_migracje.py::test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu"
+
+# `autocommit_block` w upgrade: BEZ MUTANTA. Wiersza nie ma celowo - zmiana `with ...autocommit_block():`
+# na zwykly blok jest rownowazna na PostgreSQL >= 12: `ALTER TYPE ... ADD VALUE` dziala w transakcji,
+# dopoki nowa wartosc nie jest uzyta w tej samej transakcji, a migracja jej nie uzywa. Zadne wejscie
+# (stan bazy, kolejnosc migracji) nie odroznia obu wersji w obsługiwanych wersjach PostgreSQL.
+
+# --- front: napis statusu runu odrzuconego -----------------------------------------------------------
+
+# Napis na ekranie: bez wpisu `rejected` front pokazuje surowy status, z innym - zly napis.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'rejected: "odrzucony",'
+zamien = 'rejected: "przerwany",'
+test = "tests/e2e/test_widok_runu.py::test_stan_runu_w_bazie_ma_na_ekranie_polski_napis_a_nigdy_gotowe[chromium-rejected]"
+
+# --- checkpoint: linie z `# pragma: no mutate` (mutanty None/UTF-8 rownowazne) ------------------------
+
+# Bez ensure_ascii=False znaki spoza ASCII trafiaja na dysk jako \uXXXX, nie doslownie w UTF-8.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = 'tresc = json.dumps(asdict(cp), ensure_ascii=False)  # pragma: no mutate'
+zamien = 'tresc = json.dumps(asdict(cp), ensure_ascii=True)  # pragma: no mutate'
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_na_dysku_trzyma_znaki_spoza_ascii_doslownie_w_utf8"
+
+# Zapis bez jawnego kodowania uzywa kodowania systemu: przy ASCII znak spoza ASCII to UnicodeEncodeError.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = 'with os.fdopen(fd, "w", encoding="utf-8") as f:  # pragma: no mutate'
+zamien = 'with os.fdopen(fd, "w") as f:  # pragma: no mutate'
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_ze_znakami_spoza_ascii_dziala_gdy_domyslne_kodowanie_systemu_to_nie_utf8"
+
+# Odczyt bez jawnego kodowania uzywa kodowania systemu: przy ASCII bajty UTF-8 to blad odczytu.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = 'tekst = plik.read_text(encoding="utf-8")  # pragma: no mutate'
+zamien = 'tekst = plik.read_text()  # pragma: no mutate'
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_ze_znakami_spoza_ascii_dziala_gdy_domyslne_kodowanie_systemu_to_nie_utf8"
+
+# --- trasa decyzji: wywolanie serwisu, dekorator i zaleznosc (HAR-172, korekta krytyka) -------------
+
+# Zespol z pustego napisu zamiast z sesji: wlasny run nie jest znaleziony (404 zamiast 200).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "run_id, k.tenant_id, body.decyzja, body.powod)"
+zamien = 'run_id, "", body.decyzja, body.powod)'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# Powod gubiony po drodze do serwisu: odrzucenie z powodem dostaje odmowe (brak powodu).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "run_id, k.tenant_id, body.decyzja, body.powod)"
+zamien = "run_id, k.tenant_id, body.decyzja, None)"
+test = "tests/test_decyzja_na_bramce.py::test_odrzucenie_przez_api_konczy_run_rejected_z_powodem_i_nie_wysyla_polecenia"
+
+# Powod zapisany w zdarzeniu: bez niego tekst zdarzenia nie ma powodu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "run_id, k.tenant_id, body.decyzja, body.powod)"
+zamien = "run_id, k.tenant_id, body.decyzja, None)"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_z_powodem_zapisuje_powod_w_zdarzeniu"
+
+# Zamienione miejscami decyzja i powod.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "run_id, k.tenant_id, body.decyzja, body.powod)"
+zamien = "run_id, k.tenant_id, body.powod, body.decyzja)"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# Sciezka trasy: pod adresem z kontraktu nie ma trasy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.post("/api/runs/{run_id}/decision", response_model=DecyzjaPrzyjeta,'
+zamien = '@app.post("/api/runs/{run_id}/decyzja", response_model=DecyzjaPrzyjeta,'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.post("/api/runs/{run_id}/decision", response_model=DecyzjaPrzyjeta,'
+zamien = '@app.post("/api/runs/{run_id}/decyzja", response_model=DecyzjaPrzyjeta,'
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+# Model odpowiedzi innego rodzaju niz DecyzjaPrzyjeta: odpowiedz nie przechodzi walidacji.
+# Samo USUNIECIE `response_model=DecyzjaPrzyjeta` jest mutantem rownowaznym: funkcja ma adnotacje
+# zwrotna `-> DecyzjaPrzyjeta`, z ktorej FastAPI bierze ten sam model, wiec zadne wejscie (odpowiedz,
+# schemat OpenAPI) nie odroznia obu wersji - dlatego wiersza dla usuniecia nie ma.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.post("/api/runs/{run_id}/decision", response_model=DecyzjaPrzyjeta,'
+zamien = '@app.post("/api/runs/{run_id}/decision", response_model=ZdarzeniePrzyjete,'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# Zaleznosc sesji strumieniowej zamiast zwyklej sesji w trasie decyzji.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: DecyzjaIn,\n    k: Kontekst = Depends(kontekst_sesji),\n"
+zamien = "    body: DecyzjaIn,\n    k: Kontekst = Depends(kontekst_sesji_strumienia),\n"
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+# Zdarzenie na szyne z rekordu runu zamiast zdarzenia decyzji.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "ev = wynik.zdarzenie"
+zamien = "ev = wynik.run"
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+# --- schematy decyzji: baza klasy i nazwy pol --------------------------------------------------------
+
+# Odpowiedz dziedziczy wejscie: wymaga pol `decyzja`, ktorych odpowiedz nie ma - walidacja odpowiedzi pada.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class DecyzjaPrzyjeta(BaseModel):"
+zamien = "class DecyzjaPrzyjeta(DecyzjaIn):"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# Wejscie dziedziczy po innym modelu: wymaga dodatkowego pola `run_id` w ciele, wiec poprawne
+# zatwierdzenie dostaje 422.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class DecyzjaIn(BaseModel):"
+zamien = "class DecyzjaIn(RunUtworzony):"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    decyzja: Literal["approve", "reject"]'
+zamien = '    decyzja_: Literal["approve", "reject"]'
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    powod: str | None = Field(None, max_length=2000)\n"
+zamien = "    powod_: str | None = Field(None, max_length=2000)\n"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_z_powodem_zapisuje_powod_w_zdarzeniu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    run_id: str\n    status: RunStatus\n"
+zamien = "    id_runu: str\n    status: RunStatus\n"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    status: RunStatus\n    step_id: str\n"
+zamien = "    stan: RunStatus\n    step_id: str\n"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    step_id: str\n    reason: str | None\n\n\nclass ZdarzeniePrzyjete"
+zamien = "    krok: str\n    reason: str | None\n\n\nclass ZdarzeniePrzyjete"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    reason: str | None\n\n\nclass ZdarzeniePrzyjete"
+zamien = "    powod: str | None\n\n\nclass ZdarzeniePrzyjete"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+# --- serwis decyzji: pola wyniku `Decyzja` ------------------------------------------------------------
+# Zmiana samej ADNOTACJI typu pola (np. `Run` -> `int`) jest mutantem rownowaznym: dataclass nie
+# sprawdza typow w czasie dzialania, wiec zadne wejscie nie odroznia wersji - wiersze dotycza nazw pol.
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = "class Decyzja:\n    run: Run\n"
+zamien = "class Decyzja:\n    run_: Run\n"
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_kolejkuje_runnerowi_runu_polecenie_resume_z_id_kroku"
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = "    run: Run\n    step_id: str "
+zamien = "    run: Run\n    krok: str "
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run_running_i_krok_bramki"
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = "    polecenie: dict | None  "
+zamien = "    polecenie_: dict | None  "
+test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_kolejkuje_runnerowi_runu_polecenie_resume_z_id_kroku"
+
+[[mutant]]
+plik = "src/cockpit/services/decyzje.py"
+szukaj = "    zdarzenie: Event "
+zamien = "    zdarzenie_: Event "
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+# --- checkpoint: pola dataclass (nazwy pol = klucze JSON na dysku) -----------------------------------
+# Zmiana samej ADNOTACJI typu pola jest mutantem rownowaznym (dataclass nie sprawdza typow w czasie
+# dzialania; odczyt waliduje ksztalt osobno w _napis/_krok) - wiersze dotycza nazw pol.
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "class Oczekiwanie:\n    step_id: str\n"
+zamien = "class Oczekiwanie:\n    krok_id: str\n"
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_na_dysku_ma_dokladnie_klucze_z_kontraktu"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    od: str "
+zamien = "    kiedy: str "
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_na_dysku_ma_dokladnie_klucze_z_kontraktu"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "class StanKrokuCheckpointu:\n    stan: str"
+zamien = "class StanKrokuCheckpointu:\n    stan_: str"
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_na_dysku_ma_dokladnie_klucze_z_kontraktu"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    proby: int "
+zamien = "    proby_: int "
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_na_dysku_ma_dokladnie_klucze_z_kontraktu"
+
+# Pola Checkpoint: modul tests/test_bramka_zatwierdzenia.py buduje Checkpoint w parametrize przy
+# imporcie, wiec zmiana nazwy pola psuje tam zbieranie testow (kod 4, brak dowodu). Test silnika
+# nie importuje checkpointu: silnik buduje Checkpoint(run_id=...) i mutant konczy go TypeError.
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "class Checkpoint:\n    run_id: str\n"
+zamien = "class Checkpoint:\n    id_runu: str\n"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    repozytorium: str\n    workflow: str\n"
+zamien = "    repo: str\n    workflow: str\n"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    workflow: str\n    base_commit: str\n"
+zamien = "    przeplyw: str\n    base_commit: str\n"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    base_commit: str\n    worktree: str\n"
+zamien = "    commit: str\n    worktree: str\n"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    worktree: str\n    kroki: dict"
+zamien = "    drzewo: str\n    kroki: dict"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    kroki: dict[str, StanKrokuCheckpointu]\n"
+zamien = "    stany: dict[str, StanKrokuCheckpointu]\n"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+[[mutant]]
+plik = "src/runner/checkpoint.py"
+szukaj = "    waiting_on: Oczekiwanie | None\n"
+zamien = "    czeka_na: Oczekiwanie | None\n"
+test = "tests/test_silnik_runu.py::test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta"
+
+# --- silnik: pole `repozytorium` w `Przygotowany` ------------------------------------------------------
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "    projekt: Projekt\n    repozytorium: Path\n"
+zamien = "    projekt: Projekt\n    repo: Path\n"
+test = "tests/test_bramka_zatwierdzenia.py::test_checkpoint_opisuje_run_repozytorium_workflow_commit_i_worktree"

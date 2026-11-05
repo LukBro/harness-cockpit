@@ -676,3 +676,93 @@ def test_migracja_zostawia_zdarzeniu_bez_proby_probe_nieznana_a_nie_pierwsza(cfg
         return c.execute(text("SELECT attempt FROM event WHERE id = 'e1'")).one()[0]
 
     assert _z_polaczeniem(zapytaj) is None
+
+
+# --- HAR-172: status runu `rejected` (odrzucony na bramce) ---
+
+
+def _wstaw_run_ze_statusem(c, id_runu: str, status: str, powod_sql: str = "NULL") -> None:
+    """Surowy SQL, nie model: test nie zalezy od wartosci enuma w `RunStatus`."""
+    c.execute(
+        text(
+            "INSERT INTO run (id, tenant_id, runner_kind, workflow, status, reason, created_at) "
+            f"VALUES ('{id_runu}', 't1', 'local', 'wf', '{status}', {powod_sql}, now())"
+        )
+    )
+
+
+def _statusy_i_powody_runow() -> dict[str, tuple[str, str | None]]:
+    def zapytaj(c):
+        wiersze = c.execute(text("SELECT id, status::text, reason FROM run ORDER BY id"))
+        return {w[0]: (w[1], w[2]) for w in wiersze}
+
+    return _z_polaczeniem(zapytaj)
+
+
+def test_migracja_run_odrzucony_dodaje_wartosc_rejected_do_typu_statusu_runu(cfg):
+    command.upgrade(cfg, "0010")
+    assert "rejected" not in _wartosci_enuma("runstatus")  # kontrast: przed migracja wartosci nie ma
+
+    command.upgrade(cfg, "0011")
+
+    assert "rejected" in _wartosci_enuma("runstatus")
+    assert _wartosci_enuma("runstatus") == {m.name for m in RunStatus}
+
+
+def test_po_migracji_run_odrzucony_zapisuje_sie_z_powodem_i_wraca_z_bazy(cfg):
+    command.upgrade(cfg, "head")
+
+    def wstaw(c):
+        _wstaw_zespol(c)
+        _wstaw_run_ze_statusem(c, "r1", "rejected", "'nie ten plan'")
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    assert _statusy_i_powody_runow() == {"r1": ("rejected", "nie ten plan")}
+
+
+def test_migracja_run_odrzucony_przechodzi_gdy_wartosc_rejected_juz_istnieje_w_typie(cfg):
+    command.upgrade(cfg, "0010")
+
+    def dodaj_recznie(c):
+        c.execute(text("ALTER TYPE runstatus ADD VALUE 'rejected'"))
+        c.commit()
+
+    _z_polaczeniem(dodaj_recznie)
+
+    command.upgrade(cfg, "0011")                   # bez IF NOT EXISTS: duplicate_object
+
+    assert "rejected" in _wartosci_enuma("runstatus")
+
+
+def test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_usuwa_wartosc_z_typu(cfg):
+    command.upgrade(cfg, "head")
+
+    def wstaw(c):
+        _wstaw_zespol(c)
+        _wstaw_run_ze_statusem(c, "r1", "rejected", "'nie ten plan'")
+        _wstaw_run_ze_statusem(c, "r2", "to_accept")
+        _wstaw_run_ze_statusem(c, "r3", "failed", "'nieudane kroki: a'")
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    command.downgrade(cfg, "0010")
+
+    # tylko `rejected` zmienia status; powod zostaje; pozostale runy bez zmian
+    assert _statusy_i_powody_runow() == {
+        "r1": ("failed", "nie ten plan"),
+        "r2": ("to_accept", None),
+        "r3": ("failed", "nieudane kroki: a"),
+    }
+    assert _wartosci_enuma("runstatus") == {m.name for m in RunStatus} - {"rejected"}
+    _, typy = _tabele_i_typy_w_public()
+    assert "runstatus" in typy and "runstatus_old" not in typy   # typ przebudowany, bez smieci
+
+    def typ_kolumny(c):
+        return c.execute(text(
+            "SELECT udt_name FROM information_schema.columns "
+            "WHERE table_name = 'run' AND column_name = 'status'")).one()[0]
+
+    assert _z_polaczeniem(typ_kolumny) == "runstatus"
