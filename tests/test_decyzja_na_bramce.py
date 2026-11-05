@@ -545,6 +545,40 @@ async def test_naruszenie_niezmiennika_przy_decyzji_to_naruszony_niezmiennik_i_b
     assert await _stan(swiat.maker, run_id) == przed
 
 
+async def test_naruszenie_niezmiennika_przy_decyzji_podaje_nazwe_niezmiennika_i_szczegol_w_komunikacie(
+    swiat, monkeypatch,
+):
+    monkeypatch.setattr(
+        walidacja, "sprawdz_decyzje",
+        lambda krok_ma_approval, d: Naruszenie(Niezmiennik.approval_required, "brak decyzji"))
+    run_id = await _run_na_bramce(swiat)
+
+    with pytest.raises(NaruszonyNiezmiennik) as blad:
+        await _decyzja(swiat, run_id, "approve")
+
+    assert blad.value.nazwa == Niezmiennik.approval_required
+    assert str(blad.value) == f"niezmiennik {Niezmiennik.approval_required}: brak decyzji"
+
+
+async def test_odmowa_runowi_ktory_nie_czeka_mowi_czlowiekowi_ze_run_nie_czeka_na_decyzje(swiat):
+    run_id = await _run_na_bramce(swiat)
+    await _ustaw_status(swiat.maker, run_id, "running")
+
+    with pytest.raises(StanNiemozliwy) as blad:
+        await _decyzja(swiat, run_id, "approve")
+
+    assert str(blad.value) == "run nie czeka na decyzje czlowieka"
+
+
+async def test_odmowa_odrzucenia_bez_powodu_mowi_czlowiekowi_ze_odrzucenie_wymaga_powodu(swiat):
+    run_id = await _run_na_bramce(swiat)
+
+    with pytest.raises(NiespojneDane) as blad:
+        await _decyzja(swiat, run_id, "reject", None)
+
+    assert str(blad.value) == "odrzucenie wymaga powodu"
+
+
 async def test_niezmiennik_jest_sprawdzany_po_stanie_runu_run_ktory_nie_czeka_to_stan_niemozliwy(
     swiat, monkeypatch,
 ):
