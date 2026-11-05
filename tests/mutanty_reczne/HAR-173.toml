@@ -283,7 +283,10 @@ test = "tests/e2e/test_bramka_w_przegladarce.py::test_pole_powodu_jest_puste_gdy
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''      setStatus(przyjeta.status);
 '''
-zamien = ''''''
+# `void przyjeta`, nie pusta zamiana: bez uzycia zmiennej tsc konczy build bledem TS6133
+# i narzedzie zglasza blad (kod 2) zamiast zabitego mutanta.
+zamien = '''      void przyjeta;
+'''
 test = "tests/e2e/test_bramka_w_przegladarce.py::test_odpowiedz_na_decyzje_zmienia_widok_od_razu_bez_czekania_na_ponowne_pobranie_runu"
 
 # Po przyjetej decyzji widok nie pobiera runu (brak powodu odrzucenia w napisie).
