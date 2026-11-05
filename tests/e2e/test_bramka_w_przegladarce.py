@@ -457,7 +457,8 @@ def test_drugie_zadanie_decyzji_nie_wychodzi_gdy_pierwsze_jest_w_locie_nawet_prz
     _zatwierdz(page).click()
     _czekaj_na(page, lambda: len(wstrzymane) == 1, "zadanie decyzji w locie")
 
-    # omija blokade przycisku: broni zostaje sama funkcja wysylajaca
+    # zdejmuje atrybut DOM i klika: drugie zadanie blokuje tylko disabled w propsach Reacta
+    # (React nie wola onClick wylaczonego przycisku), nie sam atrybut na stronie
     _zatwierdz(page).evaluate("b => { b.disabled = false; b.click(); }")
 
     page.wait_for_timeout(400)

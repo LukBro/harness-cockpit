@@ -5,9 +5,7 @@
 # i przegladarki; wiersze z `runner_online` startuja prawdziwego runnera.
 #
 # Elementy bez wiersza (rownowazne - zadne wejscie nie odroznia wersji):
-#   - `!id ||` w wyslijDecyzje: przyciski bramki renderuja sie tylko przy `runId`, wiec `id` jest zawsze niepusty;
-#   - `if (nieaktualny()) return;` PO `await r.json()` (dwa miejsca): pierwsza kontrola po `fetchZSesja`
-#     konczy funkcje wczesniej, a rozbieznosc `runId` w oknie samego parsowania JSON nie da sie wywolac;
+#   - `if (!id) return;` w wyslijDecyzje: przyciski bramki renderuja sie tylko przy `runId`, wiec `id` jest zawsze niepusty;
 #   - `.encode("utf-8")` -> `.encode("UTF-8")` w `_zapisz_decyzje`: nazwy kodekow Pythona sa
 #     niewrazliwe na wielkosc liter (codecs.lookup normalizuje nazwe), oba wywolania zwracaja te same bajty;
 #   - `ensure_ascii=False` -> `ensure_ascii=None` w `_zapisz_decyzje`: json czyta flage jako bool.
@@ -145,11 +143,13 @@ zamien = '''{ decyzja: "approve" })} disabled={false}>'''
 test = "tests/e2e/test_bramka_w_przegladarce.py::test_w_trakcie_wysylania_decyzji_oba_przyciski_sa_wylaczone_a_po_odpowiedzi_znowu_aktywne"
 
 # --- blokada podwojnego zadania -----------------------------------------------------------------
+# Broni jej disabled w propsach przycisku (React nie wola onClick wylaczonego przycisku), nie
+# atrybut DOM: test zdejmuje atrybut i klika, wiec drugie zadanie wychodzi tylko bez blokady w propsach.
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
-szukaj = '''if (!id || wysylamDecyzje) return;'''
-zamien = '''if (!id) return;'''
+szukaj = '''{ decyzja: "approve" })} disabled={wysylamDecyzje}>'''
+zamien = '''{ decyzja: "approve" })} disabled={false}>'''
 test = "tests/e2e/test_bramka_w_przegladarce.py::test_drugie_zadanie_decyzji_nie_wychodzi_gdy_pierwsze_jest_w_locie_nawet_przy_wlaczonym_przycisku"
 
 # Stan "wysylam" nie wraca po odpowiedzi.
@@ -319,21 +319,20 @@ szukaj = '''  runIdRef.current = runId;
 zamien = ''''''
 test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_na_decyzje_runu_a_po_przejsciu_na_run_b_nie_pokazuje_bledu_w_runie_b"
 
-# Kontrola po odpowiedzi: spozniona odpowiedz (odmowa) trafia do nowego runu.
+# Kontrola po ostatnim await galezi odmowy: spozniona odmowa trafia do nowego runu.
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
-szukaj = '''      if (nieaktualny()) return;
-      if (!r.ok) {'''
-zamien = '''      if (!r.ok) {'''
+szukaj = '''        if (nieaktualny()) return;
+        setBladDecyzji('''
+zamien = '''        setBladDecyzji('''
 test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_na_decyzje_runu_a_po_przejsciu_na_run_b_nie_pokazuje_bledu_w_runie_b"
 
-# Ta sama kontrola, galaz sukcesu: spozniona przyjeta decyzja zmienia status nowego runu.
+# Kontrola po ostatnim await galezi sukcesu: spozniona przyjeta decyzja zmienia status nowego runu.
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
 szukaj = '''      if (nieaktualny()) return;
-      if (!r.ok) {'''
-zamien = '''      if (!r.ok && nieaktualny()) return;
-      if (!r.ok) {'''
+      setStatus(przyjeta.status);'''
+zamien = '''      setStatus(przyjeta.status);'''
 test = "tests/e2e/test_bramka_w_przegladarce.py::test_przyjeta_decyzja_runu_a_po_przejsciu_na_run_b_nie_zmienia_stanu_runu_b"
 
 # --- napis "odrzucony" -------------------------------------------------------------------------------

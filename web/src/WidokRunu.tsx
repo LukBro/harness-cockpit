@@ -230,7 +230,9 @@ export function WidokRunu({
 
   async function wyslijDecyzje(tresc: DecyzjaIn) {
     const id = runId;
-    if (!id || wysylamDecyzje) return;
+    // Podwojnego zadania broni disabled={wysylamDecyzje} na obu przyciskach: React nie wola
+    // onClick przycisku wylaczonego w propsach, wiec handler z wysylamDecyzje=true nie startuje.
+    if (!id) return;
     setWysylamDecyzje(true);
     setBladDecyzji(null);
     const nieaktualny = () => runIdRef.current !== id;
@@ -240,7 +242,8 @@ export function WidokRunu({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(tresc),
       });
-      if (nieaktualny()) return;
+      // Zmiane runu sprawdzamy dopiero po ostatnim await galezi (po r.json()): spozniona
+      // odpowiedz runu A nie moze dotknac widoku runu B takze w oknie parsowania ciala.
       if (!r.ok) {
         // detail z JSON, a gdy go brak albo nie jest napisem: kod HTTP. Nigdy cisza.
         const detail = await r.json().then(
