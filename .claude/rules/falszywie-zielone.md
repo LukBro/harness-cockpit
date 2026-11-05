@@ -47,3 +47,27 @@ zmian zgłaszałby „brak zmienionych funkcji” na maszynie z `diff.noprefix` 
   nigdy do kodu 0 (HAR-144).
 
 Co sprawdzić w review: każdy z powyższych kształtów = **-25**.
+
+## Regresja (retro M1.7)
+
+Źródło: 5 ticketów M1.7 z -25 u backend-python (HAR-78, HAR-87, HAR-89, HAR-151, HAR-152 —
+ten ostatni w czterech rundach z rzędu, limit poprawek wyczerpany). Nowe kształty:
+
+- **Kod wyjścia o kilku znaczeniach** — u gita kod 1 znaczy i „różni się”, i „błąd”
+  (`diff --no-index`), kod 127 z `ps` znaczy „brak narzędzia”, nie „proces nie żyje”. Kod
+  sprawdzasz razem z danymi wyjścia: pusty albo niezrozumiany wynik przy kodzie „różni się”
+  to błąd, a strażnik, który nie może ocenić stanu, traktuje go jak zajęty, nigdy jak zgodę
+  na akcję destrukcyjną (HAR-89, HAR-151).
+- **Parser pomija element niezgodny z formatem** — element wyglądający na objęty regułą
+  (`## L-12` zamiast `## L-012`, niedomknięty blok kodu) jest błędem walidatora, nie zwykłą
+  sekcją przepuszczaną z kodem 0 (HAR-87).
+- **Zdarzenie zamykające po utraconym dowodzie** — `run_finished` (werdykt, koniec całości)
+  wysyłasz dopiero po potwierdzeniu, że zdarzenie kroku, z którego kokpit wylicza wynik,
+  zostało przyjęte; utracony dowód nigdy nie kończy się stanem sukcesu (HAR-78).
+- **Model zasięgu zewnętrznego narzędzia** (powtórka z M1.6, HAR-144) — przybliżenie przez
+  AST zamiast mechanizmu narzędzia: pragma `end` na końcu linii z kodem, `end` w miejscu,
+  którego `PragmaVisitor` nie czyta, nazwy z `NEVER_MUTATE_FUNCTION_NAMES` tylko na najwyższym
+  poziomie. Gdy narzędzie ma własny parser, wołasz jego kod (`PragmaVisitor` zainstalowanego
+  mutmuta), a nie piszesz drugi (HAR-152).
+
+Co sprawdzić w review: każdy z powyższych kształtów = **-25**.
