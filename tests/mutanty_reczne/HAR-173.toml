@@ -9,7 +9,9 @@
 #   - `if (nieaktualny()) return;` PO `await r.json()` (dwa miejsca): pierwsza kontrola po `fetchZSesja`
 #     konczy funkcje wczesniej, a rozbieznosc `runId` w oknie samego parsowania JSON nie da sie wywolac;
 #   - `.encode("utf-8")` -> `.encode("UTF-8")` w `_zapisz_decyzje`: nazwy kodekow Pythona sa
-#     niewrazliwe na wielkosc liter (codecs.lookup normalizuje nazwe), oba wywolania zwracaja te same bajty.
+#     niewrazliwe na wielkosc liter (codecs.lookup normalizuje nazwe), oba wywolania zwracaja te same bajty;
+#   - `ensure_ascii=False` -> `ensure_ascii=None` w `_zapisz_decyzje`: json czyta flage jako bool.
+#   Obie linie maja `# pragma: no mutate`; warianty, ktore wejscie odroznia (True, inne kodowanie), maja wiersze nizej.
 
 # =====================================================================================
 # web/src/WidokRunu.tsx: widok bramki
@@ -620,6 +622,13 @@ test = "tests/test_wznowienie_runu.py::test_blokady_runow_nie_zostaja_w_pamieci_
 plik = "src/runner/silnik.py"
 szukaj = '''}, ensure_ascii=False)'''
 zamien = '''}, ensure_ascii=True)'''
+test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_zapisuje_polskie_znaki_powodu_doslownie_w_utf8"
+
+# Artefakt decyzji w innym kodowaniu niz UTF-8 (linia z `# pragma: no mutate`, bo mutant UTF-8 jest rownowazny).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''bajty = tresc.encode("utf-8")'''
+zamien = '''bajty = tresc.encode("utf-16")'''
 test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_zapisuje_polskie_znaki_powodu_doslownie_w_utf8"
 
 # Wspolna blokada dla wszystkich runow.

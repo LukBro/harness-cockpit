@@ -359,9 +359,13 @@ def _zapisz_decyzje(
     tresc = json.dumps({
         "run_id": run_id, "step_id": step_id, "decyzja": decyzja, "powod": powod,
         "czas": datetime.now(timezone.utc).isoformat(),
-    }, ensure_ascii=False)
+    # mutant None jest rownowazny (json czyta ensure_ascii jako bool); wariant True chroni reczny mutant
+    }, ensure_ascii=False)  # pragma: no mutate
+    # mutant UTF-8 jest rownowazny (codecs.lookup nie rozroznia wielkosci liter w nazwie kodeka);
+    # inne kodowanie chroni reczny mutant
+    bajty = tresc.encode("utf-8")  # pragma: no mutate
     try:
-        _zapisz_atomowo(p.worktree.sciezka / _sciezka_decyzji(step_id), tresc.encode("utf-8"))
+        _zapisz_atomowo(p.worktree.sciezka / _sciezka_decyzji(step_id), bajty)
     except OSError as e:
         raise BladWznowienia(f"zapis artefaktu decyzji dla kroku {step_id}: {e}") from e
 
