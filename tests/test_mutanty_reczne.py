@@ -2530,16 +2530,19 @@ def _git_w_korzeniu(*argv: str) -> tuple[int, bytes, str]:
     return proces.returncode, wyjscie, blad.decode("utf-8", errors="replace")
 
 
+def _korzen_gita() -> Path:
+    """Korzen repozytorium gita, takze pod mutmut, gdzie KORZEN to podkatalog mutants/ z kodem
+    przepisanym przez mutmut (kazda funkcja w wielu kopiach) i bez czesci plikow repozytorium."""
+    kod, wyjscie, blad = _git_w_korzeniu("rev-parse", "--show-toplevel")
+    assert kod == 0, blad
+    return Path(wyjscie.decode("utf-8").strip())
+
+
 def _wypakuj_commit(commit: str, cel: Path, tabele: set[str]) -> None:
     """Wypakowuje pliki commitu do `cel`; z `tests/mutanty_reczne/` tylko wskazane tabele."""
     # git archive uruchomiony w podkatalogu repozytorium pakuje tylko ten podkatalog. Pod mutmut
-    # KORZEN to mutants/, ktorego w starym commicie nie ma - tar bylby pusty. Archiwum robimy
-    # z korzenia repozytorium gita.
-    kod, korzen_gita, blad = _git_w_korzeniu("rev-parse", "--show-toplevel")
-    assert kod == 0, blad
-    kod, tar_bajty, blad = _git_w_korzeniu(
-        "-C", korzen_gita.decode("utf-8").strip(), "archive", "--format=tar", commit
-    )
+    # KORZEN to mutants/, ktorego w starym commicie nie ma - tar bylby pusty.
+    kod, tar_bajty, blad = _git_w_korzeniu("-C", str(_korzen_gita()), "archive", "--format=tar", commit)
     assert kod == 0, blad
     with tarfile.open(fileobj=io.BytesIO(tar_bajty)) as archiwum:
         for czlonek in archiwum.getmembers():
@@ -2584,7 +2587,9 @@ def test_stan_sprzed_naprawy_ma_dokladnie_cztery_zepsute_wiersze_tabel_har_0_i_h
 
 
 def test_wszystkie_tabele_recznych_mutantow_w_repozytorium_wskazuja_istniejacy_kod_i_testy(capsys):
-    kod = _sprawdz_wszystkie(KORZEN)
+    # Tabele celuja w oryginalny kod: pod mutmut kopia w mutants/ ma funkcje powielone przez
+    # mutmut, wiec `szukaj` wystepowaloby tam wiele razy.
+    kod = _sprawdz_wszystkie(_korzen_gita())
 
     zrzut = capsys.readouterr()
     assert kod == 0, zrzut.err
@@ -2850,10 +2855,11 @@ def _stary_stan_z_aktualnych_plikow(repo: Path) -> None:
     (repo / WYPELNIACZ_PLIK).parent.mkdir(parents=True, exist_ok=True)
     (repo / WYPELNIACZ_PLIK).write_text("x = 1\n", encoding="utf-8")
     testy: dict[str, set[str]] = {"tests/test_wypelniacz.py": {"test_wypelniacz"}}
+    korzen = _korzen_gita()
     for pola in STARE_WIERSZE.values():
         cel = repo / pola["plik"]
         cel.parent.mkdir(parents=True, exist_ok=True)
-        cel.write_bytes((KORZEN / pola["plik"]).read_bytes())
+        cel.write_bytes((korzen / pola["plik"]).read_bytes())
         plik_testu, _, nazwa = pola["test"].partition("::")
         testy.setdefault(plik_testu, set()).add(nazwa)
     for plik_testu, nazwy in testy.items():
@@ -2892,6 +2898,6 @@ def test_stan_sprzed_naprawy_zbudowany_z_aktualnych_plikow_daje_kod_2_z_dokladni
     # wiec oczekiwanie liczymy z aktualnego pliku; wiersz psuje sie, gdy wystapien jest wiecej niz jedno.
     for klucz in (("HAR-0.toml", 10), ("HAR-79.toml", 35)):
         pola = STARE_WIERSZE[klucz]
-        ile = (KORZEN / pola["plik"]).read_text(encoding="utf-8").count(pola["szukaj"])
+        ile = (_korzen_gita() / pola["plik"]).read_text(encoding="utf-8").count(pola["szukaj"])
         assert ile > 1, pola
         assert f"wystepuje {ile} razy" in linie[f"{PREFIKS_TABEL}{klucz[0]} #{klucz[1]}"]
