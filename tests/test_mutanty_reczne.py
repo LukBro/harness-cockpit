@@ -8,10 +8,13 @@ Testy używają prawdziwego kodu skryptu. Prawdziwy pytest i git działają wył
 mini-repozytoriach w `tmp_path`; zaślepka `uruchom_test` jest użyta tylko tam, gdzie badamy
 parametry wiersza poleceń (limit czasu), nie wynik testu.
 """
+import io
 import json
 import os
+import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from dataclasses import FrozenInstanceError
@@ -2153,3 +2156,730 @@ def test_limit_budowy_niedodatni_albo_nie_liczba_jest_bledem_wiersza_polecen(
     assert kod == 2
     assert budowania == []
     assert testy == []
+
+
+# =============================================================================
+# HAR-225: `--sprawdz-wszystkie` - kazda tabela, kazdy wiersz, bez nakladania mutacji
+# =============================================================================
+
+PREFIKS_TABEL = "tests/mutanty_reczne/"
+OPCJA_WSZYSTKIE = "--sprawdz-wszystkie"
+TEST_PARAMETRYZOWANY = "tests/test_param.py::test_parametryzowany"
+TEST_PARAM = """\
+import pytest
+
+
+@pytest.mark.parametrize("wartosc", [1, 2])
+def test_parametryzowany(wartosc):
+    assert wartosc
+
+
+def test_ab():
+    assert True
+"""
+COMMIT_PRZED_NAPRAWA = "74e176e7937cfaad47b0f1a946ef150c623ca7b7"
+
+
+def _tabela_w_repo(repo: Path, nazwa: str, tresc: str) -> None:
+    (repo / "tests" / "mutanty_reczne" / nazwa).write_text(tresc, encoding="utf-8")
+
+
+def _sprawdz_wszystkie(korzen: Path, *dodatkowe: str) -> int:
+    return _main([OPCJA_WSZYSTKIE, "--korzen", str(korzen), *dodatkowe])
+
+
+def _linie_tabel(tekst: str) -> list[str]:
+    """Linie bledow tabel (`tests/mutanty_reczne/<tabela> #n: powod`) z wyjscia."""
+    return [linia for linia in tekst.splitlines() if linia.startswith(PREFIKS_TABEL)]
+
+
+def _adresy_bledow(tekst: str) -> list[str]:
+    """Czesc linii bledu przed pierwszym dwukropkiem: `tabela #n` albo sama `tabela`."""
+    return [linia.split(":", 1)[0] for linia in _linie_tabel(tekst)]
+
+
+def _pliki_repo(repo: Path) -> dict[str, bytes]:
+    return {k: v for k, v in _migawka(repo).items() if "__pycache__" not in Path(k).parts}
+
+
+def _dobry_wiersz(test: str = TEST_DODAWANIE) -> str:
+    return _mutant(SZUKAJ, ZABIJA, test)
+
+
+def _zakaz_wykonywania_mutacji(monkeypatch) -> list[str]:
+    """Podmienia wszystko, co naklada mutacje, kopiuje repo albo uruchamia test, na zapis wywolania + wyjatek."""
+    wywolania: list[str] = []
+
+    def zakaz(nazwa: str):
+        def wolane(*args, **kwargs):
+            wywolania.append(nazwa)
+            raise AssertionError(f"tryb sprawdzenia nie moze wolac {nazwa}")
+
+        return wolane
+
+    for nazwa in ("zastosuj_mutacje", "uruchom_test", "skopiuj_repo", "_zabity", "zbuduj_front"):
+        monkeypatch.setattr(mutanty_reczne, nazwa, zakaz(nazwa))
+    return wywolania
+
+
+def test_poprawne_tabele_daja_kod_0_z_liczba_wierszy_i_tabel_a_repozytorium_zostaje_bez_zmian(
+    tmp_path, capsys, monkeypatch
+):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz() + _mutant("return a - b", "return a + b", TEST_ODEJMOWANIE))
+    _tabela_w_repo(repo, "HAR-2.toml", _mutant(SZUKAJ, PRZEZYWA_A))
+    # Plik niebedacy tabela (.toml) w katalogu tabel nie jest czytany jako tabela.
+    _tabela_w_repo(repo, "notatki.md", "to nie jest toml [[[\n")
+    przed = _pliki_repo(repo)
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 0, zrzut.err
+    assert re.search(r"sprawdzono 3 \w+ w 2 \w+", zrzut.out), zrzut.out
+    assert _linie_tabel(zrzut.err) == []
+    assert wywolania == []
+    assert _pliki_repo(repo) == przed
+
+
+@pytest.mark.parametrize("numer", [1, 2, 3])
+@pytest.mark.parametrize(
+    ("szukaj", "ile"),
+    [("return a - c", 0), ("return a", 2), ("b", MODUL.count("b"))],
+)
+def test_szukaj_wystepujace_inaczej_niz_raz_to_blad_wiersza_z_numerem_i_liczba_wystapien(
+    tmp_path, capsys, numer, szukaj, ile
+):
+    wiersze = [_dobry_wiersz(), _dobry_wiersz(), _dobry_wiersz()]
+    wiersze[numer - 1] = _mutant(szukaj, "zzz")
+    repo = _repo(tmp_path, "".join(wiersze))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    linie = _linie_tabel(zrzut.err)
+    assert kod == 2
+    assert len(linie) == 1, zrzut.err
+    assert linie[0].startswith(f"{TABELA_W_REPO} #{numer}:")
+    assert f"wystepuje {ile} razy" in linie[0]
+    assert PLIK_MODULU in linie[0]
+
+
+def test_bledy_z_kilku_tabel_i_kilku_wierszy_sa_zebrane_naraz_w_kolejnosci_nazw_tabel(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    zly = _mutant("return a - c", "zzz")
+    _tabela_w_repo(repo, "B.toml", _dobry_wiersz() + zly)
+    _tabela_w_repo(repo, "A.toml", zly + _dobry_wiersz() + zly)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    assert kod == 2
+    assert _adresy_bledow(capsys.readouterr().err) == [
+        f"{PREFIKS_TABEL}A.toml #1",
+        f"{PREFIKS_TABEL}A.toml #3",
+        f"{PREFIKS_TABEL}B.toml #2",
+    ]
+
+
+def test_wiersz_z_nieistniejacym_testem_to_kod_2_bez_nakladania_mutacji_i_bez_zmian_w_repozytorium(
+    tmp_path, capsys, monkeypatch
+):
+    repo = _repo(tmp_path)
+    nieistniejacy = "tests/test_modul.py::test_ktorego_nie_ma"
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz() + _dobry_wiersz(nieistniejacy))
+    przed = _pliki_repo(repo)
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    linie = _linie_tabel(zrzut.err)
+    assert kod == 2
+    assert len(linie) == 1, zrzut.err
+    assert linie[0].startswith(f"{PREFIKS_TABEL}HAR-1.toml #2:")
+    assert "nie istnieje" in linie[0]
+    assert nieistniejacy in linie[0]
+    assert wywolania == []
+    assert _pliki_repo(repo) == przed
+
+
+def test_wiersz_z_plikiem_testu_ktorego_nie_ma_na_dysku_to_blad_tego_wiersza_a_reszta_jest_sprawdzana(
+    tmp_path, capsys
+):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(
+        repo, "HAR-1.toml", _dobry_wiersz() + _dobry_wiersz("tests/test_brak.py::test_x") + _dobry_wiersz()
+    )
+
+    kod = _sprawdz_wszystkie(repo)
+
+    linie = _linie_tabel(capsys.readouterr().err)
+    assert kod == 2
+    assert len(linie) == 1, linie
+    assert linie[0].startswith(f"{PREFIKS_TABEL}HAR-1.toml #2:")
+    assert "test_brak.py" in linie[0]
+
+
+@pytest.mark.parametrize(
+    ("test", "oczekiwany_kod"),
+    [
+        (TEST_PARAMETRYZOWANY, 0),
+        (f"{TEST_PARAMETRYZOWANY}[2]", 0),
+        (f"{TEST_PARAMETRYZOWANY}[zly]", 2),
+        ("tests/test_param.py::test_ab", 0),
+        # Prefiks nazwy innej funkcji: bez zawezenia do `[` przeszedlby jako istniejacy.
+        ("tests/test_param.py::test_a", 2),
+        ("tests/test_param.py::test_parametryz", 2),
+    ],
+)
+def test_node_id_funkcji_parametryzowanej_bez_nawiasu_istnieje_ale_prefiks_innej_funkcji_nie(
+    tmp_path, capsys, test, oczekiwany_kod
+):
+    repo = _repo(tmp_path)
+    (repo / "tests" / "test_param.py").write_text(TEST_PARAM, encoding="utf-8")
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz(test))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == oczekiwany_kod, zrzut.err
+    if oczekiwany_kod == 2:
+        linie = _linie_tabel(zrzut.err)
+        assert len(linie) == 1
+        assert linie[0].startswith(f"{PREFIKS_TABEL}HAR-1.toml #1:")
+        assert "nie istnieje" in linie[0]
+
+
+@pytest.mark.parametrize("zawartosc_katalogu", [{}, {"README.md": "notatki\n"}], ids=["pusty", "tylko_md"])
+def test_katalog_tabel_bez_zadnej_tabeli_to_kod_2_a_nie_zielone(tmp_path, capsys, zawartosc_katalogu):
+    repo = _repo(tmp_path)
+    for nazwa, tresc in zawartosc_katalogu.items():
+        _tabela_w_repo(repo, nazwa, tresc)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.startswith("blad: ")
+    # Fragment tylko ze strazy braku tabel; ogolna "zero sprawdzonych wierszy" go nie ma.
+    assert "brak tabel" in zrzut.err
+    assert "mutanty_reczne" in zrzut.err
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_brak_katalogu_tabel_to_kod_2_a_nie_zielone(tmp_path, capsys):
+    korzen = tmp_path / "pusty"
+    korzen.mkdir()
+
+    kod = _sprawdz_wszystkie(korzen)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.startswith("blad: ")
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_tabela_ktorej_wiersze_przeszly_walidacje_ale_jest_ich_zero_to_kod_2_a_nie_zielone(
+    tmp_path, capsys, monkeypatch
+):
+    repo = _repo(tmp_path, _dobry_wiersz())
+    monkeypatch.setattr(mutanty_reczne, "wczytaj_tabele", lambda sciezka: [])
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.strip() != ""
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_pusta_tabela_bez_wierszy_to_kod_2_z_linia_tabeli(tmp_path, capsys):
+    repo = _repo(tmp_path, "mutant = []\n")
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _adresy_bledow(zrzut.err) == [TABELA_W_REPO]
+    assert "sprawdzono" not in zrzut.out
+
+
+@pytest.mark.parametrize(
+    "tresc",
+    [
+        "to nie jest toml [[[\n",
+        "mutant = []\n",
+        "",
+        "inne = 1\n" + _mutant(SZUKAJ, ZABIJA),
+    ],
+    ids=["zly_toml", "pusta_lista", "pusty_plik", "nieznany_klucz_najwyzszego_poziomu"],
+)
+def test_blad_calej_tabeli_ma_linie_bez_numeru_a_pozostale_tabele_sa_dalej_sprawdzane(tmp_path, capsys, tresc):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(repo, "A.toml", tresc)
+    _tabela_w_repo(repo, "B.toml", _dobry_wiersz() + _mutant("return a - c", "zzz"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    linie = _linie_tabel(zrzut.err)
+    assert kod == 2
+    assert len(linie) == 2, zrzut.err
+    assert linie[0].startswith(f"{PREFIKS_TABEL}A.toml:")
+    assert linie[1].startswith(f"{PREFIKS_TABEL}B.toml #2:")
+
+
+@pytest.mark.parametrize(
+    ("wpis", "fragment"),
+    [
+        (_wpis(plik=PLIK_MODULU, szukaj=SZUKAJ, zamien=SZUKAJ, test=TEST_DODAWANIE), "tozsamosciowy"),
+        (_wpis(plik=PLIK_MODULU, szukaj=SZUKAJ, zamien=ZABIJA), "brak pola 'test'"),
+        (_wpis(plik=PLIK_MODULU, szukaj=SZUKAJ, zamien=5, test=TEST_DODAWANIE), "'zamien'"),
+        (_wpis(plik="/etc/passwd", szukaj=SZUKAJ, zamien=ZABIJA, test=TEST_DODAWANIE), "/etc/passwd"),
+        (_wpis(plik="../poza.py", szukaj=SZUKAJ, zamien=ZABIJA, test=TEST_DODAWANIE), "../poza.py"),
+    ],
+    ids=["szukaj_rowne_zamien", "brak_pola", "zly_typ", "plik_absolutny", "plik_z_kropkami"],
+)
+def test_niepoprawny_wpis_ma_linie_z_numerem_i_powodem_a_nastepne_wiersze_sa_dalej_sprawdzane(
+    tmp_path, capsys, wpis, fragment
+):
+    repo = _repo(tmp_path, _dobry_wiersz() + wpis + _mutant("return a - c", "zzz"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    linie = _linie_tabel(capsys.readouterr().err)
+    assert kod == 2
+    assert len(linie) == 2, linie
+    assert linie[0].startswith(f"{TABELA_W_REPO} #2:")
+    assert fragment in linie[0]
+    assert linie[1].startswith(f"{TABELA_W_REPO} #3:")
+    assert "wystepuje 0 razy" in linie[1]
+
+
+@pytest.mark.parametrize(
+    "zepsuty_plik",
+    ["def test_x(:\n    pass\n", "import modul_ktorego_nie_ma\n\n\ndef test_x():\n    pass\n"],
+    ids=["blad_skladni", "blad_importu"],
+)
+def test_blad_kolekcji_pytesta_to_kod_2_a_nie_zielone(tmp_path, capsys, zepsuty_plik):
+    repo = _repo(tmp_path)
+    (repo / "tests" / "test_zepsuty.py").write_text(zepsuty_plik, encoding="utf-8")
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz() + _dobry_wiersz("tests/test_zepsuty.py::test_x"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.strip() != ""
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_przekroczony_limit_czasu_kolekcji_to_kod_2_a_nie_wyjatek_ani_zielone(tmp_path, capsys):
+    repo = _repo(tmp_path, _dobry_wiersz())
+
+    kod = _sprawdz_wszystkie(repo, "--limit", "0.001")
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.strip() != ""
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_sprawdz_wszystkie_razem_z_tabela_pozycyjna_to_blad_wiersza_polecen(tmp_path, capsys, monkeypatch):
+    repo = _repo(tmp_path, _dobry_wiersz())
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+
+    kod = _main([OPCJA_WSZYSTKIE, TABELA_W_REPO, "--korzen", str(repo)])
+
+    assert kod == 2
+    assert wywolania == []
+    assert "sprawdzono" not in capsys.readouterr().out
+
+
+def test_skrypt_uruchomiony_jako_program_z_sprawdz_wszystkie_konczy_sie_kodem_2_i_wymienia_zepsuty_wiersz(tmp_path):
+    repo = _repo(tmp_path, _dobry_wiersz() + _mutant("return a - c", "zzz"))
+
+    kod, wyjscie, blad = _uruchom_skrypt(OPCJA_WSZYSTKIE, "--korzen", str(repo))
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert _adresy_bledow(blad) == [f"{TABELA_W_REPO} #2"]
+
+
+def test_skrypt_uruchomiony_jako_program_z_sprawdz_wszystkie_konczy_sie_kodem_0_dla_poprawnych_tabel(tmp_path):
+    repo = _repo(tmp_path, _dobry_wiersz())
+
+    kod, wyjscie, blad = _uruchom_skrypt(OPCJA_WSZYSTKIE, "--korzen", str(repo))
+
+    assert kod == 0, blad
+    assert re.search(r"sprawdzono 1 \w+ w 1 \w+", wyjscie), wyjscie
+
+
+# --- prawdziwe tabele repozytorium --------------------------------------------------
+
+
+def _git_w_korzeniu(*argv: str) -> tuple[int, bytes, str]:
+    proces = uruchom_proces_sync(
+        ["git", *argv], cwd=KORZEN, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    try:
+        wyjscie, blad = proces.communicate(timeout=120)
+    finally:
+        zakoncz_proces_sync(proces, nazwa=f"git {argv[0]} w korzeniu repozytorium")
+    return proces.returncode, wyjscie, blad.decode("utf-8", errors="replace")
+
+
+def _wypakuj_commit(commit: str, cel: Path, tabele: set[str]) -> None:
+    """Wypakowuje pliki commitu do `cel`; z `tests/mutanty_reczne/` tylko wskazane tabele."""
+    kod, tar_bajty, blad = _git_w_korzeniu("archive", "--format=tar", commit)
+    assert kod == 0, blad
+    with tarfile.open(fileobj=io.BytesIO(tar_bajty)) as archiwum:
+        for czlonek in archiwum.getmembers():
+            if not czlonek.isfile():
+                continue
+            if czlonek.name.startswith(PREFIKS_TABEL) and czlonek.name not in tabele:
+                continue
+            plik = archiwum.extractfile(czlonek)
+            assert plik is not None
+            sciezka = cel / czlonek.name
+            sciezka.parent.mkdir(parents=True, exist_ok=True)
+            sciezka.write_bytes(plik.read())
+
+
+def test_stan_sprzed_naprawy_ma_dokladnie_cztery_zepsute_wiersze_tabel_har_0_i_har_79(tmp_path, capsys):
+    # Commit 74e176e to origin/main z czterema zepsutymi wierszami (HAR-225). Obiekt zostaje w historii
+    # takze po naprawie; w plytkim klonie (checkout bez historii) nie ma go jak odczytac.
+    kod_gita, _, _ = _git_w_korzeniu("cat-file", "-e", f"{COMMIT_PRZED_NAPRAWA}^{{commit}}")
+    if kod_gita != 0:
+        _, plytki, _ = _git_w_korzeniu("rev-parse", "--is-shallow-repository")
+        if plytki.strip() == b"true":
+            pytest.skip("plytki klon: brak commitu 74e176e - kryterium sprawdza job z pelna historia")
+        pytest.fail(f"brak commitu {COMMIT_PRZED_NAPRAWA} w historii repozytorium")
+    stary = tmp_path / "stary-main"
+    stary.mkdir()
+    _wypakuj_commit(
+        COMMIT_PRZED_NAPRAWA, stary, {f"{PREFIKS_TABEL}HAR-0.toml", f"{PREFIKS_TABEL}HAR-79.toml"}
+    )
+
+    kod = _sprawdz_wszystkie(stary)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2, zrzut.out
+    assert sorted(_adresy_bledow(zrzut.err)) == sorted(
+        [
+            f"{PREFIKS_TABEL}HAR-0.toml #2",
+            f"{PREFIKS_TABEL}HAR-0.toml #7",
+            f"{PREFIKS_TABEL}HAR-0.toml #10",
+            f"{PREFIKS_TABEL}HAR-79.toml #35",
+        ]
+    ), zrzut.err
+
+
+def test_wszystkie_tabele_recznych_mutantow_w_repozytorium_wskazuja_istniejacy_kod_i_testy(capsys):
+    kod = _sprawdz_wszystkie(KORZEN)
+
+    zrzut = capsys.readouterr()
+    assert kod == 0, zrzut.err
+    assert re.search(r"sprawdzono \d+ \w+ w \d+ \w+", zrzut.out), zrzut.out
+
+
+# --- HAR-225, runda poprawkowa: plik wiersza, kolekcja, srodowisko kolekcji ------------
+
+
+def _bledy_wierszy(tekst: str) -> dict[str, str]:
+    """Adres (`tabela #n`) -> cala linia bledu."""
+    return {linia.split(":", 1)[0]: linia for linia in _linie_tabel(tekst)}
+
+
+def test_wiersz_z_plikiem_ktorego_nie_ma_w_repozytorium_to_blad_tego_wiersza_z_nazwa_pliku_a_reszta_jest_sprawdzana(
+    tmp_path, capsys
+):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(
+        repo,
+        "HAR-1.toml",
+        _dobry_wiersz() + _mutant(SZUKAJ, ZABIJA, plik="src/brak.py") + _dobry_wiersz(),
+    )
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2, zrzut.err
+    assert list(_bledy_wierszy(zrzut.err)) == [f"{PREFIKS_TABEL}HAR-1.toml #2"], zrzut.err
+    assert "src/brak.py" in zrzut.err
+
+
+def test_wiersz_z_plikiem_w_kodowaniu_innym_niz_utf8_to_blad_z_nazwa_pliku_a_nie_wyjatek(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    # `szukaj` wystepuje w bajtach dokladnie raz: tylko kontrola UTF-8 odrzuca ten plik.
+    (repo / "src" / "zly.py").write_bytes(b"return a + b\n# \xff\xfe\n")
+    _tabela_w_repo(
+        repo,
+        "HAR-1.toml",
+        _dobry_wiersz() + _mutant(SZUKAJ, ZABIJA, plik="src/zly.py") + _dobry_wiersz(),
+    )
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    linie = _bledy_wierszy(zrzut.err)
+    assert kod == 2, zrzut.err
+    assert list(linie) == [f"{PREFIKS_TABEL}HAR-1.toml #2"], zrzut.err
+    assert "UTF-8" in linie[f"{PREFIKS_TABEL}HAR-1.toml #2"]
+    assert "src/zly.py" in linie[f"{PREFIKS_TABEL}HAR-1.toml #2"]
+
+
+@pytest.mark.parametrize("zawartosc", [None, b"return a + b\n# \xff\xfe\n"], ids=["brak_pliku", "zle_kodowanie"])
+def test_ten_sam_nieczytelny_plik_wskazany_przez_dwa_wiersze_daje_blad_przy_obu(tmp_path, capsys, zawartosc):
+    repo = _repo(tmp_path)
+    if zawartosc is not None:
+        (repo / "src" / "nieczytelny.py").write_bytes(zawartosc)
+    wiersz = _mutant(SZUKAJ, ZABIJA, plik="src/nieczytelny.py")
+    _tabela_w_repo(repo, "HAR-1.toml", wiersz + _dobry_wiersz() + wiersz)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2, zrzut.err
+    assert list(_bledy_wierszy(zrzut.err)) == [
+        f"{PREFIKS_TABEL}HAR-1.toml #1",
+        f"{PREFIKS_TABEL}HAR-1.toml #3",
+    ], zrzut.err
+    # Komunikat OSError powtarza pelna sciezke, wiec liczymy linie, a nie wystapienia.
+    assert sum("src/nieczytelny.py" in linia for linia in zrzut.err.splitlines()) == 2
+
+
+def test_plik_testu_ktorego_dysk_nie_pozwala_sprawdzic_to_blad_tego_wiersza_a_reszta_jest_sprawdzana(
+    tmp_path, capsys, monkeypatch
+):
+    repo = _repo(tmp_path)
+    (repo / "tests" / "test_nieczytelny.py").write_text("def test_x():\n    assert True\n", encoding="utf-8")
+    _tabela_w_repo(
+        repo,
+        "HAR-1.toml",
+        _dobry_wiersz() + _dobry_wiersz("tests/test_nieczytelny.py::test_x") + _dobry_wiersz(),
+    )
+    oryginal = Path.is_file
+
+    def is_file(self, *args, **kwargs):
+        if self.name == "test_nieczytelny.py":
+            raise PermissionError(13, "brak praw")
+        return oryginal(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2, zrzut.err
+    assert "Traceback" not in zrzut.err
+    assert list(_bledy_wierszy(zrzut.err)) == [f"{PREFIKS_TABEL}HAR-1.toml #2"], zrzut.err
+    assert "nie da sie sprawdzic pliku testu" in zrzut.err
+    assert "tests/test_nieczytelny.py" in zrzut.err
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_kolekcja_zakonczona_kodem_innym_niz_zero_to_kod_2_nawet_gdy_wszystkie_node_id_zostaly_zebrane(
+    tmp_path, capsys
+):
+    # Sprawdzone w zrodlach pytesta (main.py, wrap_session): `pytest_sessionfinish` moze ustawic
+    # `session.exitstatus`, a wolajacy dostaje wlasnie ten kod. Node id sa wypisane, kod jest 1.
+    repo = _repo(tmp_path, _dobry_wiersz())
+    (repo / "tests" / "conftest.py").write_text(
+        "def pytest_sessionfinish(session, exitstatus):\n    session.exitstatus = 1\n", encoding="utf-8"
+    )
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2, zrzut.out
+    assert "blad: kolekcja testow zakonczyla sie kodem 1" in zrzut.err
+    # Koncowka wyjscia pytesta (zebrany node id) jest w komunikacie bledu.
+    assert TEST_DODAWANIE in zrzut.err
+    assert _linie_tabel(zrzut.err) == []
+    assert "sprawdzono" not in zrzut.out
+
+
+def test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_jest_zebrany_wiec_wiersz_istnieje(
+    tmp_path, capsys
+):
+    # PYPROJECT_MINI ma `addopts = "-m 'not wolny'"`. Odznaczone testy nie sa wypisane przez
+    # `--collect-only -q` (mark/__init__.py: deselect_by_mark usuwa je z `items`), wiec bez
+    # `-o addopts=` wiersz dostalby "nie istnieje".
+    repo = _repo(tmp_path)
+    (repo / "tests" / "test_wolny.py").write_text(
+        "import pytest\n\n\n@pytest.mark.wolny\ndef test_wolny():\n    assert True\n", encoding="utf-8"
+    )
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz("tests/test_wolny.py::test_wolny"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 0, zrzut.err
+    assert _linie_tabel(zrzut.err) == []
+
+
+def test_kolekcja_widzi_modul_z_katalogu_src_repozytorium_bez_instalacji_i_bez_pythonpath_z_zewnatrz(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    repo = _repo(tmp_path)
+    (repo / "src" / "tylko_w_src.py").write_text("WARTOSC = 1\n", encoding="utf-8")
+    (repo / "tests" / "test_import_z_src.py").write_text(
+        "from tylko_w_src import WARTOSC\n\n\ndef test_import():\n    assert WARTOSC == 1\n", encoding="utf-8"
+    )
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz("tests/test_import_z_src.py::test_import"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    assert kod == 0, capsys.readouterr().err
+
+
+def test_kolekcja_zachowuje_pythonpath_wolajacego_obok_katalogu_src_repozytorium(tmp_path, capsys, monkeypatch):
+    zewnetrzny = tmp_path / "zewnetrzny"
+    zewnetrzny.mkdir()
+    (zewnetrzny / "modul_zewnetrzny.py").write_text("WARTOSC = 2\n", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(zewnetrzny))
+    repo = _repo(tmp_path)
+    (repo / "tests" / "test_dwa_zrodla.py").write_text(
+        "import modul_zewnetrzny\nfrom modul import dodaj\n\n\n"
+        "def test_oba():\n    assert modul_zewnetrzny.WARTOSC == dodaj(1, 1)\n",
+        encoding="utf-8",
+    )
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz("tests/test_dwa_zrodla.py::test_oba"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    assert kod == 0, capsys.readouterr().err
+
+
+def test_sprawdzenie_z_blednym_plikiem_testu_nie_zostawia_cache_pytesta_w_repozytorium_uzytkownika(
+    tmp_path, capsys
+):
+    # Sprawdzone w zrodlach (cacheprovider.py, LFPlugin.pytest_collectreport): nieudana kolekcja modulu
+    # zapisuje `cache/lastfailed`, czyli bez `-p no:cacheprovider` powstaje `.pytest_cache` w repo.
+    repo = _repo(tmp_path)
+    (repo / "tests" / "test_zepsuty.py").write_text("def test_x(:\n    pass\n", encoding="utf-8")
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz() + _dobry_wiersz("tests/test_zepsuty.py::test_x"))
+    przed = set(_migawka(repo))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    nowe = sorted(set(_migawka(repo)) - przed)
+    assert kod == 2, capsys.readouterr().err
+    assert [n for n in nowe if ".pytest_cache" in Path(n).parts] == []
+
+
+def test_sprawdzenie_nie_zostawia_bajtkodu_w_repozytorium_uzytkownika(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    repo = _repo(tmp_path, _dobry_wiersz())
+    przed = set(_migawka(repo))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    nowe = sorted(set(_migawka(repo)) - przed)
+    assert kod == 0, capsys.readouterr().err
+    assert [n for n in nowe if "__pycache__" in Path(n).parts] == []
+
+
+def test_sprawdz_wszystkie_razem_z_czy_front_to_blad_wiersza_polecen_a_nie_ciche_pominiecie_opcji(
+    tmp_path, capsys, monkeypatch
+):
+    # Poprawne tabele: gdyby opcja `--czy-front` byla ignorowana, wynik bylby kodem 0.
+    repo = _repo(tmp_path, _dobry_wiersz())
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+
+    kod = _main([OPCJA_WSZYSTKIE, "--czy-front", "--korzen", str(repo)])
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert wywolania == []
+    assert "sprawdzono" not in zrzut.out
+    assert "front=" not in zrzut.out
+
+
+# --- kryterium 0b2ea143 bez historii gita (dziala tez w plytkim klonie CI) ------------
+
+WYPELNIACZ_PLIK = "src/wypelniacz.py"
+WYPELNIACZ_TEST = "tests/test_wypelniacz.py::test_wypelniacz"
+# Doslowne wiersze z origin/main 74e176e (HAR-0 #2, #7, #10 i HAR-79 #35), przed naprawa.
+STARE_WIERSZE = {
+    ("HAR-0.toml", 2): {
+        "plik": "tools/mutanty_reczne.py",
+        "szukaj": '"-o", "addopts=", test]',
+        "zamien": "test]",
+        "test": "tests/test_mutanty_reczne.py::test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_nadal_sie_uruchamia",
+    },
+    ("HAR-0.toml", 7): {
+        "plik": "tools/mutanty_reczne.py",
+        "szukaj": "if uruchom_test(kopia, mutant.test, limit) != 0:",
+        "zamien": "if False:",
+        "test": "tests/test_mutanty_reczne.py::test_test_czerwony_juz_bez_mutacji_konczy_sie_kodem_2_zamiast_falszywie_zabitym_mutantem",
+    },
+    ("HAR-0.toml", 10): {
+        "plik": ".github/workflows/mutation.yml",
+        "szukaj": '--no-renames --diff-filter=d "origin/$BASE_REF...HEAD"',
+        "zamien": '--no-renames "origin/$BASE_REF...HEAD"',
+        "test": "tests/test_workflow_mutacje.py::test_tabele_sa_wybierane_zapytaniem_gita_ograniczonym_do_katalogu_tabel_bez_usunietych",
+    },
+    ("HAR-79.toml", 35): {
+        "plik": "src/cockpit/api/app.py",
+        "szukaj": "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))",
+        "zamien": "responses=odpowiedzi_bledow(401, 404, 409, 422))",
+        "test": "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic",
+    },
+}
+LICZBA_WIERSZY_STARYCH_TABEL = {"HAR-0.toml": 10, "HAR-79.toml": 35}
+
+
+def _stary_stan_z_aktualnych_plikow(repo: Path) -> None:
+    """Tabele HAR-0 i HAR-79 o dawnej numeracji: cztery stare wiersze, reszta to poprawne wypelniacze.
+
+    Stare wiersze celuja w AKTUALNE pliki repozytorium (kopiowane bajt w bajt); pliki testow sa
+    atrapami z samymi nazwami funkcji, bo sprawdzenie tylko zbiera node id."""
+    (repo / "tests" / "mutanty_reczne").mkdir(parents=True)
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+    (repo / WYPELNIACZ_PLIK).parent.mkdir(parents=True, exist_ok=True)
+    (repo / WYPELNIACZ_PLIK).write_text("x = 1\n", encoding="utf-8")
+    testy: dict[str, set[str]] = {"tests/test_wypelniacz.py": {"test_wypelniacz"}}
+    for pola in STARE_WIERSZE.values():
+        cel = repo / pola["plik"]
+        cel.parent.mkdir(parents=True, exist_ok=True)
+        cel.write_bytes((KORZEN / pola["plik"]).read_bytes())
+        plik_testu, _, nazwa = pola["test"].partition("::")
+        testy.setdefault(plik_testu, set()).add(nazwa)
+    for plik_testu, nazwy in testy.items():
+        (repo / plik_testu).write_text(
+            "".join(f"def {n}():\n    pass\n\n\n" for n in sorted(nazwy)), encoding="utf-8"
+        )
+    wypelniacz = {"plik": WYPELNIACZ_PLIK, "szukaj": "x = 1", "zamien": "x = 2", "test": WYPELNIACZ_TEST}
+    for tabela, ile in LICZBA_WIERSZY_STARYCH_TABEL.items():
+        tresc = "".join(_wpis(**STARE_WIERSZE.get((tabela, n), wypelniacz)) for n in range(1, ile + 1))
+        _tabela_w_repo(repo, tabela, tresc)
+
+
+def test_stan_sprzed_naprawy_zbudowany_z_aktualnych_plikow_daje_kod_2_z_dokladnie_czterema_zepsutymi_wierszami(
+    tmp_path, capsys
+):
+    repo = tmp_path / "stary-stan"
+    repo.mkdir()
+    _stary_stan_z_aktualnych_plikow(repo)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    linie = _bledy_wierszy(zrzut.err)
+    assert kod == 2, zrzut.out
+    assert sorted(linie) == sorted(
+        [
+            f"{PREFIKS_TABEL}HAR-0.toml #2",
+            f"{PREFIKS_TABEL}HAR-0.toml #7",
+            f"{PREFIKS_TABEL}HAR-0.toml #10",
+            f"{PREFIKS_TABEL}HAR-79.toml #35",
+        ]
+    ), zrzut.err
+    assert "wystepuje 0 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #2"]
+    assert "wystepuje 0 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #7"]
+    assert "wystepuje 2 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #10"]
+    assert "wystepuje 2 razy" in linie[f"{PREFIKS_TABEL}HAR-79.toml #35"]

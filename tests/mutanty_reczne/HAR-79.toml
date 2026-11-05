@@ -245,8 +245,11 @@ test = "tests/test_projekty.py::test_podlaczenie_projektu_przez_http_daje_201_i_
 # POST /api/projects: kody bledow w kontrakcie
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))"
-zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))"
+# Kontekst `status_code=201,` odroznia POST /api/projects od POST /api/runs (ta sama linia responses).
+szukaj = '''status_code=201,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''status_code=201,
+          responses=odpowiedzi_bledow(401, 404, 409, 422))'''
 test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
 
 # GET /api/projects: kody bledow
