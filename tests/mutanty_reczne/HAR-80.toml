@@ -190,8 +190,8 @@ test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_
 # Znak sterujacy w prompcie (ValueError) konczy krok porazka.
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = 'except ValueError as e:'
-zamien = 'except KeyError as e:'
+szukaj = "zbuduj_prompt(spec)\n    except ValueError as e:"
+zamien = "zbuduj_prompt(spec)\n    except KeyError as e:"
 test = "tests/test_silnik_runu.py::test_znak_sterujacy_w_komendzie_capability_konczy_krok_bledem_bez_uruchomienia_agenta"
 
 # Brak modelu w profilu (BrakModelu) konczy krok porazka.

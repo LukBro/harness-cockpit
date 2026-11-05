@@ -181,8 +181,8 @@ test = "tests/e2e/test_widok_runu.py::test_run_bez_krokow_nie_pokazuje_tabeli_kr
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
-szukaj = '''{runId && reason && <p style='''
-zamien = '''{runId && !reason && <p style='''
+szukaj = '''{runId && status !== "rejected" && reason && <p style='''
+zamien = '''{runId && status !== "rejected" && !reason && <p style='''
 test = "tests/e2e/test_widok_runu.py::test_run_z_krokiem_nieudanym_pokazuje_nieudany_z_powodem_runu_i_nie_do_odbioru"
 
 # --- STATUS_RUNU: kazdy wpis mapy ma wiersz, w ktorym tylko ta wartosc decyduje o napisie ---

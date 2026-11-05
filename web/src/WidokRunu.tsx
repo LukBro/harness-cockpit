@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchZSesja } from "./Konto";
-import type { KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
+import type { DecyzjaIn, DecyzjaPrzyjeta, KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
 
 // "nieznany": brak odpowiedzi albo blad pobrania. Nie blokujemy akcji, bo backend i tak broni sie 409.
 export type StanRunnera = "nieznany" | "online" | "offline";
@@ -95,6 +95,13 @@ export function WidokRunu({
   const [uruchamiam, setUruchamiam] = useState(false);
   const [ticket, setTicket] = useState("");
   const [ostrzezenie, setOstrzezenie] = useState<{ aktywnyRunId: string } | null>(null);
+  const [powod, setPowod] = useState("");
+  const [bladDecyzji, setBladDecyzji] = useState<string | null>(null);
+  const [wysylamDecyzje, setWysylamDecyzje] = useState(false);
+  // dociagnij() zyje w efekcie (zalezy od runId); decyzja odswieza widok przez ten uchwyt.
+  const dociagnijRef = useRef<(() => Promise<void>) | null>(null);
+  const runIdRef = useRef<string | null>(runId);
+  runIdRef.current = runId;
 
   useEffect(() => {
     // Nowy runId (lub brak): nic z poprzedniego runu nie moze zostac na ekranie.
@@ -104,6 +111,9 @@ export function WidokRunu({
     setReason(null);
     setBlad(null);
     setBladStrumienia(null);
+    setPowod("");
+    setBladDecyzji(null);
+    setWysylamDecyzje(false);
     if (!runId) return;
     let anulowano = false;
 
@@ -133,6 +143,7 @@ export function WidokRunu({
 
     // Strumien nie odtwarza historii, wiec GET idzie zawsze, takze gdy strumien
     // sie nie otwiera; onopen dociaga po (ponownym) polaczeniu. Scalanie po seq.
+    dociagnijRef.current = dociagnij;
     const es = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`);
     void dociagnij();
     es.onopen = () => {
@@ -158,6 +169,7 @@ export function WidokRunu({
     });
     return () => {
       anulowano = true;
+      dociagnijRef.current = null;
       es.close();
     };
   }, [runId]);
@@ -216,6 +228,48 @@ export function WidokRunu({
     }
   }
 
+  async function wyslijDecyzje(tresc: DecyzjaIn) {
+    const id = runId;
+    // Podwojnego zadania broni disabled={wysylamDecyzje} na obu przyciskach: React nie wola
+    // onClick przycisku wylaczonego w propsach, wiec handler z wysylamDecyzje=true nie startuje.
+    if (!id) return;
+    setWysylamDecyzje(true);
+    setBladDecyzji(null);
+    const nieaktualny = () => runIdRef.current !== id;
+    try {
+      const r = await fetchZSesja(`/api/runs/${encodeURIComponent(id)}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tresc),
+      });
+      // Zmiane runu sprawdzamy dopiero po ostatnim await galezi (po r.json()): spozniona
+      // odpowiedz runu A nie moze dotknac widoku runu B takze w oknie parsowania ciala.
+      if (!r.ok) {
+        // detail z JSON, a gdy go brak albo nie jest napisem: kod HTTP. Nigdy cisza.
+        const detail = await r.json().then(
+          (j) => (typeof j?.detail === "string" && j.detail ? (j.detail as string) : null),
+          () => null,
+        );
+        if (nieaktualny()) return;
+        setBladDecyzji(`Decyzja nieprzyjęta: ${detail ?? `błąd ${r.status}`}`);
+        // Stan na ekranie mogl sie rozjechac z kokpitem (np. 409): pokaz prawde.
+        void dociagnijRef.current?.();
+        return;
+      }
+      const przyjeta: DecyzjaPrzyjeta = await r.json();
+      if (nieaktualny()) return;
+      setStatus(przyjeta.status);
+      setPowod("");
+      void dociagnijRef.current?.();
+    } catch {
+      if (!nieaktualny()) setBladDecyzji(`Decyzja nieprzyjęta: ${KOMUNIKAT_SIEC}`);
+    } finally {
+      if (!nieaktualny()) setWysylamDecyzje(false);
+    }
+  }
+
+  const krokBramki = kroki.find((k) => k.status === "waiting")?.step_id;
+
   return (
     <main style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto" }}>
       <h1 style={{ fontSize: 20 }}>Harness Cockpit</h1>
@@ -258,7 +312,31 @@ export function WidokRunu({
         </p>
       )}
       {runId && status && <p>Stan runu: {napisStatusuRunu(status)}</p>}
-      {runId && reason && <p style={{ color: "#A5201A" }}>{reason}</p>}
+      {runId && status === "waiting" && (
+        <div>
+          <p>czeka na decyzję: krok {krokBramki ?? "—"}</p>
+          <button onClick={() => void wyslijDecyzje({ decyzja: "approve" })} disabled={wysylamDecyzje}>
+            Zatwierdź
+          </button>{" "}
+          <label>
+            Powód odrzucenia{" "}
+            <input type="text" value={powod} onChange={(e) => setPowod(e.target.value)} />
+          </label>{" "}
+          <button
+            onClick={() => void wyslijDecyzje({ decyzja: "reject", powod: powod.trim() })}
+            disabled={wysylamDecyzje || powod.trim() === ""}
+          >
+            Odrzuć
+          </button>
+        </div>
+      )}
+      {runId && bladDecyzji && (
+        <p role="alert" style={{ color: "#A5201A" }}>
+          {bladDecyzji}
+        </p>
+      )}
+      {runId && status === "rejected" && <p style={{ color: "#A5201A" }}>odrzucony{reason ? `: ${reason}` : ""}</p>}
+      {runId && status !== "rejected" && reason && <p style={{ color: "#A5201A" }}>{reason}</p>}
       {runId && kroki.length > 0 && (
         <table aria-label="Kroki runu" style={{ borderCollapse: "collapse", width: "100%", textAlign: "left" }}>
           <thead>
