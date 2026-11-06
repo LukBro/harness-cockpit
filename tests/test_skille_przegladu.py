@@ -4,6 +4,7 @@ Czytamy prawdziwe pliki `.cockpit/skills/<id>/SKILL.md` tego repozytorium
 przez produkcyjny `rozstrzygnij_rejestr`. Katalog domowy jest pusty, żeby
 skille użytkownika nie wpływały na wynik.
 """
+import re
 from pathlib import Path
 
 import pytest
@@ -66,10 +67,18 @@ def test_skill_przegladu_oddaje_wynik_jako_artefakt_runu(tmp_path, id):
     assert skill_przegladu(tmp_path, id).produces == OCZEKIWANE[id]
 
 
+# HAR-176: recenzenci dostaja dowod z kroku diff; stala lista niezalezna od kodu.
+OCZEKIWANE_WEJSCIA = {
+    "contract-check": ["zmiana.diff"],
+    "explain-change": ["zmiana.diff", "zmienione-linie.json"],
+    "review-unknown": ["zmiana.diff"],
+}
+
+
 @pytest.mark.parametrize("id", IDENTYFIKATORY)
-def test_skill_przegladu_nie_wymaga_wejsc_ani_poprzednikow(tmp_path, id):
+def test_skill_przegladu_dostaje_diff_runu_jako_wejscie(tmp_path, id):
     skill = skill_przegladu(tmp_path, id)
-    assert skill.consumes == []
+    assert skill.consumes == OCZEKIWANE_WEJSCIA[id]
 
 
 @pytest.mark.parametrize("id", ["explain-change", "review-unknown"])
@@ -108,14 +117,36 @@ def test_recenzent_kontraktu_pisze_zgodny_tylko_gdy_oba_wyniki_sa_zielone(tmp_pa
     ) in brief
 
 
-def test_wyjasnienie_zmiany_ma_notatke_w_ksztalcie_co_zmieniono_jakie_ryzyko(tmp_path):
+def test_wyjasnienie_zmiany_ma_notatke_w_ksztalcie_co_zmieniono_jakie_ryzyko_jak_to_sprawdzic(
+    tmp_path,
+):
     brief = brief_znormalizowany(tmp_path, "explain-change")
     # Szablon notatki (blok z treścią sekcji), nie wzmianki o nagłówkach w punktach.
     zmieniono = "## Co zmieniono <zachowanie widziane z zewnątrz"
-    ryzyko = "## Jakie ryzyko <konkretny scenariusz"
+    ryzyko = "## Jakie ryzyko - [plik:linia] scenariusz: <"
+    sprawdzenie = "## Jak to sprawdzić <jeden krok"
     assert zmieniono in brief
     assert ryzyko in brief
-    assert brief.index(zmieniono) < brief.index(ryzyko)
+    assert sprawdzenie in brief
+    assert brief.index(zmieniono) < brief.index(ryzyko) < brief.index(sprawdzenie)
+
+
+def test_wyjasnienie_zmiany_wymaga_kotwicy_plik_linia_z_diffu_przy_kazdym_ryzyku(tmp_path):
+    brief = brief_znormalizowany(tmp_path, "explain-change")
+    assert "Każde ryzyko zaczyna się od kotwicy `[plik:linia]` z `zmiana.diff`." in brief
+    assert "Silnik odrzuci notatkę z kotwicą spoza zmienionych linii diffu" in brief
+
+
+def test_wyjasnienie_zmiany_czyta_zmiane_ze_sciezek_diffu_i_zmienionych_linii(tmp_path):
+    brief = brief_znormalizowany(tmp_path, "explain-change")
+    assert "`zmiana.diff`" in brief
+    assert "`zmienione-linie.json`" in brief
+
+
+def test_sekcja_jak_to_sprawdzic_w_notatce_jest_obowiazkowa_a_nie_opcjonalna(tmp_path):
+    brief = brief_znormalizowany(tmp_path, "explain-change")
+    assert "`## Jak to sprawdzić` jest obowiązkowa" in brief
+    assert "Opcjonalnie na końcu" not in brief
 
 
 def test_wyjasnienie_zmiany_zakazuje_oceniac_skladnie_i_styl(tmp_path):
@@ -126,7 +157,8 @@ def test_wyjasnienie_zmiany_zakazuje_oceniac_skladnie_i_styl(tmp_path):
 
 def test_wyjasnienie_zmiany_podaje_dobry_przyklad_ryzyka_z_warunkiem_skutkiem_i_osoba(tmp_path):
     brief = brief_znormalizowany(tmp_path, "explain-change")
-    assert "Dobry: „Run przerwany w trakcie zapisu zostawi plik werdyktu" in brief
+    # HAR-176: dobry przykład niesie kotwicę `[plik:linia]` przed scenariuszem (np. `[src/x.py:10]`)
+    assert re.search(r"\[[\w./-]+:\d+\] scenariusz: Run przerwany w trakcie zapisu zostawi plik werdyktu", brief)
     assert "Dotknie każdego, kto zatwierdza po samym kolorze kroku." in brief
     assert "Dobry przykład ma warunek, skutek i osobę, której to szkodzi." in brief
 
