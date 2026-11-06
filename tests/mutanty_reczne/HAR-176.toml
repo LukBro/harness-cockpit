@@ -3,15 +3,9 @@
 # systemowych, wartosci domyslne pol), budowa.yaml ani SKILL.md. Kazde `szukaj` wystepuje w
 # pliku dokladnie raz.
 #
-# Wpisy z listy `bez mutantow` (tools/mutanty_zmian.py) bez wiersza - rownowazne, bo zaden test
-# ani wejscie ich nie odroznia:
-#   - kroki_systemowe.py:20-21 i graf.py:61-62 (dekorator `@dataclass(frozen=True)` i naglowek
-#     klasy), kroki_systemowe.py:29 i :31 (`MappingProxyType({` i `})`: opakowanie tylko do
-#     odczytu, ta sama zawartosc), kroki_systemowe.py:24 (`produces: tuple[str, ...]`: pole bez
-#     wartosci domyslnej, sama adnotacja), graf.py:65-67 (pola `_Kontrakt`: sama adnotacja,
-#     wartosci wpisuje `_kontrakt`, ktory mutmut mutuje),
-#   - krok_diff.py:23 (`__all__`: importy w testach sa jawne, lista nie zmienia wyniku),
-#   - silnik.py:72 (alias typu `WykonawcaSystemowy`: adnotacja, nie wartosc),
+# Wpisy z listy `bez mutantow` (tools/mutanty_zmian.py): kroki_systemowe.py:20-31 i graf.py:62-67
+# maja wiersze `[[mutant]]` na koncu pliku; bez wiersza, jako `[[rownowazny]]` (uzasadnienia na koncu
+# pliku), zostaja graf.py:61, krok_diff.py:23 i silnik.py:72. Pozostale rownowazne:
 #   - kotwice.py:21 i :26 (komentarze).
 #   - `UnicodeDecodeError` w krotce `except` w `wczytaj_zmienione_linie`: usuniety, bo jest
 #     podklasa `ValueError` i nie da sie go wyzwolic w pojedynke (lapie go `ValueError`).
@@ -364,3 +358,89 @@ plik = "src/runner/kotwice.py"
 szukaj = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)\]")'
 zamien = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)")'
 test = "tests/test_kotwice_ryzyk.py::test_kotwica_bez_zamykajacego_nawiasu_po_linii_to_ryzyko_bez_kotwicy"
+
+# kroki_systemowe.py:20-21: `frozen=True` -> `frozen=False`; opis kroku (publiczny kontrakt, HAR-177
+# dopisze `check`) przestaje byc niezmienny, przypisanie pola nie rzuca `FrozenInstanceError`.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = """@dataclass(frozen=True)
+class OpisKrokuSystemowego:"""
+zamien = """@dataclass(frozen=False)
+class OpisKrokuSystemowego:"""
+test = "tests/test_krok_diff.py::test_opis_kroku_systemowego_jest_niezmienny_po_utworzeniu"
+
+# kroki_systemowe.py:24: `produces` dostaje wartosc domyslna `()`; opis bez artefaktow tworzy sie
+# bez bledu, wiec krok systemowy mogloby zarejestrowac bez zadnego kontraktu wyjscia.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = "produces: tuple[str, ...]"
+zamien = "produces: tuple[str, ...] = ()"
+test = "tests/test_krok_diff.py::test_opis_kroku_systemowego_wymaga_podania_artefaktow_ktore_produkuje"
+
+# kroki_systemowe.py:29-31: `MappingProxyType({...})` -> zwykly `dict`; rejestr krokow systemowych
+# przestaje byc tylko do odczytu i da sie do niego dopisac krok w czasie dzialania.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = """MappingProxyType({
+    "diff": OpisKrokuSystemowego(produces=(PLIK_DIFFU, PLIK_LINII)),
+})"""
+zamien = """dict({
+    "diff": OpisKrokuSystemowego(produces=(PLIK_DIFFU, PLIK_LINII)),
+})"""
+test = "tests/test_krok_diff.py::test_rejestr_krokow_systemowych_jest_tylko_do_odczytu"
+
+# graf.py:62-67: pola `consumes` i `produces` `_Kontrakt` zamienione miejscami; konstruktor
+# pozycyjny wpisuje artefakty wejscia jako wyjscie i odwrotnie, recenzent traci `brak wejscia`.
+[[mutant]]
+plik = "src/runner/graf.py"
+szukaj = """class _Kontrakt:
+    \"\"\"Artefakty i capabilities kroku: ze skilla albo z opisu kroku systemowego.\"\"\"
+
+    consumes: tuple[str, ...]
+    produces: tuple[str, ...]
+    needs: tuple[str, ...]"""
+zamien = """class _Kontrakt:
+    \"\"\"Artefakty i capabilities kroku: ze skilla albo z opisu kroku systemowego.\"\"\"
+
+    produces: tuple[str, ...]
+    consumes: tuple[str, ...]
+    needs: tuple[str, ...]"""
+test = "tests/test_graf_krokow.py::test_nieudany_krok_diff_odbiera_recenzentowi_wejscie_zmiana_diff"
+
+# graf.py:66-67: pola `produces` i `needs` `_Kontrakt` zamienione miejscami; capabilities kroku
+# systemowego `diff` staja sie jego artefaktami, wiec krok wymaga capabilities, ktorych runner nie ma.
+[[mutant]]
+plik = "src/runner/graf.py"
+szukaj = """    produces: tuple[str, ...]
+    needs: tuple[str, ...]"""
+zamien = """    needs: tuple[str, ...]
+    produces: tuple[str, ...]"""
+test = "tests/test_graf_krokow.py::test_krok_systemowy_diff_nie_wymaga_capabilities_runnera"
+
+# Uzasadnienia rownowaznosci (linie, ktorych nie da sie odroznic zadnym wejsciem).
+
+# `_Kontrakt` (graf.py:61): usuniecie dekoratora zabija kazdy test grafu (TypeError w `_kontrakt`
+# przy wywolaniu z argumentami), wiec to nie ten mutant; `frozen=True` -> `frozen=False` jest
+# nieodroznialne: instancje `_Kontrakt` powstaja tylko w `_kontrakt` i sa czytane w `nastepne`
+# (`kontrakt.consumes/.produces/.needs`), nikt nie przypisuje ich pol ani ich nie haszuje
+# (`rg _Kontrakt src tests tools` - tylko graf.py:62, 70, 73, 75). Dotyczy `_Kontrakt`.
+[[rownowazny]]
+plik = "src/runner/graf.py"
+linia_tekst = "@dataclass(frozen=True)"
+uzasadnienie = "frozen=False jest nieodroznialne dla _Kontrakt: instancje tylko tworzone w _kontrakt i czytane w nastepne, nikt nie przypisuje pol ani nie haszuje (grep _Kontrakt: graf.py, 4 trafienia); dotyczy _Kontrakt, nie Plan ani Podsumowanie"
+
+# `__all__` (krok_diff.py:23): wplywa wylacznie na `from runner.krok_diff import *`; w src/, tests/
+# i tools/ nikt tak nie importuje (grep `import \*`: tylko napisy w test_granica_warstw), a nazwy z listy
+# sa importowane jawnie (silnik.py, test_krok_diff.py).
+[[rownowazny]]
+plik = "src/runner/krok_diff.py"
+linia_tekst = '__all__ = ["PLIK_DIFFU", "PLIK_LINII", "wykonaj_diff", "zmienione_linie"]'
+uzasadnienie = "__all__ zmienia tylko import gwiazdkowy z runner.krok_diff, a nikt tak nie importuje (grep import * w src, tests, tools); nazwy importowane jawnie"
+
+# `WykonawcaSystemowy` (silnik.py:72): modul ma `from __future__ import annotations`, a alias jest
+# uzyty tylko w adnotacji `WYKONAWCY_SYSTEMOWI` (linia 73), ktora nie jest wartosciowana; zadna sciezka
+# wykonania ani test go nie czyta (grep WykonawcaSystemowy: silnik.py:72-73).
+[[rownowazny]]
+plik = "src/runner/silnik.py"
+linia_tekst = "WykonawcaSystemowy = Callable[[Path, str, Path], Awaitable[WynikKroku]]"
+uzasadnienie = "alias uzywany tylko w adnotacji WYKONAWCY_SYSTEMOWI (from __future__ import annotations, adnotacja niewartosciowana); zadna sciezka wykonania go nie czyta (grep WykonawcaSystemowy)"

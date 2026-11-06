@@ -11,12 +11,13 @@ krokiem moze zmienic worktree). Nazwy testow w jezyku dziedziny (CLAUDE.md).
 """
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from cockpit.services.kroki_systemowe import KROKI_SYSTEMOWE, OpisKrokuSystemowego
 from runner.krok_diff import PLIK_DIFFU, PLIK_LINII, wykonaj_diff, zmienione_linie
 from runner.krok import WynikKroku
 from runner.odbior import zbierz_diff
@@ -36,6 +37,27 @@ def _zmiana(plik: str, *hunki: str) -> str:
 def test_nazwy_artefaktow_kroku_diff_to_zmiana_diff_i_zmienione_linie_json():
     assert PLIK_DIFFU == "zmiana.diff"
     assert PLIK_LINII == "zmienione-linie.json"
+
+
+def test_opis_kroku_systemowego_jest_niezmienny_po_utworzeniu():
+    opis = OpisKrokuSystemowego(produces=("a.txt",))
+
+    with pytest.raises(FrozenInstanceError):
+        opis.produces = ("b.txt",)  # type: ignore[misc]
+
+    assert opis.produces == ("a.txt",)
+
+
+def test_opis_kroku_systemowego_wymaga_podania_artefaktow_ktore_produkuje():
+    with pytest.raises(TypeError, match="missing 1 required positional argument: 'produces'"):
+        OpisKrokuSystemowego()  # type: ignore[call-arg]
+
+
+def test_rejestr_krokow_systemowych_jest_tylko_do_odczytu():
+    with pytest.raises(TypeError, match="does not support item assignment"):
+        KROKI_SYSTEMOWE["x"] = OpisKrokuSystemowego(produces=())  # type: ignore[index]
+
+    assert "x" not in KROKI_SYSTEMOWE
 
 
 def test_diff_bez_zmian_nie_ma_zadnego_pliku_ze_zmienionymi_liniami():
