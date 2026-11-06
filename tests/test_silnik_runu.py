@@ -518,7 +518,7 @@ async def test_krok_z_niezerowym_kodem_wyjscia_jest_nieudany_a_zalezny_pominiety
     assert zdarzenia[-1]["kind"] == "run_finished"
 
 
-# --- approval: bramka to HAR-172 ----------------------------------------------------------
+# --- approval: bramka (HAR-172; szczegoly w tests/test_bramka_zatwierdzenia.py) -------------
 
 
 async def test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_uruchamia_agenta(tmp_path):
@@ -527,14 +527,19 @@ async def test_krok_z_approval_nie_przechodzi_bez_decyzji_czlowieka_i_nie_urucha
 
     zdarzenia = await uruchom(s, agent)
 
-    assert indeks(zdarzenia, "step_started", "a") < indeks(zdarzenia, "step_failed", "a")
-    tekst = jedno(zdarzenia, "step_failed", "a")["text"]
-    assert tekst == (
-        "krok wymaga decyzji człowieka (approval) - bramka nie jest jeszcze obsługiwana (HAR-172)")
-    assert jedno(zdarzenia, "step_skipped", "b")["text"].startswith("zaleznosc_nieudana: ")
-    jedno(zdarzenia, "step_finished", "c")
+    czekanie = jedno(zdarzenia, "step_waiting", "a")
+    # krok na bramce ma wylacznie `step_waiting`: bez startu, bez porazki, bez konca
+    assert [z for z in zdarzenia if z["step_id"] == "a"] == [czekanie]
+    # krok zalezny od bramki nie rusza i nie jest pominiety: czeka razem z nia
+    assert [z for z in zdarzenia if z["step_id"] == "b"] == []
+    jedno(zdarzenia, "step_finished", "c")                  # krok niezalezny od bramki konczy sie
     assert agent.kroki == ["c"]                              # a i b nie dotarly do agenta
-    assert zdarzenia[-1]["kind"] == "run_finished"
+    # bramka jest ogloszona na koncu: po kroku niezaleznym i jako ostatnie zdarzenie runu
+    assert indeks(zdarzenia, "step_finished", "c") < indeks(zdarzenia, "step_waiting", "a")
+    assert zdarzenia[-1] == czekanie
+    # run zawieszony na bramce nie jest zakonczony: kokpit zrobilby z niego "do odbioru"
+    assert "run_finished" not in rodzaje(zdarzenia)
+    assert (s.katalog_runu / "checkpoint.json").is_file()
 
 
 # --- bledy przed startem: nazwa, zakres, project.yaml ---------------------------------------

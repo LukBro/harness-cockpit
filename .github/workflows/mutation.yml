@@ -58,6 +58,39 @@ jobs:
 
       - run: pip install -e ".[dev]"
 
+      # HAR-225: KAZDA tabela tests/mutanty_reczne/*.toml jest sprawdzana na kazdym PR, nie tylko
+      # tabele zmienione w PR (krok `mutanty reczne` wykonuje mutacje tylko dla zmienionych).
+      # Inaczej zmiana kodu albo nazwy testu w jednym tickecie psuje tabele innych po cichu, a
+      # czerwono robi sie dopiero w PR, ktory tej tabeli dotknie. Sprawdzenie nie naklada mutacji
+      # i niczego nie uruchamia poza kolekcja testow, wiec trwa sekundy. Celowo bez `if`, bez
+      # `git diff` i bez wyjsc kroku `front`. Kod 0 to jedyny zielony wynik: kazdy inny kod
+      # (bledy wierszy, brak tabel, zero wierszy, blad kolekcji) oblewa krok.
+      - name: sprawdzenie tabel mutantów ręcznych
+        run: |
+          mkdir -p mutants
+          kod=0
+          python3 tools/mutanty_reczne.py --sprawdz-wszystkie > mutants/tabele-reczne.txt 2> mutants/tabele-reczne.err || kod=$?
+          {
+            echo "## Tabele mutantów ręcznych"
+            echo
+            case "$kod" in
+              0)
+                cat mutants/tabele-reczne.txt
+                ;;
+              *)
+                echo "Zepsute wiersze albo błąd narzędzia (kod $kod, krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/tabele-reczne.err
+                echo '```'
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$kod" != "0" ]; then
+            echo "::error::sprawdzenie tabel mutantów ręcznych zakończyło się kodem $kod: $(tr '\n' ' ' < mutants/tabele-reczne.err)"
+            exit 1
+          fi
+
       # Tylko odczyt: cache zapisuje mutation-main. Restore po checkoucie, wiec zrodla maja
       # nowszy mtime niz kopie w mutants/ (mutmut generuje je od nowa, hashe decyduja o wynikach).
       # Bez golego prefiksu `mutmut-v1-`: kopia testow w mutants/ tylko przybywa, wiec cache
@@ -278,11 +311,16 @@ jobs:
             mutants/mutanty-zmian.err
             mutants/mutanty-reczne.txt
             mutants/mutanty-reczne.err
+            mutants/tabele-reczne.txt
+            mutants/tabele-reczne.err
 
   mutation-main:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # Udane przebiegi z cache trwaly 104-119 min; przebieg bez cache (zmiana testow zmienia
+    # klucz) przekroczyl 120 min i zostal anulowany, a anulowany nie zapisuje cache - kazdy
+    # nastepny zaczynalby od zera i tez by sie nie zmiescil.
+    timeout-minutes: 240
     # Dwa pelne przebiegi naraz tylko walcza o CPU i cache; nie przerywamy trwajacego,
     # bo jego wynik trafia do baseline.
     concurrency:

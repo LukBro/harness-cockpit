@@ -208,3 +208,54 @@ osobny ticket z retro M1.6.
 
 Co sprawdzić w review: element z listy bez testu, który oblewa po jego usunięciu = **-25**;
 test z limitem czasu niezależny od mechanizmu limitu = **-20**.
+
+## Regresja (retro M1.7)
+
+Źródło: 12 z 33 ticketów M1.7 dostało -25 z tej reguły u test-writera (HAR-77, 79, 81, 85, 86,
+150, 151, 160, 163, 183, 206, 221); „korekta WRACA” wprost w HAR-81, 85, 86, 150, 163, 183.
+Większość mutantów znalazł `tools/mutanty_zmian.py` albo krytyk w tabeli — test-writer
+oddaje pracę przed przejściem własnej listy. Nowe kształty:
+
+- **Komunikat na pełną treść** — każda linia ostrzeżenia i treść wyjątku w zmienionej
+  funkcji ma asercję na cały napis, nie „zawiera słowo”; mutant `XX…XX` zachowuje każde
+  słowo i przeżywa (HAR-183, wcześniej HAR-12).
+- **Każdy element zapytania z celem** — `ORDER BY` ustalające kolejność blokad, `FOR UPDATE`,
+  filtr: test, który oblewa po usunięciu właśnie tego elementu; test sąsiedniego elementu
+  tego samego zapytania go nie chroni (HAR-206).
+- **Lista przypadków niezależna od kodu** — parametry testu strażnika pochodzą z osobnej,
+  stałej listy, nigdy z listy wzorców, której używa kod pod testem; inaczej usunięcie
+  wzorca usuwa też jego test (HAR-163, wcześniej HAR-6, HAR-29).
+- **Stan rodzica różny od oczekiwanego u potomka** — test dziedziczenia (stdin, zmienna
+  środowiskowa) ustawia u rodzica wartość inną niż oczekiwana u potomka; pod xdist fd 0
+  to już `/dev/null` i asercja przechodzi bez reguły. „Nieustawiona” i „pusta” zmienna
+  to dwa osobne przypadki (HAR-85, HAR-157).
+- **Sprzątanie współbieżne i liczniki limitu** — anulowanie w `finally`, drugi czytnik
+  strumienia, gałąź `trap` skryptu: test na ścieżce, na której działa więcej niż jedno
+  zadanie i tylko ta gałąź zwalnia zasób; licznik limitu sprawdzony wartością, przy której
+  krok `+1` i `+2` dają różny wynik (HAR-151, HAR-160).
+- **Wartość, którą błąd mógłby zostawić** — test gałęzi błędu sprawdza wartość, którą
+  błędna zmiana by zapisała (np. `tabele=1` po błędzie skryptu), nie wartość, której żadna
+  implementacja nie zapisuje (HAR-221).
+- **Każdy człon warunku i strażnik z poprawki** — `isfinite` obok `<= 0`, `is not None`
+  dodane po review: parametryzacja złych wartości ma wartość odrzucaną tylko przez ten
+  człon; poprawka po review podlega tej samej regule co kod pierwotny (HAR-86, HAR-150).
+- **Front: stan przejściowy** — stan „przed pierwszą odpowiedzią” ma test z wstrzymaną
+  odpowiedzią i asercją przed jej nadejściem; gałąź `!r.ok` dostaje poprawny JSON (nie-JSON
+  trafia do `catch`); test gałęzi ustawiającej stan startuje z innego stanu niż docelowy,
+  bez przeładowania strony (HAR-77, pięć rund po 75).
+
+### Cudze tabele ręcznych mutantów
+
+Źródło: HAR-81 (przeniesienie kodu do `WidokRunu.tsx` zepsuło wpisy HAR-77 i HAR-156),
+HAR-221 (zepsuł dwa wiersze HAR-156), HAR-223 (po nim `HAR-0.toml` #7 nie trafia w kod).
+Na `origin/main` po M1.7 cztery wiersze nie trafiają w kod (HAR-0 #2, #7, #10, HAR-79 #35),
+bo CI wykonuje tylko tabele zmienione w PR.
+
+- Zmiana, która przenosi kod, zmienia tekst trafiany przez `szukaj` albo nazwę testu
+  wskazanego w tabeli **innego** ticketu, poprawia tę tabelę w tym samym PR (nowe `plik`,
+  pełniejsze `szukaj` albo wiersz przeniesiony do tabeli bieżącego ticketu).
+- Każdy wpis stałej mapy napisów ma osobny wiersz z testem, w którym tylko ta wartość decyduje.
+- Egzekucja: sprawdzenie statyczne wszystkich tabel na każdym PR — HAR-225.
+
+Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu
+elementu = **-25**; PR, po którym wiersz cudzej tabeli przestaje trafiać w kod = **-25**.

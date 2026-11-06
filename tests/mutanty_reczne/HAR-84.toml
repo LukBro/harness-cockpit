@@ -120,9 +120,11 @@ test = "tests/test_typy_frontu.py::test_typy_odpowiedzi_api_importuje_tylko_modu
 
 [[mutant]]
 plik = "web/src/WidokRunu.tsx"
-szukaj = '''import type { KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";'''
+szukaj = '''import type { DecyzjaIn, DecyzjaPrzyjeta, KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";'''
 zamien = '''import type { components } from "./api-types";
 
+type DecyzjaIn = components["schemas"]["DecyzjaIn"];
+type DecyzjaPrzyjeta = components["schemas"]["DecyzjaPrzyjeta"];
 type KrokRunu = components["schemas"]["KrokRunu"];
 type Run = components["schemas"]["RunSzczegoly"];
 type RunStatus = components["schemas"]["RunStatus"];

@@ -1,0 +1,708 @@
+# Tabela recznych mutantow HAR-173: front (web/), stale modulu runnera i warunki klienta, ktorych
+# mutmut nie mutuje albo mutuje niepelnie. Kazde `szukaj` wystepuje w pliku dokladnie raz.
+#
+# Testy e2e (tests/e2e/test_bramka_w_przegladarce.py) wymagaja PostgreSQL, zbudowanego frontu
+# i przegladarki; wiersze z `runner_online` startuja prawdziwego runnera.
+#
+# Elementy bez wiersza (rownowazne - zadne wejscie nie odroznia wersji):
+#   - `if (!id) return;` w wyslijDecyzje: przyciski bramki renderuja sie tylko przy `runId`, wiec `id` jest zawsze niepusty;
+#   - `.encode("utf-8")` -> `.encode("UTF-8")` w `_zapisz_decyzje`: nazwy kodekow Pythona sa
+#     niewrazliwe na wielkosc liter (codecs.lookup normalizuje nazwe), oba wywolania zwracaja te same bajty;
+#   - `ensure_ascii=False` -> `ensure_ascii=None` w `_zapisz_decyzje`: json czyta flage jako bool.
+#   Obie linie maja `# pragma: no mutate`; warianty, ktore wejscie odroznia (True, inne kodowanie), maja wiersze nizej.
+
+# =====================================================================================
+# web/src/WidokRunu.tsx: widok bramki
+# =====================================================================================
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{runId && status === "waiting" && ('''
+zamien = '''{runId && status !== "waiting" && ('''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_run_w_toku_nie_pokazuje_przyciskow_bramki"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''kroki.find((k) => k.status === "waiting")?.step_id'''
+zamien = '''kroki.find((k) => k.status === "running")?.step_id'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_run_czekajacy_na_bramce_pokazuje_na_ktory_krok_czeka"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''krok {krokBramki ?? "—"}'''
+zamien = '''krok {krokBramki ?? "?"}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_waiting_bez_czekajacego_kroku_pokazuje_myslnik_zamiast_nazwy_kroku"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''<p>czeka na decyzję: krok'''
+zamien = '''<p>czeka na decyzje: krok'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_run_czekajacy_na_bramce_pokazuje_na_ktory_krok_czeka"
+
+# --- tresc zadania decyzji ---------------------------------------------------------------------
+
+# Zatwierdzenie niesie powod z pola odrzucenia.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''wyslijDecyzje({ decyzja: "approve" })'''
+zamien = '''wyslijDecyzje({ decyzja: "approve", powod: powod.trim() })'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_zatwierdzenie_wysyla_zadanie_z_sama_decyzja_jako_json_nawet_gdy_pole_powodu_jest_wypelnione"
+
+# Przycisk Zatwierdz wysyla odrzucenie.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''wyslijDecyzje({ decyzja: "approve" })'''
+zamien = '''wyslijDecyzje({ decyzja: "reject" })'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_klikniecie_zatwierdz_wznawia_run_w_bazie_i_zapisuje_zdarzenie_decyzji"
+
+# Przycisk Odrzuc wysyla zatwierdzenie.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''wyslijDecyzje({ decyzja: "reject", powod: powod.trim() })'''
+zamien = '''wyslijDecyzje({ decyzja: "approve", powod: powod.trim() })'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_z_powodem_zapisuje_w_bazie_status_odrzucony_i_przyciety_powod"
+
+# trim w tresci zadania (backend sam przycina, wiec widac to tylko w zadaniu HTTP).
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''wyslijDecyzje({ decyzja: "reject", powod: powod.trim() })'''
+zamien = '''wyslijDecyzje({ decyzja: "reject", powod: powod })'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_wysyla_powod_bez_spacji_z_brzegow_jako_json"
+
+# Odrzucenie bez powodu w tresci zadania.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''wyslijDecyzje({ decyzja: "reject", powod: powod.trim() })'''
+zamien = '''wyslijDecyzje({ decyzja: "reject" })'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_wysyla_powod_bez_spacji_z_brzegow_jako_json"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tresc),'''
+zamien = '''body: JSON.stringify(tresc),'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_zatwierdzenie_wysyla_zadanie_z_sama_decyzja_jako_json_nawet_gdy_pole_powodu_jest_wypelnione"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tresc),'''
+zamien = '''method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tresc),'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_zatwierdzenie_wysyla_zadanie_z_sama_decyzja_jako_json_nawet_gdy_pole_powodu_jest_wypelnione"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''/decision`, {'''
+zamien = '''/decisions`, {'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_klikniecie_zatwierdz_wznawia_run_w_bazie_i_zapisuje_zdarzenie_decyzji"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''body: JSON.stringify(tresc),'''
+zamien = '''body: JSON.stringify({}),'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_klikniecie_zatwierdz_wznawia_run_w_bazie_i_zapisuje_zdarzenie_decyzji"
+
+# --- przycisk Odrzuc: kazdy czlon warunku disabled -----------------------------------------------
+
+# bez trim: same spacje odblokowuja przycisk.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''disabled={wysylamDecyzje || powod.trim() === ""}'''
+zamien = '''disabled={wysylamDecyzje || powod === ""}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzuc_jest_wylaczone_gdy_powod_jest_pusty_albo_z_samych_spacji[chromium-same_spacje]"
+
+# odwrocony warunek pustego powodu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''disabled={wysylamDecyzje || powod.trim() === ""}'''
+zamien = '''disabled={wysylamDecyzje || powod.trim() !== ""}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzuc_staje_sie_aktywne_po_wpisaniu_powodu_i_znowu_wylaczone_po_jego_skasowaniu"
+
+# `||` zamienione na `&&`: pusty powod nie wylacza przycisku.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''disabled={wysylamDecyzje || powod.trim() === ""}'''
+zamien = '''disabled={wysylamDecyzje && powod.trim() === ""}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzuc_jest_wylaczone_gdy_powod_jest_pusty_albo_z_samych_spacji[chromium-pusty]"
+
+# bez blokady na czas wysylania.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''disabled={wysylamDecyzje || powod.trim() === ""}'''
+zamien = '''disabled={powod.trim() === ""}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_w_trakcie_wysylania_decyzji_oba_przyciski_sa_wylaczone_a_po_odpowiedzi_znowu_aktywne"
+
+# Zatwierdz bez blokady na czas wysylania.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{ decyzja: "approve" })} disabled={wysylamDecyzje}>'''
+zamien = '''{ decyzja: "approve" })} disabled={false}>'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_w_trakcie_wysylania_decyzji_oba_przyciski_sa_wylaczone_a_po_odpowiedzi_znowu_aktywne"
+
+# --- blokada podwojnego zadania -----------------------------------------------------------------
+# Broni jej disabled w propsach przycisku (React nie wola onClick wylaczonego przycisku), nie
+# atrybut DOM: test zdejmuje atrybut i klika, wiec drugie zadanie wychodzi tylko bez blokady w propsach.
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{ decyzja: "approve" })} disabled={wysylamDecyzje}>'''
+zamien = '''{ decyzja: "approve" })} disabled={false}>'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_drugie_zadanie_decyzji_nie_wychodzi_gdy_pierwsze_jest_w_locie_nawet_przy_wlaczonym_przycisku"
+
+# Stan "wysylam" nie wraca po odpowiedzi.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (!nieaktualny()) setWysylamDecyzje(false);'''
+zamien = '''if (nieaktualny()) setWysylamDecyzje(false);'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_w_trakcie_wysylania_decyzji_oba_przyciski_sa_wylaczone_a_po_odpowiedzi_znowu_aktywne"
+
+# Spozniona odpowiedz runu A zdejmuje blokade z runu B.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (!nieaktualny()) setWysylamDecyzje(false);'''
+zamien = '''setWysylamDecyzje(false);'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_spozniona_odpowiedz_runu_a_nie_odblokowuje_przyciskow_runu_b_gdy_jego_wlasna_decyzja_trwa"
+
+# --- komunikat o odmowie -------------------------------------------------------------------------
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''`Decyzja nieprzyjęta: ${detail'''
+zamien = '''`Decyzja odrzucona: ${detail'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_kokpitu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_napisem]"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''?? `błąd ${r.status}`'''
+zamien = '''?? `kod ${r.status}`'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_kokpitu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-cialo_nie_json]"
+
+# Pusty detail traktowany jak komunikat.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''typeof j?.detail === "string" && j.detail ?'''
+zamien = '''typeof j?.detail === "string" ?'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_kokpitu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_pusty]"
+
+# Detail niebedacy napisem (lista bledow walidacji) trafia do komunikatu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''typeof j?.detail === "string" && j.detail ?'''
+zamien = '''j?.detail ?'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_kokpitu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_nie_jest_napisem]"
+
+# Cialo nieczytelne jako JSON: odrzucenie parsowania nie jest zamieniane na brak detail.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''          () => null,
+        );
+        if (nieaktualny()) return;
+        setBladDecyzji('''
+zamien = '''          () => { throw new Error("nie json"); },
+        );
+        if (nieaktualny()) return;
+        setBladDecyzji('''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_kokpitu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-cialo_nie_json]"
+
+# Odmowa nie odswieza widoku (stan na ekranie rozjezdza sie z kokpitem).
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''        void dociagnijRef.current?.();
+        return;'''
+zamien = '''        return;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_decyzja_na_run_ktory_juz_nie_czeka_pokazuje_komunikat_decyzja_nieprzyjeta"
+
+# Blad sieci: komunikat tylko gdy run nadal ten sam.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (!nieaktualny()) setBladDecyzji('''
+zamien = '''if (nieaktualny()) setBladDecyzji('''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_zerwane_polaczenie_przy_decyzji_pokazuje_komunikat_decyzja_nieprzyjeta_z_brakiem_polaczenia"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''if (!nieaktualny()) setBladDecyzji('''
+zamien = '''setBladDecyzji('''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_zerwane_polaczenie_przy_decyzji_runu_a_po_przejsciu_na_run_b_nie_pokazuje_bledu_w_runie_b"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''`Decyzja nieprzyjęta: ${KOMUNIKAT_SIEC}`'''
+zamien = '''`Decyzja nieprzyjęta: ${KOMUNIKAT_STRUMIEN}`'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_zerwane_polaczenie_przy_decyzji_pokazuje_komunikat_decyzja_nieprzyjeta_z_brakiem_polaczenia"
+
+# --- czyszczenie stanu ------------------------------------------------------------------------------
+
+# Blad poprzedniej proby zostaje na ekranie na czas kolejnej.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''    setWysylamDecyzje(true);
+    setBladDecyzji(null);'''
+zamien = '''    setWysylamDecyzje(true);'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_komunikat_o_odmowie_znika_na_poczatku_kolejnej_proby_a_nie_dopiero_z_odpowiedzia"
+
+# Powod z poprzedniego runu zostaje w polu po zmianie runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''    setPowod("");
+    setBladDecyzji(null);'''
+zamien = '''    setBladDecyzji(null);'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_powod_wpisany_w_runie_a_nie_przechodzi_do_pola_powodu_runu_b"
+
+# Blad decyzji poprzedniego runu zostaje po zmianie runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''    setBladDecyzji(null);
+    setWysylamDecyzje(false);
+    if (!runId) return;'''
+zamien = '''    setWysylamDecyzje(false);
+    if (!runId) return;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_blad_decyzji_runu_a_nie_zostaje_na_ekranie_po_przejsciu_na_run_b"
+
+# Blokada "wysylam" z poprzedniego runu zostaje po zmianie runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''    setWysylamDecyzje(false);
+    if (!runId) return;'''
+zamien = '''    if (!runId) return;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_decyzja_w_locie_w_runie_a_nie_blokuje_przyciskow_runu_b"
+
+# Pole powodu nie jest czyszczone po przyjetej decyzji (wraca przy kolejnej bramce).
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''      setPowod("");
+      void dociagnijRef.current?.();'''
+zamien = '''      void dociagnijRef.current?.();'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_pole_powodu_jest_puste_gdy_run_znowu_czeka_na_kolejnej_bramce_po_zatwierdzeniu"
+
+# Przyjeta decyzja nie zmienia statusu od razu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''      setStatus(przyjeta.status);
+'''
+# `void przyjeta`, nie pusta zamiana: bez uzycia zmiennej tsc konczy build bledem TS6133
+# i narzedzie zglasza blad (kod 2) zamiast zabitego mutanta.
+zamien = '''      void przyjeta;
+'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odpowiedz_na_decyzje_zmienia_widok_od_razu_bez_czekania_na_ponowne_pobranie_runu"
+
+# Po przyjetej decyzji widok nie pobiera runu (brak powodu odrzucenia w napisie).
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''      setPowod("");
+      void dociagnijRef.current?.();'''
+zamien = '''      setPowod("");'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_z_powodem_zapisuje_w_bazie_status_odrzucony_i_przyciety_powod"
+
+# --- ignorowanie odpowiedzi po zmianie runu -------------------------------------------------------
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''const nieaktualny = () => runIdRef.current !== id;'''
+zamien = '''const nieaktualny = () => runIdRef.current === id;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_klikniecie_zatwierdz_wznawia_run_w_bazie_i_zapisuje_zdarzenie_decyzji"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''const nieaktualny = () => runIdRef.current !== id;'''
+zamien = '''const nieaktualny = () => false;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_na_decyzje_runu_a_po_przejsciu_na_run_b_nie_pokazuje_bledu_w_runie_b"
+
+# Uchwyt biezacego runu nie jest odswiezany po zmianie runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''  runIdRef.current = runId;
+'''
+zamien = ''''''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_na_decyzje_runu_a_po_przejsciu_na_run_b_nie_pokazuje_bledu_w_runie_b"
+
+# Kontrola po ostatnim await galezi odmowy: spozniona odmowa trafia do nowego runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''        if (nieaktualny()) return;
+        setBladDecyzji('''
+zamien = '''        setBladDecyzji('''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odmowa_na_decyzje_runu_a_po_przejsciu_na_run_b_nie_pokazuje_bledu_w_runie_b"
+
+# Kontrola po ostatnim await galezi sukcesu: spozniona przyjeta decyzja zmienia status nowego runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''      if (nieaktualny()) return;
+      setStatus(przyjeta.status);'''
+zamien = '''      setStatus(przyjeta.status);'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_przyjeta_decyzja_runu_a_po_przejsciu_na_run_b_nie_zmienia_stanu_runu_b"
+
+# --- napis "odrzucony" -------------------------------------------------------------------------------
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{runId && status === "rejected" && <p'''
+zamien = '''{runId && status !== "rejected" && <p'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_z_powodem_zapisuje_w_bazie_status_odrzucony_i_przyciety_powod"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''odrzucony{reason ? `: ${reason}` : ""}'''
+zamien = '''odrzucony{!reason ? `: ${reason}` : ""}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_z_powodem_zapisuje_w_bazie_status_odrzucony_i_przyciety_powod"
+
+# Gdy brak powodu, napis nie ma dwukropka.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''odrzucony{reason ? `: ${reason}` : ""}'''
+zamien = '''odrzucony{reason ? `: ${reason}` : ":"}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucony_run_bez_powodu_pokazuje_samo_odrzucony_bez_dwukropka"
+
+# Brak powodu pokazuje "odrzucony: null".
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''odrzucony{reason ? `: ${reason}` : ""}'''
+zamien = '''odrzucony{`: ${reason}`}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucony_run_bez_powodu_pokazuje_samo_odrzucony_bez_dwukropka"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''odrzucony{reason ? `: ${reason}` : ""}'''
+zamien = '''odrzucony{reason ? `; ${reason}` : ""}'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_z_powodem_zapisuje_w_bazie_status_odrzucony_i_przyciety_powod"
+
+# Powod odrzuconego runu pokazany drugi raz osobnym akapitem.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''{runId && status !== "rejected" && reason && <p style='''
+zamien = '''{runId && reason && <p style='''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_z_powodem_zapisuje_w_bazie_status_odrzucony_i_przyciety_powod"
+
+# =====================================================================================
+# web/src/api.ts: aliasy typow decyzji zalezne od kontraktu
+# =====================================================================================
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type DecyzjaIn = Schemat["DecyzjaIn"];'''
+zamien = '''export type DecyzjaIn = any;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_pole_usuniete_z_kontraktu_decyzji_oblewa_kompilacje_frontu[DecyzjaIn-decyzja]"
+
+[[mutant]]
+plik = "web/src/api.ts"
+szukaj = '''export type DecyzjaPrzyjeta = Schemat["DecyzjaPrzyjeta"];'''
+zamien = '''export type DecyzjaPrzyjeta = any;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_pole_usuniete_z_kontraktu_decyzji_oblewa_kompilacje_frontu[DecyzjaPrzyjeta-status]"
+
+# =====================================================================================
+# src/runner/silnik.py: stale modulu i zapis artefaktu decyzji
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''TEKST_PRZERWANIA = "przerwany przy śmierci runnera — nie wznawiamy"'''
+zamien = '''TEKST_PRZERWANIA = "przerwany przy śmierci runnera — wznawiamy"'''
+test = "tests/test_wznowienie_runu.py::test_krok_przerwany_przy_smierci_runnera_dostaje_porazke_z_powodem_zamiast_wznowienia"
+
+# Odrzucenie przestaje byc znana decyzja.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''DECYZJE = ("approve", "reject")'''
+zamien = '''DECYZJE = ("approve",)'''
+test = "tests/test_wznowienie_runu.py::test_odrzucenie_konczy_run_bez_startu_kroku_i_bez_wywolania_agenta"
+
+# Zatwierdzenie przestaje byc znana decyzja.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''DECYZJE = ("approve", "reject")'''
+zamien = '''DECYZJE = ("reject",)'''
+test = "tests/test_wznowienie_runu.py::test_po_zatwierdzeniu_uruchamiaja_sie_krok_za_bramka_i_jego_nastepnik_ale_nie_zakonczony_poprzednik"
+
+# Nieznana decyzja "maybe" przestaje byc ignorowana (zatwierdza krok).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''DECYZJE = ("approve", "reject")'''
+zamien = '''DECYZJE = ("approve", "reject", "maybe")'''
+test = "tests/test_wznowienie_runu.py::test_nieznana_decyzja_jest_ignorowana_a_run_dalej_czeka_na_bramce"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''KATALOG_ARTEFAKTOW = KATALOG_RUNU / "artifacts"'''
+zamien = '''KATALOG_ARTEFAKTOW = KATALOG_RUNU / "artefakty"'''
+test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_jest_ostatnim_wejsciem_kroku_za_bramka_po_wejsciach_ze_skilla"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''async with _BLOKADY.setdefault(run_id, asyncio.Lock()):'''
+zamien = '''async with asyncio.Lock():'''
+test = "tests/test_wznowienie_runu.py::test_dwa_wspolbiezne_polecenia_wznowienia_uruchamiaja_krok_za_bramka_dokladnie_raz"
+
+# Czas decyzji bez strefy.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''"czas": datetime.now(timezone.utc).isoformat(),'''
+zamien = '''"czas": datetime.now().isoformat(),'''
+test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_niesie_run_krok_decyzje_powod_i_czas_w_utc"
+
+# =====================================================================================
+# src/runner/client.py: walidacja polecenia `resume` i rozdzielanie
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''elif cmd.get("type") == "resume":'''
+zamien = '''elif cmd.get("type") == "resume_":'''
+test = "tests/test_polecenie_resume.py::test_polecenie_resume_trafia_do_silnika_z_run_krokiem_decyzja_i_powodem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._runy.add(wznowienie)'''
+zamien = '''pass'''
+test = "tests/test_polecenie_resume.py::test_stop_runnera_anuluje_trwajace_wznowienie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)'''
+zamien = '''silnik.wznow_run(run_id, step_id, decyzja, emit, powod=None)'''
+test = "tests/test_polecenie_resume.py::test_odrzucenie_z_powodem_dochodzi_do_silnika_z_decyzja_reject"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''step_id=step_id, kind="step_aborted",
+                    text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
+
+    @staticmethod
+    def _zabij_grupe'''
+zamien = '''step_id="run", kind="step_aborted",
+                    text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
+
+    @staticmethod
+    def _zabij_grupe'''
+test = "tests/test_polecenie_resume.py::test_brak_miejsca_na_zdarzenia_wznowienia_zglasza_kokpitowi_przerwanie_kroku_bramki"
+
+# Slad odmowy idzie na stdout zamiast stderr.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''niepoprawne polecenie {cmd!r}", file=sys.stderr)'''
+zamien = '''niepoprawne polecenie {cmd!r}", file=sys.stdout)'''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[brak_run_id]"
+
+# Kazdy czlon warunku walidacji ma wejscie, ktore odrzuca tylko on.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''not isinstance(run_id, str) or not run_id'''
+zamien = '''not isinstance(run_id, str)'''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[pusty_run_id]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''not isinstance(run_id, str) or not run_id'''
+zamien = '''not run_id'''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[run_id_nie_jest_napisem]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or not isinstance(step_id, str) or not step_id'''
+zamien = '''or not isinstance(step_id, str)'''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[pusty_step_id]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or not isinstance(step_id, str) or not step_id'''
+zamien = '''or not step_id'''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[step_id_nie_jest_napisem]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or decyzja not in ("approve", "reject")'''
+zamien = ''''''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[decyzja_spoza_listy]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or decyzja not in ("approve", "reject")'''
+zamien = '''or decyzja not in ("approve",)'''
+test = "tests/test_polecenie_resume.py::test_odrzucenie_z_powodem_dochodzi_do_silnika_z_decyzja_reject"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or decyzja not in ("approve", "reject")'''
+zamien = '''or decyzja not in ("reject",)'''
+test = "tests/test_polecenie_resume.py::test_polecenie_resume_trafia_do_silnika_z_run_krokiem_decyzja_i_powodem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or not (powod is None or isinstance(powod, str))'''
+zamien = '''or not isinstance(powod, str)'''
+test = "tests/test_polecenie_resume.py::test_zatwierdzenie_bez_powodu_dochodzi_do_silnika_z_powodem_none"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or not (powod is None or isinstance(powod, str))'''
+zamien = '''or not (powod is None)'''
+test = "tests/test_polecenie_resume.py::test_polecenie_resume_trafia_do_silnika_z_run_krokiem_decyzja_i_powodem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''or not (powod is None or isinstance(powod, str))'''
+zamien = ''''''
+test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[powod_nie_jest_napisem]"
+
+# Zakonczone wznowienie zostaje w zadaniach runnera.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''wznowienie.add_done_callback(self._runy.discard)'''
+zamien = '''wznowienie.add_done_callback(lambda _: None)'''
+test = "tests/test_polecenie_resume.py::test_zakonczone_wznowienie_znika_z_zadan_runnera"
+
+# =====================================================================================
+# src/runner/silnik.py: klasa bledu i mapa blokad (linie poza funkcjami)
+# =====================================================================================
+
+# Surowy OSError (PermissionError z katalogu skilli) ucieka z wznow_run.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''except (BladDziedziny, OSError) as e:      # BladCheckpointu'''
+zamien = '''except (BladDziedziny,) as e:      # BladCheckpointu'''
+test = "tests/test_wznowienie_runu.py::test_surowy_oserror_z_dysku_przy_wznowieniu_to_porazka_kroku_i_koniec_runu_bez_wyjatku"
+
+# Kolejnosc zapisow: checkpoint bez oczekiwania PRZED artefaktem decyzji.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''    await asyncio.to_thread(_zapisz_decyzje, p, run_id, step_id, decyzja, powod)
+    await asyncio.to_thread(
+        zapisz_checkpoint, katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))'''
+zamien = '''    await asyncio.to_thread(
+        zapisz_checkpoint, katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))
+    await asyncio.to_thread(_zapisz_decyzje, p, run_id, step_id, decyzja, powod)'''
+test = "tests/test_wznowienie_runu.py::test_nieudany_zapis_artefaktu_decyzji_to_porazka_kroku_i_koniec_runu_bez_startu_agenta"
+
+# Walidacja workflow wzgledem biezacego rejestru pominieta przy wznowieniu.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''miedzy bramka a decyzja
+        problemy += waliduj_workflow(workflow, rejestr, dom)'''
+zamien = '''miedzy bramka a decyzja
+        pass'''
+test = "tests/test_wznowienie_runu.py::test_skill_usuniety_miedzy_bramka_a_decyzja_to_porazka_walidacji_bez_zapisu_i_bez_startu_agenta"
+
+# Zestaw krokow checkpointu a kopii workflow: kazdy kierunek rozbieznosci ma wejscie.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if set(stany) != {k.id for k in p.workflow.kroki}:'''
+zamien = '''if set(stany) < {k.id for k in p.workflow.kroki}:'''
+test = "tests/test_wznowienie_runu.py::test_checkpoint_z_innym_zestawem_krokow_niz_kopia_workflow_to_porazka_kroku_bez_zapisu_i_startu[krok_nadmiarowy]"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if set(stany) != {k.id for k in p.workflow.kroki}:'''
+zamien = '''if set(stany) > {k.id for k in p.workflow.kroki}:'''
+test = "tests/test_wznowienie_runu.py::test_checkpoint_z_innym_zestawem_krokow_niz_kopia_workflow_to_porazka_kroku_bez_zapisu_i_startu[krok_brakujacy]"
+
+# Bez dziedziczenia po BladDziedziny wyjatek ucieka z wznow_run.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''class BladWznowienia(BladDziedziny):'''
+zamien = '''class BladWznowienia(Exception):'''
+test = "tests/test_wznowienie_runu.py::test_porazka_wznowienia_to_dokladnie_dwa_zdarzenia_step_failed_i_run_finished_ze_wszystkimi_polami"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''class BladWznowienia(BladDziedziny):'''
+zamien = '''class BladWznowienia(Exception):'''
+test = "tests/test_wznowienie_runu.py::test_blad_wznowienia_jest_bledem_dziedziny"
+
+# Zwykly slownik trzyma blokady zakonczonych runow w nieskonczonosc.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = ''' = weakref.WeakValueDictionary()'''
+zamien = ''' = {}'''
+test = "tests/test_wznowienie_runu.py::test_blokady_runow_nie_zostaja_w_pamieci_po_zakonczeniu_wznowienia"
+
+# Artefakt decyzji z ucieczkami \uXXXX zamiast znakow UTF-8.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''}, ensure_ascii=False)'''
+zamien = '''}, ensure_ascii=True)'''
+test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_zapisuje_polskie_znaki_powodu_doslownie_w_utf8"
+
+# Artefakt decyzji w innym kodowaniu niz UTF-8 (linia z `# pragma: no mutate`, bo mutant UTF-8 jest rownowazny).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''bajty = tresc.encode("utf-8")'''
+zamien = '''bajty = tresc.encode("utf-16")'''
+test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_zapisuje_polskie_znaki_powodu_doslownie_w_utf8"
+
+# Wspolna blokada dla wszystkich runow.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''_BLOKADY.setdefault(run_id, asyncio.Lock())'''
+zamien = '''_BLOKADY.setdefault(None, asyncio.Lock())'''
+test = "tests/test_wznowienie_runu.py::test_blokada_wznowienia_jest_osobna_dla_kazdego_runu_a_nie_wspolna_dla_wszystkich"
+
+# Sciezka repozytorium gubiona w checkpoincie po wznowieniu.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''        Path(cp.repozytorium))'''
+zamien = '''        None)'''
+test = "tests/test_wznowienie_runu.py::test_wznowienie_zachowuje_w_checkpoincie_sciezke_repozytorium_uzytkownika"
+
+# Bledna nazwa pliku kopii workflow (na systemach bez rozrozniania wielkosci liter tylko ten test to widzi).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''wczytaj_workflow(katalog / "workflow.yaml")'''
+zamien = '''wczytaj_workflow(katalog / "WORKFLOW.YAML")'''
+test = "tests/test_wznowienie_runu.py::test_wznowienie_wczytuje_workflow_z_pliku_workflow_yaml_dokladnie_w_katalogu_runu"
+
+# Workflow z bledem pola nie blokuje wznowienia (`or` -> `and`).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if workflow is None or ma_bledy(problemy):
+        raise BladWznowienia'''
+zamien = '''if workflow is None and ma_bledy(problemy):
+        raise BladWznowienia'''
+test = "tests/test_wznowienie_runu.py::test_kopia_workflow_z_bledem_pola_to_porazka_kroku_mimo_wczytanego_workflow_bez_startu_agenta"
+
+# Brak tekstu problemow projektu w porazce.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''raise BladWznowienia(_bledy(problemy_projektu))'''
+zamien = '''raise BladWznowienia(None)'''
+test = "tests/test_wznowienie_runu.py::test_zepsuty_project_yaml_w_worktree_to_porazka_kroku_z_dokladnym_tekstem_problemow"
+
+# Wartosci domyslne profilu i katalogu domowego.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    dom = dom if dom is not None else Path.home()
+    try:
+        async with'''
+zamien = '''profil = ProfilBackendu.z_srodowiska()
+    dom = dom if dom is not None else Path.home()
+    try:
+        async with'''
+test = "tests/test_wznowienie_runu.py::test_wznowienie_z_podanym_profilem_nie_siega_do_profilu_srodowiska"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    dom = dom if dom is not None else Path.home()
+    try:
+        async with'''
+zamien = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    dom = Path.home()
+    try:
+        async with'''
+test = "tests/test_wznowienie_runu.py::test_wznowienie_z_podanym_dom_przekazuje_go_do_rejestru_a_nie_katalog_domowy"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    dom = dom if dom is not None else Path.home()
+    try:
+        async with'''
+zamien = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    dom = dom
+    try:
+        async with'''
+test = "tests/test_wznowienie_runu.py::test_wznowienie_bez_dom_buduje_rejestr_z_katalogu_domowego"

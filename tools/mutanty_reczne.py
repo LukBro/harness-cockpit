@@ -16,6 +16,16 @@ HAR-156: mutant z `plik` pod `web/` albo z testem pod `tests/e2e/` dostaje w kop
 front (`npm ci` raz na kopie, `npm run build` do `src/cockpit/static`); po mutacji pliku pod
 `web/` front jest budowany ponownie. `--czy-front <tabele>` tylko wypisuje `front=1`/`front=0`.
 Pominiety test nigdy nie liczy sie jako "przeszedl" ani "zabil mutanta".
+HAR-225: `--sprawdz-wszystkie [--korzen K] [--limit S]` sprawdza WSZYSTKIE tabele
+`K/tests/mutanty_reczne/*.toml` (bez tabel pozycyjnych i bez `--czy-front`) i niczego nie
+wykonuje: nie kopiuje repo, nie naklada mutacji, nie uruchamia testow (tylko jedna kolekcja
+pytesta `--collect-only`). Wiersz jest poprawny, gdy wpis przechodzi walidacje, `szukaj`
+wystepuje w `plik` dokladnie raz (ta sama regula co przy nakladaniu mutacji) i node id testu
+istnieje (dokladnie albo jako `node_id[...]`). Bledy sa zbierane, po jednym w linii na stderr:
+`tests/mutanty_reczne/X.toml #n: powod` (wiersz) albo `tests/mutanty_reczne/X.toml: powod`
+(cala tabela). Kody wyjscia: 0 - sprawdzono > 0 wierszy bez bledow (stdout: `sprawdzono N
+wierszy w M tabelach`), 2 - kazdy blad wiersza lub tabeli, brak tabel, zero wierszy, kolekcja
+pytesta z kodem innym niz 0 (blad importu, nic nie zebrano, przekroczony limit); nigdy 1.
 HAR-184: `zamien` moze byc pustym napisem (mutacja usuwajaca fragment `szukaj`); `plik`, `szukaj`
 i `test` pozostaja niepuste.
 """
@@ -41,6 +51,8 @@ CZEKANIE_PO_ZABICIU = 10.0
 RAPORT_JUNIT = ".mutanty-reczne-junit.xml"
 ZMIENNA_WYMAGANIA_BAZY = "COCKPIT_WYMAGAJ_BAZY"
 KONCOWKA_WYJSCIA = 2000
+KONCOWKA_KOLEKCJI = 2000
+KOD_BLEDU_NARZEDZIA = 2
 
 
 class BladNarzedzia(Exception):
@@ -55,43 +67,59 @@ class Mutant:
     test: str
 
 
-def _mutant_z_wpisu(wpis: object, numer: int, tabela: Path) -> Mutant:
-    gdzie = f"{tabela}: wpis {numer}"
+def _wpis_na_mutanta(wpis: object) -> Mutant:
+    """Waliduje jeden wpis; powod bledu bez nazwy tabeli i numeru."""
     if not isinstance(wpis, dict):
-        raise BladNarzedzia(f"{gdzie}: wpis nie jest tabela")
+        raise BladNarzedzia("wpis nie jest tabela")
     nieznane = sorted(set(wpis) - set(POLA))
     if nieznane:
-        raise BladNarzedzia(f"{gdzie}: nieznany klucz {nieznane[0]!r}")
+        raise BladNarzedzia(f"nieznany klucz {nieznane[0]!r}")
     for pole in POLA:
         if pole not in wpis:
-            raise BladNarzedzia(f"{gdzie}: brak pola {pole!r}")
+            raise BladNarzedzia(f"brak pola {pole!r}")
         if not isinstance(wpis[pole], str):
-            raise BladNarzedzia(f"{gdzie}: pole {pole!r} musi byc napisem")
+            raise BladNarzedzia(f"pole {pole!r} musi byc napisem")
         if not wpis[pole] and pole != "zamien":
-            raise BladNarzedzia(f"{gdzie}: pole {pole!r} musi byc niepustym napisem")
+            raise BladNarzedzia(f"pole {pole!r} musi byc niepustym napisem")
     sciezka = Path(wpis["plik"])
     if sciezka.is_absolute() or ".." in sciezka.parts:
-        raise BladNarzedzia(f"{gdzie}: plik {wpis['plik']!r} musi byc sciezka wzgledna w repozytorium")
+        raise BladNarzedzia(f"plik {wpis['plik']!r} musi byc sciezka wzgledna w repozytorium")
     if wpis["szukaj"] == wpis["zamien"]:
-        raise BladNarzedzia(f"{gdzie}: zamien jest rowne szukaj (mutant tozsamosciowy)")
+        raise BladNarzedzia("zamien jest rowne szukaj (mutant tozsamosciowy)")
     return Mutant(wpis["plik"], wpis["szukaj"], wpis["zamien"], wpis["test"])
+
+
+def _mutant_z_wpisu(wpis: object, numer: int, tabela: Path) -> Mutant:
+    try:
+        return _wpis_na_mutanta(wpis)
+    except BladNarzedzia as blad:
+        raise BladNarzedzia(f"{tabela}: wpis {numer}: {blad}") from blad
+
+
+def _surowe_wpisy(sciezka: Path) -> list[object]:
+    """Czyta tabele i zwraca wpisy `[[mutant]]`; powod bledu bez nazwy tabeli."""
+    try:
+        with sciezka.open("rb") as plik:
+            dane = tomllib.load(plik)
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:
+        raise BladNarzedzia(f"nie da sie odczytac tabeli: {blad}") from blad
+    nieznane = sorted(set(dane) - {"mutant"})
+    if nieznane:
+        raise BladNarzedzia(f"nieznany klucz najwyzszego poziomu {nieznane[0]!r}")
+    wpisy = dane.get("mutant")
+    if not isinstance(wpisy, list):
+        raise BladNarzedzia("brak listy [[mutant]]")
+    if not wpisy:
+        raise BladNarzedzia("pusta tabela - brak dowodu")
+    return wpisy
 
 
 def wczytaj_tabele(sciezka: Path) -> list[Mutant]:
     """Czyta i waliduje tabele; kazde naruszenie to `BladNarzedzia`."""
     try:
-        with sciezka.open("rb") as plik:
-            dane = tomllib.load(plik)
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:
-        raise BladNarzedzia(f"{sciezka}: nie da sie odczytac tabeli: {blad}") from blad
-    nieznane = sorted(set(dane) - {"mutant"})
-    if nieznane:
-        raise BladNarzedzia(f"{sciezka}: nieznany klucz najwyzszego poziomu {nieznane[0]!r}")
-    wpisy = dane.get("mutant")
-    if not isinstance(wpisy, list):
-        raise BladNarzedzia(f"{sciezka}: brak listy [[mutant]]")
-    if not wpisy:
-        raise BladNarzedzia(f"{sciezka}: pusta tabela - brak dowodu")
+        wpisy = _surowe_wpisy(sciezka)
+    except BladNarzedzia as blad:
+        raise BladNarzedzia(f"{sciezka}: {blad}") from blad
     return [_mutant_z_wpisu(wpis, numer, sciezka) for numer, wpis in enumerate(wpisy, start=1)]
 
 
@@ -130,23 +158,35 @@ def skopiuj_repo(korzen: Path, cel: Path) -> None:
             raise BladNarzedzia(f"{wzgledna}: nie da sie skopiowac: {blad}") from blad
 
 
-def zastosuj_mutacje(kopia: Path, mutant: Mutant) -> None:
-    """Zamienia `szukaj` na `zamien` w pliku kopii; `szukaj` musi wystapic dokladnie raz."""
-    sciezka = kopia / mutant.plik
+def _odczytaj_utf8(sciezka: Path, nazwa: str) -> bytes:
+    """Bajty pliku UTF-8; brak pliku, brak praw albo inne kodowanie to `BladNarzedzia`."""
     try:
         tresc = sciezka.read_bytes()
     except OSError as blad:
-        raise BladNarzedzia(f"{mutant.plik}: nie da sie odczytac: {blad}") from blad
+        raise BladNarzedzia(f"{nazwa}: nie da sie odczytac: {blad}") from blad
     try:
         tresc.decode("utf-8")
     except UnicodeDecodeError as blad:
-        raise BladNarzedzia(f"{mutant.plik}: to nie jest UTF-8: {blad}") from blad
+        raise BladNarzedzia(f"{nazwa}: to nie jest UTF-8: {blad}") from blad
+    return tresc
+
+
+def _wymagaj_dokladnie_raz(tresc: bytes, mutant: Mutant) -> bytes:
+    """Zwraca `szukaj` jako bajty; jedna definicja "dokladnie raz" dla mutacji i dla sprawdzenia tabel."""
     szukaj = mutant.szukaj.encode("utf-8")
     ile = tresc.count(szukaj)
     if ile != 1:
         raise BladNarzedzia(
             f"{mutant.plik}: szukaj {mutant.szukaj!r} wystepuje {ile} razy, a ma dokladnie raz"
         )
+    return szukaj
+
+
+def zastosuj_mutacje(kopia: Path, mutant: Mutant) -> None:
+    """Zamienia `szukaj` na `zamien` w pliku kopii; `szukaj` musi wystapic dokladnie raz."""
+    sciezka = kopia / mutant.plik
+    tresc = _odczytaj_utf8(sciezka, mutant.plik)
+    szukaj = _wymagaj_dokladnie_raz(tresc, mutant)
     try:
         sciezka.write_bytes(tresc.replace(szukaj, mutant.zamien.encode("utf-8"), 1))
     except OSError as blad:
@@ -321,6 +361,132 @@ def _zabity(korzen: Path, mutant: Mutant, limit: float, limit_budowy: float) -> 
             raise BladNarzedzia(f"nie da sie usunac katalogu tymczasowego {kopia}: {blad}") from blad
 
 
+KATALOG_TABEL = ("tests", "mutanty_reczne")
+
+
+def _tabele_repozytorium(korzen: Path) -> list[Path]:
+    """Wszystkie `*.toml` z katalogu tabel, posortowane po nazwie; brak tabel to `BladNarzedzia`."""
+    katalog = korzen.joinpath(*KATALOG_TABEL)
+    try:
+        tabele = sorted((k for k in katalog.iterdir() if k.name.endswith(".toml")), key=lambda k: k.name)
+    except OSError as blad:
+        raise BladNarzedzia(f"nie da sie odczytac katalogu tabel {katalog}: {blad}") from blad
+    if not tabele:
+        raise BladNarzedzia(f"brak tabel *.toml w {katalog} - brak dowodu")
+    return tabele
+
+
+def _wiersze_i_bledy_tabeli(sciezka: Path, nazwa: str) -> tuple[list[tuple[int, Mutant]], list[str]]:
+    """Poprawne wiersze (z numerem wpisu od 1) i zebrane bledy jednej tabeli."""
+    try:
+        return list(enumerate(wczytaj_tabele(sciezka), start=1)), []
+    except BladNarzedzia:
+        pass
+    # Tabela ma blad: wczytaj_tabele przerywa na pierwszym, a tu zbieramy wszystkie.
+    try:
+        wpisy = _surowe_wpisy(sciezka)
+    except BladNarzedzia as blad:
+        return [], [f"{nazwa}: {blad}"]
+    wiersze: list[tuple[int, Mutant]] = []
+    bledy: list[str] = []
+    for numer, wpis in enumerate(wpisy, start=1):
+        try:
+            wiersze.append((numer, _wpis_na_mutanta(wpis)))
+        except BladNarzedzia as blad:
+            bledy.append(f"{nazwa} #{numer}: {blad}")
+    return wiersze, bledy
+
+
+def _blad_pliku_i_licznika(korzen: Path, mutant: Mutant, tresci: dict[str, bytes | BladNarzedzia]) -> str | None:
+    """Powod bledu wiersza: plik nieczytelny albo `szukaj` nie dokladnie raz; None, gdy jest dobrze."""
+    if mutant.plik not in tresci:
+        try:
+            tresci[mutant.plik] = _odczytaj_utf8(korzen / mutant.plik, mutant.plik)
+        except BladNarzedzia as blad:
+            tresci[mutant.plik] = blad
+    tresc = tresci[mutant.plik]
+    if isinstance(tresc, BladNarzedzia):
+        return str(tresc)
+    try:
+        _wymagaj_dokladnie_raz(tresc, mutant)
+    except BladNarzedzia as blad:
+        return str(blad)
+    return None
+
+
+def _plik_testu(test: str) -> str:
+    """Czesc node id przed pierwszym `::`."""
+    return test.partition("::")[0]
+
+
+def _blad_pliku_testu(korzen: Path, test: str) -> str | None:
+    """Powod bledu, gdy pliku testu z node id nie ma na dysku (bez wolania pytesta); None, gdy jest."""
+    plik_testu = _plik_testu(test)
+    try:
+        istnieje = (korzen / plik_testu).is_file()
+    except OSError as blad:
+        return f"{plik_testu}: nie da sie sprawdzic pliku testu: {blad}"
+    return None if istnieje else f"test {test} nie istnieje: brak pliku {plik_testu}"
+
+
+def _zbierz_node_id(korzen: Path, pliki: list[str], limit: float) -> set[str]:
+    """Jedna kolekcja pytesta (`--collect-only`) dla plikow testow; kod inny niz 0 to `BladNarzedzia`."""
+    stare = os.environ.get("PYTHONPATH")
+    sciezki = os.pathsep.join([str(korzen / "src"), *([stare] if stare else [])])
+    srodowisko = {**os.environ, "PYTHONPATH": sciezki}
+    # Kolekcja nie zostawia bajtkodu w repozytorium uzytkownika.
+    srodowisko["PYTHONDONTWRITEBYTECODE"] = "1"
+    polecenie = [
+        sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", "-o", "addopts=",
+        *pliki,
+    ]  # fmt: skip
+    kod, wyjscie = _uruchom_proces(polecenie, korzen, srodowisko, limit, "kolekcji testow")
+    if kod:
+        raise BladNarzedzia(
+            f"kolekcja testow zakonczyla sie kodem {kod} (nie 0): brak dowodu, ze node id istnieja: "
+            f"{wyjscie[-KONCOWKA_KOLEKCJI:]}"
+        )
+    return {linia.strip() for linia in wyjscie.splitlines() if "::" in linia}
+
+
+def _istnieje_node_id(test: str, zebrane: set[str]) -> bool:
+    """Dokladnie na liscie albo jako funkcja parametryzowana `test[...]` zapisana bez nawiasu."""
+    return test in zebrane or any(z.startswith(f"{test}[") for z in zebrane)
+
+
+def sprawdz_wszystkie_tabele(korzen: Path, limit: float, bledy: list[str]) -> tuple[int, int]:
+    """Sprawdza wszystkie tabele bez nakladania mutacji; bledy dopisuje do `bledy`.
+
+    Zwraca (liczba wierszy, liczba tabel). Brak tabel, zero wierszy i kolekcja z kodem != 0 to `BladNarzedzia`."""
+    tabele = _tabele_repozytorium(korzen)
+    wiersze: list[tuple[str, int, Mutant]] = []
+    for tabela in tabele:
+        nazwa = tabela.relative_to(korzen).as_posix()
+        poprawne, bledy_tabeli = _wiersze_i_bledy_tabeli(tabela, nazwa)
+        bledy.extend(bledy_tabeli)
+        wiersze.extend((nazwa, numer, mutant) for numer, mutant in poprawne)
+    tresci: dict[str, bytes | BladNarzedzia] = {}
+    do_kolekcji: list[tuple[str, int, Mutant]] = []
+    for nazwa, numer, mutant in wiersze:
+        powod_pliku = _blad_pliku_i_licznika(korzen, mutant, tresci)
+        if powod_pliku is not None:
+            bledy.append(f"{nazwa} #{numer}: {powod_pliku}")
+        powod_testu = _blad_pliku_testu(korzen, mutant.test)
+        if powod_testu is not None:
+            bledy.append(f"{nazwa} #{numer}: {powod_testu}")
+        else:
+            do_kolekcji.append((nazwa, numer, mutant))
+    if do_kolekcji:
+        pliki = sorted({_plik_testu(mutant.test) for _, _, mutant in do_kolekcji})
+        zebrane = _zbierz_node_id(korzen, pliki, limit)
+        for nazwa, numer, mutant in do_kolekcji:
+            if not _istnieje_node_id(mutant.test, zebrane):
+                bledy.append(f"{nazwa} #{numer}: test {mutant.test} nie istnieje wsrod zebranych testow")
+    if not bledy and not wiersze:
+        raise BladNarzedzia("zero sprawdzonych wierszy - brak dowodu")
+    return len(wiersze), len(tabele)
+
+
 def _limit(tekst: str) -> float:
     try:
         wartosc = float(tekst)
@@ -333,7 +499,7 @@ def _limit(tekst: str) -> float:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("tabele", nargs="+", type=Path, help="tests/mutanty_reczne/<ticket>.toml")
+    parser.add_argument("tabele", nargs="*", type=Path, help="tests/mutanty_reczne/<ticket>.toml")
     parser.add_argument("--korzen", type=Path, default=None, help="korzen repozytorium (domyslnie cwd)")
     parser.add_argument("--limit", type=_limit, default=LIMIT_DOMYSLNY, help="limit czasu testu w sekundach")
     parser.add_argument(
@@ -344,8 +510,31 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="tylko wypisz front=1 (jest mutant frontu/e2e) albo front=0; niczego nie uruchamia",
     )
+    parser.add_argument(
+        "--sprawdz-wszystkie",
+        action="store_const",
+        const=True,
+        default=False,
+        help="HAR-225: sprawdz wszystkie tabele z tests/mutanty_reczne (szukaj raz, test istnieje), bez mutacji",
+    )
     args = parser.parse_args(argv)
+    if args.sprawdz_wszystkie and (args.tabele or args.czy_front):
+        parser.error("--sprawdz-wszystkie nie laczy sie z tabelami pozycyjnymi ani z --czy-front")
+    if not args.sprawdz_wszystkie and not args.tabele:
+        parser.error("podaj co najmniej jedna tabele (albo --sprawdz-wszystkie): brak tabeli to brak dowodu")
     korzen = args.korzen if args.korzen is not None else Path.cwd()
+    if args.sprawdz_wszystkie:
+        bledy: list[str] = []
+        try:
+            wiersze, tabele = sprawdz_wszystkie_tabele(korzen, args.limit, bledy)
+        except BladNarzedzia as blad:
+            bledy.append(f"blad: {blad}")
+        for linia in bledy:
+            print(linia, file=sys.stderr)
+        if bledy:
+            return KOD_BLEDU_NARZEDZIA
+        print(f"sprawdzono {wiersze} wierszy w {tabele} tabelach")
+        return 0
     try:
         mutanty = [m for tabela in args.tabele for m in wczytaj_tabele(korzen / tabela)]
         if args.czy_front:

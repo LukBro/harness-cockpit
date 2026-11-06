@@ -11,8 +11,9 @@ test = "tests/test_mutanty_reczne.py::test_test_ktory_przeszedl_po_mutacji_oznac
 # `-o addopts=`: marker wykluczony w konfiguracji projektu nie moze wyciac wybranego testu.
 [[mutant]]
 plik = "tools/mutanty_reczne.py"
-szukaj = '"-o", "addopts=", test]'
-zamien = 'test]'
+szukaj = '''"-o", "addopts=",
+        f"--junitxml={raport}", test,'''
+zamien = '''f"--junitxml={raport}", test,'''
 test = "tests/test_mutanty_reczne.py::test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_nadal_sie_uruchamia"
 
 # Bez bajtkodu: stary `.pyc` z przebiegu bazowego nie moze ukryc mutacji tej samej dlugosci.
@@ -46,8 +47,8 @@ test = "tests/test_mutanty_reczne.py::test_mutacja_bez_wystapienia_szukaj_konczy
 # Przebieg bazowy: test czerwony bez mutacji nie moze "zabijac" mutantow.
 [[mutant]]
 plik = "tools/mutanty_reczne.py"
-szukaj = "if uruchom_test(kopia, mutant.test, limit) != 0:"
-zamien = "if False:"
+szukaj = "kod_bazowy = uruchom_test(kopia, mutant.test, limit)"
+zamien = "kod_bazowy = 0"
 test = "tests/test_mutanty_reczne.py::test_test_czerwony_juz_bez_mutacji_konczy_sie_kodem_2_zamiast_falszywie_zabitym_mutantem"
 
 # Kod wyjscia bledu narzedzia to 2.
@@ -67,8 +68,10 @@ test = "tests/test_workflow_mutacje.py::test_katalog_web_tools_cicd_liczy_sie_ty
 # `--diff-filter=d`: tabela usunieta w PR nie jest dowodem.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = '--no-renames --diff-filter=d "origin/$BASE_REF...HEAD"'
-zamien = '--no-renames "origin/$BASE_REF...HEAD"'
+szukaj = '''# Tylko istniejace pliki: tabela usunieta w PR nie jest dowodem.
+          tabele="$(git diff --name-only --no-renames --diff-filter=d'''
+zamien = '''# Tylko istniejace pliki: tabela usunieta w PR nie jest dowodem.
+          tabele="$(git diff --name-only --no-renames'''
 test = "tests/test_workflow_mutacje.py::test_tabele_sa_wybierane_zapytaniem_gita_ograniczonym_do_katalogu_tabel_bez_usunietych"
 
 # `exit 1` przy braku dowodu: zmiana poza zasiegiem bez tabeli oblewa krok.
