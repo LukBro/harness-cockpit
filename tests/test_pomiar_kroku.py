@@ -1896,27 +1896,27 @@ def _sql_migracji(zakres: str, w_dol: bool) -> list[str]:
     return [w for w in bufor.getvalue().splitlines() if w.startswith(("ALTER", "UPDATE"))]
 
 
-def test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012():
-    assert _sql_migracji("0011:0012", w_dol=False) == [
+def test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013():
+    assert _sql_migracji("0012:0013", w_dol=False) == [
         "ALTER TABLE step_run ADD COLUMN cost_usd FLOAT;",
         "ALTER TABLE step_run ADD COLUMN tokens_in INTEGER;",
         "ALTER TABLE step_run ADD COLUMN tokens_out INTEGER;",
         "ALTER TABLE step_run ADD COLUMN num_turns INTEGER;",
         "ALTER TABLE step_run ADD COLUMN session_id VARCHAR(100);",
-        "UPDATE alembic_version SET version_num='0012' "
-        "WHERE alembic_version.version_num = '0011';",
+        "UPDATE alembic_version SET version_num='0013' "
+        "WHERE alembic_version.version_num = '0012';",
     ]
 
 
-def test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0011():
-    assert _sql_migracji("0012:0011", w_dol=True) == [
+def test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012():
+    assert _sql_migracji("0013:0012", w_dol=True) == [
         "ALTER TABLE step_run DROP COLUMN session_id;",
         "ALTER TABLE step_run DROP COLUMN num_turns;",
         "ALTER TABLE step_run DROP COLUMN tokens_out;",
         "ALTER TABLE step_run DROP COLUMN tokens_in;",
         "ALTER TABLE step_run DROP COLUMN cost_usd;",
-        "UPDATE alembic_version SET version_num='0011' "
-        "WHERE alembic_version.version_num = '0012';",
+        "UPDATE alembic_version SET version_num='0012' "
+        "WHERE alembic_version.version_num = '0013';",
     ]
 
 

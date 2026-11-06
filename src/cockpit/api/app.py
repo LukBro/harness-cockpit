@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -47,6 +47,7 @@ from .schematy import (
     ListaPlikow,
     PlikOdczytany,
     PlikZapisany,
+    PokrycieRunu,
     Projekt,
     RunnerZameldowany,
     RunnerZespolu,
@@ -152,6 +153,9 @@ class EventIn(BaseModel):
     tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)
     num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)
     session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
+    kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
+        default=None, max_length=1000)
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -309,6 +313,7 @@ async def ingest_event(
         wyslane_output=body.wyslane_output, text_full_len=body.text_full_len,
         attempt=body.attempt, tokens_in=body.tokens_in, tokens_out=body.tokens_out,
         num_turns=body.num_turns, session_id=body.session_id,
+        kroki_weryfikujace=body.kroki_weryfikujace,
     )
     if nowe:
         await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
@@ -328,6 +333,7 @@ async def get_run(
     run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
     rows = await uslugi.zdarzenia_runu(s, run)
     wiersze_krokow = await kroki.kroki_runu(s, run)
+    pokrycie = uslugi.pokrycie_z_kolumn(run)
     return RunSzczegoly(
         id=run.id,
         workflow=run.workflow,
@@ -342,6 +348,7 @@ async def get_run(
             reason=k.reason, cost_usd=k.cost_usd, tokens_in=k.tokens_in,
             tokens_out=k.tokens_out, num_turns=k.num_turns, session_id=k.session_id,
         ) for k in wiersze_krokow],
+        pokrycie=None if pokrycie is None else PokrycieRunu(**pokrycie),
     )
 
 

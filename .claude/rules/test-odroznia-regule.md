@@ -259,3 +259,35 @@ bo CI wykonuje tylko tabele zmienione w PR.
 
 Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu
 elementu = **-25**; PR, po którym wiersz cudzej tabeli przestaje trafiać w kod = **-25**.
+
+## Regresja (retro M1.8)
+
+Źródło: 3 z 4 ticketów M1.8 dostały -25 z tej reguły u test-writera (HAR-172 dwie rundy z rzędu,
+„korekta WRACA”; HAR-173; HAR-225 „korekta WRACA” za HAR-141/HAR-133). Za każdym razem brakujące
+wiersze znalazł krytyk, nie autor tabeli. Nowe kształty:
+
+- **Lista kodu 3 to lista wierszy tabeli** — każda linia, którą `tools/mutanty_zmian.py` wypisuje
+  jako „bez mutantów — sprawdź ręcznie”, ma w tabeli ręcznych mutantów wiersz albo uzasadnienie
+  równoważności. Dotyczy także wywołania serwisu w trasie (argument `k.tenant_id`, dekorator,
+  `Depends(...)`), pól dataclass i modeli wejścia/wyjścia (HAR-172).
+- **Strażnik typu** (`isinstance(x, bool)` obok `int`) ma wejście, które odrzuca tylko on
+  (`proby: true` w checkpoincie) (HAR-172).
+- **Kolejność zapisów nakazana w ustaleniach** (artefakt → checkpoint → zdarzenie) ma test na
+  danych, który oblewa po zamianie dwóch zapisów; element krotki `except` (`OSError` obok błędu
+  dziedziny) — wejście wyzwalające tylko ten typ (HAR-173).
+- **Strażnik za strażnikiem z tym samym kodem wyjścia** (`if not tabele:` przed sprawdzeniem
+  zera wierszy, oba dają kod 2) — asercja na fragmencie komunikatu, który powstaje tylko w nim;
+  `except` wokół `is_file()` — test, który w niego trafia (HAR-225).
+- **Przeżywający ręczny mutant frontu bywa kodem martwym** — zanim dopiszesz test, sprawdź, czy
+  element jest osiągalny (React nie woła `onClick` przycisku z `disabled`; podwójna kontrola
+  `nieaktualny()`); kod nieosiągalny usuwasz (HAR-173).
+- **Mutant równoważny** oznaczasz `# pragma: no mutate` z komentarzem uzasadnienia w linii nad nim
+  i wierszem ręcznego mutanta dla wariantu, który da się zabić (precedens `src/runner/checkpoint.py`,
+  HAR-173 `_zapisz_decyzje`). Pusty `zamien` w pliku TypeScript, który zostawia nieużytą zmienną,
+  psuje build (TS6133) — wtedy `void x;` (HAR-173).
+
+Tekst reguły znów nie wystarczył — egzekucja „każda linia kodu 3 ma wiersz albo uzasadnienie”
+jako sprawdzenie w CI to ticket z retro M1.8.
+
+Co sprawdzić w review: linia z listy kodu 3 bez wiersza i bez uzasadnienia = **-25**; każdy
+z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.

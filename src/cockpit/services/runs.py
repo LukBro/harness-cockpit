@@ -12,7 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cockpit.db.models import Event, Project, Run, Runner, RunStatus
+from cockpit.db.models import Event, Project, Run, Runner, RunStatus, StepStatus
 
 from cockpit.settings import settings
 
@@ -20,7 +20,10 @@ from .errors import (
     BrakDostepu, NaruszonyNiezmiennik, NiespojneDane, NieZnaleziono, StanNiemozliwy,
     WymagaPotwierdzenia,
 )
-from .kroki import nieudane_kroki, zastosuj_zdarzenie_kroku
+from .kroki import kroki_runu, nieudane_kroki, zastosuj_zdarzenie_kroku
+from .pokrycie import (
+    PokrycieBramek, WynikBramki, WynikKrokuWeryfikujacego, pokrycie_bramek,
+)
 from .walidacja import sprawdz_pomiar
 
 
@@ -289,6 +292,75 @@ def powod_nieudanych_krokow(nieudane: Sequence[str]) -> str:
     return "nieudane kroki: " + ", ".join(nieudane)
 
 
+_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.to_accept, RunStatus.failed})
+
+
+async def _powod_pominiecia(s: AsyncSession, run: Run, step_id: str) -> str | None:
+    """Kod D4 z poczatku tekstu ostatniego `step_skipped` kroku w tym runie i zespole."""
+    tekst = (
+        await s.execute(
+            select(Event.text).where(
+                Event.run_id == run.id, Event.tenant_id == run.tenant_id,
+                Event.step_id == step_id, Event.kind == "step_skipped",
+            ).order_by(Event.seq.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if tekst is None:
+        return None
+    return tekst.partition(":")[0]
+
+
+async def pokrycie_runu(
+    s: AsyncSession, run: Run, kroki_weryfikujace: Sequence[str] | None,
+) -> PokrycieBramek | None:
+    """Pokrycie bramkami z listy runnera i wierszy krokow (HAR-178); liczy `pokrycie_bramek`.
+
+    Brak pomiaru (None): brak listy, pusta lista, krok bez wiersza albo wciaz w toku, powod
+    pominiecia spoza listy D4. Nigdy wyjatek: nie da sie zmierzyc to nie zero bramek."""
+    if not kroki_weryfikujace:
+        return None
+    ostatnie: dict[tuple[str, str], StepStatus] = {}
+    for w in await kroki_runu(s, run):   # rosnaco po probie: pozniejsza podmienia wczesniejsza
+        ostatnie[(w.step_id, w.agent_id)] = w.status
+    wyniki: list[WynikKrokuWeryfikujacego] = []
+    for krok in dict.fromkeys(kroki_weryfikujace):
+        stany = {st for (id_kroku, _), st in ostatnie.items() if id_kroku == krok}
+        if not stany or stany & {StepStatus.running, StepStatus.waiting}:
+            return None
+        powod = None
+        if StepStatus.failed in stany:
+            wynik = WynikBramki.nieudana
+        elif StepStatus.finished in stany:
+            wynik = WynikBramki.wykonana     # jakikolwiek agent kroku sprawdzil
+        else:
+            wynik = WynikBramki.pominieta
+            powod = await _powod_pominiecia(s, run, krok)
+        try:
+            wyniki.append(WynikKrokuWeryfikujacego(krok, wynik, powod))
+        except ValueError:
+            return None      # kod spoza D4 albo brak powodu: brak pomiaru
+    return pokrycie_bramek(wyniki)
+
+
+def _zapisz_pokrycie(run: Run, pokrycie: PokrycieBramek) -> None:
+    run.bramki_zaplanowane = pokrycie.zaplanowane
+    run.bramki_wykonane = pokrycie.wykonane
+    run.bramki_pominiete = pokrycie.pominiete
+    run.stan_pokrycia = pokrycie.stan.value
+    run.bramki_powody = {krok: powod.value for krok, powod in pokrycie.powody.items()}
+
+
+def pokrycie_z_kolumn(run: Run) -> dict | None:
+    """Zapisane pokrycie runu; wszystkie kolumny puste to brak pomiaru (None)."""
+    if run.stan_pokrycia is None:
+        return None
+    return {
+        "zaplanowane": run.bramki_zaplanowane, "wykonane": run.bramki_wykonane,
+        "pominiete": run.bramki_pominiete, "powody": run.bramki_powody or {},
+        "stan": run.stan_pokrycia,
+    }
+
+
 async def zapisz_zdarzenie(
     s: AsyncSession,
     run: Run,
@@ -310,6 +382,7 @@ async def zapisz_zdarzenie(
     tokens_out: int | None = None,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:
     """Zapisuje zdarzenie od runnera; zwraca `(zdarzenie, nowe)`.
 
@@ -324,6 +397,8 @@ async def zapisz_zdarzenie(
             f"text_full_len ({text_full_len} znakow) jest krotsza niz przyslany tekst "
             f"({len(text)} znakow)"
         )
+    if kroki_weryfikujace and kind != _KONIEC_RUNU:
+        raise NiespojneDane("kroki_weryfikujace wolno przeslac tylko w zdarzeniu run_finished")
     # tekst ponad limit nigdy nie udaje calosci: znacznik i pelna dlugosc (HAR-56)
     pelna = max(len(text), text_full_len or 0)
     limit = settings.limit_tekstu_zdarzenia
@@ -382,6 +457,10 @@ async def zapisz_zdarzenie(
             if (kind == _KONIEC_RUNU and status_przed != RunStatus.failed
                     and run.status == RunStatus.failed):
                 run.reason = powod_nieudanych_krokow(nieudane)
+            if kind == _KONIEC_RUNU and run.status in _STATUSY_Z_POKRYCIEM:
+                pokrycie = await pokrycie_runu(s, run, kroki_weryfikujace)
+                if pokrycie is not None:
+                    _zapisz_pokrycie(run, pokrycie)
         try:
             await s.commit()
         except IntegrityError as e:

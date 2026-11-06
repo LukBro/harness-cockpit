@@ -768,16 +768,69 @@ def test_cofniecie_migracji_run_odrzucony_zamienia_odrzucone_runy_na_failed_i_us
     assert _z_polaczeniem(typ_kolumny) == "runstatus"
 
 
+# --- HAR-178: pokrycie bramkami w rekordzie runu ---
+
+KOLUMNY_POKRYCIA = {"bramki_zaplanowane", "bramki_wykonane", "bramki_pominiete",
+                    "stan_pokrycia", "bramki_powody"}
+
+
+def test_migracja_pokrycia_bramek_dodaje_do_runu_piec_kolumn_ktore_dopuszczaja_brak(cfg):
+    command.upgrade(cfg, "0011")
+    assert not KOLUMNY_POKRYCIA & set(_kolumny_tabeli("run"))     # kontrast: przed migracja
+
+    command.upgrade(cfg, "head")
+
+    kolumny = _kolumny_tabeli("run")
+    assert {k: kolumny.get(k) for k in KOLUMNY_POKRYCIA} == {k: "YES" for k in KOLUMNY_POKRYCIA}
+
+
+def test_run_dodany_przed_migracja_pokrycia_ma_po_niej_brak_pomiaru_a_nie_zera(cfg):
+    command.upgrade(cfg, "0011")
+
+    def wstaw(c):
+        _wstaw_zespol(c)
+        _wstaw_run_ze_statusem(c, "r1", "to_accept")
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        return tuple(c.execute(text(
+            "SELECT bramki_zaplanowane, bramki_wykonane, bramki_pominiete, stan_pokrycia, "
+            "bramki_powody::text FROM run WHERE id = 'r1'")).one())
+
+    assert _z_polaczeniem(zapytaj) == (None, None, None, None, None)
+
+
+def test_cofniecie_migracji_pokrycia_usuwa_piec_kolumn_i_zostawia_run(cfg):
+    command.upgrade(cfg, "head")
+
+    def wstaw(c):
+        _wstaw_zespol(c)
+        _wstaw_run_ze_statusem(c, "r1", "to_accept")
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+    assert KOLUMNY_POKRYCIA <= set(_kolumny_tabeli("run"))        # kontrast: przed cofnieciem
+
+    command.downgrade(cfg, "0011")
+
+    assert not KOLUMNY_POKRYCIA & set(_kolumny_tabeli("run"))
+    assert _statusy_i_powody_runow() == {"r1": ("to_accept", None)}
+
+
 # --- HAR-174: pomiar kroku (koszt, tokeny, tury, sesja) ---
 
 POLA_POMIARU_KROKU = ("cost_usd", "tokens_in", "tokens_out", "num_turns", "session_id")
 
 
 def test_migracja_pomiaru_kroku_dodaje_pieciu_kolumn_dopuszczajacych_brak_pomiaru(cfg):
-    command.upgrade(cfg, "0011")
+    command.upgrade(cfg, "0012")
     assert not set(POLA_POMIARU_KROKU) & set(_kolumny_tabeli("step_run"))  # kontrast
 
-    command.upgrade(cfg, "0012")
+    command.upgrade(cfg, "0013")
 
     kolumny = _kolumny_tabeli("step_run")
     assert {pole: kolumny.get(pole) for pole in POLA_POMIARU_KROKU} == {
@@ -788,7 +841,7 @@ def test_cofniecie_migracji_pomiaru_kroku_usuwa_kolumny_pomiaru_i_zostawia_reszt
     command.upgrade(cfg, "head")
     assert set(POLA_POMIARU_KROKU) <= set(_kolumny_tabeli("step_run"))  # kontrast
 
-    command.downgrade(cfg, "0011")
+    command.downgrade(cfg, "0012")
 
     kolumny = _kolumny_tabeli("step_run")
     assert not set(POLA_POMIARU_KROKU) & set(kolumny)

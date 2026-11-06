@@ -360,7 +360,10 @@ POLA_MODELI = {
     "ZdarzenieRunu": {"seq": {INT}, "kind": {S}, "text": {S}, "step_id": {S}, "agent_type": {S},
                       "text_truncated": {B}, "text_full_len": {INT, N}},
     "RunSzczegoly": {"id": {S}, "workflow": {S}, "status": {S}, "runner_kind": {S},
-                     "reason": {S, N}, "events": {"array"}, "steps": {"array"}},
+                     "reason": {S, N}, "events": {"array"}, "steps": {"array"},
+                     "pokrycie": {"object", N}},
+    "PokrycieRunu": {"zaplanowane": {INT}, "wykonane": {INT}, "pominiete": {INT},
+                     "powody": {"object"}, "stan": {S}},
     "KrokRunu": {"step_id": {S}, "agent_id": {S}, "attempt": {INT}, "status": {S},
                  "reason": {S, N}, "cost_usd": {"number", N}, "tokens_in": {INT, N},
                  "tokens_out": {INT, N}, "num_turns": {INT, N}, "session_id": {S, N}},
@@ -530,11 +533,13 @@ async def test_szczegoly_runu_niosa_klucze_reason_i_text_full_len_takze_gdy_sa_p
 
     assert odp.status_code == 200
     tresc = odp.json()
-    assert set(tresc) == {"id", "workflow", "status", "runner_kind", "reason", "events", "steps"}
+    assert set(tresc) == {"id", "workflow", "status", "runner_kind", "reason", "events", "steps",
+                          "pokrycie"}
     assert tresc["id"] == run_id
     assert tresc["status"] == RunStatus.running.value
     assert tresc["runner_kind"] in {k.value for k in RunnerKind}
     assert "reason" in tresc and tresc["reason"] is None
+    assert "pokrycie" in tresc and tresc["pokrycie"] is None      # brak pomiaru, nie zera
     pola_zdarzenia = {"seq", "kind", "text", "step_id", "agent_type", "text_truncated",
                       "text_full_len"}
     zdarzenia = sorted(tresc["events"], key=lambda e: e["seq"])

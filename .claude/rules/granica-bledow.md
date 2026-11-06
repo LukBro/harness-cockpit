@@ -107,3 +107,19 @@ ma test (zob. [test-odroznia-regule](test-odroznia-regule.md)).
 
 Co sprawdzić w review: każdy z powyższych kształtów = **-25**; każda gałąź tłumaczenia ma test
 na prawdziwej funkcji (zob. [test-odroznia-regule](test-odroznia-regule.md)).
+
+## Regresja (retro M1.8)
+
+Źródło: HAR-172 (-10, `BladCheckpointu` wychodził z `wykonaj_run` bez obsługi), HAR-173 (-25,
+`KeyError` z `graf.py` uciekał z `wznow_run`, gdy skill zniknął z rejestru między bramką a
+decyzją — run zostawał `running` bez `step_failed` i `run_finished`; korekta WRACA za HAR-133).
+
+- **Nowy wyjątek dziedziny ma obsługę u wołającego** — moduł, który wprowadza własny błąd
+  (`BladCheckpointu`), ma w tym samym PR gałąź w funkcji wywołującej, która zamienia go na
+  zdarzenie końca kroku albo runu; test wywołuje prawdziwą ścieżkę wołającego.
+- **Wejście czytane ponownie przy wznowieniu** (rejestr skilli, workflow, `project.yaml`,
+  checkpoint) przechodzi tę samą walidację co przy starcie, **przed** pierwszym nieodwracalnym
+  zapisem stanu (checkpoint z `waiting_on=None`, artefakt decyzji). Błąd struktury (`KeyError`)
+  nie wychodzi z funkcji, która obiecuje błąd dziedziny.
+
+Co sprawdzić w review: każdy z powyższych kształtów = **-25**.

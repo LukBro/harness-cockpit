@@ -430,11 +430,13 @@ szukaj = '''    tokens_in: int | None = None,
     tokens_out: int | None = None,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 zamien = '''    tokens_in: int | None = 0,
     tokens_out: int | None = None,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
 
@@ -444,11 +446,13 @@ szukaj = '''    tokens_in: int | None = None,
     tokens_out: int | None = None,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 zamien = '''    tokens_in: int | None = None,
     tokens_out: int | None = 0,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
 
@@ -458,11 +462,13 @@ szukaj = '''    tokens_in: int | None = None,
     tokens_out: int | None = None,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 zamien = '''    tokens_in: int | None = None,
     tokens_out: int | None = None,
     num_turns: int | None = 0,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
 
@@ -472,6 +478,7 @@ szukaj = '''    tokens_in: int | None = None,
     tokens_out: int | None = None,
     num_turns: int | None = None,
     session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:'''
 zamien = '''    tokens_in: int | None = None,
     tokens_out: int | None = None,
@@ -825,139 +832,139 @@ zamien = '''        async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
 test = 'tests/test_profil_backendu.py::test_wznowienie_z_uszkodzonym_plikiem_profilu_konczy_sie_porazka_a_decyzja_nie_przepada'
 
 
-# --- migracja 0012: identyfikatory, kolumny i ich typy, dopuszczenie NULL, nazwy w downgrade ---
+# --- migracja 0013 (przemianowana po HAR-178 z 0012): identyfikatory, kolumny i ich typy, dopuszczenie NULL, nazwy w downgrade ---
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
-szukaj = 'revision: str = "0012"'
-zamien = 'revision: str = "0013"'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'revision: str = "0013"'
+zamien = 'revision: str = "0014"'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
-szukaj = 'down_revision: Union[str, None] = "0011"'
-zamien = 'down_revision: Union[str, None] = "0010"'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'down_revision: Union[str, None] = "0012"'
+zamien = 'down_revision: Union[str, None] = "0011"'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=False))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("cost_usd", sa.Integer(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("cost_usd_x", sa.Float(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.drop_column("step_run", "cost_usd")'
 zamien = 'op.drop_column("step_run", "cost_usd_x")'
-test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0011'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=False))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("tokens_in", sa.Float(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("tokens_in_x", sa.Integer(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.drop_column("step_run", "tokens_in")'
 zamien = 'op.drop_column("step_run", "tokens_in_x")'
-test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0011'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=False))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("tokens_out", sa.Float(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("tokens_out_x", sa.Integer(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.drop_column("step_run", "tokens_out")'
 zamien = 'op.drop_column("step_run", "tokens_out_x")'
-test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0011'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=False))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("num_turns", sa.Float(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("num_turns_x", sa.Integer(), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.drop_column("step_run", "num_turns")'
 zamien = 'op.drop_column("step_run", "num_turns_x")'
-test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0011'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=False))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=99), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=True))'
 zamien = 'op.add_column("step_run", sa.Column("session_id_x", sa.String(length=100), nullable=True))'
-test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0012'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
 
 [[mutant]]
-plik = 'alembic/versions/0012_pomiar_kroku.py'
+plik = 'alembic/versions/0013_pomiar_kroku.py'
 szukaj = 'op.drop_column("step_run", "session_id")'
 zamien = 'op.drop_column("step_run", "session_id_x")'
-test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0011'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
 
 
 # --- web/openapi.json: pola pomiaru w EventIn (limity) i KrokRunu (typy, wymagalnosc) ---
