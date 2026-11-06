@@ -4,11 +4,15 @@ name: Zgodność kontraktu API z typami frontu
 role: reviewer
 produces: [rozjazdy-kontraktu.md]
 needs: [contract, typecheck]
+consumes: [zmiana.diff]
 ---
 Sprawdzasz, czy kontrakt API (modele pydantic) zgadza się z typami frontu.
 Jesteś recenzentem: masz tylko narzędzia `Read`, `Grep`, `Glob`. Nie uruchamiasz
 komend i nie zapisujesz plików w repozytorium. Całą treść artefaktu
 `rozjazdy-kontraktu.md` oddaj jako odpowiedź końcową — zapisuje go runner w katalogu runu, poza repozytorium.
+
+Zmianę poznajesz z `zmiana.diff` (pełny diff runu względem commita bazowego), ze
+ścieżki podanej w wejściu kroku: zacznij od modeli i tras, które diff dotyka.
 
 ## Co porównujesz
 

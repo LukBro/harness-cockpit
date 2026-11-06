@@ -10,8 +10,9 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from cockpit.services.kroki_systemowe import opis_kroku_systemowego
 from cockpit.services.skills import Rejestr
-from cockpit.services.workflow import Workflow
+from cockpit.services.workflow import Krok, Workflow
 
 
 class StanKroku(StrEnum):
@@ -57,6 +58,23 @@ def _przodkowie(start: str, needs: Mapping[str, list[str]]) -> set[str]:
     return odwiedzeni
 
 
+@dataclass(frozen=True)
+class _Kontrakt:
+    """Artefakty i capabilities kroku: ze skilla albo z opisu kroku systemowego."""
+
+    consumes: tuple[str, ...]
+    produces: tuple[str, ...]
+    needs: tuple[str, ...]
+
+
+def _kontrakt(krok: Krok, rejestr: Rejestr) -> _Kontrakt:
+    if krok.skill is None:
+        opis = opis_kroku_systemowego(krok.system)
+        return _Kontrakt(opis.consumes, opis.produces, opis.needs)
+    skill = rejestr.skille[krok.skill]
+    return _Kontrakt(tuple(skill.consumes), tuple(skill.produces), tuple(skill.needs))
+
+
 def nastepne(
     workflow: Workflow,
     rejestr: Rejestr,
@@ -66,32 +84,34 @@ def nastepne(
     """Plan: kroki do startu i do pominiecia (z powodem). Planuje tylko kroki `oczekuje`."""
     ids = [krok.id for krok in workflow.kroki]
     needs = {krok.id: list(krok.needs) for krok in workflow.kroki}
-    skille = {krok.id: rejestr.skille[krok.skill] for krok in workflow.kroki}
+    kontrakty = {krok.id: _kontrakt(krok, rejestr) for krok in workflow.kroki}
     przodkowie = {id_kroku: _przodkowie(id_kroku, needs) for id_kroku in ids}
     lokalne = {id_kroku: stany.get(id_kroku, StanKroku.OCZEKUJE) for id_kroku in ids}
     pominiecia: dict[str, tuple[PowodPominiecia, str]] = {}
 
     def powod(id_kroku: str) -> tuple[PowodPominiecia, str] | None:
         moi = [p for p in ids if p in przodkowie[id_kroku]]
-        for przodek in moi:
-            if lokalne[przodek] == StanKroku.NIEUDANY:
-                return PowodPominiecia.ZALEZNOSC_NIEUDANA, f"zależność nieudana: {przodek}"
-        skill = skille[id_kroku]
-        for artefakt in skill.consumes:
-            producenci = [p for p in moi if artefakt in skille[p].produces]
-            if producenci and all(lokalne[p] == StanKroku.POMINIETY for p in producenci):
+        kontrakt = kontrakty[id_kroku]
+        # utracone wejscie (kazdy producent artefaktu pominiety albo nieudany) jest dokladniejsza
+        # przyczyna niz nieudany przodek w ogole, wiec idzie przed `zaleznosc_nieudana`
+        stracone = (StanKroku.POMINIETY, StanKroku.NIEUDANY)
+        for artefakt in kontrakt.consumes:
+            producenci = [p for p in moi if artefakt in kontrakty[p].produces]
+            if producenci and all(lokalne[p] in stracone for p in producenci):
                 return (
                     PowodPominiecia.BRAK_WEJSCIA,
                     f"brak wejścia: {artefakt} z kroku {producenci[0]}",
                 )
-        for capability in skill.needs:
+        for przodek in moi:
+            if lokalne[przodek] == StanKroku.NIEUDANY:
+                return PowodPominiecia.ZALEZNOSC_NIEUDANA, f"zależność nieudana: {przodek}"
+        for capability in kontrakt.needs:
             if capability not in capabilities:
                 return PowodPominiecia.BRAK_CAPABILITY, f"brak capability {capability}"
         return None
 
-    zmiana = True
-    while zmiana:
-        zmiana = False
+    while True:
+        liczba = len(pominiecia)
         for id_kroku in ids:
             if lokalne[id_kroku] != StanKroku.OCZEKUJE:
                 continue
@@ -99,7 +119,8 @@ def nastepne(
             if znaleziony is not None:
                 lokalne[id_kroku] = StanKroku.POMINIETY
                 pominiecia[id_kroku] = znaleziony
-                zmiana = True
+        if len(pominiecia) == liczba:
+            break
 
     gotowe = (StanKroku.ZAKONCZONY, StanKroku.POMINIETY)
     do_startu = [

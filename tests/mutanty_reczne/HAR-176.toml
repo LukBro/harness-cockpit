@@ -1,0 +1,446 @@
+# Tabela recznych mutantow HAR-176 (krok systemowy `diff`, kotwice `plik:linia` w notatce zmiany).
+# Mutmut nie mutuje stalych modulu (regexy, tolerancja, nazwy artefaktow, rejestr krokow
+# systemowych, wartosci domyslne pol), budowa.yaml ani SKILL.md. Kazde `szukaj` wystepuje w
+# pliku dokladnie raz.
+#
+# Wpisy z listy `bez mutantow` (tools/mutanty_zmian.py): kroki_systemowe.py:20-31 i graf.py:62-67
+# maja wiersze `[[mutant]]` na koncu pliku; bez wiersza, jako `[[rownowazny]]` (uzasadnienia na koncu
+# pliku), zostaja graf.py:61, krok_diff.py:23 i silnik.py:72. Pozostale rownowazne:
+#   - kotwice.py:21 i :26 (komentarze).
+#   - `UnicodeDecodeError` w krotce `except` w `wczytaj_zmienione_linie`: usuniety, bo jest
+#     podklasa `ValueError` i nie da sie go wyzwolic w pojedynke (lapie go `ValueError`).
+# (zob. wiersze KODOWANIE i OPCJE_JSON nizej: literaly kodowania i opcji JSON sa stalymi modulu)
+# Warunek `biezacy is not None` w `zmienione_linie` i galaz `PorazkaKroku("nieznany krok
+# systemowy…")` w `_krok_systemowy` lezą w funkcjach, wiec mutmut je mutuje; maja testy
+# (`test_hunk_przed_naglowkiem_jakiegokolwiek_pliku_jest_pomijany_bez_bledu`,
+# `test_krok_systemowy_bez_wykonawcy_konczy_sie_porazka_z_nazwa_a_recenzent_jest_pominiety`).
+# Pierwszy z nich ma tez wiersz nizej (warunek jest jedynym strazem przed TypeError).
+
+# Tolerancja kotwicy: 3 -> 4, linia 16 (12 + 4) przestaje byc poza zakresem.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'TOLERANCJA = 3'
+zamien = 'TOLERANCJA = 4'
+test = "tests/test_kotwice_ryzyk.py::test_granice_tolerancji_wokol_zakresu_to_trzy_linie_w_obie_strony[16-False]"
+
+# Tolerancja kotwicy: 3 -> 2, linia 15 (12 + 3) przestaje byc w zakresie.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'TOLERANCJA = 3'
+zamien = 'TOLERANCJA = 2'
+test = "tests/test_kotwice_ryzyk.py::test_granice_tolerancji_wokol_zakresu_to_trzy_linie_w_obie_strony[15-True]"
+
+# Kotwica: linia moze byc nie tylko cyframi - `abc` przestaje byc ryzykiem bez kotwicy.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = '(?P<linia>[0-9]+)'
+zamien = '(?P<linia>[0-9a-z]+)'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_z_nienumeryczna_linia_to_ryzyko_bez_kotwicy"
+
+# Kotwica musi byc na poczatku pozycji: search znajduje ja w srodku zdania.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KOTWICA.match(pozycja)'
+zamien = 'KOTWICA.search(pozycja)'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_w_srodku_pozycji_nie_jest_kotwica_ryzyka"
+
+# Naglowek sekcji ryzyka z innym zapisem: sekcja nie zostaje znaleziona.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'NAGLOWEK_RYZYKA = "## Jakie ryzyko"'
+zamien = 'NAGLOWEK_RYZYKA = "## Jakie Ryzyko"'
+test = "tests/test_kotwice_ryzyk.py::test_notatka_z_kotwicami_w_diffie_i_sekcja_jak_to_sprawdzic_nie_ma_naruszen"
+
+# Naglowek sekcji `Jak to sprawdzic` z innym zapisem: sekcja nie zostaje znaleziona.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'NAGLOWEK_SPRAWDZENIA = "## Jak to sprawdzić"'
+zamien = 'NAGLOWEK_SPRAWDZENIA = "## Jak to Sprawdzić"'
+test = "tests/test_kotwice_ryzyk.py::test_notatka_z_kotwicami_w_diffie_i_sekcja_jak_to_sprawdzic_nie_ma_naruszen"
+
+# Nazwa artefaktu notatki: krok z `notatka-zmiany.md` przestaje podlegac sprawdzeniu kotwic.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'PLIK_NOTATKI = "notatka-zmiany.md"'
+zamien = 'PLIK_NOTATKI = "notatka-zmiany.mdx"'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_spoza_diffu_konczy_krok_porazka_z_pelnym_powodem_i_nazwa_kotwicy"
+
+# Komunikat pustego diffu.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = 'BRAK_ZMIAN = "brak zmian do recenzji"'
+zamien = 'BRAK_ZMIAN = "brak zmian do recenzj"'
+test = "tests/test_krok_diff.py::test_czysty_worktree_konczy_krok_diff_porazka_evidence_required_bez_plikow"
+
+# Naglowek pliku w diffie: bez poprawnego prefiksu zaden plik nie trafia na liste.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = 'r"diff --git a/(?P<a>'
+zamien = 'r"diff --git x/(?P<a>'
+test = "tests/test_krok_diff.py::test_nowy_plik_jest_w_calosci_jednym_zakresem_od_pierwszej_do_ostatniej_linii"
+
+# Naglowek hunka: licznik starych linii staje sie wymagany, `@@ -5 +5 @@` przestaje byc hunkiem.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = '(?:,(?P<stare>\d+))? \+'
+zamien = '(?:,(?P<stare>\d+)) \+'
+test = "tests/test_krok_diff.py::test_naglowek_hunka_bez_licznika_oznacza_jedna_linie"
+
+# Naglowek hunka: licznik nowych linii staje sie wymagany, `+6 @@` przestaje byc hunkiem.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = '(?:,(?P<nowe>\d+))? @@'
+zamien = '(?:,(?P<nowe>\d+)) @@'
+test = "tests/test_krok_diff.py::test_hunk_z_samym_dodaniem_po_linii_piatej_zaczyna_sie_od_szostej"
+
+# Nazwa pliku diffu w opisie kroku systemowego.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = 'PLIK_DIFFU = "zmiana.diff"'
+zamien = 'PLIK_DIFFU = "zmiana.dif"'
+test = "tests/test_krok_diff.py::test_nazwy_artefaktow_kroku_diff_to_zmiana_diff_i_zmienione_linie_json"
+
+# Nazwa pliku zmienionych linii w opisie kroku systemowego.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = 'PLIK_LINII = "zmienione-linie.json"'
+zamien = 'PLIK_LINII = "zmienione-linie.jsn"'
+test = "tests/test_krok_diff.py::test_nazwy_artefaktow_kroku_diff_to_zmiana_diff_i_zmienione_linie_json"
+
+# Krok diff przestaje produkowac `zmienione-linie.json`.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = 'produces=(PLIK_DIFFU, PLIK_LINII)'
+zamien = 'produces=(PLIK_DIFFU,)'
+test = "tests/test_graf_krokow.py::test_nieudany_krok_diff_odbiera_tez_drugi_artefakt_zmienione_linie_json"
+
+# Rejestr zna krok systemowy pod inna nazwa: `diff` nic nie produkuje.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = '"diff": OpisKrokuSystemowego('
+zamien = '"dif": OpisKrokuSystemowego('
+test = "tests/test_graf_krokow.py::test_nieudany_krok_diff_odbiera_recenzentowi_wejscie_zmiana_diff"
+
+# Silnik traci wykonawce kroku `diff`: krok konczy sie porazka zamiast zapisac artefakty.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '{"diff": wykonaj_diff}'
+zamien = '{}'
+test = "tests/test_krok_diff.py::test_run_z_krokiem_diff_zapisuje_oba_artefakty_w_katalogu_runu_pod_id_kroku"
+
+# Wynik kroku ma domyslnie niepuste kotwice.
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = 'kotwice: tuple[str, ...] = ()'
+zamien = 'kotwice: tuple[str, ...] = ("x",)'
+test = "tests/test_kotwice_ryzyk.py::test_wynik_kroku_bez_kotwic_ma_domyslnie_pusta_krotke_kotwic"
+
+# Krok ma domyslnie `system: diff`.
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = '    system: str | None = None'
+zamien = '    system: str | None = "diff"'
+test = "tests/test_workflow_model.py::test_krok_z_samym_polem_system_wczytuje_sie_bez_problemow_i_bez_skilla"
+
+# Kod problemu skill_i_system.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = 'SKILL_I_SYSTEM = "skill_i_system"'
+zamien = 'SKILL_I_SYSTEM = "skill_i_system_"'
+test = "tests/test_workflow_walidacja.py::test_krok_z_polem_skill_i_system_naraz_ma_dokladnie_jeden_blad_skill_i_system"
+
+# budowa.yaml: krok diff czeka na inny krok niz scenariusz e2e.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = 'diff: {system: diff, needs: [e2e-scenario]}'
+zamien = 'diff: {system: diff, needs: [tdd-task]}'
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_diff_systemowy_bez_skilla_zaraz_po_scenariuszu_e2e"
+
+# budowa.yaml: krok diff traci pole system.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = 'diff: {system: diff,'
+zamien = 'diff: {system: dif,'
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_diff_systemowy_bez_skilla_zaraz_po_scenariuszu_e2e"
+
+# budowa.yaml: recenzent contract-check czeka na scenariusz e2e zamiast na krok diff.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = 'contract-check: {skill: contract-check, needs: [diff]}'
+zamien = 'contract-check: {skill: contract-check, needs: [e2e-scenario]}'
+test = "tests/test_workflow_budowa.py::test_recenzent_budowy_czeka_na_krok_diff_a_nie_na_scenariusz_e2e[contract-check]"
+
+# budowa.yaml: recenzent review-unknown czeka na scenariusz e2e zamiast na krok diff.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = 'review-unknown: {skill: review-unknown, needs: [diff]}'
+zamien = 'review-unknown: {skill: review-unknown, needs: [e2e-scenario]}'
+test = "tests/test_workflow_budowa.py::test_recenzent_budowy_czeka_na_krok_diff_a_nie_na_scenariusz_e2e[review-unknown]"
+
+# budowa.yaml: recenzent explain-change czeka na scenariusz e2e zamiast na krok diff.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = 'explain-change: {skill: explain-change, needs: [diff]}'
+zamien = 'explain-change: {skill: explain-change, needs: [e2e-scenario]}'
+test = "tests/test_workflow_budowa.py::test_recenzent_budowy_czeka_na_krok_diff_a_nie_na_scenariusz_e2e[explain-change]"
+
+# explain-change nie konsumuje `zmienione-linie.json`.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = 'consumes: [zmiana.diff, zmienione-linie.json]'
+zamien = 'consumes: [zmiana.diff]'
+test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_jako_wejscie[explain-change]"
+
+# review-unknown nie konsumuje diffu.
+[[mutant]]
+plik = ".cockpit/skills/review-unknown/SKILL.md"
+szukaj = 'consumes: [zmiana.diff]'
+zamien = 'consumes: []'
+test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_jako_wejscie[review-unknown]"
+
+# contract-check nie konsumuje diffu.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = 'consumes: [zmiana.diff]'
+zamien = 'consumes: []'
+test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_jako_wejscie[contract-check]"
+
+# Brief: `Jak to sprawdzic` przestaje byc obowiazkowa.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = 'jest obowiązkowa:'
+zamien = 'jest opcjonalna:'
+test = "tests/test_skille_przegladu.py::test_sekcja_jak_to_sprawdzic_w_notatce_jest_obowiazkowa_a_nie_opcjonalna"
+
+# Brief: kotwica nie jest wymagana przy kazdym ryzyku.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = 'Każde ryzyko zaczyna się od kotwicy'
+zamien = 'Niektóre ryzyka zaczynają się od kotwicy'
+test = "tests/test_skille_przegladu.py::test_wyjasnienie_zmiany_wymaga_kotwicy_plik_linia_z_diffu_przy_kazdym_ryzyku"
+
+# Brief: silnik nie odrzuca kotwicy spoza diffu.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = 'odrzuci notatkę z kotwicą spoza zmienionych linii diffu'
+zamien = 'przyjmie notatkę z kotwicą spoza zmienionych linii diffu'
+test = "tests/test_skille_przegladu.py::test_wyjasnienie_zmiany_wymaga_kotwicy_plik_linia_z_diffu_przy_kazdym_ryzyku"
+
+# Brief: dobry przyklad traci numer linii w kotwicy.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = 'krok.py:322]'
+zamien = 'krok.py]'
+test = "tests/test_skille_przegladu.py::test_wyjasnienie_zmiany_podaje_dobry_przyklad_ryzyka_z_warunkiem_skutkiem_i_osoba"
+
+# Brief: szablon `Jak to sprawdzic` traci opis jednego kroku.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = '<jeden krok, który człowiek wykona>'
+zamien = '<kilka kroków, które człowiek wykona>'
+test = "tests/test_skille_przegladu.py::test_wyjasnienie_zmiany_ma_notatke_w_ksztalcie_co_zmieniono_jakie_ryzyko_jak_to_sprawdzic"
+
+# Brief: szablon ryzyka traci kotwice.
+[[mutant]]
+plik = ".cockpit/skills/explain-change/SKILL.md"
+szukaj = '- [plik:linia] scenariusz: <konkretny'
+zamien = '- plik:linia scenariusz: <konkretny'
+test = "tests/test_skille_przegladu.py::test_wyjasnienie_zmiany_ma_notatke_w_ksztalcie_co_zmieniono_jakie_ryzyko_jak_to_sprawdzic"
+
+# kroki_systemowe.py:25: opis kroku domyslnie konsumuje `zmiana.diff`, wiec sam krok diff nie ma producenta wejscia.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = 'consumes: tuple[str, ...] = ()'
+zamien = 'consumes: tuple[str, ...] = ("zmiana.diff",)'
+test = "tests/test_workflow_walidacja.py::test_krok_z_samym_system_diff_nie_ma_zadnego_problemu_ani_ostrzezenia"
+
+# kroki_systemowe.py:26: opis kroku domyslnie wymaga capability, wiec krok diff jest pominiety bez niej.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = 'needs: tuple[str, ...] = ()'
+zamien = 'needs: tuple[str, ...] = ("lint",)'
+test = "tests/test_graf_krokow.py::test_krok_systemowy_diff_nie_wymaga_capabilities_runnera"
+
+# kroki_systemowe.py:34: nieznany krok systemowy cos produkuje, wiec konsument diffu nie ma brak_artefaktu.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = 'NIEZNANY_OPIS = OpisKrokuSystemowego(produces=())'
+zamien = 'NIEZNANY_OPIS = OpisKrokuSystemowego(produces=("zmiana.diff",))'
+test = "tests/test_workflow_walidacja.py::test_nieznany_krok_systemowy_nic_nie_produkuje_wiec_konsument_diffu_ma_brak_artefaktu"
+
+# workflow.py:72: krok ma domyslnie skill.
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = '    skill: str | None = None'
+zamien = '    skill: str | None = "x"'
+test = "tests/test_workflow_model.py::test_krok_z_samym_polem_system_wczytuje_sie_bez_problemow_i_bez_skilla"
+
+# workflow_walidacja.py:31: kod problemu nieznanego kroku systemowego.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = 'NIEZNANY_KROK_SYSTEMOWY = "nieznany_krok_systemowy"'
+zamien = 'NIEZNANY_KROK_SYSTEMOWY = "nieznany_krok_systemowy_"'
+test = "tests/test_workflow_walidacja.py::test_nieznany_krok_systemowy_ma_blad_z_nazwa_wartosci_a_nie_nieznany_skill"
+
+# silnik.py:73: klucz wykonawcy kroku inny niz nazwa kroku systemowego.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '{"diff": wykonaj_diff}'
+zamien = '{"dif": wykonaj_diff}'
+test = "tests/test_krok_diff.py::test_run_z_krokiem_diff_zapisuje_oba_artefakty_w_katalogu_runu_pod_id_kroku"
+
+# krok_diff.py: bez warunku `biezacy is not None` hunk przed naglowkiem pliku rzuca TypeError.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = 'biezacy is not None and (hunk := NAGLOWEK_HUNKA.match(linia)) is not None'
+zamien = '(hunk := NAGLOWEK_HUNKA.match(linia)) is not None'
+test = "tests/test_krok_diff.py::test_hunk_przed_naglowkiem_jakiegokolwiek_pliku_jest_pomijany_bez_bledu"
+
+# kotwice.py: KODOWANIE (czytanie zmienione-linie.json) nie jest utf-8.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KODOWANIE = "utf-8"'
+zamien = 'KODOWANIE = "ascii"'
+test = "tests/test_kotwice_ryzyk.py::test_zmienione_linie_z_polskimi_znakami_w_nazwie_pliku_sa_czytane_jako_utf8_niezaleznie_od_srodowiska"
+
+# kotwice.py: KODOWANIE (czytanie notatki w krok.py) nie jest utf-8.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KODOWANIE = "utf-8"'
+zamien = 'KODOWANIE = "ascii"'
+test = "tests/test_kotwice_ryzyk.py::test_notatka_z_polskimi_znakami_jest_czytana_jako_utf8_niezaleznie_od_srodowiska"
+
+# kotwice.py: KODOWANIE (zapis artefaktow w krok_diff.py) nie jest utf-8.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KODOWANIE = "utf-8"'
+zamien = 'KODOWANIE = "ascii"'
+test = "tests/test_krok_diff.py::test_zmienione_linie_json_ma_dokladnie_wyliczone_zakresy_zmian_i_nowych_plikow"
+
+# krok_diff.py: JSON zapisany z ensure_ascii=True.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = '"ensure_ascii": False'
+zamien = '"ensure_ascii": True'
+test = "tests/test_krok_diff.py::test_zmienione_linie_json_ma_dokladnie_wyliczone_zakresy_zmian_i_nowych_plikow"
+
+# krok_diff.py: JSON zapisany z wcieciem 4.
+[[mutant]]
+plik = "src/runner/krok_diff.py"
+szukaj = '"indent": 2'
+zamien = '"indent": 4'
+test = "tests/test_krok_diff.py::test_zmienione_linie_json_ma_dokladnie_wyliczone_zakresy_zmian_i_nowych_plikow"
+
+# KOTWICA: plik moze zawierac dwukropek.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)\]")'
+zamien = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]]+):(?P<linia>[0-9]+)\]")'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_z_dwukropkiem_w_sciezce_to_ryzyko_bez_kotwicy"
+
+# KOTWICA: plik moze zawierac otwierajacy nawias.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)\]")'
+zamien = 'KOTWICA = re.compile(r"\[(?P<plik>[^\]:]+):(?P<linia>[0-9]+)\]")'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_z_otwierajacym_nawiasem_w_sciezce_to_ryzyko_bez_kotwicy"
+
+# KOTWICA: plik moze zawierac zamykajacy nawias.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)\]")'
+zamien = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[:]+):(?P<linia>[0-9]+)\]")'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_z_zamykajacym_nawiasem_w_sciezce_to_ryzyko_bez_kotwicy"
+
+# KOTWICA: brak zamykajacego nawiasu po linii.
+[[mutant]]
+plik = "src/runner/kotwice.py"
+szukaj = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)\]")'
+zamien = 'KOTWICA = re.compile(r"\[(?P<plik>[^\[\]:]+):(?P<linia>[0-9]+)")'
+test = "tests/test_kotwice_ryzyk.py::test_kotwica_bez_zamykajacego_nawiasu_po_linii_to_ryzyko_bez_kotwicy"
+
+# kroki_systemowe.py:20-21: `frozen=True` -> `frozen=False`; opis kroku (publiczny kontrakt, HAR-177
+# dopisze `check`) przestaje byc niezmienny, przypisanie pola nie rzuca `FrozenInstanceError`.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = """@dataclass(frozen=True)
+class OpisKrokuSystemowego:"""
+zamien = """@dataclass(frozen=False)
+class OpisKrokuSystemowego:"""
+test = "tests/test_krok_diff.py::test_opis_kroku_systemowego_jest_niezmienny_po_utworzeniu"
+
+# kroki_systemowe.py:24: `produces` dostaje wartosc domyslna `()`; opis bez artefaktow tworzy sie
+# bez bledu, wiec krok systemowy mogloby zarejestrowac bez zadnego kontraktu wyjscia.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = "produces: tuple[str, ...]"
+zamien = "produces: tuple[str, ...] = ()"
+test = "tests/test_krok_diff.py::test_opis_kroku_systemowego_wymaga_podania_artefaktow_ktore_produkuje"
+
+# kroki_systemowe.py:29-31: `MappingProxyType({...})` -> zwykly `dict`; rejestr krokow systemowych
+# przestaje byc tylko do odczytu i da sie do niego dopisac krok w czasie dzialania.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = """MappingProxyType({
+    "diff": OpisKrokuSystemowego(produces=(PLIK_DIFFU, PLIK_LINII)),
+})"""
+zamien = """dict({
+    "diff": OpisKrokuSystemowego(produces=(PLIK_DIFFU, PLIK_LINII)),
+})"""
+test = "tests/test_krok_diff.py::test_rejestr_krokow_systemowych_jest_tylko_do_odczytu"
+
+# graf.py:62-67: pola `consumes` i `produces` `_Kontrakt` zamienione miejscami; konstruktor
+# pozycyjny wpisuje artefakty wejscia jako wyjscie i odwrotnie, recenzent traci `brak wejscia`.
+[[mutant]]
+plik = "src/runner/graf.py"
+szukaj = """class _Kontrakt:
+    \"\"\"Artefakty i capabilities kroku: ze skilla albo z opisu kroku systemowego.\"\"\"
+
+    consumes: tuple[str, ...]
+    produces: tuple[str, ...]
+    needs: tuple[str, ...]"""
+zamien = """class _Kontrakt:
+    \"\"\"Artefakty i capabilities kroku: ze skilla albo z opisu kroku systemowego.\"\"\"
+
+    produces: tuple[str, ...]
+    consumes: tuple[str, ...]
+    needs: tuple[str, ...]"""
+test = "tests/test_graf_krokow.py::test_nieudany_krok_diff_odbiera_recenzentowi_wejscie_zmiana_diff"
+
+# graf.py:66-67: pola `produces` i `needs` `_Kontrakt` zamienione miejscami; capabilities kroku
+# systemowego `diff` staja sie jego artefaktami, wiec krok wymaga capabilities, ktorych runner nie ma.
+[[mutant]]
+plik = "src/runner/graf.py"
+szukaj = """    produces: tuple[str, ...]
+    needs: tuple[str, ...]"""
+zamien = """    needs: tuple[str, ...]
+    produces: tuple[str, ...]"""
+test = "tests/test_graf_krokow.py::test_krok_systemowy_diff_nie_wymaga_capabilities_runnera"
+
+# Uzasadnienia rownowaznosci (linie, ktorych nie da sie odroznic zadnym wejsciem).
+
+# `_Kontrakt` (graf.py:61): usuniecie dekoratora zabija kazdy test grafu (TypeError w `_kontrakt`
+# przy wywolaniu z argumentami), wiec to nie ten mutant; `frozen=True` -> `frozen=False` jest
+# nieodroznialne: instancje `_Kontrakt` powstaja tylko w `_kontrakt` i sa czytane w `nastepne`
+# (`kontrakt.consumes/.produces/.needs`), nikt nie przypisuje ich pol ani ich nie haszuje
+# (`rg _Kontrakt src tests tools` - tylko graf.py:62, 70, 73, 75). Dotyczy `_Kontrakt`.
+[[rownowazny]]
+plik = "src/runner/graf.py"
+linia_tekst = "@dataclass(frozen=True)"
+uzasadnienie = "frozen=False jest nieodroznialne dla _Kontrakt: instancje tylko tworzone w _kontrakt i czytane w nastepne, nikt nie przypisuje pol ani nie haszuje (grep _Kontrakt: graf.py, 4 trafienia); dotyczy _Kontrakt, nie Plan ani Podsumowanie"
+
+# `__all__` (krok_diff.py:23): wplywa wylacznie na `from runner.krok_diff import *`; w src/, tests/
+# i tools/ nikt tak nie importuje (grep `import \*`: tylko napisy w test_granica_warstw), a nazwy z listy
+# sa importowane jawnie (silnik.py, test_krok_diff.py).
+[[rownowazny]]
+plik = "src/runner/krok_diff.py"
+linia_tekst = '__all__ = ["PLIK_DIFFU", "PLIK_LINII", "wykonaj_diff", "zmienione_linie"]'
+uzasadnienie = "__all__ zmienia tylko import gwiazdkowy z runner.krok_diff, a nikt tak nie importuje (grep import * w src, tests, tools); nazwy importowane jawnie"
+
+# `WykonawcaSystemowy` (silnik.py:72): modul ma `from __future__ import annotations`, a alias jest
+# uzyty tylko w adnotacji `WYKONAWCY_SYSTEMOWI` (linia 73), ktora nie jest wartosciowana; zadna sciezka
+# wykonania ani test go nie czyta (grep WykonawcaSystemowy: silnik.py:72-73).
+[[rownowazny]]
+plik = "src/runner/silnik.py"
+linia_tekst = "WykonawcaSystemowy = Callable[[Path, str, Path], Awaitable[WynikKroku]]"
+uzasadnienie = "alias uzywany tylko w adnotacji WYKONAWCY_SYSTEMOWI (from __future__ import annotations, adnotacja niewartosciowana); zadna sciezka wykonania go nie czyta (grep WykonawcaSystemowy)"
