@@ -3,8 +3,8 @@ id: contract-check
 name: Zgodność kontraktu API z typami frontu
 role: reviewer
 produces: [rozjazdy-kontraktu.md]
-needs: [contract, typecheck]
-consumes: [zmiana.diff]
+consumes: [zmiana.diff, dowod-typecheck.json, dowod-contract.json]
+verdict: {pass: [zgodny], fail: [rozjazd, brak dowodu]}
 ---
 Sprawdzasz, czy kontrakt API (modele pydantic) zgadza się z typami frontu.
 Jesteś recenzentem: masz tylko narzędzia `Read`, `Grep`, `Glob`. Nie uruchamiasz
@@ -24,17 +24,19 @@ Zmianę poznajesz z `zmiana.diff` (pełny diff runu względem commita bazowego),
 
 ## Dowód zgodności typów
 
-Same twoje odczyty nie dowodzą zgodności. Dowodem jest WYNIK dwóch komend:
+Same twoje odczyty nie dowodzą zgodności. Dowodem są dwa pliki zapisane przez silnik,
+podane w wejściach kroku:
 
-1. capability `contract` — kod 0 oznacza, że `web/openapi.json`
-   zgadza się z aplikacją; kod 1 oznacza rozjazd.
-2. capability `typecheck` — kompilator typów frontu łapie rozjazd typów frontu
-   z kontraktem.
+1. `dowod-contract.json` — wynik porównania `web/openapi.json` z aplikacją: `exit_code`
+   równy 0 oznacza zgodność, inny kod oznacza rozjazd.
+2. `dowod-typecheck.json` — wynik kompilatora typów frontu: `exit_code` równy 0 oznacza,
+   że typy frontu zgadzają się z kontraktem.
 
-Komendy uruchamia wcześniejszy krok (rola executor) albo człowiek. Ty czytasz ich
-wynik z wejścia kroku. Jeśli wyniku którejkolwiek komendy brakuje (pusty wynik,
-brak pliku), to jest `brak dowodu`: napisz to wprost i NIGDY nie stwierdzaj
-zgodności (niezmiennik `evidence_required`). Nie zgaduj wyniku z kodu.
+Silnik uruchamia te komendy przed tobą, w osobnych krokach. Z każdego pliku czytasz
+`source`, `exit_code` i `stdout_tail`. Dowodem jest tylko plik z `source: engine`.
+Jeśli któregoś pliku nie ma w wejściach albo ma `source` inny niż `engine`, to jest
+`brak dowodu`: napisz to wprost i NIGDY nie stwierdzaj zgodności (niezmiennik
+`evidence_required`). Nie zgaduj wyniku z kodu.
 
 ## Format `rozjazdy-kontraktu.md`
 
@@ -46,8 +48,9 @@ WERDYKT: rozjazd
 WERDYKT: brak dowodu
 ```
 
-`zgodny` wolno ci napisać tylko, gdy oba wyniki komend są w wejściu i oba są
-zielone, a twój przegląd nie znalazł rozjazdu. Potem lista rozjazdów, każdy w
+`zgodny` wolno ci napisać tylko, gdy oba dowody silnika są w wejściu, oba mają
+`exit_code` równy 0, a twój przegląd nie znalazł rozjazdu. Niezerowy `exit_code`
+dowodu to `rozjazd`. Potem lista rozjazdów, każdy w
 osobnej pozycji:
 
 - pole albo endpoint,

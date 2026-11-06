@@ -10,7 +10,15 @@ from pathlib import Path
 import pytest
 
 from cockpit.services.skills import Rejestr, rozstrzygnij_rejestr
-from cockpit.services.workflow import Poziom, Problem, Workflow, ma_bledy, wczytaj_workflow
+from cockpit.services.workflow import (
+    Krok,
+    Poziom,
+    Problem,
+    Workflow,
+    ma_bledy,
+    wczytaj_workflow,
+    zapisz_workflow,
+)
 from cockpit.services.workflow_walidacja import (
     BRAK_ARTEFAKTU,
     CONSENSUS_PONAD_FANOUT,
@@ -1558,3 +1566,209 @@ def test_krok_systemowy_z_wejsciem_w_opisie_ma_brak_artefaktu_gdy_nikt_go_nie_pr
     assert problem(problemy, BRAK_ARTEFAKTU, "x").komunikat == (
         "artefakt brak.txt nie jest produkowany przez zadnego przodka kroku")
     assert kody(problemy, "x") == [BRAK_ARTEFAKTU]
+
+
+# --- krok systemowy check (HAR-177): dowod silnika jako artefakt kroku ---------------------------
+# Kody przypiete literalem (nie stalymi modulu): zmiana wartosci kodu psuje kanwe.
+
+CHECK_BEZ_CAPABILITY = "check_bez_capability"
+CAPABILITY_BEZ_CHECK = "capability_bez_check"
+WZORZEC_NAZWY = "[A-Za-z0-9_-]{1,64}"
+
+
+def workflow_check(tmp_path: Path, krok_check: str, rec_needs: str = "[typy]") -> Workflow:
+    """autor -> typy (krok check z podanym opisem) -> rec, ktory konsumuje dowod-typecheck.json."""
+    return workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n"
+        "  autor: {skill: autor}\n"
+        f"  typy: {krok_check}\n"
+        f"  rec: {{skill: rec, needs: {rec_needs}}}\n",
+    )
+
+
+@pytest.fixture
+def skille_check(skille_repo: Path) -> None:
+    napisz_skill(skille_repo, "autor")
+    napisz_skill(skille_repo, "rec", consumes=["dowod-typecheck.json"])
+
+
+def test_krok_check_z_capability_nie_ma_problemu_a_konsument_dowodu_ma_producenta(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(tmp_path, "{system: check, capability: typecheck, needs: [autor]}")
+
+    assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+def test_krok_check_to_znany_krok_systemowy_a_nie_nieznany_krok_systemowy(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(tmp_path, "{system: check, capability: typecheck, needs: [autor]}")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert NIEZNANY_KROK_SYSTEMOWY not in kody(problemy)
+    assert BRAK_ARTEFAKTU not in kody(problemy)
+
+
+def test_konsument_dowodu_bez_kroku_check_wsrod_przodkow_ma_brak_artefaktu(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(
+        tmp_path, "{system: check, capability: typecheck, needs: [autor]}", rec_needs="[autor]")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "rec", "brak_artefaktu",
+        "artefakt dowod-typecheck.json nie jest produkowany przez zadnego przodka kroku",
+        Poziom.blad)]
+
+
+def test_konsument_dowodu_innej_capability_niz_ta_z_kroku_check_ma_brak_artefaktu(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(tmp_path, "{system: check, capability: contract, needs: [autor]}")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problem(problemy, BRAK_ARTEFAKTU, "rec").komunikat == (
+        "artefakt dowod-typecheck.json nie jest produkowany przez zadnego przodka kroku")
+    assert kody(problemy) == [BRAK_ARTEFAKTU]
+
+
+@pytest.mark.parametrize(
+    "opis",
+    ["{system: check, needs: [autor]}", "{system: check, capability: '', needs: [autor]}"],
+)
+def test_krok_check_bez_capability_albo_z_pustym_napisem_ma_blad_i_nic_nie_produkuje(
+    tmp_path, repo, dom, skille_check, opis
+):
+    wf = workflow_check(tmp_path, opis)
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problem(problemy, CHECK_BEZ_CAPABILITY, "typy") == Problem(
+        "typy", "check_bez_capability", "krok system: check wymaga pola capability", Poziom.blad)
+    assert kody(problemy, "typy") == [CHECK_BEZ_CAPABILITY]
+    assert BRAK_ARTEFAKTU in kody(problemy, "rec")
+    assert ma_bledy(problemy)
+
+
+NIEPOPRAWNE_NAZWY = ["a.b", "../x", "a b", "a/b", "ą", "x" * 65, "a:b"]
+
+
+@pytest.mark.parametrize("nazwa", NIEPOPRAWNE_NAZWY)
+def test_krok_check_z_nazwa_capability_spoza_wzorca_ma_blad_z_nazwa_w_komunikacie(
+    tmp_path, repo, dom, skille_repo, nazwa
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        f"  typy: {{system: check, capability: '{nazwa}', needs: [autor]}}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "typy", "zla_nazwa_capability",
+        f"nazwa capability {nazwa!r} spoza wzorca {WZORZEC_NAZWY}", Poziom.blad)]
+
+
+POPRAWNE_NAZWY = ["a", "Z", "7", "a-b", "a_b", "Typecheck-9_x", "x" * 64]
+
+
+@pytest.mark.parametrize("nazwa", POPRAWNE_NAZWY)
+def test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny(
+    tmp_path, repo, dom, skille_repo, nazwa
+):
+    napisz_skill(skille_repo, "autor")
+    napisz_skill(skille_repo, "rec", consumes=[f"dowod-{nazwa}.json"])
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        f"  typy: {{system: check, capability: '{nazwa}', needs: [autor]}}\n"
+        "  rec: {skill: rec, needs: [typy]}\n",
+    )
+
+    assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+def test_pole_capability_przy_kroku_ze_skillem_ma_blad_capability_bez_check(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  x: {skill: autor, capability: typecheck}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "x", "capability_bez_check", "pole capability dotyczy tylko kroku system: check",
+        Poziom.blad)]
+
+
+def test_pole_capability_przy_kroku_system_diff_ma_blad_capability_bez_check(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        "  diff: {system: diff, capability: typecheck, needs: [autor]}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "diff", "capability_bez_check", "pole capability dotyczy tylko kroku system: check",
+        Poziom.blad)]
+
+
+def test_krok_check_z_capability_nie_ma_bledu_capability_bez_check(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(tmp_path, "{system: check, capability: typecheck, needs: [autor]}")
+
+    assert CAPABILITY_BEZ_CHECK not in kody(waliduj_workflow(wf, rejestr_z(repo, dom), dom))
+
+
+def test_krok_bez_pola_capability_ma_je_ustawione_na_brak():
+    assert Krok(id="k", skill="s").capability is None
+
+
+def test_zapis_workflow_po_zmianie_innego_kroku_zachowuje_capability_kroku_check(tmp_path):
+    plik = tmp_path / "workflow.yaml"
+    plik.write_text(
+        "name: w\nsteps:\n"
+        "  autor: {skill: autor}\n"
+        "  typy: {system: check, capability: typecheck, needs: [autor]}\n",
+        encoding="utf-8",
+    )
+    wf, problemy = wczytaj_workflow(plik)
+    assert wf is not None and problemy == []
+    wf.kroki[0].optional = True
+
+    zapisz_workflow(wf, plik)
+
+    ponownie, problemy = wczytaj_workflow(plik)
+    assert ponownie is not None and problemy == []
+    assert [(k.id, k.capability) for k in ponownie.kroki] == [
+        ("autor", None), ("typy", "typecheck")]
+    assert "capability: typecheck" in plik.read_text(encoding="utf-8")
+
+
+def test_zapis_workflow_z_nowym_krokiem_check_z_kanwy_niesie_jego_capability(tmp_path):
+    plik = tmp_path / "workflow.yaml"
+    plik.write_text("name: w\nsteps:\n  autor: {skill: autor}\n", encoding="utf-8")
+    wf, problemy = wczytaj_workflow(plik)
+    assert wf is not None and problemy == []
+    wf.kroki.append(Krok(id="kontrakt", system="check", capability="contract", needs=["autor"]))
+
+    zapisz_workflow(wf, plik)
+
+    ponownie, problemy = wczytaj_workflow(plik)
+    assert ponownie is not None and problemy == []
+    nowy = [k for k in ponownie.kroki if k.id == "kontrakt"][0]
+    assert (nowy.system, nowy.capability, nowy.needs) == ("check", "contract", ["autor"])

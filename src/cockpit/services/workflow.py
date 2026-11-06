@@ -71,6 +71,8 @@ class Krok(BaseModel):
     id: str
     skill: str | None = None
     system: str | None = None
+    # nazwa capability z project.yaml dla kroku `system: check` (HAR-177)
+    capability: str | None = None
     needs: list[str] = []
     fanout: int = Field(default=1, ge=1, strict=True)
     consensus: int | None = Field(default=None, ge=1, strict=True)

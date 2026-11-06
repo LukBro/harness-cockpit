@@ -7,9 +7,10 @@ Modul nie dotyka bazy.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from cockpit.services.kroki_systemowe import KROKI_SYSTEMOWE, opis_kroku_systemowego
+from cockpit.services.kroki_systemowe import KROKI_SYSTEMOWE, SYSTEM_CHECK, opis_kroku
 from cockpit.services.skills import Rejestr, Skill
 from cockpit.services.walidacja import KLUCZ_ROLI, KLUCZE_DEFINICJI, waliduj_definicje
 from cockpit.services.workflow import Krok, Poziom, Problem, Workflow
@@ -29,6 +30,12 @@ POLE_BEZ_KONSUMENTA = "pole_bez_konsumenta"
 ROLA_W_KROKU_IGNOROWANA = "rola_w_kroku_ignorowana"
 SKILL_I_SYSTEM = "skill_i_system"
 NIEZNANY_KROK_SYSTEMOWY = "nieznany_krok_systemowy"
+CHECK_BEZ_CAPABILITY = "check_bez_capability"
+ZLA_NAZWA_CAPABILITY = "zla_nazwa_capability"
+CAPABILITY_BEZ_CHECK = "capability_bez_check"
+
+# Nazwa capability trafia do nazwy pliku dowodu (`dowod-<capability>.json`).
+WZORZEC_CAPABILITY = r"[A-Za-z0-9_-]{1,64}"
 
 _POLA_BEZ_KONSUMENTA = ("optional", "require_distinct_vendors")
 
@@ -147,6 +154,23 @@ def _ostrzezenia_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> l
     return problemy
 
 
+def _problemy_capability(krok: Krok) -> list[Problem]:
+    """Pole `capability` kroku: wymagane przy `system: check`, zabronione przy kazdym innym."""
+    if krok.system == SYSTEM_CHECK and krok.skill is None:
+        if not krok.capability:
+            return [Problem(
+                krok.id, CHECK_BEZ_CAPABILITY, "krok system: check wymaga pola capability")]
+        if not re.fullmatch(WZORZEC_CAPABILITY, krok.capability):
+            return [Problem(
+                krok.id, ZLA_NAZWA_CAPABILITY,
+                f"nazwa capability {krok.capability!r} spoza wzorca {WZORZEC_CAPABILITY}")]
+        return []
+    if krok.capability is not None:
+        return [Problem(
+            krok.id, CAPABILITY_BEZ_CHECK, "pole capability dotyczy tylko kroku system: check")]
+    return []
+
+
 def _w_katalogu(sciezka: Path, katalog: Path) -> bool:
     try:
         sciezka.resolve().relative_to(katalog.resolve())
@@ -181,7 +205,7 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
     }
     # krok systemowy jest producentem artefaktow ze swojego opisu; nieznany nic nie produkuje
     produkcja.update({
-        id_kroku: list(opis_kroku_systemowego(krok.system).produces)
+        id_kroku: list(opis_kroku(krok).produces)
         for id_kroku, krok in kroki_po_id.items()
         if krok.skill is None and krok.system is not None
     })
@@ -216,12 +240,13 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
                         f"nieznany krok systemowy: {krok.system}",
                     )
                 )
-            konsumowane = opis_kroku_systemowego(krok.system).consumes
+            konsumowane = opis_kroku(krok).consumes
         elif skill is None:
             problemy.append(_nieznany_skill(krok, rejestr))
             konsumowane = ()
         else:
             konsumowane = tuple(skill.consumes)
+        problemy.extend(_problemy_capability(krok))
         problemy.extend(_niezmienniki_kroku(krok, skill, workflow))
         dostepne = _produkowane(przodkowie, produkcja)
         for artefakt in konsumowane:

@@ -10,7 +10,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-from cockpit.services.kroki_systemowe import opis_kroku_systemowego
+from cockpit.services.kroki_systemowe import SYSTEM_CHECK, opis_kroku
 from cockpit.services.skills import Rejestr
 from cockpit.services.workflow import Krok, Workflow
 
@@ -69,10 +69,20 @@ class _Kontrakt:
 
 def _kontrakt(krok: Krok, rejestr: Rejestr) -> _Kontrakt:
     if krok.skill is None:
-        opis = opis_kroku_systemowego(krok.system)
+        opis = opis_kroku(krok)
         return _Kontrakt(opis.consumes, opis.produces, opis.needs)
     skill = rejestr.skille[krok.skill]
     return _Kontrakt(tuple(skill.consumes), tuple(skill.produces), tuple(skill.needs))
+
+
+def _utracone(stan: StanKroku, producent: Krok) -> bool:
+    """Czy artefakty producenta w tym stanie sa utracone dla konsumenta.
+
+    Pominiety krok nic nie zapisal; nieudany tez nie, poza krokiem `check`: jego dowod
+    jest zapisany i jest dowodem porazki."""
+    if stan == StanKroku.POMINIETY:
+        return True
+    return stan == StanKroku.NIEUDANY and producent.system != SYSTEM_CHECK
 
 
 def nastepne(
@@ -84,6 +94,7 @@ def nastepne(
     """Plan: kroki do startu i do pominiecia (z powodem). Planuje tylko kroki `oczekuje`."""
     ids = [krok.id for krok in workflow.kroki]
     needs = {krok.id: list(krok.needs) for krok in workflow.kroki}
+    krok_po_id = {krok.id: krok for krok in workflow.kroki}
     kontrakty = {krok.id: _kontrakt(krok, rejestr) for krok in workflow.kroki}
     przodkowie = {id_kroku: _przodkowie(id_kroku, needs) for id_kroku in ids}
     lokalne = {id_kroku: stany.get(id_kroku, StanKroku.OCZEKUJE) for id_kroku in ids}
@@ -94,10 +105,11 @@ def nastepne(
         kontrakt = kontrakty[id_kroku]
         # utracone wejscie (kazdy producent artefaktu pominiety albo nieudany) jest dokladniejsza
         # przyczyna niz nieudany przodek w ogole, wiec idzie przed `zaleznosc_nieudana`
-        stracone = (StanKroku.POMINIETY, StanKroku.NIEUDANY)
+        # wyjatek: nieudany krok `check` zapisal dowod (dowod porazki), wiec jego artefakt
+        # nie jest utracony - zostaje `zaleznosc_nieudana`
         for artefakt in kontrakt.consumes:
             producenci = [p for p in moi if artefakt in kontrakty[p].produces]
-            if producenci and all(lokalne[p] in stracone for p in producenci):
+            if producenci and all(_utracone(lokalne[p], krok_po_id[p]) for p in producenci):
                 return (
                     PowodPominiecia.BRAK_WEJSCIA,
                     f"brak wejścia: {artefakt} z kroku {producenci[0]}",

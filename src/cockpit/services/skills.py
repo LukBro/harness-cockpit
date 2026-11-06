@@ -20,7 +20,11 @@ from ruamel.yaml.comments import CommentedMap
 
 from cockpit.services.errors import BlednySkill, NieZnaleziono
 from cockpit.services.invariants import Rola, profil_roli
-from cockpit.services.walidacja import waliduj_definicje
+from cockpit.services.walidacja import (
+    PREFIKS_WERDYKTU,
+    KontraktWerdyktu,
+    waliduj_definicje,
+)
 
 # Zrodla od najwyzszego priorytetu (wygrywa pierwsze, w ktorym jest id).
 # (baza, podkatalog, scisle): scisle = model kokpitu; nie scisle = format innych narzedzi.
@@ -36,6 +40,9 @@ KATALOG_RUNU = Path(".cockpit") / "_run" / "skills"
 _GRANICA = re.compile(r"^-{3,}\s*$")
 _POLA_LISTOWE = ("consumes", "produces", "needs")
 _POLA = ("id", "name", "role", *_POLA_LISTOWE)
+KLUCZ_WERDYKTU = "verdict"
+# klucze mapy `verdict` we frontmatterze (`pass` w YAML to `pass_` w modelu)
+_KLUCZE_WERDYKTU = frozenset({"line", "prefix", "pass", "fail"})
 
 
 def _yaml() -> YAML:
@@ -54,6 +61,7 @@ class Skill(BaseModel):
     consumes: list[str] = []
     produces: list[str] = []
     needs: list[str] = []
+    verdict: KontraktWerdyktu | None = None
     brief: str
     katalog: Path
 
@@ -165,6 +173,41 @@ def metadane_skilla(frontmatter: str, katalog: str, *, scisle: bool) -> tuple[st
     return id_skilla, nazwa, str(rola)
 
 
+def _lista_napisow(wartosc: Any) -> tuple[str, ...] | None:
+    """Krotka niepustych napisow z listy YAML; None, gdy to nie lista takich napisow."""
+    if not isinstance(wartosc, list):
+        return None
+    if not all(isinstance(x, str) and x for x in wartosc):
+        return None
+    return tuple(str(x) for x in wartosc)
+
+
+def _kontrakt_werdyktu(surowy: Any) -> KontraktWerdyktu | str:
+    """Kontrakt z mapy `verdict` frontmattera albo powod odrzucenia (napis)."""
+    if not isinstance(surowy, CommentedMap):
+        return "verdict musi być mapą"
+    for klucz in surowy:
+        if klucz not in _KLUCZE_WERDYKTU:
+            return f"nieznany klucz {klucz}"
+    przechodzi = _lista_napisow(surowy.get("pass"))
+    if not przechodzi:
+        return "pass musi być niepustą listą napisów"
+    oblewa = _lista_napisow(surowy.get("fail", []))
+    if oblewa is None:
+        return "fail musi być listą napisów"
+    linia = surowy.get("line", 1)
+    if not isinstance(linia, int) or isinstance(linia, bool) or linia < 1:
+        return "line musi być liczbą całkowitą >= 1"
+    prefiks = surowy.get("prefix", PREFIKS_WERDYKTU)
+    if not isinstance(prefiks, str) or not prefiks:
+        return "prefix musi być niepustym napisem"
+    zablokowane = {x.casefold() for x in oblewa}
+    for wartosc in przechodzi:
+        if wartosc.casefold() in zablokowane:
+            return f"pass i fail mają wspólną wartość: {wartosc}"
+    return KontraktWerdyktu(pass_=przechodzi, fail=oblewa, line=int(linia), prefix=str(prefiks))
+
+
 def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
     # pliki zrodel konwencyjnych pochodza z innych narzedzi: nieparsowalny plik
     # to dla nas "nie nasz skill", nie blad calego rejestru
@@ -184,12 +227,19 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
     naruszenia = waliduj_definicje({k: v for k, v in mapa.items() if isinstance(k, str)})
     if naruszenia:
         raise BlednySkill(f"{plik}: " + "; ".join(str(n) for n in naruszenia))
+    verdict = None
+    if KLUCZ_WERDYKTU in mapa:
+        wynik = _kontrakt_werdyktu(mapa[KLUCZ_WERDYKTU])
+        if isinstance(wynik, str):
+            raise BlednySkill(f"niepoprawny verdict w {plik}: {wynik}")
+        verdict = wynik
     try:
         skill = Skill(
             **{
                 k: ([str(x) for x in v] if k in _POLA_LISTOWE and isinstance(v, list) else v)
                 for k, v in dane.items()
             },
+            verdict=verdict,
             brief=brief,
             katalog=katalog,
         )
@@ -201,6 +251,8 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
             f"skill {skill.id}: rola {skill.role.value} oddaje jeden artefakt, "
             f"produces ma {len(skill.produces)}: {', '.join(skill.produces)}"
         )
+    if skill.verdict is not None and not skill.produces:
+        raise BlednySkill(f"niepoprawny verdict w {plik}: verdict wymaga produces")
     skill._surowy = surowy
     skill._mapa = mapa
     skill._migawka = skill._stan()

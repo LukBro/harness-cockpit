@@ -3,13 +3,19 @@
 Trzy skille budowy (tdd-task, e2e-scenario, smoke) jako SKILL.md w
 `.cockpit/skills/` tego repozytorium (HAR-73). Czytamy je przez prawdziwy rejestr.
 """
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from cockpit.services.invariants import Rola, profil_roli
 from cockpit.services.skills import Rejestr, rozstrzygnij_rejestr
+from cockpit.services.walidacja import (
+    KontraktWerdyktu,
+    Naruszenie,
+    Niezmiennik,
+    Werdykt,
+    sprawdz_werdykt,
+)
 
 IDENTYFIKATORY = ["tdd-task", "e2e-scenario", "smoke"]
 
@@ -22,16 +28,9 @@ OCZEKIWANE = {
 
 
 def korzen_repozytorium() -> Path:
-    """Korzeń repozytorium git, także gdy test leży w kopii `mutants/` (mutmut
-    nie kopiuje `.gitignore`, więc `parents[1]` wskazywałoby katalog bez niego)."""
-    wynik = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=Path(__file__).resolve().parent,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return Path(wynik.stdout.strip())
+    """Korzeń repozytorium liczony względem pliku testu (bez gita): kopia `mutants/` i kopia
+    narzędzia ręcznych mutantów nie są repozytoriami git."""
+    return Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -124,3 +123,47 @@ def test_smoke_opisuje_wynik_tak_albo_nie(rejestr):
     brief = rejestr.skille["smoke"].brief
     assert "TAK" in brief
     assert "NIE" in brief
+
+
+# --- werdykt proby dymnej jako kontrakt skilla (HAR-177) ---------------------------------------
+
+
+def test_proba_dymna_deklaruje_werdykt_tak_przechodzi_nie_oblewa(rejestr):
+    assert rejestr.skille["smoke"].verdict == KontraktWerdyktu(pass_=("TAK",), fail=("NIE",))
+
+
+@pytest.mark.parametrize("id", ["tdd-task", "e2e-scenario"])
+def test_skill_piszacy_testy_nie_deklaruje_werdyktu(rejestr, id):
+    assert rejestr.skille[id].verdict is None
+
+
+def test_brief_proby_dymnej_wymaga_linii_werdyktu_na_poczatku_artefaktu(rejestr):
+    brief = " ".join(rejestr.skille["smoke"].brief.split())
+    assert "WERDYKT: TAK" in brief
+    assert "WERDYKT: NIE" in brief
+    assert "Pierwsza linia to `TAK` albo `NIE`" not in brief
+
+
+def test_artefakt_proby_dymnej_z_linia_werdykt_tak_jest_zdany_a_z_nie_nie_jest(rejestr, tmp_path):
+    kontrakt = rejestr.skille["smoke"].verdict
+    assert kontrakt is not None
+    tak = tmp_path / "tak" / "smoke.md"
+    nie = tmp_path / "nie" / "smoke.md"
+    for plik, linia in ((tak, "WERDYKT: TAK"), (nie, "WERDYKT: NIE")):
+        plik.parent.mkdir()
+        plik.write_text(linia + "\nkomenda: python tools/demo_szkielet.py\n", encoding="utf-8")
+
+    assert sprawdz_werdykt(tak, kontrakt) == Werdykt("TAK", True)
+    assert sprawdz_werdykt(nie, kontrakt) == Werdykt("NIE", False)
+
+
+def test_dawny_format_proby_dymnej_z_samym_tak_w_pierwszej_linii_nie_jest_werdyktem(
+    rejestr, tmp_path
+):
+    kontrakt = rejestr.skille["smoke"].verdict
+    assert kontrakt is not None
+    plik = tmp_path / "smoke.md"
+    plik.write_text("TAK\nkomenda: python tools/demo_szkielet.py\n", encoding="utf-8")
+
+    assert sprawdz_werdykt(plik, kontrakt) == Naruszenie(
+        Niezmiennik.evidence_required, "linia 1 w smoke.md nie zaczyna się od WERDYKT:")

@@ -34,6 +34,9 @@ KLUCZE_ZAPISU = ("write", "zapis", "can_write")
 KLUCZE_KOMENDY = ("command", "run")  # klucz komendy nie jest jeszcze ustalony
 KLUCZE_DEFINICJI = frozenset({KLUCZ_ROLI, KLUCZ_TIERU, KLUCZ_MODELU, *KLUCZE_ZAPISU, *KLUCZE_KOMENDY})
 
+# Domyslny prefiks linii werdyktu w artefakcie skilla (HAR-177).
+PREFIKS_WERDYKTU = "WERDYKT:"
+
 _PRAWDA = frozenset({"true", "yes", "tak", "on", "1"})
 # opcje globalne gita, ktore biora argument w osobnym tokenie
 _OPCJE_Z_ARGUMENTEM = frozenset({"-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
@@ -49,6 +52,22 @@ class Naruszenie:
     def __str__(self) -> str:
         nazwa = f"niezmiennik {self.niezmiennik.value}"
         return f"{nazwa}: {self.szczegol}" if self.szczegol else nazwa
+
+
+@dataclass(frozen=True)
+class KontraktWerdyktu:
+    """Kontrakt werdyktu skilla (`verdict` we frontmatterze): linia, prefiks, wartosci."""
+
+    pass_: tuple[str, ...]
+    fail: tuple[str, ...] = ()
+    line: int = 1
+    prefix: str = PREFIKS_WERDYKTU
+
+
+@dataclass(frozen=True)
+class Werdykt:
+    wartosc: str     # wartosc w brzmieniu z kontraktu (z listy), nie z pliku
+    zdany: bool      # True = z listy pass, False = z listy fail
 
 
 def _daje_zapis(wartosc: Any) -> bool:
@@ -260,6 +279,38 @@ def dowod_z_pliku(plik: Path) -> Naruszenie | None:
     return None
 
 
+def _naruszenie_werdyktu(szczegol: str) -> Naruszenie:
+    return Naruszenie(Niezmiennik.evidence_required, szczegol)
+
+
+def sprawdz_werdykt(plik: Path, kontrakt: KontraktWerdyktu) -> Werdykt | Naruszenie:
+    """Linia werdyktu artefaktu wedlug kontraktu skilla.
+
+    Linia nr `kontrakt.line` (od 1) musi zaczynac sie od prefiksu, a reszta rownac sie
+    (casefold) elementowi `pass_` albo `fail`; wartosc w wyniku jest z kontraktu. Brak
+    czytelnego pliku, brak linii, zly prefiks i wartosc spoza list to `evidence_required`
+    (komunikat bez echa wartosci z pliku)."""
+    try:
+        # mutant UTF-8 jest rownowazny (nazwa kodeka bez rozroznienia wielkosci liter);
+        # brak encoding chroni reczny mutant
+        linie = plik.read_text(encoding="utf-8").splitlines()  # pragma: no mutate
+    except (OSError, UnicodeDecodeError):
+        return _naruszenie_werdyktu(f"nie da się odczytać werdyktu z {plik.name}")
+    if len(linie) < kontrakt.line:
+        return _naruszenie_werdyktu(f"brak linii werdyktu {kontrakt.line} w {plik.name}")
+    linia = linie[kontrakt.line - 1].strip().casefold()
+    prefiks = kontrakt.prefix.casefold()
+    if not linia.startswith(prefiks):
+        return _naruszenie_werdyktu(
+            f"linia {kontrakt.line} w {plik.name} nie zaczyna się od {kontrakt.prefix}")
+    wartosc = linia[len(prefiks):].strip()
+    for dozwolone, zdany in ((kontrakt.pass_, True), (kontrakt.fail, False)):
+        for kandydat in dozwolone:
+            if kandydat.casefold() == wartosc:
+                return Werdykt(kandydat, zdany)
+    return _naruszenie_werdyktu(f"werdykt spoza kontraktu w {plik.name}")
+
+
 SPRAWDZENIA: Mapping[Niezmiennik, tuple[Callable[..., Any], ...]] = MappingProxyType({
     Niezmiennik.role_binding: (waliduj_definicje,),
     Niezmiennik.reviewer_readonly: (waliduj_definicje, sprawdz_tylko_odczyt),
@@ -267,7 +318,7 @@ SPRAWDZENIA: Mapping[Niezmiennik, tuple[Callable[..., Any], ...]] = MappingProxy
     Niezmiennik.no_git_write: (waliduj_definicje,),
     Niezmiennik.run_dir_outside_repo: (sprawdz_katalog_runu,),
     Niezmiennik.measured_or_null: (sprawdz_pomiar,),
-    Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku),
+    Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku, sprawdz_werdykt),
 })
 
 # Punkty wywolania "modul:funkcja" osiagalne z cockpit.__main__ i runner.__main__.
