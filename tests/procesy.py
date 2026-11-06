@@ -246,6 +246,26 @@ def zakoncz_proces_sync(
     zabij_grupe(pgid, SIGKILL)
 
 
+def przerwij_sigtermem_sync(
+    proc: subprocess.Popen, *, nazwa: str, limit: float = 120.0
+) -> None:
+    """Sam SIGTERM do grupy procesu i czekanie na jego koniec; BEZ eskalacji do SIGKILL.
+
+    Dla testow, ktore sprawdzaja, jak proces reaguje na SIGTERM (kod 143, sprzatanie):
+    `zakoncz_proces_sync` po 5 s dobilby go SIGKILL-em i test zobaczylby -9 zamiast
+    wlasnej reakcji. `limit` to zabezpieczenie przed zawieszeniem, nie czas, ktorego
+    test oczekuje - po nim `LimitCzasuTestu` (proces zostaje zywy, sprzata go wolajacy).
+    Zakonczony proces: no-op."""
+    if proc.poll() is not None:
+        return
+    pgid = _grupa_procesu(proc.pid, nazwa)
+    if pgid is None:
+        _czekaj_sync(proc, limit, f"koniec procesu {nazwa}")
+        return
+    zabij_grupe(pgid, SIGTERM)
+    _czekaj_sync(proc, limit, f"koniec procesu {nazwa} po SIGTERM")
+
+
 def _czekaj_sync(proc: subprocess.Popen, limit: float, nazwa: str) -> None:
     try:
         proc.wait(limit)

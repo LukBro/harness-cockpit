@@ -28,6 +28,7 @@ from procesy import (
     czy_zyje,
     grupa_istnieje,
     grupa_umarla,
+    przerwij_sigtermem_sync,
     sprzatnij_zapamietane,
     uruchom_proces,
     uruchom_proces_sync,
@@ -758,3 +759,74 @@ def test_testy_nie_wysylaja_sygnalow_do_grup_procesow_poza_wspolnym_helperem():
             naruszenia[str(plik.relative_to(TESTY))] = numery
 
     assert naruszenia == {}, "uzyj tests/procesy.py zamiast os.kill/os.killpg"
+
+
+# --- sam SIGTERM bez eskalacji (HAR-226) -----------------------------------------
+
+
+def test_przerwanie_sigtermem_konczy_proces_reagujacy_na_sigterm_jego_sygnalem(tmp_path):
+    znacznik = tmp_path / "gotowy"
+    proc = uruchom_proces_sync([sys.executable, "-c", KROK_REAGUJACY_NA_SIGTERM, str(znacznik)])
+    try:
+        _czekaj_synchronicznie_na_plik(znacznik)
+        przerwij_sigtermem_sync(proc, nazwa="grzeczny-krok", limit=10)
+
+        assert proc.returncode == -signal.SIGTERM
+    finally:
+        zakoncz_proces_sync(proc, nazwa="sprzatanie-atrapy")
+
+
+def test_przerwanie_sigtermem_procesu_ignorujacego_sigterm_daje_blad_z_nazwa_i_nie_dobija_go(
+    tmp_path,
+):
+    znacznik = tmp_path / "gotowy"
+    proc = uruchom_proces_sync([sys.executable, "-c", KROK_IGNORUJACY_SIGTERM, str(znacznik)])
+    try:
+        _czekaj_synchronicznie_na_plik(znacznik)
+
+        with pytest.raises(LimitCzasuTestu, match="uparty-krok"):
+            przerwij_sigtermem_sync(proc, nazwa="uparty-krok", limit=0.3)
+
+        assert proc.poll() is None  # zadnej eskalacji do SIGKILL
+    finally:
+        zakoncz_proces_sync(proc, nazwa="sprzatanie-atrapy")
+
+
+def test_przerwanie_sigtermem_procesu_z_grupy_testu_nie_wysyla_sygnalu_do_grupy_ale_dobija_pid(
+    killpg_zapisany,
+):
+    proc = _uzyj_wolnego_procesu_bez_nowej_sesji()
+    try:
+        with pytest.raises(WlasnaGrupaProcesow, match="atrapa-sigterm"):
+            przerwij_sigtermem_sync(proc, nazwa="atrapa-sigterm")
+
+        assert killpg_zapisany.wywolania == []
+        assert proc.wait(10) == -signal.SIGKILL
+    finally:
+        if proc.poll() is None:
+            _dobij(proc)
+
+
+def test_przerwanie_sigtermem_zakonczonego_procesu_nie_dotyka_grup_procesow(monkeypatch):
+    proc = uruchom_proces_sync([sys.executable, "-c", KROK_KONCZACY_SIE_OD_RAZU])
+    proc.wait(10)
+    wywolania: list[str] = []
+    monkeypatch.setattr(procesy.os, "killpg", lambda *a: wywolania.append("killpg"))
+    monkeypatch.setattr(procesy.os, "getpgid", lambda *a: wywolania.append("getpgid") or 0)
+
+    przerwij_sigtermem_sync(proc, nazwa="juz-zakonczony")
+
+    assert wywolania == []
+
+
+def test_przerwanie_sigtermem_procesu_bez_ustalonej_grupy_tylko_go_odbiera(killpg_zapisany):
+    class Zombie(AtrapaProcesuBezGrupy):
+        def wait(self, timeout=None):
+            self.returncode = 0
+
+    atrapa = Zombie(_pid_nieistniejacego_procesu())
+
+    przerwij_sigtermem_sync(atrapa, nazwa="zombie-sigterm")
+
+    assert atrapa.returncode == 0
+    assert killpg_zapisany.wywolania == []

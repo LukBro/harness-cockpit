@@ -17,12 +17,20 @@ import sys
 import tarfile
 import tempfile
 import time
+import types
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
 
-from procesy import czy_zyje, uruchom_proces_sync, zabij_proces, zakoncz_proces_sync
+from procesy import (
+    LimitCzasuTestu,
+    czy_zyje,
+    uruchom_proces_sync,
+    zabij_proces,
+    zakoncz_proces_sync,
+)
 
 KORZEN = Path(__file__).resolve().parents[1]
 SKRYPT = KORZEN / "tools" / "mutanty_reczne.py"
@@ -31,6 +39,60 @@ import mutanty_reczne  # noqa: E402
 
 BladNarzedzia = mutanty_reczne.BladNarzedzia
 Mutant = mutanty_reczne.Mutant
+
+# --- zegar limitu od zdarzenia, nie od startu procesu (HAR-226) ---------------
+# Limit w `tools/mutanty_reczne.py` liczy `communicate(timeout=...)` od chwili `Popen`. Pod
+# obciazeniem rownoleglych sesji start procesu potomka (fork/exec, import Pythona) zjada ten
+# limit, zanim potomek powstanie. Testy limitu podmieniaja wiec `Popen` na podklase, ktora
+# przed PIERWSZYM `communicate` czeka na zdarzenie "potomek zapisal PID"; dalej idzie prawdziwe
+# `Popen.communicate(timeout)` i prawdziwe `os.killpg` z `_uruchom_proces`.
+# Zabezpieczenie przed zawieszeniem na zdarzeniu (nie czas, ktorego test oczekuje):
+LIMIT_ZDARZENIA = 120.0
+# Czas na zniknieciu potomka po zabiciu grupy: ZAWSZE krotszy niz 60 s snu potomka, inaczej
+# mutant bez `os.killpg` przezylby, bo potomek skonczylby sie sam.
+LIMIT_ZNIKNIECIA_POTOMKA = 30.0
+
+
+def _czekaj_synchronicznie(warunek: Callable[[], object], limit: float, nazwa: str) -> None:
+    koniec = time.monotonic() + limit
+    while not warunek():
+        if time.monotonic() >= koniec:
+            raise LimitCzasuTestu(f"{nazwa}: przekroczono limit {limit} s")
+        time.sleep(0.05)
+
+
+def _pid_zapisany(plik: Path) -> bool:
+    try:
+        return plik.read_text(encoding="utf-8").strip() != ""
+    except OSError:
+        return False
+
+
+def _podmien_popen_na_zegar_od_potomka(monkeypatch, plik_pid: Path) -> dict[str, float]:
+    """`Popen` widziany przez `tools/mutanty_reczne.py` czeka przed pierwszym `communicate`
+    na niepusty `plik_pid`. Zwraca slownik, w ktorym po tym zdarzeniu jest klucz `zdarzenie`
+    (`time.monotonic()` chwili, gdy PID potomka byl juz zapisany)."""
+    zapis: dict[str, float] = {}
+
+    class PopenZegarOdPotomka(subprocess.Popen):
+        czekano = False
+
+        def communicate(self, input=None, timeout=None):
+            if not self.czekano:
+                self.czekano = True
+                _czekaj_synchronicznie(
+                    lambda: _pid_zapisany(plik_pid) or self.poll() is not None,
+                    LIMIT_ZDARZENIA,
+                    f"potomek nie zapisal PID {plik_pid.name}",
+                )
+                zapis["zdarzenie"] = time.monotonic()
+            return super().communicate(input, timeout)
+
+    # Podmiana tylko w module narzedzia (kopia przestrzeni nazw), nie globalnego `subprocess`.
+    podmieniony = types.SimpleNamespace(**vars(subprocess))
+    podmieniony.Popen = PopenZegarOdPotomka
+    monkeypatch.setattr(mutanty_reczne, "subprocess", podmieniony)
+    return zapis
 
 # --- dane mini-repozytorium -------------------------------------------------
 
@@ -684,31 +746,33 @@ def test_test_przekraczajacy_limit_czasu_konczy_sie_bledem_narzedzia_a_nie_zawie
     assert time.monotonic() - start < 30
 
 
-def test_po_przekroczeniu_limitu_ginie_takze_proces_potomny_testu(tmp_path):
+def test_po_przekroczeniu_limitu_ginie_takze_proces_potomny_testu(tmp_path, monkeypatch):
     kopia = _kopia_testowa(
         tmp_path / "kopia",
         {
             "test_wnuk.py": (
-                "import pathlib\nimport subprocess\nimport sys\nimport time\n\n\n"
+                "import os\nimport pathlib\nimport subprocess\nimport sys\nimport time\n\n\n"
                 "def test_spi_z_wnukiem():\n"
                 "    wnuk = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-                "    pathlib.Path('wnuk.pid').write_text(str(wnuk.pid))\n"
+                "    pathlib.Path('wnuk.pid.tmp').write_text(str(wnuk.pid))\n"
+                "    os.replace('wnuk.pid.tmp', 'wnuk.pid')\n"
                 "    time.sleep(60)\n"
             )
         },
     )
+    plik_pid = kopia / "wnuk.pid"
+    # Limit 4 s liczy sie dopiero od chwili, gdy wnuk zapisal PID (start pytesta w kopii i wnuka
+    # pod obciazeniem nie zjada limitu); dalej dziala prawdziwy `communicate(timeout)` i `killpg`.
+    _podmien_popen_na_zegar_od_potomka(monkeypatch, plik_pid)
     pid = None
     try:
         with pytest.raises(BladNarzedzia):
             mutanty_reczne.uruchom_test(kopia, "tests/test_wnuk.py::test_spi_z_wnukiem", 4)
 
-        plik_pid = kopia / "wnuk.pid"
-        assert plik_pid.exists(), "test nie zdazyl uruchomic potomka przed limitem"
         pid = int(plik_pid.read_text(encoding="utf-8"))
-        koniec = time.monotonic() + 5
-        while czy_zyje(pid) and time.monotonic() < koniec:
-            time.sleep(0.1)
-        assert not czy_zyje(pid)
+        _czekaj_synchronicznie(
+            lambda: not czy_zyje(pid), LIMIT_ZNIKNIECIA_POTOMKA, f"zniknięcie wnuka {pid}"
+        )
     finally:
         if pid is not None:
             zabij_proces(pid)
@@ -1294,7 +1358,7 @@ case "$1" in
   run)
     if [ -n "$ATRAPA_USPIJ" ]; then
       sleep "$ATRAPA_USPIJ" &
-      echo "$!" > "$ATRAPA_PID_NPM"
+      echo "$!" > "$ATRAPA_PID_NPM.tmp" && mv "$ATRAPA_PID_NPM.tmp" "$ATRAPA_PID_NPM"
       wait
     fi
     [ -n "$ATRAPA_WYJSCIE_BUILD" ] && echo "$ATRAPA_WYJSCIE_BUILD"
@@ -1820,25 +1884,25 @@ def test_brak_npm_w_path_to_blad_narzedzia_a_nie_oserror(tmp_path, monkeypatch):
         mutanty_reczne.zbuduj_front(kopia, 30)
 
 
-def test_przekroczony_limit_budowania_to_blad_narzedzia_a_proces_npm_ginie(tmp_path, npm):
+def test_przekroczony_limit_budowania_to_blad_narzedzia_a_proces_npm_ginie(
+    tmp_path, npm, monkeypatch
+):
     npm.ustaw(ATRAPA_USPIJ="60")
     kopia = _kopia_z_webem(tmp_path)
     (kopia / "web" / "node_modules").mkdir()
+    # Limit 5 s liczy sie dopiero od chwili, gdy potomek atrapy zapisal PID; atrapa spi 60 s,
+    # wiec bez limitu (`communicate()`) albo bez zabicia grupy test oblewa.
+    zapis = _podmien_popen_na_zegar_od_potomka(monkeypatch, npm.pid)
     pid = None
-    start = time.monotonic()
     try:
         with pytest.raises(BladNarzedzia, match="przekroczony"):
-            # Limit z zapasem na obciazona maszyne: potomek atrapy zapisuje PID zaraz po starcie,
-            # wiec przy kilku sekundach zawsze zdazy, a atrapa spi 60 s - bez zabicia grupy zyje dalej.
             mutanty_reczne.zbuduj_front(kopia, 5)
 
-        assert time.monotonic() - start < 50
-        assert npm.pid.exists(), "atrapa npm nie zdazyla wystartowac potomka przed limitem"
+        assert time.monotonic() - zapis["zdarzenie"] < 50
         pid = int(npm.pid.read_text(encoding="utf-8"))
-        koniec = time.monotonic() + 5
-        while czy_zyje(pid) and time.monotonic() < koniec:
-            time.sleep(0.1)
-        assert not czy_zyje(pid)
+        _czekaj_synchronicznie(
+            lambda: not czy_zyje(pid), LIMIT_ZNIKNIECIA_POTOMKA, f"zniknięcie potomka npm {pid}"
+        )
     finally:
         if pid is not None:
             zabij_proces(pid)
