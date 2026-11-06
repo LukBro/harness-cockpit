@@ -10,6 +10,7 @@ export type RunnerZespolu = Schemat["RunnerZespolu"];
 export type Katalog = Schemat["Katalog"];
 export type DefinicjaKatalogu = Schemat["DefinicjaKatalogu"];
 export type KrokRunu = Schemat["KrokRunu"];
+export type PokrycieRunu = Schemat["PokrycieRunu"];
 export type RunStatus = Schemat["RunStatus"];
 export type Profil = Schemat["Profil"];
 export type DecyzjaIn = Schemat["DecyzjaIn"];

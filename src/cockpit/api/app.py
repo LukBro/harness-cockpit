@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -47,6 +47,7 @@ from .schematy import (
     ListaPlikow,
     PlikOdczytany,
     PlikZapisany,
+    PokrycieRunu,
     Projekt,
     RunnerZameldowany,
     RunnerZespolu,
@@ -147,6 +148,9 @@ class EventIn(BaseModel):
     text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
     # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
     attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
+    kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
+        default=None, max_length=1000)
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -303,6 +307,7 @@ async def ingest_event(
         tokens=body.tokens, duration_ms=body.duration_ms,
         wyslane_output=body.wyslane_output, text_full_len=body.text_full_len,
         attempt=body.attempt,
+        kroki_weryfikujace=body.kroki_weryfikujace,
     )
     if nowe:
         await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
@@ -322,6 +327,7 @@ async def get_run(
     run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
     rows = await uslugi.zdarzenia_runu(s, run)
     wiersze_krokow = await kroki.kroki_runu(s, run)
+    pokrycie = uslugi.pokrycie_z_kolumn(run)
     return RunSzczegoly(
         id=run.id,
         workflow=run.workflow,
@@ -334,6 +340,7 @@ async def get_run(
         steps=[KrokRunu(
             step_id=k.step_id, agent_id=k.agent_id, attempt=k.attempt, status=k.status.value,
             reason=k.reason) for k in wiersze_krokow],
+        pokrycie=None if pokrycie is None else PokrycieRunu(**pokrycie),
     )
 
 
