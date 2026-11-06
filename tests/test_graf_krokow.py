@@ -60,6 +60,7 @@ def swiat(tmp_path: Path, kroki: list[tuple]) -> tuple[Workflow, Rejestr]:
 
     Opcje skilla: consumes, produces, needs (capabilities). Skill każdego kroku
     nazywa się `s_<id>`. Kolejność kroków w YAML = kolejność w `workflow.kroki`.
+    Opcje `{"system": "diff"}` robią z kroku krok systemowy (HAR-176): bez skilla.
     """
     repo = tmp_path / "repo"
     dom = tmp_path / "dom"
@@ -70,8 +71,11 @@ def swiat(tmp_path: Path, kroki: list[tuple]) -> tuple[Workflow, Rejestr]:
     for wpis in kroki:
         id, needs = wpis[0], wpis[1]
         opcje = wpis[2] if len(wpis) > 2 else {}
-        napisz_skill(skille, f"s_{id}", **opcje)
         zaleznosci = f", needs: [{', '.join(needs)}]" if needs else ""
+        if "system" in opcje:
+            linie.append(f"  {id}: {{system: {opcje['system']}{zaleznosci}}}")
+            continue
+        napisz_skill(skille, f"s_{id}", **opcje)
         linie.append(f"  {id}: {{skill: s_{id}{zaleznosci}}}")
     plik = tmp_path / "workflow.yaml"
     plik.write_text("\n".join(linie) + "\n", encoding="utf-8")
@@ -404,13 +408,28 @@ def test_brak_capability_pomija_krok_od_razu_nie_czekajac_na_jego_zaleznosci(tmp
 # --- pierwszeństwo reguł --------------------------------------------------
 
 
-def test_porazka_przodka_wygrywa_z_brakiem_wejscia(tmp_path):
+def test_brak_wejscia_wygrywa_z_porazka_przodka_ktory_nie_produkuje_artefaktu(tmp_path):
+    # HAR-176: odwrocona kolejnosc - utracone wejscie jest wazniejsza przyczyna niz obcy nieudany przodek
     kroki = [
         ("a", []),
         ("p", [], {"produces": ["plan.md"]}),
         ("b", ["a", "p"], {"consumes": ["plan.md"]}),
     ]
     stany = {"a": NIEUDANY, "p": POMINIETY}
+    assert plan(tmp_path, kroki, stany) == Plan(
+        do_startu=[],
+        do_pominiecia={"b": "brak wejścia: plan.md z kroku p"},
+        powody={"b": BRAK_WEJSCIA},
+    )
+
+
+def test_porazka_przodka_pomija_krok_gdy_konsumowany_artefakt_dotarl(tmp_path):
+    kroki = [
+        ("a", []),
+        ("p", [], {"produces": ["plan.md"]}),
+        ("b", ["a", "p"], {"consumes": ["plan.md"]}),
+    ]
+    stany = {"a": NIEUDANY, "p": ZAKONCZONY}
     assert plan(tmp_path, kroki, stany) == Plan(
         do_startu=[],
         do_pominiecia={"b": "zależność nieudana: a"},
@@ -436,6 +455,173 @@ def test_porazka_przodka_wygrywa_z_brakiem_capability(tmp_path):
         do_startu=[],
         do_pominiecia={"b": "zależność nieudana: a"},
         powody={"b": ZALEZNOSC},
+    )
+
+
+# --- nieudany producent odbiera wejście (HAR-176) ---------------------------
+
+
+def test_krok_konsumujacy_artefakt_nieudanego_producenta_jest_pominiety_z_brakiem_wejscia(tmp_path):
+    kroki = [
+        ("a", [], {"produces": ["plan.md"]}),
+        ("b", ["a"], {"consumes": ["plan.md"]}),
+    ]
+    assert plan(tmp_path, kroki, {"a": NIEUDANY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"b": "brak wejścia: plan.md z kroku a"},
+        powody={"b": BRAK_WEJSCIA},
+    )
+
+
+def test_nieudany_producent_innego_artefaktu_daje_zaleznosc_nieudana_a_nie_brak_wejscia(tmp_path):
+    kroki = [
+        ("a", [], {"produces": ["plan.md"]}),
+        ("z", [], {"produces": ["inny.md"]}),
+        ("b", ["a", "z"], {"consumes": ["inny.md"]}),
+    ]
+    assert plan(tmp_path, kroki, {"a": NIEUDANY, "z": ZAKONCZONY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"b": "zależność nieudana: a"},
+        powody={"b": ZALEZNOSC},
+    )
+
+
+def test_nieudany_producent_nie_odbiera_wejscia_gdy_drugi_producent_dostarczyl_artefakt(tmp_path):
+    kroki = [
+        ("p1", [], {"produces": ["plan.md"]}),
+        ("p2", [], {"produces": ["plan.md"]}),
+        ("b", ["p1", "p2"], {"consumes": ["plan.md"]}),
+    ]
+    stany = {"p1": NIEUDANY, "p2": ZAKONCZONY}
+    # artefakt dotarl od p2, wiec to nie brak wejscia; krok i tak ma nieudanego przodka
+    assert plan(tmp_path, kroki, stany) == Plan(
+        do_startu=[],
+        do_pominiecia={"b": "zależność nieudana: p1"},
+        powody={"b": ZALEZNOSC},
+    )
+
+
+def test_nieudany_producent_spoza_przodkow_nie_odbiera_wejscia_konsumentowi(tmp_path):
+    kroki = [
+        ("q", [], {"produces": ["plan.md"]}),
+        ("b", [], {"consumes": ["plan.md"]}),
+    ]
+    assert plan(tmp_path, kroki, {"q": NIEUDANY}) == Plan(
+        do_startu=["b"], do_pominiecia={}, powody={}
+    )
+
+
+def test_artefakt_traci_konsument_gdy_producenci_sa_czesciowo_nieudani_a_czesciowo_pominieci(
+    tmp_path,
+):
+    kroki = [
+        ("p2", [], {"produces": ["plan.md"]}),
+        ("p1", [], {"produces": ["plan.md"]}),
+        ("b", ["p1", "p2"], {"consumes": ["plan.md"]}),
+    ]
+    stany = {"p2": NIEUDANY, "p1": POMINIETY}
+    assert plan(tmp_path, kroki, stany) == Plan(
+        do_startu=[],
+        do_pominiecia={"b": "brak wejścia: plan.md z kroku p2"},
+        powody={"b": BRAK_WEJSCIA},
+    )
+
+
+def test_nieudany_producent_przodek_przechodni_odbiera_wejscie_konsumentowi(tmp_path):
+    kroki = [
+        ("a", [], {"produces": ["plan.md"]}),
+        ("m", ["a"]),
+        ("b", ["m"], {"consumes": ["plan.md"]}),
+    ]
+    assert plan(tmp_path, kroki, {"a": NIEUDANY, "m": POMINIETY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"b": "brak wejścia: plan.md z kroku a"},
+        powody={"b": BRAK_WEJSCIA},
+    )
+
+
+# --- krok systemowy diff (HAR-176) ---------------------------------------------
+
+DIFF_I_RECENZENT = [
+    ("autor", []),
+    ("diff", ["autor"], {"system": "diff"}),
+    ("rec", ["diff"], {"consumes": ["zmiana.diff"]}),
+]
+
+
+def test_krok_systemowy_diff_jest_planowany_jak_kazdy_krok_po_swoich_zaleznosciach(tmp_path):
+    # swiat() tworzy katalogi w podanej sciezce: kazde wywolanie ma wlasny podkatalog
+    for podkatalog in ("a", "b", "c"):
+        (tmp_path / podkatalog).mkdir()
+    assert plan(tmp_path / "a", DIFF_I_RECENZENT, {}) == Plan(
+        do_startu=["autor"], do_pominiecia={}, powody={})
+    assert plan(tmp_path / "b", DIFF_I_RECENZENT, {"autor": ZAKONCZONY}) == Plan(
+        do_startu=["diff"], do_pominiecia={}, powody={})
+    assert plan(
+        tmp_path / "c", DIFF_I_RECENZENT, {"autor": ZAKONCZONY, "diff": ZAKONCZONY}
+    ) == Plan(do_startu=["rec"], do_pominiecia={}, powody={})
+
+
+def test_krok_systemowy_diff_nie_wymaga_capabilities_runnera(tmp_path):
+    assert plan(tmp_path, DIFF_I_RECENZENT, {"autor": ZAKONCZONY}, capabilities=set()) == Plan(
+        do_startu=["diff"], do_pominiecia={}, powody={})
+
+
+def test_nieudany_krok_diff_odbiera_recenzentowi_wejscie_zmiana_diff(tmp_path):
+    assert plan(tmp_path, DIFF_I_RECENZENT, {"autor": ZAKONCZONY, "diff": NIEUDANY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"rec": "brak wejścia: zmiana.diff z kroku diff"},
+        powody={"rec": BRAK_WEJSCIA},
+    )
+
+
+def test_pominiety_krok_diff_tez_odbiera_recenzentowi_wejscie_zmiana_diff(tmp_path):
+    assert plan(tmp_path, DIFF_I_RECENZENT, {"autor": ZAKONCZONY, "diff": POMINIETY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"rec": "brak wejścia: zmiana.diff z kroku diff"},
+        powody={"rec": BRAK_WEJSCIA},
+    )
+
+
+def test_nieudany_krok_diff_odbiera_tez_drugi_artefakt_zmienione_linie_json(tmp_path):
+    kroki = [
+        ("diff", [], {"system": "diff"}),
+        ("opis", ["diff"], {"consumes": ["zmienione-linie.json"]}),
+    ]
+    assert plan(tmp_path, kroki, {"diff": NIEUDANY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"opis": "brak wejścia: zmienione-linie.json z kroku diff"},
+        powody={"opis": BRAK_WEJSCIA},
+    )
+
+
+def test_nieudany_krok_diff_pomija_recenzenta_niekonsumujacego_diffu_jako_zaleznosc_nieudana(
+    tmp_path,
+):
+    kroki = [
+        ("autor", []),
+        ("diff", ["autor"], {"system": "diff"}),
+        ("rec", ["diff"]),
+    ]
+    assert plan(tmp_path, kroki, {"autor": ZAKONCZONY, "diff": NIEUDANY}) == Plan(
+        do_startu=[],
+        do_pominiecia={"rec": "zależność nieudana: diff"},
+        powody={"rec": ZALEZNOSC},
+    )
+
+
+def test_nieudany_autor_pomija_krok_diff_jako_zaleznosc_nieudana_a_recenzent_traci_wejscie(
+    tmp_path,
+):
+    wynik = plan(tmp_path, DIFF_I_RECENZENT, {"autor": NIEUDANY})
+
+    assert wynik == Plan(
+        do_startu=[],
+        do_pominiecia={
+            "diff": "zależność nieudana: autor",
+            "rec": "brak wejścia: zmiana.diff z kroku diff",
+        },
+        powody={"diff": ZALEZNOSC, "rec": BRAK_WEJSCIA},
     )
 
 

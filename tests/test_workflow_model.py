@@ -15,6 +15,7 @@ from cockpit.services.workflow import (
     BRAK_SKILLA,
     NIEPOPRAWNY_YAML,
     ZDUPLIKOWANY_KLUCZ,
+    Krok,
     Poziom,
     Problem,
     ma_bledy,
@@ -568,3 +569,201 @@ def test_klucze_krokow_1_i_napis_1_to_ten_sam_krok_zduplikowany(tmp_path):
 
     assert workflow is None
     assert [(p.krok, p.kod) for p in problemy] == [(None, ZDUPLIKOWANY_KLUCZ)]
+
+
+# --- krok systemowy (HAR-176): `system: diff` zamiast `skill` ---------------------------------
+
+PLIK_Z_KROKIEM_SYSTEMOWYM = """\
+# komentarz zostaje
+name: w
+steps:
+  autor:
+    skill: pisarz
+    fanout: 2
+  diff:
+    system: diff
+    needs:
+      - autor
+  rec:
+    skill: recenzent
+    needs:
+      - diff
+"""
+
+
+def test_krok_z_samym_polem_system_wczytuje_sie_bez_problemow_i_bez_skilla(tmp_path):
+    plik = _zapisz(tmp_path, PLIK_Z_KROKIEM_SYSTEMOWYM)
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert problemy == []
+    assert workflow is not None
+    diff = _krok(workflow, "diff")
+    assert (diff.system, diff.skill, diff.needs) == ("diff", None, ["autor"])
+    assert _krok(workflow, "autor").system is None
+    assert workflow.niepoprawne == []
+
+
+def test_krok_bez_skill_i_bez_system_ma_problem_brak_skilla_z_komunikatem_o_obu_polach(tmp_path):
+    plik = _zapisz(tmp_path, "name: w\nsteps:\n  pusty:\n    fanout: 2\n")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is not None
+    assert problemy == [
+        Problem("pusty", BRAK_SKILLA, "krok nie ma pola skill ani system", Poziom.blad)]
+    assert workflow.niepoprawne == ["pusty"]
+
+
+def test_zmiana_pola_innego_kroku_nie_dotyka_kroku_systemowego_w_pliku(tmp_path):
+    plik = _zapisz(tmp_path, PLIK_Z_KROKIEM_SYSTEMOWYM)
+    workflow, _ = wczytaj_workflow(plik)
+    assert workflow is not None
+
+    _krok(workflow, "autor").fanout = 3
+    zapisz_workflow(workflow, plik)
+    tekst = plik.read_text(encoding="utf-8")
+
+    roznice = [
+        (a, b)
+        for a, b in zip(
+            PLIK_Z_KROKIEM_SYSTEMOWYM.splitlines(), tekst.splitlines(), strict=True)
+        if a != b
+    ]
+    assert roznice == [("    fanout: 2", "    fanout: 3")]
+    assert _blok_kroku(tekst, "diff") == ["  diff:", "    system: diff", "    needs:", "      - autor"]
+
+
+def test_nowy_krok_systemowy_dodany_w_modelu_zapisuje_sie_jako_system_a_nie_skill_null(tmp_path):
+    plik = _zapisz(tmp_path, "name: w\nsteps:\n  autor:\n    skill: pisarz\n")
+    workflow, _ = wczytaj_workflow(plik)
+    assert workflow is not None
+
+    workflow.kroki.append(Krok(id="diff", system="diff", needs=["autor"]))
+    zapisz_workflow(workflow, plik)
+    tekst = plik.read_text(encoding="utf-8")
+
+    blok = _blok_kroku(tekst, "diff")
+    # caly blok: bez zadnego obcego klucza, `system` przed `needs`
+    assert blok == ["  diff:", "    system: diff", "    needs:", "      - autor"]
+    assert "null" not in tekst and "None" not in tekst
+    ponownie, problemy = wczytaj_workflow(plik)
+    assert problemy == []
+    assert ponownie is not None
+    diff = _krok(ponownie, "diff")
+    assert (diff.system, diff.skill, diff.needs) == ("diff", None, ["autor"])
+    assert _krok(ponownie, "autor").skill == "pisarz"
+
+
+def test_nowy_krok_ze_skillem_dodany_w_modelu_nadal_zapisuje_skill_i_nie_dopisuje_system(tmp_path):
+    plik = _zapisz(tmp_path, "name: w\nsteps:\n  autor:\n    skill: pisarz\n")
+    workflow, _ = wczytaj_workflow(plik)
+    assert workflow is not None
+
+    workflow.kroki.append(Krok(id="rec", skill="recenzent", needs=["autor"]))
+    zapisz_workflow(workflow, plik)
+
+    blok = _blok_kroku(plik.read_text(encoding="utf-8"), "rec")
+    assert blok == ["  rec:", "    skill: recenzent", "    needs:", "      - autor"]
+
+
+# --- nazwa workflow, bool vs int, bledy krokow (HAR-176, mutanty zmienionych funkcji) ----------
+
+
+def test_zmiana_nazwy_workflow_zastepuje_name_na_jego_miejscu_w_pliku(tmp_path):
+    plik = _zapisz(tmp_path, "# k\nsteps:\n  plan:\n    skill: planner\nname: stara\n")
+    workflow, problemy = wczytaj_workflow(plik)
+    assert problemy == [] and workflow is not None
+
+    workflow.nazwa = "nowa"
+    zapisz_workflow(workflow, plik)
+    tekst = plik.read_text(encoding="utf-8")
+
+    assert tekst.splitlines()[-1] == "name: nowa"
+    assert tekst.count("name:") == 1
+    assert tekst.index("steps:") < tekst.index("name:")
+    assert "null" not in tekst
+
+
+def test_nazwa_rowna_nazwie_pliku_zapisuje_sie_gdy_name_w_pliku_jest_inne(tmp_path):
+    plik = _zapisz(tmp_path, "name: alfa\nsteps:\n  plan:\n    skill: planner\n", nazwa="beta.yaml")
+    workflow, problemy = wczytaj_workflow(plik)
+    assert problemy == [] and workflow is not None
+
+    workflow.nazwa = "beta"
+    zapisz_workflow(workflow, plik)
+
+    assert plik.read_text(encoding="utf-8").splitlines()[0] == "name: beta"
+
+
+def test_zapis_pliku_bez_klucza_name_nie_dopisuje_name_gdy_nazwa_nie_zmieniona(tmp_path):
+    plik = _zapisz(tmp_path, "steps:\n  plan:\n    skill: planner\n")
+    workflow, problemy = wczytaj_workflow(plik)
+    assert problemy == [] and workflow is not None
+
+    _krok(workflow, "plan").fanout = 2
+    zapisz_workflow(workflow, plik)
+
+    tekst = plik.read_text(encoding="utf-8")
+    assert "name" not in tekst
+    assert "fanout: 2" in tekst
+
+
+def test_zmiana_nazwy_w_pliku_bez_klucza_name_dopisuje_name_jako_pierwszy_klucz(tmp_path):
+    plik = _zapisz(tmp_path, "steps:\n  plan:\n    skill: planner\n")
+    workflow, problemy = wczytaj_workflow(plik)
+    assert problemy == [] and workflow is not None
+
+    workflow.nazwa = "nowa"
+    zapisz_workflow(workflow, plik)
+
+    assert plik.read_text(encoding="utf-8").splitlines()[:2] == ["name: nowa", "steps:"]
+
+
+def test_wartosc_logiczna_w_modelu_zastepuje_rowna_jej_liczbe_w_pliku(tmp_path):
+    # True == 1, ale to inna wartosc w YAML (`true` a `1`): zapis nie moze ich mylic
+    plik = _zapisz(tmp_path, "name: w\nsteps:\n  plan:\n    skill: planner\n    fanout: 1\n")
+    workflow, problemy = wczytaj_workflow(plik)
+    assert problemy == [] and workflow is not None
+
+    _krok(workflow, "plan").fanout = True           # przypisanie nie jest walidowane
+    workflow.nazwa = "w2"                            # model_dump nie widzi roznicy True/1
+    zapisz_workflow(workflow, plik)
+
+    tekst = plik.read_text(encoding="utf-8")
+    assert "fanout: true" in tekst
+    assert "fanout: 1" not in tekst
+
+
+def test_krok_niebedacy_mapa_nie_przerywa_wczytywania_kolejnych_krokow(tmp_path):
+    plik = _zapisz(tmp_path, "name: w\nsteps:\n  zly: 5\n  dobry:\n    skill: x\n")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is not None
+    assert [(p.krok, p.kod, p.komunikat) for p in problemy] == [
+        ("zly", BLAD_POLA, "krok musi byc mapa pol")]
+    assert workflow.niepoprawne == ["zly"]
+    assert [k.id for k in workflow.kroki] == ["dobry"]
+
+
+def test_zduplikowany_krok_ma_komunikat_z_jego_identyfikatorem(tmp_path):
+    plik = _zapisz(tmp_path, "name: w\nsteps:\n  1:\n    skill: a\n  '1':\n    skill: b\n")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is None
+    assert problemy == [Problem(None, ZDUPLIKOWANY_KLUCZ, "zduplikowany klucz kroku: 1")]
+
+
+def test_blad_zagniezdzonego_pola_kroku_ma_sciezke_pola_rozdzielona_kropka(tmp_path):
+    plik = _zapisz(
+        tmp_path,
+        "name: w\nsteps:\n  a:\n    skill: x\n  b:\n    skill: y\n    on_fail: {retry: a, max: 0}\n",
+    )
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is not None
+    assert [(p.krok, p.kod) for p in problemy] == [("b", BLAD_POLA)]
+    assert problemy[0].komunikat.startswith("on_fail.max: ")

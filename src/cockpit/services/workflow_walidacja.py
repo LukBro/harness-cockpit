@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cockpit.services.kroki_systemowe import KROKI_SYSTEMOWE, opis_kroku_systemowego
 from cockpit.services.skills import Rejestr, Skill
 from cockpit.services.walidacja import KLUCZ_ROLI, KLUCZE_DEFINICJI, waliduj_definicje
 from cockpit.services.workflow import Krok, Poziom, Problem, Workflow
@@ -26,6 +27,8 @@ NIEPRZENOSNY_SKILL = "nieprzenosny_skill"
 NIEZNANY_KLUCZ = "nieznany_klucz"
 POLE_BEZ_KONSUMENTA = "pole_bez_konsumenta"
 ROLA_W_KROKU_IGNOROWANA = "rola_w_kroku_ignorowana"
+SKILL_I_SYSTEM = "skill_i_system"
+NIEZNANY_KROK_SYSTEMOWY = "nieznany_krok_systemowy"
 
 _POLA_BEZ_KONSUMENTA = ("optional", "require_distinct_vendors")
 
@@ -176,6 +179,12 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
         for id_kroku, krok in kroki_po_id.items()
         if krok.skill in rejestr.skille
     }
+    # krok systemowy jest producentem artefaktow ze swojego opisu; nieznany nic nie produkuje
+    produkcja.update({
+        id_kroku: list(opis_kroku_systemowego(krok.system).produces)
+        for id_kroku, krok in kroki_po_id.items()
+        if krok.skill is None and krok.system is not None
+    })
     skille_repo = dom / ".cockpit" / "skills"
 
     for krok in workflow.kroki:
@@ -192,21 +201,38 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
                 Problem(krok.id, CYKL, "cykl w needs: " + " → ".join(cykl))
             )
 
+        if krok.skill is not None and krok.system is not None:
+            problemy.append(
+                Problem(krok.id, SKILL_I_SYSTEM, "krok ma naraz pole skill i system")
+            )
         skill = rejestr.skille.get(krok.skill)
-        if skill is None:
-            problemy.append(_nieznany_skill(krok, rejestr))
-        problemy.extend(_niezmienniki_kroku(krok, skill, workflow))
-        if skill is not None:
-            dostepne = _produkowane(przodkowie, produkcja)
-            for artefakt in skill.consumes:
-                if artefakt not in dostepne:
-                    problemy.append(
-                        Problem(
-                            krok.id,
-                            BRAK_ARTEFAKTU,
-                            f"artefakt {artefakt} nie jest produkowany przez zadnego przodka kroku",
-                        )
+        if krok.skill is None and krok.system is not None:
+            # krok systemowy: bez skilla, wiec bez `nieznany_skill` i bez roli
+            if krok.system not in KROKI_SYSTEMOWE:
+                problemy.append(
+                    Problem(
+                        krok.id,
+                        NIEZNANY_KROK_SYSTEMOWY,
+                        f"nieznany krok systemowy: {krok.system}",
                     )
+                )
+            konsumowane = opis_kroku_systemowego(krok.system).consumes
+        elif skill is None:
+            problemy.append(_nieznany_skill(krok, rejestr))
+            konsumowane = ()
+        else:
+            konsumowane = tuple(skill.consumes)
+        problemy.extend(_niezmienniki_kroku(krok, skill, workflow))
+        dostepne = _produkowane(przodkowie, produkcja)
+        for artefakt in konsumowane:
+            if artefakt not in dostepne:
+                problemy.append(
+                    Problem(
+                        krok.id,
+                        BRAK_ARTEFAKTU,
+                        f"artefakt {artefakt} nie jest produkowany przez zadnego przodka kroku",
+                    )
+                )
 
         if krok.consensus is not None and krok.consensus > krok.fanout:
             problemy.append(

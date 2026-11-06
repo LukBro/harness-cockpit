@@ -42,9 +42,10 @@ from pathlib import Path
 from typing import Any
 
 from cockpit.services.errors import BladDziedziny
+from cockpit.services.kroki_systemowe import PLIK_LINII, opis_kroku_systemowego
 from cockpit.services.projekt import Projekt, wczytaj_projekt
 from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
-from cockpit.services.workflow import Problem, Workflow, ma_bledy, wczytaj_workflow
+from cockpit.services.workflow import Krok, Problem, Workflow, ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
 from runner.agent import BrakModelu, ProfilBackendu, SpecKroku, polecenie_agenta, zbuduj_prompt
 from runner.checkpoint import (
@@ -57,12 +58,19 @@ from runner.checkpoint import (
     zapisz_checkpoint,
 )
 from runner.graf import StanKroku, nastepne
+from runner.kotwice import PLIK_NOTATKI
 from runner.krok import KATALOG_RUNU, WynikKroku, _zapisz_atomowo, wykonaj_krok
+from runner.krok_diff import wykonaj_diff
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
 from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
 
 Emit = Callable[[dict], Awaitable[None]]
 UruchomAgenta = Callable[..., Awaitable[WynikKroku]]
+# Wykonawca kroku systemowego: (worktree, base_commit, katalog kroku w katalogu runu) -> wynik.
+# Rejestr jest jedynym miejscem, ktore zna nazwy krokow systemowych po stronie runnera; opis
+# kontraktu (produces/consumes/needs) lezy w `cockpit.services.kroki_systemowe`.
+WykonawcaSystemowy = Callable[[Path, str, Path], Awaitable[WynikKroku]]
+WYKONAWCY_SYSTEMOWI: Mapping[str, WykonawcaSystemowy] = {"diff": wykonaj_diff}
 
 NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # Katalog workflow w repozytorium: odczyt idzie z worktree (stan z commita). Stala, bo literal
@@ -139,7 +147,7 @@ def _przygotuj(
         if projekt is None:
             raise BladStartu(_bledy(problemy_projektu))
         shutil.copyfile(plik, wt.katalog_runu / "workflow.yaml")
-        materializuj({k.skill for k in workflow.kroki}, rejestr, wt.sciezka)
+        materializuj({k.skill for k in workflow.kroki if k.skill is not None}, rejestr, wt.sciezka)
     except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:
         raise BladStartu(str(e)) from e
     return Przygotowany(wt, workflow, rejestr, projekt, repo)
@@ -157,16 +165,56 @@ def _zdarzenie(run_id: str, kind: str, step_id: str, agent_id: str, text: str, *
     }
 
 
+def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | None:
+    """Id kroku systemowego, ktory produkuje `artefakt` i jest przodkiem `id_kroku` (albo None).
+
+    Producent skillowy nie jest tu potrzebny: jego artefakty to nazwy wzgledne, a krok
+    systemowy zapisuje pod `<katalog_runu>/<id kroku>/`."""
+    kroki = {k.id: k for k in p.workflow.kroki}
+    stos = list(kroki[id_kroku].needs)
+    odwiedzeni: set[str] = set()
+    while stos:
+        kandydat = stos.pop(0)
+        if kandydat in odwiedzeni or kandydat not in kroki:
+            continue
+        odwiedzeni.add(kandydat)
+        krok = kroki[kandydat]
+        if krok.skill is None and artefakt in opis_kroku_systemowego(krok.system).produces:
+            return kandydat
+        stos.extend(krok.needs)
+    return None
+
+
+def _wejscie(p: Przygotowany, id_kroku: str, artefakt: str) -> str:
+    """Wejscie agenta: sciezka bezwzgledna dla artefaktu kroku systemowego, inaczej nazwa."""
+    producent = _krok_producenta(p, id_kroku, artefakt)
+    if producent is None:
+        return artefakt
+    return str(p.worktree.katalog_runu / producent / artefakt)
+
+
+async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
+    """Krok bez agenta: wykonawca z rejestru, artefakty w katalogu runu pod id kroku."""
+    wykonawca = WYKONAWCY_SYSTEMOWI.get(krok.system)
+    if wykonawca is None:
+        raise PorazkaKroku(f"nieznany krok systemowy: {krok.system}")
+    return await wykonawca(
+        p.worktree.sciezka, p.worktree.base_commit, p.worktree.katalog_runu / krok.id)
+
+
 async def _krok(
     run_id: str, id_kroku: str, p: Przygotowany, profil: ProfilBackendu,
     uruchom_agenta: UruchomAgenta, emit: Emit, zatwierdzone: frozenset[str] = frozenset(),
 ) -> WynikKroku:
     """Jeden krok: specyfikacja agenta, prompt, polecenie; blad budowy to `PorazkaKroku`.
 
-    Krok zatwierdzony na bramce dostaje artefakt decyzji jako ostatnie wejscie."""
+    Krok systemowy idzie do wykonawcy z rejestru, bez agenta. Krok zatwierdzony na bramce
+    dostaje artefakt decyzji jako ostatnie wejscie."""
     krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
+    if krok.skill is None:
+        return await _krok_systemowy(krok, p)
     skill = p.rejestr.skille[krok.skill]
-    wejscia = list(skill.consumes)
+    wejscia = [_wejscie(p, id_kroku, artefakt) for artefakt in skill.consumes]
     if id_kroku in zatwierdzone:
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
     spec = SpecKroku(
@@ -182,8 +230,19 @@ async def _krok(
         argv = polecenie_agenta(spec, prompt, profil)
     except BrakModelu as e:
         raise PorazkaKroku(str(e)) from e
+    dodatkowe: dict[str, Path] = {}
+    if PLIK_NOTATKI in skill.produces:
+        producent = _krok_producenta(p, id_kroku, PLIK_LINII)
+        if producent is not None:
+            dodatkowe["zmienione_linie"] = p.worktree.katalog_runu / producent / PLIK_LINII
     return await uruchom_agenta(
-        spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu)
+        spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu, **dodatkowe)
+
+
+def _produkuje_notatke(p: Przygotowany, id_kroku: str) -> bool:
+    """Czy skill kroku produkuje `notatka-zmiany.md` (krok systemowy nie ma skilla)."""
+    krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
+    return krok.skill is not None and PLIK_NOTATKI in p.rejestr.skille[krok.skill].produces
 
 
 async def _pauza_testowa() -> None:
@@ -315,20 +374,24 @@ async def _wykonaj_plan(
             gotowe, _ = await asyncio.wait(w_toku, return_when=asyncio.FIRST_COMPLETED)
             for zadanie in [z for z in w_toku if z in gotowe]:
                 id_kroku, start = w_toku.pop(zadanie)
+                kotwice = None
                 try:
                     wynik = zadanie.result()
                 except PorazkaKroku as e:
                     udany, powod = False, str(e)
                 else:
                     udany, powod = wynik.status == "zakonczony", wynik.powod
+                    if udany and _produkuje_notatke(p, id_kroku):
+                        kotwice = list(wynik.kotwice)
                 czas_ms = int((time.monotonic() - start) * 1000)
                 stany[id_kroku] = StanKroku.ZAKONCZONY if udany else StanKroku.NIEUDANY
                 ostatni = id_kroku
                 # nieudany krok ma powod (krok.py); text zakonczonego to pusty napis
+                dodatkowe = {} if kotwice is None else {"kotwice": kotwice}
                 await emit(_zdarzenie(
                     run_id, "step_finished" if udany else "step_failed", id_kroku, id_kroku,
                     "" if udany else powod,
-                    duration_ms=czas_ms, cost_usd=None, cost_source="unavailable"))
+                    duration_ms=czas_ms, cost_usd=None, cost_source="unavailable", **dodatkowe))
     finally:
         zadania = list(w_toku)
         for zadanie in zadania:
