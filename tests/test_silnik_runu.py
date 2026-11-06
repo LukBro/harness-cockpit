@@ -181,9 +181,10 @@ class Szpieg:
     opoznienia: dict[str, float] = field(default_factory=dict)     # per krok, przed `opoznienie`
     wywolania: list = field(default_factory=list)
 
-    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None):
+    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None):
         self.wywolania.append(SimpleNamespace(
-            spec=spec, polecenie=polecenie, katalog=katalog, katalog_runu=katalog_runu))
+            spec=spec, polecenie=polecenie, katalog=katalog, katalog_runu=katalog_runu,
+            prompt=prompt))
         czekanie = self.opoznienia.get(spec.step_id, self.opoznienie)
         if czekanie:
             await asyncio.sleep(czekanie)
@@ -208,7 +209,7 @@ class Atrapa:
     repo: Path | None = None
     wywolania: list = field(default_factory=list)
 
-    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None):
+    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None):
         self.wywolania.append(spec.step_id)
         opis = {
             "znaczniki": str(self.znaczniki), "step_id": spec.step_id,
@@ -763,9 +764,10 @@ async def test_polecenie_agenta_niesie_sciezke_skilla_a_model_wynika_z_tieru_rol
     assert argv_a[0] == "claude"
     assert argv_a[argv_a.index("--model") + 1] == "m-judgment"
     assert argv_b[argv_b.index("--model") + 1] == "m-execution"
-    prompt = argv_a[argv_a.index("-p") + 1]
+    prompt = next(w.prompt for w in agent.wywolania if w.spec.step_id == "a")
     assert ".cockpit/_run/skills/s_a/SKILL.md" in prompt
     assert "Brief." not in prompt                        # sciezka, nigdy tresc
+    assert not any("SKILL.md" in x for x in argv_a)      # prompt idzie plikiem, nie argv
 
 
 async def test_znak_sterujacy_w_komendzie_capability_konczy_krok_bledem_bez_uruchomienia_agenta(tmp_path):
@@ -1043,6 +1045,7 @@ async def test_krok_zalezny_od_pominietego_i_od_trwajacego_wykonuje_sie_po_zakon
 async def test_model_ze_srodowiska_runnera_trafia_do_polecenia_agenta_gdy_wolajacy_nie_poda_profilu(
     tmp_path, monkeypatch,
 ):
+    monkeypatch.setenv("COCKPIT_BACKENDY", str(tmp_path / "brak-profilu.json"))
     monkeypatch.setenv("COCKPIT_MODEL_JUDGMENT", "m-ze-srodowiska")
     s = swiat(tmp_path, [K("a")])
     s.profil = None

@@ -138,7 +138,7 @@ class EventIn(BaseModel):
     agent_type: str = ""
     kind: str
     text: str = ""
-    cost_usd: float | None = None          # None = brak pomiaru, nigdy 0 (BRO-87)
+    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)  # None = brak pomiaru, nigdy 0 (BRO-87)
     cost_source: str = "unavailable"
     tokens: int | None = None
     duration_ms: int | None = None
@@ -147,6 +147,11 @@ class EventIn(BaseModel):
     text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
     # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
     attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    # pomiar kroku z wyniku agenta (HAR-174); brak to None, nigdy 0; le = int4 PostgreSQL
+    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -302,7 +307,8 @@ async def ingest_event(
         text=body.text, cost_usd=body.cost_usd, cost_source=body.cost_source,
         tokens=body.tokens, duration_ms=body.duration_ms,
         wyslane_output=body.wyslane_output, text_full_len=body.text_full_len,
-        attempt=body.attempt,
+        attempt=body.attempt, tokens_in=body.tokens_in, tokens_out=body.tokens_out,
+        num_turns=body.num_turns, session_id=body.session_id,
     )
     if nowe:
         await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
@@ -333,7 +339,9 @@ async def get_run(
             text_truncated=e.text_truncated, text_full_len=e.text_full_len) for e in rows],
         steps=[KrokRunu(
             step_id=k.step_id, agent_id=k.agent_id, attempt=k.attempt, status=k.status.value,
-            reason=k.reason) for k in wiersze_krokow],
+            reason=k.reason, cost_usd=k.cost_usd, tokens_in=k.tokens_in,
+            tokens_out=k.tokens_out, num_turns=k.num_turns, session_id=k.session_id,
+        ) for k in wiersze_krokow],
     )
 
 

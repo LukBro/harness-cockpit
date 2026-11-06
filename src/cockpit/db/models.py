@@ -164,6 +164,12 @@ class StepRun(Base):
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[StepStatus] = mapped_column(Enum(StepStatus))
     reason: Mapped[str | None] = mapped_column(Text, default=None)
+    # pomiar kroku (HAR-174): brak pomiaru to NULL, nigdy 0 (measured_or_null)
+    cost_usd: Mapped[float | None] = mapped_column(Float, default=None)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, default=None)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, default=None)
+    num_turns: Mapped[int | None] = mapped_column(Integer, default=None)
+    session_id: Mapped[str | None] = mapped_column(String(100), default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 

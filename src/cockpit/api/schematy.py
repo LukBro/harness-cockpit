@@ -66,6 +66,12 @@ class KrokRunu(BaseModel):
     # wartosci StepStatus; Literal, bo api/ importuje z modeli tylko RunStatus i RunnerKind
     status: Literal["running", "finished", "failed", "skipped", "waiting"]
     reason: str | None
+    # pomiar kroku (HAR-174): null = brak pomiaru, nigdy 0
+    cost_usd: float | None
+    tokens_in: int | None
+    tokens_out: int | None
+    num_turns: int | None
+    session_id: str | None
 
 
 class RunSzczegoly(BaseModel):

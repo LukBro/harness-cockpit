@@ -37,6 +37,15 @@ def _katalog_stanu_runnera_w_katalogu_testu(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _profil_backendu_bez_pliku_uzytkownika(tmp_path, monkeypatch):
+    """HAR-174: run bez podanego profilu czyta backendy.json; żaden test nie czyta
+    prawdziwego ~/.config/cockpit/backendy.json. Plik wskazany zmienną nie istnieje,
+    więc obowiązuje profil domyślny; testy profilu ustawiają zmienne same."""
+    monkeypatch.setenv("COCKPIT_BACKENDY", str(tmp_path / "brak-backendy.json"))
+    monkeypatch.delenv("COCKPIT_CONFIG", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _maskowanie_sekretow_nie_przecieka_miedzy_testami():
     """HAR-86: `main()` runnera uruchamiane w procesie testów instaluje filtr na
     loggerze korzenia, a `get_token` rejestruje sekret w rejestrze modułu. Bez

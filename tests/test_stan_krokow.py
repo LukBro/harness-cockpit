@@ -654,11 +654,17 @@ async def test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzad
     await _ok(swiat, "step_failed", step_id="a", agent_id="z", attempt=1, text="stara")
     r = await swiat.klient.get(f"/api/runs/{swiat.run_id}")
     assert r.status_code == 200
+    brak_pomiaru = {"cost_usd": None, "tokens_in": None, "tokens_out": None,
+                    "num_turns": None, "session_id": None}      # HAR-174: null, nigdy 0
     assert r.json()["steps"] == [
-        {"step_id": "a", "agent_id": "", "attempt": 1, "status": "running", "reason": None},
-        {"step_id": "a", "agent_id": "z", "attempt": 1, "status": "failed", "reason": "stara"},
-        {"step_id": "a", "agent_id": "z", "attempt": 2, "status": "failed", "reason": "boom"},
-        {"step_id": "b", "agent_id": "", "attempt": 1, "status": "finished", "reason": None},
+        {"step_id": "a", "agent_id": "", "attempt": 1, "status": "running", "reason": None,
+         **brak_pomiaru},
+        {"step_id": "a", "agent_id": "z", "attempt": 1, "status": "failed", "reason": "stara",
+         **brak_pomiaru},
+        {"step_id": "a", "agent_id": "z", "attempt": 2, "status": "failed", "reason": "boom",
+         **brak_pomiaru},
+        {"step_id": "b", "agent_id": "", "attempt": 1, "status": "finished", "reason": None,
+         **brak_pomiaru},
     ]
 
 

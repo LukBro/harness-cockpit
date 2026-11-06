@@ -19,10 +19,26 @@ MAPA_KROKOW: dict[str, StepStatus] = {
     "step_waiting": StepStatus.waiting,
 }
 
+KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
+
+
+def _zapisz_pomiar(
+    wiersz: StepRun, cost_usd: float | None, tokens_in: int | None,
+    tokens_out: int | None, num_turns: int | None, session_id: str | None,
+) -> None:
+    wiersz.cost_usd = cost_usd
+    wiersz.tokens_in = tokens_in
+    wiersz.tokens_out = tokens_out
+    wiersz.num_turns = num_turns
+    wiersz.session_id = session_id
+
 
 async def zastosuj_zdarzenie_kroku(
     s: AsyncSession, run: Run, kind: str, step_id: str, agent_id: str,
     attempt: int | None, text: str,
+    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,
 ) -> None:
     """Ustawia stan proby kroku wynikajacy ze zdarzenia; bez `commit`.
 
@@ -33,6 +49,8 @@ async def zastosuj_zdarzenie_kroku(
         return
     proba = 1 if attempt is None else attempt
     powod = text if status == StepStatus.failed else None
+    # pomiar (HAR-174) tylko z konca kroku; None to brak pomiaru (NULL), nigdy 0
+    koniec = kind in KONCZACE_KROK
     wiersz = (
         await s.execute(
             select(StepRun).where(
@@ -43,11 +61,16 @@ async def zastosuj_zdarzenie_kroku(
         )
     ).scalar_one_or_none()
     if wiersz is None:
-        s.add(StepRun(tenant_id=run.tenant_id, run_id=run.id, step_id=step_id,
-                      agent_id=agent_id, attempt=proba, status=status, reason=powod))
+        nowy = StepRun(tenant_id=run.tenant_id, run_id=run.id, step_id=step_id,
+                       agent_id=agent_id, attempt=proba, status=status, reason=powod)
+        if koniec:
+            _zapisz_pomiar(nowy, cost_usd, tokens_in, tokens_out, num_turns, session_id)
+        s.add(nowy)
         return
     wiersz.status = status
     wiersz.reason = powod
+    if koniec:
+        _zapisz_pomiar(wiersz, cost_usd, tokens_in, tokens_out, num_turns, session_id)
 
 
 async def kroki_runu(s: AsyncSession, run: Run) -> list[StepRun]:

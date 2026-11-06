@@ -81,11 +81,12 @@ class SzpiegCzytajacyStan(Szpieg):
         self.waiting_on: dict[str, object] = {}
         self.artefakt_istnieje: dict[str, bool] = {}
 
-    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None):
+    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None):
         cp = wczytaj_checkpoint(self.s.katalog_runu)
         self.waiting_on[spec.step_id] = cp.waiting_on
         self.artefakt_istnieje[spec.step_id] = artefakt_decyzji(self.s, spec.step_id).is_file()
-        return await super().__call__(spec, polecenie, katalog, emit, katalog_runu=katalog_runu)
+        return await super().__call__(
+            spec, polecenie, katalog, emit, katalog_runu=katalog_runu, prompt=prompt)
 
 
 # =====================================================================================
@@ -727,7 +728,7 @@ async def test_wznowienie_bez_profilu_bierze_modele_z_profilu_srodowiska(tmp_pat
 
     s, _ = await run_zatrzymany_na_bramce(tmp_path)
     z_env = ProfilBackendu(modele={t: "model-z-env" for t in (Tier.judgment, Tier.execution, Tier.retrieval)})
-    monkeypatch.setattr(ProfilBackendu, "z_srodowiska", classmethod(lambda cls: z_env))
+    monkeypatch.setattr(ProfilBackendu, "z_konfiguracji", classmethod(lambda cls: z_env))
     nowy = Szpieg()
 
     async def emit(zdarzenie: dict) -> None:
@@ -747,7 +748,7 @@ async def test_wznowienie_z_podanym_profilem_nie_siega_do_profilu_srodowiska(tmp
 
     s, _ = await run_zatrzymany_na_bramce(tmp_path)
     z_env = ProfilBackendu(modele={t: "model-z-env" for t in (Tier.judgment, Tier.execution, Tier.retrieval)})
-    monkeypatch.setattr(ProfilBackendu, "z_srodowiska", classmethod(lambda cls: z_env))
+    monkeypatch.setattr(ProfilBackendu, "z_konfiguracji", classmethod(lambda cls: z_env))
     nowy = Szpieg()
 
     await wznow(s, nowy)                                  # `wznow` podaje s.profil

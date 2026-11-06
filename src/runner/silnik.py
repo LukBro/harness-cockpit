@@ -46,7 +46,14 @@ from cockpit.services.projekt import Projekt, wczytaj_projekt
 from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Problem, Workflow, ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
-from runner.agent import BrakModelu, ProfilBackendu, SpecKroku, polecenie_agenta, zbuduj_prompt
+from runner.agent import (
+    BladProfiluBackendu,
+    BrakModelu,
+    ProfilBackendu,
+    SpecKroku,
+    polecenie_agenta,
+    zbuduj_prompt,
+)
 from runner.checkpoint import (
     BladCheckpointu,
     ZMIENNA_PAUZY,
@@ -57,7 +64,7 @@ from runner.checkpoint import (
     zapisz_checkpoint,
 )
 from runner.graf import StanKroku, nastepne
-from runner.krok import KATALOG_RUNU, WynikKroku, _zapisz_atomowo, wykonaj_krok
+from runner.krok import KATALOG_RUNU, PomiarKroku, WynikKroku, _zapisz_atomowo, wykonaj_krok
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
 from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
 
@@ -173,17 +180,19 @@ async def _krok(
         run_id=run_id, step_id=krok.id, agent_id=krok.id, skill_id=krok.skill,
         rola=skill.role, wejscia=wejscia, wyjscia=list(skill.produces),
         komendy={n: p.projekt.capabilities[n] for n in skill.needs if n in p.projekt.capabilities},
+        budget_usd=krok.budget_usd, max_turns=krok.max_turns,
     )
     try:
         prompt = zbuduj_prompt(spec)
     except ValueError as e:
         raise PorazkaKroku(str(e)) from e
     try:
-        argv = polecenie_agenta(spec, prompt, profil)
-    except BrakModelu as e:
+        argv = polecenie_agenta(spec, profil)
+    except (BrakModelu, ValueError) as e:      # brak modelu tieru, zly budzet albo limit tur
         raise PorazkaKroku(str(e)) from e
     return await uruchom_agenta(
-        spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu)
+        spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu,
+        prompt=prompt)
 
 
 async def _pauza_testowa() -> None:
@@ -226,6 +235,16 @@ def _checkpoint(
     )
 
 
+def _pola_pomiaru(pomiar: PomiarKroku) -> dict:
+    """Pola pomiaru zdarzenia konca kroku; brak kosztu to `unavailable`, nigdy zero."""
+    return {
+        "cost_usd": pomiar.cost_usd,
+        "cost_source": "measured" if pomiar.cost_usd is not None else "unavailable",
+        "tokens_in": pomiar.tokens_in, "tokens_out": pomiar.tokens_out,
+        "num_turns": pomiar.num_turns, "session_id": pomiar.session_id,
+    }
+
+
 async def _blad_przed_startem(emit: Emit, run_id: str, tekst: str) -> None:
     """Dokladnie `step_failed` i `run_finished` kroku walidacji: bez pierwszego kokpit
     wyliczylby z samego `run_finished` falszywe "do odbioru" (evidence_required)."""
@@ -250,7 +269,11 @@ async def wykonaj_run(
     if not isinstance(run_id, str) or not run_id:
         print("polecenie run_workflow bez poprawnego run_id odrzucone", file=sys.stderr)
         return
-    profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
+    try:
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()
+    except BladProfiluBackendu as e:
+        await _blad_przed_startem(emit, run_id, str(e))
+        return
     dom = dom if dom is not None else Path.home()
     try:
         p = await asyncio.to_thread(_przygotuj, polecenie, dom, root, zakres, run_id)
@@ -318,9 +341,9 @@ async def _wykonaj_plan(
                 try:
                     wynik = zadanie.result()
                 except PorazkaKroku as e:
-                    udany, powod = False, str(e)
+                    udany, powod, pomiar = False, str(e), PomiarKroku()
                 else:
-                    udany, powod = wynik.status == "zakonczony", wynik.powod
+                    udany, powod, pomiar = wynik.status == "zakonczony", wynik.powod, wynik.pomiar
                 czas_ms = int((time.monotonic() - start) * 1000)
                 stany[id_kroku] = StanKroku.ZAKONCZONY if udany else StanKroku.NIEUDANY
                 ostatni = id_kroku
@@ -328,7 +351,7 @@ async def _wykonaj_plan(
                 await emit(_zdarzenie(
                     run_id, "step_finished" if udany else "step_failed", id_kroku, id_kroku,
                     "" if udany else powod,
-                    duration_ms=czas_ms, cost_usd=None, cost_source="unavailable"))
+                    duration_ms=czas_ms, **_pola_pomiaru(pomiar)))
     finally:
         zadania = list(w_toku)
         for zadanie in zadania:
@@ -462,9 +485,10 @@ async def wznow_run(
     root: Path | None = None,
 ) -> None:
     """Wznawia run zawieszony na bramce `step_id` decyzja czlowieka, wylacznie z checkpointu."""
-    profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
     dom = dom if dom is not None else Path.home()
     try:
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()
         async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
             start = await _przyjmij_decyzje(run_id, step_id, decyzja, powod, dom, root, emit)
     except (BladDziedziny, OSError) as e:      # BladCheckpointu, BladWznowienia, katalog runu

@@ -105,7 +105,7 @@ def test_podklasy_bledow_runnera_sa_zaladowane_ale_poza_tabela():
     _zaimportuj_wszystkie_moduly()
     runnerowe = {k.__name__ for k in _wszystkie_podklasy(BladDziedziny)
                  if k.__module__.startswith("runner.")}
-    assert {"BrakModelu", "PusteWklejenie", "PozaZakresem"} <= runnerowe
+    assert {"BrakModelu", "PusteWklejenie", "PozaZakresem", "BladProfiluBackendu"} <= runnerowe
     assert not any(k.__module__.startswith("runner.") for k in KODY_BLEDOW)
 
 

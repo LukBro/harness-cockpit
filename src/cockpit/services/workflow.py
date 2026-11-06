@@ -75,6 +75,10 @@ class Krok(BaseModel):
     optional: bool = Field(default=False, strict=True)
     require_distinct_vendors: bool = Field(default=False, strict=True)
     on_fail: OnFail | None = None
+    # budzet kroku w USD i limit tur agenta (HAR-174); strict odrzuca bool i napis,
+    # allow_inf_nan=False nieskonczonosc i NaN; int z YAML-u (`budget_usd: 5`) przechodzi
+    budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=False)
+    max_turns: int | None = Field(default=None, ge=1, strict=True)
 
 
 _POLA_KROKU = [nazwa for nazwa in Krok.model_fields if nazwa != "id"]
