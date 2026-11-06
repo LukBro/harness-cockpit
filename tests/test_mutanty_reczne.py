@@ -17,6 +17,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import tomllib
 import types
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError
@@ -2965,3 +2966,1132 @@ def test_stan_sprzed_naprawy_zbudowany_z_aktualnych_plikow_daje_kod_2_z_dokladni
         ile = (_korzen_gita() / pola["plik"]).read_text(encoding="utf-8").count(pola["szukaj"])
         assert ile > 1, pola
         assert f"wystepuje {ile} razy" in linie[f"{PREFIKS_TABEL}{klucz[0]} #{klucz[1]}"]
+
+
+# =============================================================================
+# HAR-228: `--pokrycie-kod3` - kazda linia z kodu 3 ma wiersz [[mutant]] albo [[rownowazny]]
+# =============================================================================
+
+OPCJA_POKRYCIE = "--pokrycie-kod3"
+NAGLOWEK_KODU_3 = "bez mutantów — sprawdź ręcznie"
+PLIK_P = "src/a.py"
+INNY_PLIK_P = "src/b.py"
+# Pierwsza linia ze znakami spoza ASCII: przesuniecia w bajtach i w znakach sie rozjezdzaja.
+TRESC_P = 'a = "zażółć"\nb = 2\nc = 3\nd = 4\ne = 5\n'
+LINII_W_P = 5
+UZASADNIENIE = "zadne wejscie nie odroznia tej linii od wersji bez niej"
+# Wiersz [[mutant]] dla pliku spoza listy: tabela musi miec [[mutant]], a ten niczego nie pokrywa.
+WIERSZ_NIEZWIAZANY = _mutant("x = 1", "x = 2", plik="src/inny.py")
+
+
+def _rownowazny(**zmiany) -> str:
+    pola = {"plik": PLIK_P, "linia_tekst": "c = 3", "uzasadnienie": UZASADNIENIE}
+    for nazwa, wartosc in zmiany.items():
+        if wartosc is None:
+            del pola[nazwa]
+        else:
+            pola[nazwa] = wartosc
+    return "[[rownowazny]]\n" + "".join(f"{k} = {_toml(v)}\n" for k, v in pola.items()) + "\n"
+
+
+def _lista_kodu_3(*wpisy: str) -> str:
+    return NAGLOWEK_KODU_3 + "\n" + "".join(f"{w}\n" for w in wpisy)
+
+
+def _pokrycie(
+    tmp_path: Path,
+    capsys,
+    lista: str | bytes | tuple[str, ...] | list[str] | None,
+    tabele: tuple[str | bytes, ...] = (),
+    *,
+    pliki: dict[str, str | bytes] | None = None,
+    na_dysku: tuple[str, ...] = (),
+    lista_absolutna: bool = False,
+) -> tuple[int, str, str]:
+    """Uruchamia `main --pokrycie-kod3` w korzeniu w `tmp_path`. `lista`: tuple/list = wpisy z poprawnym
+    naglowkiem, str/bytes = surowa zawartosc pliku, None = brak pliku. `tabele` leza w katalogu tabel
+    i sa podane na wejsciu; `na_dysku` leza tam tez, ale nie sa podane."""
+    korzen = tmp_path / "k"
+    for sciezka, tresc in (pliki if pliki is not None else {PLIK_P: TRESC_P, INNY_PLIK_P: TRESC_P}).items():
+        (korzen / sciezka).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(tresc, bytes):
+            (korzen / sciezka).write_bytes(tresc)
+        else:
+            (korzen / sciezka).write_text(tresc, encoding="utf-8")
+    katalog_tabel = korzen / "tests" / "mutanty_reczne"
+    katalog_tabel.mkdir(parents=True, exist_ok=True)
+    wejscie: list[str] = []
+    for numer, tresc in enumerate(tabele):
+        nazwa = f"T{numer}.toml"
+        (katalog_tabel / nazwa).write_bytes(tresc if isinstance(tresc, bytes) else tresc.encode("utf-8"))
+        wejscie.append(f"tests/mutanty_reczne/{nazwa}")
+    for numer, tresc in enumerate(na_dysku):
+        (katalog_tabel / f"Dysk{numer}.toml").write_text(tresc, encoding="utf-8")
+    plik_listy = korzen / "lista.txt"
+    if isinstance(lista, (tuple, list)):
+        plik_listy.write_text(_lista_kodu_3(*lista), encoding="utf-8")
+    elif isinstance(lista, bytes):
+        plik_listy.write_bytes(lista)
+    elif isinstance(lista, str):
+        plik_listy.write_text(lista, encoding="utf-8")
+    argument_listy = str(plik_listy) if lista_absolutna else "lista.txt"
+    kod = _main([OPCJA_POKRYCIE, argument_listy, "--korzen", str(korzen), *wejscie])
+    zrzut = capsys.readouterr()
+    return kod, zrzut.out, zrzut.err
+
+
+def _brak_dowodu(ile: int) -> str:
+    return (
+        f"brak dowodu: {ile} linii bez wiersza [[mutant]] i bez [[rownowazny]]"
+        " - .claude/rules/test-odroznia-regule.md"
+    )
+
+
+# --- kod 0: linia jest pokryta -------------------------------------------------------------
+
+
+def test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii(
+    tmp_path, capsys
+):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 1 linii bez mutantów\n"
+    assert blad == ""
+
+
+@pytest.mark.parametrize("linia", [2, 3, 4, 5])
+def test_kazda_linia_wieloliniowego_szukaj_od_pierwszej_do_ostatniej_jest_pokryta(tmp_path, capsys, linia):
+    # Ostatnia linia zakresu zawiera tylko jeden znak `e` z `e = 5`: szukaj konczy sie w srodku linii.
+    tabela = _mutant("b = 2\nc = 3\nd = 4\ne", "b = 0", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:{linia}"], (tabela,))
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 1 linii bez mutantów\n"
+
+
+def test_wszystkie_linie_zakresu_wieloliniowego_szukaj_liczone_sa_do_podsumowania(tmp_path, capsys):
+    tabela = _mutant("b = 2\nc = 3\nd = 4", "b = 0", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:2", f"{PLIK_P}:3", f"{PLIK_P}:4"], (tabela,))
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 3 linii bez mutantów\n"
+
+
+def test_szukaj_konczacy_sie_znakiem_nowej_linii_obejmuje_ostatnia_linie_z_trescia(tmp_path, capsys):
+    tabela = _mutant("c = 3\n", "c = 4\n", plik=PLIK_P)
+
+    kod, _, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 0, blad
+
+
+def test_linia_ze_znakami_spoza_ascii_przed_szukaj_nie_przesuwa_numerow_linii(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, _, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+    kod_pierwszej, _, blad_pierwszej = _pokrycie(
+        tmp_path / "druga", capsys, [f"{PLIK_P}:1"], (_mutant('a = "zażółć"', "a = 1", plik=PLIK_P),)
+    )
+
+    assert kod == 0, blad
+    assert kod_pierwszej == 0, blad_pierwszej
+
+
+@pytest.mark.parametrize("tresc", [TRESC_P, TRESC_P.rstrip("\n")], ids=["z_koncowym_enterem", "bez_koncowego_enter"])
+def test_ostatnia_linia_pliku_jest_dopuszczalna_niezaleznie_od_koncowego_znaku_nowej_linii(
+    tmp_path, capsys, tresc
+):
+    tabela = _mutant("e = 5", "e = 6", plik=PLIK_P)
+
+    kod, _, blad = _pokrycie(
+        tmp_path, capsys, [f"{PLIK_P}:{LINII_W_P}"], (tabela,), pliki={PLIK_P: tresc}
+    )
+
+    assert kod == 0, blad
+
+
+def test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma(tmp_path, capsys):
+    pliki = {PLIK_P: "def f():\n    zwrot = 5   \n"}
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="zwrot = 5")
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:2"], (tabela,), pliki=pliki)
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 1 linii bez mutantów\n"
+
+
+def test_linia_rownowazna_jest_pokryta_gdy_tekst_we_wpisie_ma_biale_znaki_a_linia_pliku_ich_nie_ma(
+    tmp_path, capsys
+):
+    pliki = {PLIK_P: "zwrot = 5\n"}
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="\t  zwrot = 5 \t")
+
+    kod, _, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:1"], (tabela,), pliki=pliki)
+
+    assert kod == 0, blad
+
+
+def test_pokrycie_z_dwoch_tabel_sumuje_sie_wiersz_mutant_z_jednej_i_rownowazny_z_drugiej(tmp_path, capsys):
+    pierwsza = _mutant("b = 2", "b = 3", plik=PLIK_P)
+    druga = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="d = 4")
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:4", f"{PLIK_P}:2"], (pierwsza, druga))
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 2 linii bez mutantów\n"
+
+
+def test_rownowazny_z_pierwszej_tabeli_nie_ginie_gdy_druga_tabela_ma_tylko_wiersz_mutant(tmp_path, capsys):
+    pierwsza = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="d = 4")
+    druga = _mutant("b = 2", "b = 3", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:4", f"{PLIK_P}:2"], (pierwsza, druga))
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 2 linii bez mutantów\n"
+
+
+def test_lista_podana_sciezka_bezwzgledna_jest_czytana_tak_samo_jak_wzgledna(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(
+        tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,), lista_absolutna=True
+    )
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 1 linii bez mutantów\n"
+
+
+def test_tryb_pokrycia_nie_kopiuje_repozytorium_nie_uruchamia_testow_ani_podprocesow(
+    tmp_path, capsys, monkeypatch
+):
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+    for nazwa in ("uruchom", "_uruchom_proces", "_zbierz_node_id"):
+        def zakaz(*args, _nazwa=nazwa, **kwargs):
+            wywolania.append(_nazwa)
+            raise AssertionError(f"tryb pokrycia nie moze wolac {_nazwa}")
+
+        monkeypatch.setattr(mutanty_reczne, nazwa, zakaz)
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, _, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 0, blad
+    assert wywolania == []
+
+
+# --- kod 1: brak dowodu ---------------------------------------------------------------------
+
+
+def test_linia_tuz_przed_poczatkiem_zakresu_szukaj_nie_jest_pokryta(tmp_path, capsys):
+    tabela = _mutant("c = 3\nd = 4", "c = 0", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:2"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:2\n"
+    assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+def test_linia_tuz_za_koncem_zakresu_szukaj_nie_jest_pokryta(tmp_path, capsys):
+    tabela = _mutant("b = 2\nc = 3", "b = 0", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:4"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:4\n"
+    assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+def test_szukaj_konczacy_sie_znakiem_nowej_linii_nie_obejmuje_nastepnej_linii(tmp_path, capsys):
+    tabela = _mutant("c = 3\n", "c = 4\n", plik=PLIK_P)
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:4"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:4\n"
+
+
+def test_wiersz_z_tym_samym_szukaj_dla_innego_pliku_nie_pokrywa_linii(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=INNY_PLIK_P)
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+
+
+def test_rownowazny_z_innym_tekstem_linii_nie_pokrywa_linii(tmp_path, capsys):
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="c = 33")
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+
+
+def test_rownowazny_dla_innego_pliku_z_tym_samym_tekstem_nie_pokrywa_linii(tmp_path, capsys):
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(plik=INNY_PLIK_P, linia_tekst="c = 3")
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+
+
+def test_rownowazny_nie_pokrywa_innej_linii_o_innym_tekscie_w_tym_samym_pliku(tmp_path, capsys):
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="c = 3")
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3", f"{PLIK_P}:4"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:4\n"
+
+
+def test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy(tmp_path, capsys):
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:4", f"{INNY_PLIK_P}:2", f"{PLIK_P}:2"])
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:4\n{INNY_PLIK_P}:2\n{PLIK_P}:2\n"
+    assert blad.rstrip("\n") == _brak_dowodu(3)
+
+
+def test_tabela_lezaca_w_katalogu_ale_niepodana_na_wejsciu_nie_pokrywa_linii(tmp_path, capsys):
+    na_dysku = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], na_dysku=(na_dysku,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+
+
+def test_na_wyjsciu_sa_tylko_niepokryte_linie_a_komunikat_liczy_tylko_je(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(
+        tmp_path, capsys, [f"{PLIK_P}:5", f"{PLIK_P}:3", f"{PLIK_P}:2"], (tabela,)
+    )
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:5\n{PLIK_P}:2\n"
+    assert blad.rstrip("\n") == _brak_dowodu(2)
+
+
+def test_wiersz_dla_pliku_spoza_listy_nie_jest_sprawdzany_nawet_gdy_jego_szukaj_wystepuje_dwa_razy(
+    tmp_path, capsys
+):
+    pliki = {PLIK_P: TRESC_P, INNY_PLIK_P: "x = 1\nx = 1\n"}
+    tabela = _mutant("x = 1", "x = 2", plik=INNY_PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,), pliki=pliki)
+
+    assert kod == 1, blad
+    assert wyjscie == f"{PLIK_P}:3\n"
+
+
+# --- pokrycie: wejscia, na ktorych decyduje tylko jeden element reguly -------------------------------
+
+
+def test_wiersz_jednego_pliku_z_listy_nie_pokrywa_tej_samej_linii_drugiego_pliku_z_listy(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=INNY_PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3", f"{INNY_PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+    assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+def test_szukaj_zaczynajacy_sie_znakiem_nowej_linii_obejmuje_linie_ktora_ten_znak_konczy(tmp_path, capsys):
+    tabela = _mutant("\nc = 3", "\nc = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:1", f"{PLIK_P}:2", f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:1\n"
+    assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+def test_szukaj_z_polskimi_znakami_w_pierwszej_linii_obejmuje_nastepna_linie_ale_nie_kolejna(tmp_path, capsys):
+    # Dlugosc `szukaj` liczona w znakach (14) zamiast w bajtach (18) ucielaby zakres przed znakiem nowej linii.
+    szukaj = 'a = "zażółć"\nb'
+    tabela = _mutant(szukaj, "a = 0\nb", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:1", f"{PLIK_P}:2", f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+    assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+def test_znak_podzialu_strony_w_pliku_nie_przesuwa_numerow_linii_ani_ich_liczby(tmp_path, capsys):
+    # `splitlines()` tnie takze po \x0c: linii byloby trzy, a edytor i `\n` mowia, ze dwie.
+    pliki = {PLIK_P: "a = 1\x0c\nb = 2\n"}
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst="b = 2")
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:2"], (tabela,), pliki=pliki)
+    kod_za_koncem, wyjscie_za_koncem, blad_za_koncem = _pokrycie(
+        tmp_path / "druga", capsys, [f"{PLIK_P}:3"], (tabela,), pliki=pliki
+    )
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 1 linii bez mutantów\n"
+    assert kod_za_koncem == 2
+    assert wyjscie_za_koncem == ""
+    assert blad_za_koncem == _blad_narzedzia(f"{PLIK_P}:3: plik ma tylko 2 linii")
+
+
+def test_plik_wymieniony_na_liscie_kilka_razy_jest_czytany_z_dysku_raz(tmp_path, capsys, monkeypatch):
+    odczyty: list[str] = []
+    oryginal = mutanty_reczne._odczytaj_utf8
+
+    def zliczaj(sciezka, nazwa):
+        odczyty.append(nazwa)
+        return oryginal(sciezka, nazwa)
+
+    monkeypatch.setattr(mutanty_reczne, "_odczytaj_utf8", zliczaj)
+    tabela = _mutant("b = 2\nc = 3", "b = 0", plik=PLIK_P)
+
+    kod, _, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:2", f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 0, blad
+    assert odczyty.count(PLIK_P) == 1
+
+
+def test_plik_z_dwukropkiem_w_nazwie_jest_rozpoznany_po_ostatnim_dwukropku_listy(tmp_path, capsys):
+    plik = "src/a:b.py"
+    tabela = _mutant("c = 3", "c = 4", plik=plik)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{plik}:3"], (tabela,), pliki={plik: TRESC_P})
+
+    assert kod == 0, blad
+    assert wyjscie == "pokryto 1 linii bez mutantów\n"
+
+
+@pytest.mark.parametrize(
+    "linia_tekst",
+    [
+        pytest.param("c =", id="fragment_linii"),
+        pytest.param("c = 3 # dopisek", id="dluzszy_tekst_zawierajacy_linie"),
+        pytest.param("c = 33", id="inny_tekst_o_wspolnym_poczatku"),
+    ],
+)
+def test_rownowazny_pokrywa_linie_tylko_gdy_tekst_jest_identyczny_a_nie_gdy_jest_jej_fragmentem(
+    tmp_path, capsys, linia_tekst
+):
+    tabela = WIERSZ_NIEZWIAZANY + _rownowazny(linia_tekst=linia_tekst)
+
+    kod, wyjscie, _ = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 1
+    assert wyjscie == f"{PLIK_P}:3\n"
+
+
+# --- kod 2: blad narzedzia - lista --------------------------------------------------------------
+
+
+def _nie_wpis(wpis: str) -> str:
+    return f"wpis {wpis!r} nie ma postaci plik:linia"
+
+
+def _zla_sciezka(plik: str) -> str:
+    return f"plik {plik!r} musi byc niepusta sciezka wzgledna bez segmentu '..'"
+
+
+def _zly_numer(cyfry: str) -> str:
+    return f"numer linii {cyfry!r} musi byc liczba calkowita >= 1 (same cyfry ASCII)"
+
+
+# Wpis i dokladny powod; lista powstaje niezaleznie od kodu pod testem (retro M1.7).
+ZLE_WPISY_LISTY = [
+    pytest.param(PLIK_P, _nie_wpis(PLIK_P), id="bez_dwukropka"),
+    pytest.param("", _nie_wpis(""), id="pusta_linia_w_srodku"),
+    pytest.param(f"{PLIK_P}:abc", _zly_numer("abc"), id="numer_nie_jest_liczba"),
+    pytest.param(f"{PLIK_P}:0", _zly_numer("0"), id="numer_zero"),
+    pytest.param(f"{PLIK_P}:-1", _zly_numer("-1"), id="numer_ujemny"),
+    pytest.param(f"{PLIK_P}:+3", _zly_numer("+3"), id="numer_ze_znakiem_plus"),
+    pytest.param(f"{PLIK_P}: 3", _zly_numer(" 3"), id="numer_ze_spacja_z_przodu"),
+    pytest.param(f"{PLIK_P}:3 ", _zly_numer("3 "), id="numer_ze_spacja_z_tylu"),
+    pytest.param(f"{PLIK_P}:٣", _zly_numer("٣"), id="numer_cyframi_arabsko_indyjskimi"),
+    pytest.param(f"{PLIK_P}:", _zly_numer(""), id="pusty_numer"),
+    pytest.param(":3", _zla_sciezka(""), id="pusta_sciezka"),
+    pytest.param("/etc/passwd:3", _zla_sciezka("/etc/passwd"), id="sciezka_bezwzgledna"),
+    pytest.param("../a.py:3", _zla_sciezka("../a.py"), id="sciezka_wychodzi_nad_korzen"),
+    pytest.param("src/../src/a.py:3", _zla_sciezka("src/../src/a.py"), id="segment_wyjscia_w_srodku_sciezki"),
+]
+
+
+@pytest.mark.parametrize(("zly", "powod"), ZLE_WPISY_LISTY)
+def test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem(
+    tmp_path, capsys, zly, powod
+):
+    # Dwa poprawne, pokryte wpisy i zly na linii 4 (nagłówek to linia 1): pominiecie zlego wpisu dalo by 0.
+    tabela = _mutant("b = 2\nc = 3", "b = 0", plik=PLIK_P)
+    lista = _lista_kodu_3(f"{PLIK_P}:2", f"{PLIK_P}:3", zly)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, lista, (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"lista kodu 3, linia 4: {powod}")
+
+
+def test_przy_kilku_niepoprawnych_wpisach_listy_blad_dotyczy_pierwszego_z_nich(tmp_path, capsys):
+    lista = _lista_kodu_3(f"{PLIK_P}:abc", "/etc/passwd:3")
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, lista)
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"lista kodu 3, linia 2: {_zly_numer('abc')}")
+
+
+def test_lista_bez_naglowka_to_blad_narzedzia_mimo_pokrytych_wpisow(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, f"{PLIK_P}:3\n", (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"lista kodu 3: pierwsza linia musi byc dokladnie {NAGLOWEK_KODU_3!r}")
+
+
+@pytest.mark.parametrize(
+    "naglowek",
+    [
+        pytest.param("bez mutantow — sprawdz recznie", id="bez_polskich_znakow"),
+        pytest.param(NAGLOWEK_KODU_3 + " ", id="spacja_na_koncu"),
+        pytest.param(NAGLOWEK_KODU_3.upper(), id="wielkie_litery"),
+        pytest.param("# " + NAGLOWEK_KODU_3, id="przedrostek"),
+    ],
+)
+def test_zly_naglowek_listy_to_blad_narzedzia_mimo_pokrytych_wpisow(tmp_path, capsys, naglowek):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, f"{naglowek}\n{PLIK_P}:3\n", (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"lista kodu 3: pierwsza linia musi byc dokladnie {NAGLOWEK_KODU_3!r}")
+
+
+def test_lista_z_samym_naglowkiem_to_blad_narzedzia_brak_dowodu(tmp_path, capsys):
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, NAGLOWEK_KODU_3 + "\n")
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia("brak dowodu: lista kodu 3 bez wpisów")
+
+
+def test_pusty_plik_listy_to_blad_narzedzia_o_braku_naglowka_a_nie_zero_linii_do_pokrycia(tmp_path, capsys):
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, "")
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"lista kodu 3: pierwsza linia musi byc dokladnie {NAGLOWEK_KODU_3!r}")
+
+
+def test_brak_pliku_listy_to_blad_narzedzia_z_nazwa_pliku(tmp_path, capsys):
+    plik = tmp_path / "k" / "lista.txt"
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, None)
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(
+        f"lista kodu 3 {plik}: nie da sie odczytac: [Errno 2] No such file or directory: {str(plik)!r}"
+    )
+
+
+def test_lista_w_zlym_utf8_to_blad_narzedzia_a_nie_wyjatek(tmp_path, capsys):
+    plik = tmp_path / "k" / "lista.txt"
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, b"\xff\xfe" + f"\n{PLIK_P}:3\n".encode())
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(
+        f"lista kodu 3 {plik}: to nie jest UTF-8: "
+        "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+    )
+
+
+# --- kod 2: blad narzedzia - plik z listy ---------------------------------------------------------
+
+
+def test_plik_z_listy_ktorego_nie_ma_na_dysku_to_blad_narzedzia_z_nazwa_pliku(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik="src/brak.py")
+    brak = tmp_path / "k" / "src" / "brak.py"
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, ["src/brak.py:3"], (tabela,))
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(
+        f"src/brak.py: nie da sie odczytac: [Errno 2] No such file or directory: {str(brak)!r}"
+    )
+
+
+def test_plik_z_listy_w_zlym_utf8_to_blad_narzedzia_z_nazwa_pliku(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,), pliki={PLIK_P: b"\xff\xfe"})
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(
+        f"{PLIK_P}: to nie jest UTF-8: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+    )
+
+
+@pytest.mark.parametrize("tresc", [TRESC_P, TRESC_P.rstrip("\n")], ids=["z_koncowym_enterem", "bez_koncowego_enter"])
+def test_numer_linii_wiekszy_niz_liczba_linii_pliku_to_blad_narzedzia_a_nie_niepokryta_linia(
+    tmp_path, capsys, tresc
+):
+    tabela = _mutant("e = 5", "e = 6", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(
+        tmp_path, capsys, [f"{PLIK_P}:{LINII_W_P + 1}"], (tabela,), pliki={PLIK_P: tresc}
+    )
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{PLIK_P}:{LINII_W_P + 1}: plik ma tylko {LINII_W_P} linii")
+
+
+def test_pusty_plik_z_listy_ma_zero_linii_wiec_kazdy_numer_to_blad_narzedzia(tmp_path, capsys):
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:1"], pliki={PLIK_P: ""})
+
+    assert kod == 2
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{PLIK_P}:1: plik ma tylko 0 linii")
+
+
+@pytest.mark.parametrize(
+    ("szukaj", "ile"),
+    [pytest.param("c = 33", 0, id="zero_wystapien"), pytest.param("= ", 5, id="kilka_wystapien")],
+)
+def test_szukaj_wystepujacy_w_pliku_z_listy_inaczej_niz_raz_to_blad_narzedzia(tmp_path, capsys, szukaj, ile):
+    tabela = _mutant(szukaj, "zzz", plik=PLIK_P)
+    assert TRESC_P.count(szukaj) == ile
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{PLIK_P}: szukaj {szukaj!r} wystepuje {ile} razy, a ma dokladnie raz")
+
+
+# --- kod 2: blad narzedzia - tabela ---------------------------------------------------------------
+
+
+def _tabela_p(tmp_path: Path, numer: int = 0) -> Path:
+    """Sciezka tabeli o numerze `numer` zapisanej przez `_pokrycie`; w komunikatach jest bezwzgledna."""
+    return tmp_path / "k" / "tests" / "mutanty_reczne" / f"T{numer}.toml"
+
+
+def _blad_narzedzia(powod: str) -> str:
+    return f"blad: {powod}\n"
+
+
+def test_tabela_z_bledem_toml_to_blad_narzedzia_mimo_pokrytej_linii_w_drugiej_tabeli(tmp_path, capsys):
+    dobra = _mutant("c = 3", "c = 4", plik=PLIK_P)
+    zla = "[[mutant\nplik = \n"
+    with pytest.raises(tomllib.TOMLDecodeError) as przyczyna:
+        tomllib.loads(zla)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (dobra, zla))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path, 1)}: nie da sie odczytac tabeli: {przyczyna.value}")
+
+
+def test_tabela_w_zlym_utf8_to_blad_narzedzia_w_trybie_pokrycia(tmp_path, capsys):
+    dobra = _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (dobra, b"\xff\xfe\xfd"))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(
+        f"{_tabela_p(tmp_path, 1)}: nie da sie odczytac tabeli: "
+        "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+    )
+
+
+def test_tabela_podana_na_wejsciu_ktorej_nie_ma_na_dysku_to_blad_narzedzia(tmp_path, capsys):
+    korzen = tmp_path / "k"
+    (korzen / "src").mkdir(parents=True)
+    (korzen / PLIK_P).write_text(TRESC_P, encoding="utf-8")
+    (korzen / "lista.txt").write_text(_lista_kodu_3(f"{PLIK_P}:3"), encoding="utf-8")
+    brak = korzen / "tests" / "mutanty_reczne" / "brak.toml"
+
+    kod = _main([OPCJA_POKRYCIE, "lista.txt", "--korzen", str(korzen), "tests/mutanty_reczne/brak.toml"])
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.out == ""
+    assert zrzut.err == _blad_narzedzia(
+        f"{brak}: nie da sie odczytac tabeli: [Errno 2] No such file or directory: {str(brak)!r}"
+    )
+
+
+def _zle_rownowazne() -> list:
+    """Wadliwy wpis `[[rownowazny]]` i dokladny powod (bez nazwy tabeli i numeru wpisu)."""
+    przypadki = []
+    for pole in ("plik", "linia_tekst", "uzasadnienie"):
+        przypadki.append(
+            pytest.param(_rownowazny(**{pole: None}), f"wpis rownowazny: brak pola {pole!r}", id=f"brak_{pole}")
+        )
+        for wartosc, nazwa in ((5, "liczba"), (True, "bool"), (["c = 3"], "lista")):
+            przypadki.append(
+                pytest.param(
+                    _rownowazny(**{pole: wartosc}),
+                    f"wpis rownowazny: {pole!r} nie jest tekstem",
+                    id=f"{pole}_{nazwa}",
+                )
+            )
+        for wartosc, nazwa in (("", "pusty"), ("  \t ", "same_biale_znaki")):
+            przypadki.append(
+                pytest.param(
+                    _rownowazny(**{pole: wartosc}), f"wpis rownowazny: {pole!r} jest pusty", id=f"{pole}_{nazwa}"
+                )
+            )
+    przypadki.append(
+        pytest.param(_rownowazny(powod="inaczej"), "wpis rownowazny: nieznany klucz 'powod'", id="nieznane_pole")
+    )
+    przypadki.append(
+        pytest.param(
+            _rownowazny(zeta="1", alfa="2"),
+            "wpis rownowazny: nieznany klucz 'alfa'",
+            id="dwa_nieznane_pola_pierwsze_alfabetycznie",
+        )
+    )
+    for plik in ("/etc/passwd", "../a.py", "src/../a.py"):
+        przypadki.append(
+            pytest.param(
+                _rownowazny(plik=plik),
+                f"plik {plik!r} musi byc sciezka wzgledna w repozytorium",
+                id=f"plik_{plik.replace('/', '_')}",
+            )
+        )
+    return przypadki
+
+
+ZLE_ROWNOWAZNE = _zle_rownowazne()
+
+
+@pytest.mark.parametrize(("wadliwy", "powod"), ZLE_ROWNOWAZNE)
+def test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem(
+    tmp_path, capsys, wadliwy, powod
+):
+    # Linia 3 jest pokryta wierszem [[mutant]]: bez walidacji kod bylby 0, nie 2.
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P) + wadliwy
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: rownowazny 1: {powod}")
+
+
+def test_rownowazny_wadliwy_po_poprawnym_ma_numer_drugi_w_komunikacie(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P) + _rownowazny() + _rownowazny(uzasadnienie="  ")
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: rownowazny 2: wpis rownowazny: 'uzasadnienie' jest pusty")
+
+
+@pytest.mark.parametrize(
+    ("poczatek", "koniec"),
+    [
+        pytest.param("rownowazny = 5\n", "", id="liczba"),
+        pytest.param('rownowazny = "napis"\n', "", id="napis"),
+        pytest.param("", '[rownowazny]\nplik = "src/a.py"\n', id="tabela_a_nie_lista_tabel"),
+    ],
+)
+def test_rownowazny_ktory_nie_jest_lista_tabel_to_blad_narzedzia_w_trybie_pokrycia(
+    tmp_path, capsys, poczatek, koniec
+):
+    # Klucz `rownowazny = 5` musi stac przed pierwsza tabela, inaczej TOML przypisze go do `[[mutant]]`.
+    tabela = poczatek + _mutant("c = 3", "c = 4", plik=PLIK_P) + koniec
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: rownowazny musi byc lista [[rownowazny]]")
+
+
+def test_rownowazny_bedacy_lista_liczb_a_nie_tabel_to_blad_narzedzia_o_wpisie(tmp_path, capsys):
+    tabela = "rownowazny = [5]\n" + _mutant("c = 3", "c = 4", plik=PLIK_P)
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: rownowazny 1: wpis rownowazny nie jest tabela")
+
+
+@pytest.mark.parametrize(
+    "tabela",
+    [
+        pytest.param(_rownowazny(), id="tylko_rownowazny"),
+        pytest.param(_rownowazny() + _rownowazny(linia_tekst="d = 4"), id="kilka_rownowazny"),
+    ],
+)
+def test_tabela_z_samymi_wpisami_rownowazny_bez_mutant_to_blad_narzedzia_takze_w_trybie_pokrycia(
+    tmp_path, capsys, tabela
+):
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: brak listy [[mutant]]")
+
+
+def test_nieznany_klucz_najwyzszego_poziomu_tabeli_to_blad_narzedzia_takze_obok_rownowazny(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P) + _rownowazny() + '[[inny]]\nplik = "x"\n'
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: nieznany klucz najwyzszego poziomu 'inny'")
+
+
+def test_blad_tabeli_wygrywa_z_niepokryta_linia_bo_blad_narzedzia_to_kod_2_a_nie_1(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P) + _rownowazny(uzasadnienie="  ")
+
+    kod, wyjscie, blad = _pokrycie(tmp_path, capsys, [f"{PLIK_P}:3", f"{PLIK_P}:4"], (tabela,))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(f"{_tabela_p(tmp_path)}: rownowazny 1: wpis rownowazny: 'uzasadnienie' jest pusty")
+
+
+def test_blad_pliku_z_listy_wygrywa_z_niepokryta_linia_bo_blad_narzedzia_to_kod_2_a_nie_1(tmp_path, capsys):
+    tabela = _mutant("c = 3", "c = 4", plik=PLIK_P)
+    brak = tmp_path / "k" / "src" / "brak.py"
+
+    kod, wyjscie, blad = _pokrycie(
+        tmp_path, capsys, [f"{PLIK_P}:4", "src/brak.py:1"], (tabela,)
+    )
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad == _blad_narzedzia(
+        f"src/brak.py: nie da sie odczytac: [Errno 2] No such file or directory: {str(brak)!r}"
+    )
+
+
+# --- wiersz polecenia -----------------------------------------------------------------------------
+
+POKRYCIE_Z_INNYM_TRYBEM = (
+    "mutanty_reczne.py: error: --pokrycie-kod3 nie laczy sie z --sprawdz-wszystkie ani z --czy-front"
+)
+
+
+def test_wywolanie_bez_tabeli_i_bez_opcji_pokrycia_to_blad_wiersza_polecen_o_braku_tabeli(tmp_path):
+    kod, wyjscie, blad = _uruchom_skrypt("--korzen", str(tmp_path))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad.splitlines()[-1] == (
+        "mutanty_reczne.py: error: podaj co najmniej jedna tabele (albo --sprawdz-wszystkie): "
+        "brak tabeli to brak dowodu"
+    )
+
+
+def test_pokrycie_kod3_razem_z_sprawdz_wszystkie_to_blad_wiersza_polecen(tmp_path):
+    kod, wyjscie, blad = _uruchom_skrypt(OPCJA_POKRYCIE, "lista.txt", OPCJA_WSZYSTKIE, "--korzen", str(tmp_path))
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad.splitlines()[-1] == POKRYCIE_Z_INNYM_TRYBEM
+
+
+def test_pokrycie_kod3_razem_z_czy_front_to_blad_wiersza_polecen(tmp_path):
+    kod, wyjscie, blad = _uruchom_skrypt(
+        OPCJA_POKRYCIE, "lista.txt", "--czy-front", TABELA_W_REPO, "--korzen", str(tmp_path)
+    )
+
+    assert kod == 2, blad
+    assert wyjscie == ""
+    assert blad.splitlines()[-1] == POKRYCIE_Z_INNYM_TRYBEM
+
+
+def test_pokrycie_kod3_bez_czy_front_i_bez_sprawdz_wszystkie_dziala_z_tabela_pozycyjna(tmp_path, capsys):
+    repo = _repo(tmp_path, _mutant("return a + b", "return a - b"))
+    (repo / "lista.txt").write_text(_lista_kodu_3(f"{PLIK_MODULU}:2"), encoding="utf-8")
+
+    kod = _main([OPCJA_POKRYCIE, "lista.txt", "--korzen", str(repo), TABELA_W_REPO])
+
+    zrzut = capsys.readouterr()
+    assert kod == 0, zrzut.err
+    assert zrzut.out == "pokryto 1 linii bez mutantów\n"
+
+
+def test_wiersz_polecen_przekazuje_trybowi_pokrycia_korzen_liste_i_tabele_jako_sciezki(monkeypatch):
+    wywolania: list[tuple] = []
+
+    def podstawka(korzen, lista, tabele):
+        wywolania.append((korzen, lista, tabele))
+        return 0
+
+    monkeypatch.setattr(mutanty_reczne, "pokrycie_kod3", podstawka)
+
+    kod = _main([OPCJA_POKRYCIE, "lista.txt", "--korzen", "/korzen", "a.toml", "b.toml"])
+    kod_bez_tabel = _main([OPCJA_POKRYCIE, "druga.txt", "--korzen", "/korzen"])
+
+    assert (kod, kod_bez_tabel) == (0, 0)
+    assert wywolania == [
+        (Path("/korzen"), Path("lista.txt"), [Path("a.toml"), Path("b.toml")]),
+        (Path("/korzen"), Path("druga.txt"), []),
+    ]
+
+
+def test_pomoc_opisuje_opcje_pokrycia_kodu_3_z_nazwa_argumentu_lista(capsys, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "300")
+
+    kod = _main(["--help"])
+
+    pomoc = " ".join(capsys.readouterr().out.split())
+    assert kod == 0
+    assert (
+        "--pokrycie-kod3 LISTA HAR-228: sprawdz, ze kazda linia z wyjscia kodu 3 mutanty_zmian.py"
+        " ma wiersz [[mutant]] albo [[rownowazny]]"
+    ) in pomoc
+
+
+# --- zgodnosc wstecz: pozostale tryby i [[rownowazny]] ------------------------------------------
+
+
+def test_sprawdz_wszystkie_przyjmuje_tabele_z_poprawnym_rownowazny_i_nie_liczy_go_jako_wiersza(
+    tmp_path, capsys
+):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz() + _rownowazny(plik=PLIK_MODULU, linia_tekst="return a - b"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 0, zrzut.err
+    assert re.search(r"sprawdzono 1 \w+ w 1 \w+", zrzut.out), zrzut.out
+
+
+@pytest.mark.parametrize(("wadliwy", "powod"), ZLE_ROWNOWAZNE)
+def test_sprawdz_wszystkie_podaje_pelna_linie_wadliwego_rownowazny_z_numerem_wpisu_rownowazny(
+    tmp_path, capsys, wadliwy, powod
+):
+    repo = _repo(tmp_path)
+    dobry = _rownowazny(plik=PLIK_MODULU, linia_tekst="return a - b")
+    _tabela_w_repo(repo, "HAR-1.toml", _dobry_wiersz() + dobry + wadliwy)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _linie_tabel(zrzut.err) == [f"{PREFIKS_TABEL}HAR-1.toml rownowazny #2: {powod}"]
+    assert zrzut.out == ""
+
+
+def test_sprawdz_wszystkie_podaje_kazdy_wadliwy_rownowazny_osobna_linia_w_kolejnosci_wpisow(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(
+        repo,
+        "HAR-1.toml",
+        _dobry_wiersz()
+        + _rownowazny(plik=PLIK_MODULU, uzasadnienie=None)
+        + _rownowazny(plik=PLIK_MODULU, linia_tekst="return a - b")
+        + _rownowazny(plik=PLIK_MODULU, linia_tekst=" "),
+    )
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _linie_tabel(zrzut.err) == [
+        f"{PREFIKS_TABEL}HAR-1.toml rownowazny #1: wpis rownowazny: brak pola 'uzasadnienie'",
+        f"{PREFIKS_TABEL}HAR-1.toml rownowazny #3: wpis rownowazny: 'linia_tekst' jest pusty",
+    ]
+
+
+def test_sprawdz_wszystkie_podaje_bledy_wierszy_mutant_przed_bledami_wpisow_rownowazny(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    zly_mutant = _wpis(**_pola(szukaj="x = 1", zamien="x = 1"))
+    _tabela_w_repo(
+        repo, "HAR-1.toml", zly_mutant + _rownowazny(uzasadnienie=" ") + _dobry_wiersz()
+    )
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _linie_tabel(zrzut.err) == [
+        f"{PREFIKS_TABEL}HAR-1.toml #1: zamien jest rowne szukaj (mutant tozsamosciowy)",
+        f"{PREFIKS_TABEL}HAR-1.toml rownowazny #1: wpis rownowazny: 'uzasadnienie' jest pusty",
+    ]
+
+
+def test_sprawdz_wszystkie_rownowazny_bedacy_lista_liczb_to_blad_wpisu_a_nie_wyjatek(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(repo, "HAR-1.toml", "rownowazny = [5]\n" + _dobry_wiersz())
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _linie_tabel(zrzut.err) == [f"{PREFIKS_TABEL}HAR-1.toml rownowazny #1: wpis rownowazny nie jest tabela"]
+
+
+@pytest.mark.parametrize(
+    ("poczatek", "koniec"),
+    [
+        pytest.param("rownowazny = 5\n", "", id="liczba"),
+        pytest.param("", '[rownowazny]\nplik = "src/a.py"\n', id="tabela_a_nie_lista_tabel"),
+    ],
+)
+def test_sprawdz_wszystkie_rownowazny_ktory_nie_jest_lista_tabel_to_blad_calej_tabeli(
+    tmp_path, capsys, poczatek, koniec
+):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(repo, "HAR-1.toml", poczatek + _dobry_wiersz() + koniec)
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _linie_tabel(zrzut.err) == [f"{PREFIKS_TABEL}HAR-1.toml: rownowazny musi byc lista [[rownowazny]]"]
+    assert zrzut.out == ""
+
+
+def test_sprawdz_wszystkie_tabela_z_samym_rownowazny_to_blad_tabeli(tmp_path, capsys):
+    repo = _repo(tmp_path)
+    _tabela_w_repo(repo, "HAR-1.toml", _rownowazny(plik=PLIK_MODULU, linia_tekst="return a - b"))
+
+    kod = _sprawdz_wszystkie(repo)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert _linie_tabel(zrzut.err) == [f"{PREFIKS_TABEL}HAR-1.toml: brak listy [[mutant]]"]
+
+
+def test_wpis_rownowazny_jest_niezmienny_po_wczytaniu(tmp_path):
+    tabela = _zapisz_tabele(tmp_path, _dobry_wiersz() + _rownowazny())
+
+    _, rownowazne = mutanty_reczne.wczytaj_tabele_z_rownowaznymi(tabela)
+
+    assert rownowazne == [mutanty_reczne.Rownowazny(PLIK_P, "c = 3", UZASADNIENIE)]
+    with pytest.raises(FrozenInstanceError):
+        rownowazne[0].linia_tekst = "z"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("tresc", "przyczyna"),
+    [
+        pytest.param(
+            _dobry_wiersz() + _rownowazny(uzasadnienie=" "),
+            "wpis rownowazny: 'uzasadnienie' jest pusty",
+            id="wadliwy_wpis_rownowazny",
+        ),
+        pytest.param(_rownowazny(), "brak listy [[mutant]]", id="tabela_bez_wiersza_mutant"),
+    ],
+)
+def test_blad_tabeli_z_rownowaznymi_zachowuje_przyczyne_bez_nazwy_tabeli_i_numeru_wpisu(
+    tmp_path, tresc, przyczyna
+):
+    tabela = _zapisz_tabele(tmp_path, tresc)
+
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_reczne.wczytaj_tabele_z_rownowaznymi(tabela)
+
+    assert isinstance(wyjatek.value.__cause__, BladNarzedzia)
+    assert str(wyjatek.value.__cause__) == przyczyna
+
+
+def test_wpis_rownowazny_ma_pola_w_kolejnosci_plik_linia_tekst_uzasadnienie():
+    wpis = mutanty_reczne.Rownowazny("a.py", "x = 1", "bo tak")
+
+    assert (wpis.plik, wpis.linia_tekst, wpis.uzasadnienie) == ("a.py", "x = 1", "bo tak")
+
+
+def test_tryb_wykonywania_nie_wykonuje_wpisow_rownowazny_i_zwraca_wynik_samych_mutantow(tmp_path, capsys):
+    tabela = TABELA_PRZEZYWA + _rownowazny(plik=PLIK_MODULU, linia_tekst="return a + b")
+    repo = _repo(tmp_path, tabela)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 1, zrzut.err
+    assert zrzut.out == f"{PLIK_MODULU}: {SZUKAJ} → {PRZEZYWA_A}\n"
+
+
+def test_tryb_wykonywania_z_zabitym_mutantem_i_rownowazny_daje_kod_0(tmp_path, capsys):
+    tabela = TABELA_ZABITY + _rownowazny(plik=PLIK_MODULU, linia_tekst="return a + b")
+    repo = _repo(tmp_path, tabela)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    assert kod == 0, capsys.readouterr().err
+
+
+def test_tryb_wykonywania_odrzuca_wadliwy_rownowazny_kodem_2_bez_uruchamiania_testow(
+    tmp_path, capsys, monkeypatch
+):
+    tabela = TABELA_ZABITY + _rownowazny(plik=PLIK_MODULU, uzasadnienie="  ")
+    repo = _repo(tmp_path, tabela)
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.out == ""
+    assert zrzut.err.startswith("blad: ")
+    assert wywolania == []
+
+
+def test_tryb_wykonywania_odrzuca_tabele_z_samym_rownowazny_kodem_2(tmp_path, capsys, monkeypatch):
+    repo = _repo(tmp_path, _rownowazny(plik=PLIK_MODULU, linia_tekst="return a + b"))
+    wywolania = _zakaz_wykonywania_mutacji(monkeypatch)
+
+    kod = _uruchom(repo, TABELA_W_REPO)
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.out == ""
+    assert wywolania == []
+
+
+# --- prawdziwy proces ------------------------------------------------------------------------------
+
+
+def test_skrypt_uruchomiony_jako_program_z_pokrycie_kod3_konczy_sie_kodem_1_i_wypisuje_niepokryta_linie(
+    tmp_path,
+):
+    korzen = tmp_path / "k"
+    (korzen / "src").mkdir(parents=True)
+    (korzen / "tests" / "mutanty_reczne").mkdir(parents=True)
+    (korzen / PLIK_P).write_text(TRESC_P, encoding="utf-8")
+    (korzen / "tests" / "mutanty_reczne" / "HAR-1.toml").write_text(
+        _mutant("c = 3", "c = 4", plik=PLIK_P), encoding="utf-8"
+    )
+    (korzen / "lista.txt").write_text(_lista_kodu_3(f"{PLIK_P}:3", f"{PLIK_P}:5"), encoding="utf-8")
+
+    kod, wyjscie, blad = _uruchom_skrypt(
+        OPCJA_POKRYCIE, "lista.txt", "--korzen", str(korzen), "tests/mutanty_reczne/HAR-1.toml"
+    )
+
+    assert kod == 1, blad
+    assert wyjscie == f"{PLIK_P}:5\n"
+    assert blad.rstrip("\n") == _brak_dowodu(1)
