@@ -28,6 +28,14 @@ wierszy w M tabelach`), 2 - kazdy blad wiersza lub tabeli, brak tabel, zero wier
 pytesta z kodem innym niz 0 (blad importu, nic nie zebrano, przekroczony limit); nigdy 1.
 HAR-184: `zamien` moze byc pustym napisem (mutacja usuwajaca fragment `szukaj`); `plik`, `szukaj`
 i `test` pozostaja niepuste.
+HAR-228: `--pokrycie-kod3 LISTA [--korzen K] [TABELA ...]` jest trybem statycznym (nie kopiuje repo,
+nie uruchamia testow). LISTA to wyjscie kodu 3 `tools/mutanty_zmian.py` (pierwsza linia
+`bez mutantów — sprawdź ręcznie`, dalej `plik:linia`). Linia jest pokryta, gdy w ktorejs z podanych
+tabel jest `[[mutant]]` tego pliku, ktorego jedyne wystapienie `szukaj` obejmuje te linie, albo
+`[[rownowazny]]` (pola `plik`, `linia_tekst`, `uzasadnienie`) z tekstem tej linii. Kody wyjscia:
+0 - wszystkie pokryte (stdout: `pokryto N linii bez mutantów`), 1 - sa niepokryte (stdout: po
+jednej `plik:linia`), 2 - blad narzedzia (zla lista, tabela, plik albo numer linii); 2 > 1 > 0.
+Wpisy `[[rownowazny]]` sa walidowane we wszystkich trybach, ale nigdzie nie sa wykonywane.
 """
 from __future__ import annotations
 
@@ -45,6 +53,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 POLA = ("plik", "szukaj", "zamien", "test")
+POLA_ROWNOWAZNEGO = ("plik", "linia_tekst", "uzasadnienie")
+# Ta sama tresc co NAGLOWEK_BEZ_MUTANTOW w tools/mutanty_zmian.py (tamten modul importuje mutmuta).
+NAGLOWEK_BEZ_MUTANTOW = "bez mutantów — sprawdź ręcznie"
 LIMIT_DOMYSLNY = 300.0
 LIMIT_BUDOWY = 900.0
 CZEKANIE_PO_ZABICIU = 10.0
@@ -67,6 +78,19 @@ class Mutant:
     test: str
 
 
+@dataclass(frozen=True)
+class Rownowazny:
+    plik: str
+    linia_tekst: str
+    uzasadnienie: str
+
+
+def _wymagaj_sciezki_wzglednej(plik: str) -> None:
+    sciezka = Path(plik)
+    if sciezka.is_absolute() or ".." in sciezka.parts:
+        raise BladNarzedzia(f"plik {plik!r} musi byc sciezka wzgledna w repozytorium")
+
+
 def _wpis_na_mutanta(wpis: object) -> Mutant:
     """Waliduje jeden wpis; powod bledu bez nazwy tabeli i numeru."""
     if not isinstance(wpis, dict):
@@ -81,12 +105,29 @@ def _wpis_na_mutanta(wpis: object) -> Mutant:
             raise BladNarzedzia(f"pole {pole!r} musi byc napisem")
         if not wpis[pole] and pole != "zamien":
             raise BladNarzedzia(f"pole {pole!r} musi byc niepustym napisem")
-    sciezka = Path(wpis["plik"])
-    if sciezka.is_absolute() or ".." in sciezka.parts:
-        raise BladNarzedzia(f"plik {wpis['plik']!r} musi byc sciezka wzgledna w repozytorium")
+    _wymagaj_sciezki_wzglednej(wpis["plik"])
     if wpis["szukaj"] == wpis["zamien"]:
         raise BladNarzedzia("zamien jest rowne szukaj (mutant tozsamosciowy)")
     return Mutant(wpis["plik"], wpis["szukaj"], wpis["zamien"], wpis["test"])
+
+
+def _wpis_na_rownowaznego(wpis: object) -> Rownowazny:
+    """Waliduje jeden wpis `[[rownowazny]]`; powod bledu bez nazwy tabeli i numeru."""
+    if not isinstance(wpis, dict):
+        raise BladNarzedzia("wpis rownowazny nie jest tabela")
+    nieznane = sorted(set(wpis) - set(POLA_ROWNOWAZNEGO))
+    if nieznane:
+        raise BladNarzedzia(f"wpis rownowazny: nieznany klucz {nieznane[0]!r}")
+    for pole in POLA_ROWNOWAZNEGO:
+        if pole not in wpis:
+            raise BladNarzedzia(f"wpis rownowazny: brak pola {pole!r}")
+        wartosc = wpis[pole]
+        if not isinstance(wartosc, str):
+            raise BladNarzedzia(f"wpis rownowazny: {pole!r} nie jest tekstem")
+        if not wartosc.strip():
+            raise BladNarzedzia(f"wpis rownowazny: {pole!r} jest pusty")
+    _wymagaj_sciezki_wzglednej(wpis["plik"])
+    return Rownowazny(wpis["plik"], wpis["linia_tekst"], wpis["uzasadnienie"])
 
 
 def _mutant_z_wpisu(wpis: object, numer: int, tabela: Path) -> Mutant:
@@ -96,14 +137,14 @@ def _mutant_z_wpisu(wpis: object, numer: int, tabela: Path) -> Mutant:
         raise BladNarzedzia(f"{tabela}: wpis {numer}: {blad}") from blad
 
 
-def _surowe_wpisy(sciezka: Path) -> list[object]:
-    """Czyta tabele i zwraca wpisy `[[mutant]]`; powod bledu bez nazwy tabeli."""
+def _surowe_wpisy(sciezka: Path) -> tuple[list[object], list[object]]:
+    """Czyta tabele i zwraca wpisy `[[mutant]]` oraz `[[rownowazny]]`; powod bledu bez nazwy tabeli."""
     try:
         with sciezka.open("rb") as plik:
             dane = tomllib.load(plik)
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:
         raise BladNarzedzia(f"nie da sie odczytac tabeli: {blad}") from blad
-    nieznane = sorted(set(dane) - {"mutant"})
+    nieznane = sorted(set(dane) - {"mutant", "rownowazny"})
     if nieznane:
         raise BladNarzedzia(f"nieznany klucz najwyzszego poziomu {nieznane[0]!r}")
     wpisy = dane.get("mutant")
@@ -111,16 +152,31 @@ def _surowe_wpisy(sciezka: Path) -> list[object]:
         raise BladNarzedzia("brak listy [[mutant]]")
     if not wpisy:
         raise BladNarzedzia("pusta tabela - brak dowodu")
-    return wpisy
+    rownowazne = dane.get("rownowazny", [])
+    if not isinstance(rownowazne, list):
+        raise BladNarzedzia("rownowazny musi byc lista [[rownowazny]]")
+    return wpisy, rownowazne
+
+
+def wczytaj_tabele_z_rownowaznymi(sciezka: Path) -> tuple[list[Mutant], list[Rownowazny]]:
+    """Czyta i waliduje tabele (`[[mutant]]` i `[[rownowazny]]`); kazde naruszenie to `BladNarzedzia`."""
+    try:
+        wpisy, rownowazne = _surowe_wpisy(sciezka)
+    except BladNarzedzia as blad:
+        raise BladNarzedzia(f"{sciezka}: {blad}") from blad
+    mutanty = [_mutant_z_wpisu(wpis, numer, sciezka) for numer, wpis in enumerate(wpisy, start=1)]
+    wpisane: list[Rownowazny] = []
+    for numer, wpis in enumerate(rownowazne, start=1):
+        try:
+            wpisane.append(_wpis_na_rownowaznego(wpis))
+        except BladNarzedzia as blad:
+            raise BladNarzedzia(f"{sciezka}: rownowazny {numer}: {blad}") from blad
+    return mutanty, wpisane
 
 
 def wczytaj_tabele(sciezka: Path) -> list[Mutant]:
-    """Czyta i waliduje tabele; kazde naruszenie to `BladNarzedzia`."""
-    try:
-        wpisy = _surowe_wpisy(sciezka)
-    except BladNarzedzia as blad:
-        raise BladNarzedzia(f"{sciezka}: {blad}") from blad
-    return [_mutant_z_wpisu(wpis, numer, sciezka) for numer, wpis in enumerate(wpisy, start=1)]
+    """Czyta i waliduje tabele; zwraca wiersze `[[mutant]]` (wpisy `[[rownowazny]]` tylko walidowane)."""
+    return wczytaj_tabele_z_rownowaznymi(sciezka)[0]
 
 
 def uruchom(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -384,7 +440,7 @@ def _wiersze_i_bledy_tabeli(sciezka: Path, nazwa: str) -> tuple[list[tuple[int, 
         pass
     # Tabela ma blad: wczytaj_tabele przerywa na pierwszym, a tu zbieramy wszystkie.
     try:
-        wpisy = _surowe_wpisy(sciezka)
+        wpisy, rownowazne = _surowe_wpisy(sciezka)
     except BladNarzedzia as blad:
         return [], [f"{nazwa}: {blad}"]
     wiersze: list[tuple[int, Mutant]] = []
@@ -394,6 +450,11 @@ def _wiersze_i_bledy_tabeli(sciezka: Path, nazwa: str) -> tuple[list[tuple[int, 
             wiersze.append((numer, _wpis_na_mutanta(wpis)))
         except BladNarzedzia as blad:
             bledy.append(f"{nazwa} #{numer}: {blad}")
+    for numer, wpis in enumerate(rownowazne, start=1):
+        try:
+            _wpis_na_rownowaznego(wpis)
+        except BladNarzedzia as blad:
+            bledy.append(f"{nazwa} rownowazny #{numer}: {blad}")
     return wiersze, bledy
 
 
@@ -487,6 +548,91 @@ def sprawdz_wszystkie_tabele(korzen: Path, limit: float, bledy: list[str]) -> tu
     return len(wiersze), len(tabele)
 
 
+def _wpis_listy_kodu_3(linia: str, numer: int) -> tuple[str, int]:
+    """Jeden wpis `plik:linia` listy; `numer` to numer linii listy (naglowek to linia 1)."""
+    plik, dwukropek, cyfry = linia.rpartition(":")
+    if not dwukropek:
+        raise BladNarzedzia(f"lista kodu 3, linia {numer}: wpis {linia!r} nie ma postaci plik:linia")
+    sciezka = Path(plik)
+    if not plik or sciezka.is_absolute() or ".." in sciezka.parts:
+        raise BladNarzedzia(
+            f"lista kodu 3, linia {numer}: plik {plik!r} musi byc niepusta sciezka wzgledna bez segmentu '..'"
+        )
+    if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:
+        raise BladNarzedzia(
+            f"lista kodu 3, linia {numer}: numer linii {cyfry!r} musi byc liczba calkowita >= 1 (same cyfry ASCII)"
+        )
+    return plik, int(cyfry)
+
+
+def wczytaj_liste_kodu_3(sciezka: Path) -> list[tuple[str, int]]:
+    """Wpisy `(plik, linia)` z pliku z wyjsciem kodu 3; kazde odstepstwo od formatu to `BladNarzedzia`."""
+    linie = _odczytaj_utf8(sciezka, f"lista kodu 3 {sciezka}").decode("utf-8").splitlines()
+    if linie[:1] != [NAGLOWEK_BEZ_MUTANTOW]:
+        raise BladNarzedzia(f"lista kodu 3: pierwsza linia musi byc dokladnie {NAGLOWEK_BEZ_MUTANTOW!r}")
+    wpisy = [_wpis_listy_kodu_3(linia, numer) for numer, linia in enumerate(linie[1:], start=2)]
+    if not wpisy:
+        raise BladNarzedzia("brak dowodu: lista kodu 3 bez wpisów")
+    return wpisy
+
+
+def _zakres_linii_szukaj(tresc: bytes, mutant: Mutant) -> range:
+    """Linie pliku (od 1) obejmowane przez jedyne wystapienie `szukaj`: od pierwszej do ostatniego znaku."""
+    szukaj = _wymagaj_dokladnie_raz(tresc, mutant)
+    poczatek = tresc.index(szukaj)
+    pierwsza = tresc[:poczatek].count(b"\n") + 1
+    ostatnia = pierwsza + tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\n")
+    return range(pierwsza, ostatnia + 1)
+
+
+def niepokryte_linie_kodu_3(
+    korzen: Path, wpisy: list[tuple[str, int]], mutanty: list[Mutant], rownowazne: list[Rownowazny]
+) -> list[tuple[str, int]]:
+    """Wpisy listy bez wiersza `[[mutant]]` obejmujacego linie i bez pasujacego `[[rownowazny]]`."""
+    linie_plikow: dict[str, list[str]] = {}
+    tresci: dict[str, bytes] = {}
+    for plik, numer in wpisy:
+        if plik not in tresci:
+            tresci[plik] = _odczytaj_utf8(korzen / plik, plik)
+            linie_plikow[plik] = tresci[plik].decode("utf-8").split("\n")
+            if linie_plikow[plik][-1] == "":
+                linie_plikow[plik].pop()
+        if numer > len(linie_plikow[plik]):
+            raise BladNarzedzia(f"{plik}:{numer}: plik ma tylko {len(linie_plikow[plik])} linii")
+    zakresy = [(m.plik, _zakres_linii_szukaj(tresci[m.plik], m)) for m in mutanty if m.plik in tresci]
+    niepokryte: list[tuple[str, int]] = []
+    for plik, numer in wpisy:
+        przez_mutant = any(p == plik and numer in zakres for p, zakres in zakresy)
+        tekst = linie_plikow[plik][numer - 1].strip()
+        przez_rownowazny = any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)
+        if not (przez_mutant or przez_rownowazny):
+            niepokryte.append((plik, numer))
+    return niepokryte
+
+
+def pokrycie_kod3(korzen: Path, lista: Path, tabele: list[Path]) -> int:
+    """Tryb `--pokrycie-kod3`: zwraca kod wyjscia 0/1; blad narzedzia to `BladNarzedzia`."""
+    wpisy = wczytaj_liste_kodu_3(korzen / lista)
+    mutanty: list[Mutant] = []
+    rownowazne: list[Rownowazny] = []
+    for tabela in tabele:
+        z_tabeli, rownowazne_z_tabeli = wczytaj_tabele_z_rownowaznymi(korzen / tabela)
+        mutanty.extend(z_tabeli)
+        rownowazne.extend(rownowazne_z_tabeli)
+    niepokryte = niepokryte_linie_kodu_3(korzen, wpisy, mutanty, rownowazne)
+    for plik, numer in niepokryte:
+        print(f"{plik}:{numer}")
+    if niepokryte:
+        print(
+            f"brak dowodu: {len(niepokryte)} linii bez wiersza [[mutant]] i bez [[rownowazny]]"
+            " - .claude/rules/test-odroznia-regule.md",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"pokryto {len(wpisy)} linii bez mutantów")
+    return 0
+
+
 def _limit(tekst: str) -> float:
     try:
         wartosc = float(tekst)
@@ -517,11 +663,21 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="HAR-225: sprawdz wszystkie tabele z tests/mutanty_reczne (szukaj raz, test istnieje), bez mutacji",
     )
+    parser.add_argument(
+        "--pokrycie-kod3",
+        type=Path,
+        default=None,
+        metavar="LISTA",
+        help="HAR-228: sprawdz, ze kazda linia z wyjscia kodu 3 mutanty_zmian.py ma wiersz [[mutant]] albo [[rownowazny]]",
+    )
     args = parser.parse_args(argv)
+    if args.pokrycie_kod3 is not None and (args.sprawdz_wszystkie or args.czy_front):
+        parser.error("--pokrycie-kod3 nie laczy sie z --sprawdz-wszystkie ani z --czy-front")
     if args.sprawdz_wszystkie and (args.tabele or args.czy_front):
         parser.error("--sprawdz-wszystkie nie laczy sie z tabelami pozycyjnymi ani z --czy-front")
     if not args.sprawdz_wszystkie and not args.tabele:
-        parser.error("podaj co najmniej jedna tabele (albo --sprawdz-wszystkie): brak tabeli to brak dowodu")
+        if args.pokrycie_kod3 is None:
+            parser.error("podaj co najmniej jedna tabele (albo --sprawdz-wszystkie): brak tabeli to brak dowodu")
     korzen = args.korzen if args.korzen is not None else Path.cwd()
     if args.sprawdz_wszystkie:
         bledy: list[str] = []
@@ -536,6 +692,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"sprawdzono {wiersze} wierszy w {tabele} tabelach")
         return 0
     try:
+        if args.pokrycie_kod3 is not None:
+            return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)
         mutanty = [m for tabela in args.tabele for m in wczytaj_tabele(korzen / tabela)]
         if args.czy_front:
             print(f"front={int(any(wymaga_frontu(m) for m in mutanty))}")

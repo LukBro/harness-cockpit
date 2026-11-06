@@ -302,6 +302,74 @@ jobs:
             exit 1
           fi
 
+      # HAR-228: kazda linia z kodu 3 (`bez mutantów — sprawdź ręcznie`) ma wiersz [[mutant]]
+      # albo [[rownowazny]] w tabeli zmienionej w PR. Sama obecnosc tabeli (krok `mutanty ręczne`)
+      # nie dowodzi, ze pokrywa wlasnie te linie. Brak pliku z kodem to brak dowodu; kod zmian
+      # inny niz 3 to nie dotyczy (lista istnieje tylko dla kodu 3). Kod narzedzia: 0 zielony,
+      # 1 brak dowodu, kazdy inny to blad narzedzia - czerwony krok.
+      - name: pokrycie linii bez mutantów
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            {
+              echo "## Pokrycie linii bez mutantów"
+              echo
+              echo "brak dowodu: nie ma mutants/mutanty-zmian.kod"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
+            exit 1
+          fi
+          kod_zmian="$(cat mutants/mutanty-zmian.kod)"
+          if [ "$kod_zmian" != "3" ]; then
+            {
+              echo "## Pokrycie linii bez mutantów"
+              echo
+              echo "nie dotyczy - mutanty_zmian.py zakończył się kodem $kod_zmian"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Pomijamy tabele usuniete w PR (--diff-filter=d): usunieta nie jest dowodem.
+          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
+          kod=0
+          python3 tools/mutanty_reczne.py --pokrycie-kod3 mutants/mutanty-zmian.txt $tabele > mutants/pokrycie-kod3.txt 2> mutants/pokrycie-kod3.err || kod=$?
+          {
+            echo "## Pokrycie linii bez mutantów"
+            echo
+            case "$kod" in
+              0)
+                echo "wszystkie linie bez mutantów mają wiersz albo uzasadnienie"
+                ;;
+              1)
+                echo "brak dowodu — linie bez wiersza [[mutant]] i bez [[rownowazny]]:"
+                echo
+                echo '```'
+                cat mutants/pokrycie-kod3.txt
+                echo '```'
+                ;;
+              *)
+                echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/pokrycie-kod3.err
+                echo '```'
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$kod" in
+            0)
+              ;;
+            1)
+              echo "::error::brak dowodu: linie bez wiersza tabeli ręcznych mutantów: $(paste -sd' ' mutants/pokrycie-kod3.txt)"
+              exit 1
+              ;;
+            *)
+              echo "::error::błąd narzędzia: mutanty_reczne.py --pokrycie-kod3 zakończył się kodem $kod: $(paste -sd' ' mutants/pokrycie-kod3.err)"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -313,6 +381,8 @@ jobs:
             mutants/mutanty-reczne.err
             mutants/tabele-reczne.txt
             mutants/tabele-reczne.err
+            mutants/pokrycie-kod3.txt
+            mutants/pokrycie-kod3.err
 
   mutation-main:
     if: github.event_name == 'push'

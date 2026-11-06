@@ -676,6 +676,7 @@ class PrzebiegRecznych:
 def uruchom_krok_recznych(
     tmp_path: Path,
     *,
+    nazwa_kroku: str = KROK_RECZNE,
     zmiany: tuple[str, ...] = (),
     tabele: tuple[str, ...] = (),
     usuniete_tabele: tuple[str, ...] = (),
@@ -705,7 +706,7 @@ def uruchom_krok_recznych(
     _atrapa(atrapy, "git", ATRAPA_GIT_ZMIANY)
 
     przebieg = PrzebiegRecznych(tmp_path, praca)
-    krok = _krok(ZADANIE_PR, KROK_RECZNE)
+    krok = _krok(ZADANIE_PR, nazwa_kroku)
     skrypt_krok = krok["run"]
     assert "${{" not in skrypt_krok, "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
     skrypt = tmp_path / "krok.sh"
@@ -1804,3 +1805,211 @@ def test_sprawdzenie_tabel_z_kodem_0_pokazuje_w_podsumowaniu_liczbe_sprawdzonych
     assert przebieg.kod == 0, przebieg.wyjscie
     assert wynik in przebieg.podsumowanie.split(NAGLOWEK_TABEL, 1)[1]
     assert (przebieg.praca / "mutants" / "tabele-reczne.txt").read_text(encoding="utf-8") == f"{wynik}\n"
+
+
+# =============================================================================
+# HAR-228: krok `pokrycie linii bez mutantów` - kazda linia kodu 3 ma wiersz albo uzasadnienie
+# =============================================================================
+
+KROK_POKRYCIA = "pokrycie linii bez mutantów"
+NAGLOWEK_POKRYCIA = "## Pokrycie linii bez mutantów"
+LISTA_KODU_3 = "mutants/mutanty-zmian.txt"
+WYJSCIE_POKRYCIA = "mutants/pokrycie-kod3.txt"
+BLAD_POKRYCIA = "mutants/pokrycie-kod3.err"
+
+
+def _krok_pokrycia(tmp_path: Path, **kw) -> PrzebiegRecznych:
+    return uruchom_krok_recznych(tmp_path, nazwa_kroku=KROK_POKRYCIA, **kw)
+
+
+def _bledy_ci(przebieg: PrzebiegRecznych) -> list[str]:
+    return [linia for linia in przebieg.wyjscie.splitlines() if linia.startswith("::error::")]
+
+
+def test_krok_pokrycia_linii_stoi_w_zadaniu_pull_requestu_zaraz_po_kroku_recznych_mutantow():
+    nazwy = [k.get("name") for k in _zadanie(ZADANIE_PR)["steps"]]
+
+    assert nazwy.index(KROK_POKRYCIA) == nazwy.index(KROK_RECZNE) + 1
+
+
+def test_krok_pokrycia_linii_dostaje_galaz_docelowa_ze_zmiennej_srodowiska():
+    krok = _krok(ZADANIE_PR, KROK_POKRYCIA)
+
+    assert krok["env"]["BASE_REF"] == "${{ github.base_ref }}"
+    assert "${{" not in krok["run"]
+
+
+def test_zadanie_pull_requestu_publikuje_wynik_pokrycia_linii_nawet_po_czerwonym_kroku():
+    artefakt = _artefakt(ZADANIE_PR, "mutation-report")
+    sciezki = artefakt["with"]["path"].splitlines()
+
+    assert artefakt["if"] == "always()"
+    assert WYJSCIE_POKRYCIA in sciezki
+    assert BLAD_POKRYCIA in sciezki
+
+
+def test_krok_pokrycia_linii_nie_ukrywa_bledu_komendy_ani_bledu_kroku():
+    krok = _krok(ZADANIE_PR, KROK_POKRYCIA)
+
+    assert not UKRYCIE_BLEDU.search(krok["run"])
+    assert "continue-on-error" not in krok
+
+
+def test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia(
+    tmp_path,
+):
+    przebieg = _krok_pokrycia(tmp_path, kod_zmian=None)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert przebieg.podsumowanie == f"{NAGLOWEK_POKRYCIA}\n\nbrak dowodu: nie ma mutants/mutanty-zmian.kod\n"
+    assert _bledy_ci(przebieg) == [
+        "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
+    ]
+    assert przebieg.wywolania_skryptu == []
+
+
+@pytest.mark.parametrize("kod_zmian", [0, 1, 2, 4])
+def test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia(
+    tmp_path, kod_zmian
+):
+    przebieg = _krok_pokrycia(tmp_path, kod_zmian=kod_zmian, tabele=(TABELA_A,))
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert (
+        przebieg.podsumowanie
+        == f"{NAGLOWEK_POKRYCIA}\n\nnie dotyczy - mutanty_zmian.py zakończył się kodem {kod_zmian}\n"
+    )
+    assert _bledy_ci(przebieg) == []
+    assert przebieg.wywolania_skryptu == []
+
+
+def test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami(tmp_path):
+    przebieg = _krok_pokrycia(tmp_path, kod_zmian=3, tabele=(TABELA_A, TABELA_B))
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == [f"--pokrycie-kod3 {LISTA_KODU_3} {TABELA_A} {TABELA_B}"]
+
+
+def test_kod_3_bez_zmienionych_tabel_wola_narzedzie_z_sama_lista_i_oblewa_gdy_linia_bez_dowodu(tmp_path):
+    przebieg = _krok_pokrycia(
+        tmp_path, kod_zmian=3, tabele=(), kod_recznych=1, stdout_recznych="src/x.py:12\n"
+    )
+
+    assert przebieg.wywolania_skryptu == [f"--pokrycie-kod3 {LISTA_KODU_3}"]
+    assert przebieg.kod != 0, przebieg.wyjscie
+
+
+def test_tabela_usunieta_w_pr_nie_trafia_do_argumentow_trybu_pokrycia(tmp_path):
+    przebieg = _krok_pokrycia(tmp_path, kod_zmian=3, tabele=(TABELA_A,), usuniete_tabele=(TABELA_B,))
+
+    assert przebieg.wywolania_skryptu == [f"--pokrycie-kod3 {LISTA_KODU_3} {TABELA_A}"]
+
+
+def test_tabele_dla_pokrycia_pochodza_z_roznicy_wzgledem_galezi_docelowej_bez_przemianowan(tmp_path):
+    inna_galaz = "release-7"
+    assert inna_galaz != GALAZ_DOCELOWA
+    przebieg = _krok_pokrycia(tmp_path, kod_zmian=3, tabele=(TABELA_A,), base_ref=inna_galaz)
+
+    zapytania = [w for w in przebieg.wywolania_git if "--diff-filter=d" in w]
+    assert len(zapytania) == 1, przebieg.wywolania_git
+    assert f"origin/{inna_galaz}...HEAD" in zapytania[0]
+    assert "--name-only" in zapytania[0]
+    assert "--no-renames" in zapytania[0]
+    assert "tests/mutanty_reczne/*.toml" in zapytania[0]
+
+
+def test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu(
+    tmp_path,
+):
+    przebieg = _krok_pokrycia(
+        tmp_path,
+        kod_zmian=3,
+        tabele=(TABELA_A,),
+        kod_recznych=0,
+        stdout_recznych="pokryto 2 linii bez mutantów\n",
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert (
+        przebieg.podsumowanie
+        == f"{NAGLOWEK_POKRYCIA}\n\nwszystkie linie bez mutantów mają wiersz albo uzasadnienie\n"
+    )
+    assert _bledy_ci(przebieg) == []
+    wyjscie = (przebieg.praca / WYJSCIE_POKRYCIA).read_text(encoding="utf-8")
+    assert wyjscie == "pokryto 2 linii bez mutantów\n"
+
+
+def test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia(tmp_path):
+    przebieg = _krok_pokrycia(
+        tmp_path,
+        kod_zmian=3,
+        tabele=(TABELA_A,),
+        kod_recznych=1,
+        stdout_recznych="src/x.py:12\n",
+        stderr_recznych="brak dowodu: 1 linii",
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert przebieg.podsumowanie == (
+        f"{NAGLOWEK_POKRYCIA}\n\n"
+        "brak dowodu — linie bez wiersza [[mutant]] i bez [[rownowazny]]:\n\n"
+        "```\nsrc/x.py:12\n```\n"
+    )
+    assert _bledy_ci(przebieg) == [
+        "::error::brak dowodu: linie bez wiersza tabeli ręcznych mutantów: src/x.py:12"
+    ]
+
+
+def test_kilka_linii_bez_wiersza_trafia_do_jednej_linii_bledu_ci_i_do_podsumowania(tmp_path):
+    przebieg = _krok_pokrycia(
+        tmp_path, kod_zmian=3, kod_recznych=1, stdout_recznych="src/x.py:12\nsrc/y.py:7\n"
+    )
+
+    assert _bledy_ci(przebieg) == [
+        "::error::brak dowodu: linie bez wiersza tabeli ręcznych mutantów: src/x.py:12 src/y.py:7"
+    ], przebieg.wyjscie
+    assert przebieg.podsumowanie.endswith("```\nsrc/x.py:12\nsrc/y.py:7\n```\n")
+
+
+def test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci(tmp_path):
+    przebieg = _krok_pokrycia(
+        tmp_path,
+        kod_zmian=3,
+        tabele=(TABELA_A,),
+        kod_recznych=2,
+        stderr_recznych="blad: lista bez wpisow",
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert przebieg.podsumowanie == (
+        f"{NAGLOWEK_POKRYCIA}\n\nbłąd narzędzia (kod 2):\n\n```\nblad: lista bez wpisow```\n"
+    )
+    assert _bledy_ci(przebieg) == [
+        "::error::błąd narzędzia: mutanty_reczne.py --pokrycie-kod3 zakończył się kodem 2: blad: lista bez wpisow"
+    ]
+
+
+def test_nieznany_kod_narzedzia_pokrycia_oblewa_krok_jak_blad_narzedzia(tmp_path):
+    przebieg = _krok_pokrycia(
+        tmp_path, kod_zmian=3, tabele=(TABELA_A,), kod_recznych=5, stderr_recznych="dziwny kod"
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert przebieg.podsumowanie == f"{NAGLOWEK_POKRYCIA}\n\nbłąd narzędzia (kod 5):\n\n```\ndziwny kod```\n"
+    assert _bledy_ci(przebieg) == [
+        "::error::błąd narzędzia: mutanty_reczne.py --pokrycie-kod3 zakończył się kodem 5: dziwny kod"
+    ]
+
+
+def test_stderr_narzedzia_pokrycia_z_kilku_linii_trafia_do_bledu_ci_w_jednej_linii(tmp_path):
+    przebieg = _krok_pokrycia(
+        tmp_path, kod_zmian=3, tabele=(TABELA_A,), kod_recznych=2, stderr_recznych="pierwsza\ndruga"
+    )
+
+    assert _bledy_ci(przebieg) == [
+        "::error::błąd narzędzia: mutanty_reczne.py --pokrycie-kod3 zakończył się kodem 2: pierwsza druga"
+    ], przebieg.wyjscie
+
+
+def test_krok_pokrycia_linii_nie_ma_warunku_if_wiec_wykonuje_sie_na_kazdym_pr_takze_bez_zmienionej_tabeli():
+    assert "if" not in _krok(ZADANIE_PR, KROK_POKRYCIA)
