@@ -330,6 +330,23 @@
             "title": "Kind",
             "type": "string"
           },
+          "kroki_weryfikujace": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kroki Weryfikujace"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -649,6 +666,47 @@
         "title": "PlikZapisany",
         "type": "object"
       },
+      "PokrycieRunu": {
+        "properties": {
+          "pominiete": {
+            "title": "Pominiete",
+            "type": "integer"
+          },
+          "powody": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Powody",
+            "type": "object"
+          },
+          "stan": {
+            "enum": [
+              "sprawdzony",
+              "czesciowo",
+              "niesprawdzony"
+            ],
+            "title": "Stan",
+            "type": "string"
+          },
+          "wykonane": {
+            "title": "Wykonane",
+            "type": "integer"
+          },
+          "zaplanowane": {
+            "title": "Zaplanowane",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "zaplanowane",
+          "wykonane",
+          "pominiete",
+          "powody",
+          "stan"
+        ],
+        "title": "PokrycieRunu",
+        "type": "object"
+      },
       "Profil": {
         "properties": {
           "csrf": {
@@ -834,6 +892,16 @@
             "title": "Id",
             "type": "string"
           },
+          "pokrycie": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PokrycieRunu"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reason": {
             "anyOf": [
               {
@@ -870,7 +938,8 @@
           "runner_kind",
           "reason",
           "events",
-          "steps"
+          "steps",
+          "pokrycie"
         ],
         "title": "RunSzczegoly",
         "type": "object"

@@ -1,0 +1,356 @@
+# Tabela recznych mutantow HAR-178: pokrycie bramkami w rekordzie runu.
+# Elementy, ktorych mutmut nie mutuje: ograniczenia pol Pydantica, wywolanie serwisu w trasie,
+# pola modeli, stale zbiory i front (web/).
+#
+# Wiersze z tests/test_migracje.py wymagaja PostgreSQL (COCKPIT_TEST_DATABASE_URL), testy
+# z tests/e2e/ wymagaja przegladarki i bazy (tools/testy_pelne.sh).
+#
+# Uzasadnienia rownowaznosci (bez wiersza):
+# - web/src/WidokRunu.tsx `runId &&` w warunku sekcji pokrycia: stan `pokrycie` jest null,
+#   gdy nie ma runId (efekt zeruje go przed `if (!runId) return`), wiec usuniecie `runId &&`
+#   nie zmienia niczego, co da sie zobaczyc.
+# - web/src/WidokRunu.tsx `key={krok}` na <li>: klucze nie zmieniaja wyniku renderowania
+#   listy, ktorej elementy nie zmieniaja sie miedzy renderami.
+# - web/src/WidokRunu.tsx `import type { PokrycieRunu }` oraz web/src/api.ts
+#   `export type PokrycieRunu`: same typy, znikaja po kompilacji; usuniecie psuje `tsc`
+#   (npm run build), a nie zachowanie.
+# - web/src/WidokRunu.tsx `pokrycie !== null` w warunku sekcji: usuniecie albo odwrocenie
+#   warunku nie kompiluje sie (TS18047 'pokrycie' is possibly 'null' w kazdym odwolaniu w
+#   sekcji), wiec mutanta zabija `tsc` w `npm run build`; wiersz z `=== null` daje kod 2
+#   narzedzia (blad budowy), nie przezywajacego mutanta (HAR-178, Team Manager).
+# - src/cockpit/api/app.py `default=None` w EventIn.kroki_weryfikujace: wariant `default=[]`
+#   jest rownowazny (pusta lista jest traktowana jak brak: `if not kroki_weryfikujace`),
+#   wiec zamiast niego mutujemy default na niepusta liste.
+
+# --- api/app.py: pole EventIn.kroki_weryfikujace -----------------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "Field(min_length=1, max_length=200)"
+zamien = "Field(min_length=0, max_length=200)"
+test = "tests/test_pokrycie_runu.py::test_pusty_napis_w_liscie_krokow_weryfikujacych_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "min_length=1, max_length=200)]]"
+zamien = "min_length=1, max_length=201)]]"
+test = "tests/test_pokrycie_runu.py::test_element_listy_krokow_weryfikujacych_dluzszy_niz_200_znakow_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "min_length=1, max_length=200)]]"
+zamien = "min_length=1, max_length=199)]]"
+test = "tests/test_pokrycie_runu.py::test_element_listy_krokow_weryfikujacych_o_200_znakach_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "default=None, max_length=1000)"
+zamien = "default=None, max_length=1001)"
+test = "tests/test_pokrycie_runu.py::test_lista_krokow_weryfikujacych_dluzsza_niz_1000_elementow_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "default=None, max_length=1000)"
+zamien = "default=None, max_length=999)"
+test = "tests/test_pokrycie_runu.py::test_lista_krokow_weryfikujacych_o_1000_elementach_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "default=None, max_length=1000)"
+zamien = 'default=["x"], max_length=1000)'
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_ma_pokrycie_sprawdzone_w_kolumnach_runu"
+
+# Bez `| None` jawny null od runnera jest odrzucany (422).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "]] | None = Field("
+zamien = "]] = Field("
+test = "tests/test_pokrycie_runu.py::test_jawny_null_w_polu_krokow_weryfikujacych_jest_brakiem_klasyfikacji"
+
+# --- api/app.py: trasy --------------------------------------------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "kroki_weryfikujace=body.kroki_weryfikujace,"
+zamien = "kroki_weryfikujace=None,"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_ma_pokrycie_sprawdzone_w_kolumnach_runu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "pokrycie = uslugi.pokrycie_z_kolumn(run)"
+zamien = "pokrycie = None"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_zwraca_pokrycie_sprawdzone_w_odpowiedzi_api"
+
+# Odwrocony warunek: dla runu bez pomiaru `PokrycieRunu(**None)` rzuca wyjatek.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "None if pokrycie is None else"
+zamien = "None if pokrycie is not None else"
+test = "tests/test_pokrycie_runu.py::test_run_w_toku_nie_ma_pokrycia_a_wszystkie_kolumny_sa_puste_a_nie_zerami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "else PokrycieRunu(**pokrycie)"
+zamien = "else None"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_zwraca_pokrycie_sprawdzone_w_odpowiedzi_api"
+
+# --- api/schematy.py: PokrycieRunu --------------------------------------------------------------
+
+[[rownowazny]]
+plik = "src/cockpit/api/schematy.py"
+linia_tekst = "class PokrycieRunu(BaseModel):"
+uzasadnienie = "Naglowek klasy nie ma wariantu zmieniajacego zachowanie: zmiana nazwy albo usuniecie psuje import w app.py (kazdy test pada przy zbieraniu), a nazwa komponentu OpenAPI i komplet pol sa sprawdzane w tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane[PokrycieRunu]; pola maja wlasne wiersze ponizej (HAR-178, Team Manager)."
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "zaplanowane: int"
+zamien = "zaplanowane: str"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_zwraca_pokrycie_sprawdzone_w_odpowiedzi_api"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "wykonane: int"
+zamien = "wykonane: str"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_zwraca_pokrycie_sprawdzone_w_odpowiedzi_api"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    wykonane: int\n    pominiete: int"
+zamien = "    wykonane: int\n    pominiete: str"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_zwraca_pokrycie_sprawdzone_w_odpowiedzi_api"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "powody: dict[str, str]"
+zamien = "powody: dict[str, int]"
+test = "tests/test_pokrycie_runu.py::test_run_z_jedna_bramka_wykonana_i_jedna_pominieta_ma_pokrycie_czesciowe_z_powodem"
+
+# Literal stanu: po jednym wierszu na kazda z trzech wartosci.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '["sprawdzony", "czesciowo", "niesprawdzony"]'
+zamien = '["czesciowo", "niesprawdzony"]'
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_zwraca_pokrycie_sprawdzone_w_odpowiedzi_api"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '["sprawdzony", "czesciowo", "niesprawdzony"]'
+zamien = '["sprawdzony", "niesprawdzony"]'
+test = "tests/test_pokrycie_runu.py::test_run_z_jedna_bramka_wykonana_i_jedna_pominieta_ma_pokrycie_czesciowe_z_powodem"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '["sprawdzony", "czesciowo", "niesprawdzony"]'
+zamien = '["sprawdzony", "czesciowo"]'
+test = "tests/test_pokrycie_runu.py::test_run_w_ktorym_pominieto_wszystkie_bramki_ma_pokrycie_niesprawdzone"
+
+# Bez `| None` run bez pomiaru nie przechodzi walidacji odpowiedzi.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "pokrycie: PokrycieRunu | None"
+zamien = "pokrycie: PokrycieRunu"
+test = "tests/test_pokrycie_runu.py::test_run_w_toku_nie_ma_pokrycia_a_wszystkie_kolumny_sa_puste_a_nie_zerami"
+
+# --- db/models.py: piec kolumn pokrycia (typ zmieniony bez migracji: compare_metadata) ---------
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "bramki_zaplanowane: Mapped[int | None] = mapped_column(Integer"
+zamien = "bramki_zaplanowane: Mapped[int | None] = mapped_column(Text"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "bramki_wykonane: Mapped[int | None] = mapped_column(Integer"
+zamien = "bramki_wykonane: Mapped[int | None] = mapped_column(Text"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "bramki_pominiete: Mapped[int | None] = mapped_column(Integer"
+zamien = "bramki_pominiete: Mapped[int | None] = mapped_column(Text"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(String(16), default=None)"
+zamien = "mapped_column(String(4), default=None)"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(JSON, default=None)"
+zamien = "mapped_column(Text, default=None)"
+test = "tests/test_migracje.py::test_migracja_tworzy_ten_sam_schemat_co_model"
+
+# --- services/runs.py: statusy, w ktorych zapisujemy pokrycie ----------------------------------
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.to_accept, RunStatus.failed})"
+zamien = "_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.failed})"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_ma_pokrycie_sprawdzone_w_kolumnach_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.to_accept, RunStatus.failed})"
+zamien = "_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.to_accept})"
+test = "tests/test_pokrycie_runu.py::test_krok_weryfikujacy_nieudany_liczy_sie_jako_wykonany_a_run_jest_nieudany"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.to_accept, RunStatus.failed})"
+zamien = "_STATUSY_Z_POKRYCIEM = frozenset({RunStatus.to_accept, RunStatus.failed, RunStatus.aborted})"
+test = "tests/test_pokrycie_runu.py::test_run_przerwany_nie_ma_pokrycia_nawet_gdy_runner_przyslal_liste"
+
+# --- services/runs.py: agregacja wierszy krokow po agentach ---------------------------------------
+# Brak `failed` przed `finished` w pokrycie_runu jest rownowazny dla pokrycia: nieudana i
+# wykonana licza sie tak samo do `wykonane` w pokrycie_bramek, a status runu wylicza osobno
+# nieudane_kroki (kroki.py).
+
+# Bez `running` agent w toku przestaje blokowac wynik, gdy drugi agent kroku skonczyl.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "{StepStatus.running, StepStatus.waiting}"
+zamien = "{StepStatus.waiting}"
+test = "tests/test_pokrycie_runu.py::test_krok_weryfikujacy_ktorego_jeden_agent_jest_w_toku_a_drugi_skonczyl_daje_brak_pokrycia"
+
+# Bez `waiting` agent czekajacy przestaje blokowac wynik.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "{StepStatus.running, StepStatus.waiting}"
+zamien = "{StepStatus.running}"
+test = "tests/test_pokrycie_runu.py::test_krok_weryfikujacy_ktorego_jeden_agent_czeka_a_drugi_skonczyl_daje_brak_pokrycia"
+
+# Klucz bez agenta: ostatni wiersz kroku (agent "b", pominiety) przykrywa wiersz agenta "a".
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "ostatnie[(w.step_id, w.agent_id)] = w.status"
+zamien = 'ostatnie[(w.step_id, "")] = w.status'
+test = "tests/test_pokrycie_runu.py::test_krok_weryfikujacy_ktorego_jeden_agent_skonczyl_a_drugi_zostal_pominiety_jest_wykonany"
+
+# --- runner/weryfikacja.py: CAPABILITY_BRAMKI, po jednym wierszu na element --------------------
+
+[[mutant]]
+plik = "src/runner/weryfikacja.py"
+szukaj = '"test_narrow", '
+zamien = ""
+test = "tests/test_weryfikacja_krokow.py::test_krok_ze_skillem_wymagajacym_capability_bramki_jest_weryfikujacy[test_narrow]"
+
+[[mutant]]
+plik = "src/runner/weryfikacja.py"
+szukaj = '"test_full", '
+zamien = ""
+test = "tests/test_weryfikacja_krokow.py::test_krok_ze_skillem_wymagajacym_capability_bramki_jest_weryfikujacy[test_full]"
+
+[[mutant]]
+plik = "src/runner/weryfikacja.py"
+szukaj = '"lint", '
+zamien = ""
+test = "tests/test_weryfikacja_krokow.py::test_krok_ze_skillem_wymagajacym_capability_bramki_jest_weryfikujacy[lint]"
+
+[[mutant]]
+plik = "src/runner/weryfikacja.py"
+szukaj = '"typecheck", '
+zamien = ""
+test = "tests/test_weryfikacja_krokow.py::test_krok_ze_skillem_wymagajacym_capability_bramki_jest_weryfikujacy[typecheck]"
+
+[[mutant]]
+plik = "src/runner/weryfikacja.py"
+szukaj = ', "build"}'
+zamien = "}"
+test = "tests/test_weryfikacja_krokow.py::test_krok_ze_skillem_wymagajacym_capability_bramki_jest_weryfikujacy[build]"
+
+# --- web/src/WidokRunu.tsx ---------------------------------------------------------------------
+
+# Reset przy zmianie runu: odpowiedz o nowym runie jest wstrzymana, wiec tylko reset zdejmuje
+# komunikat poprzedniego runu.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "setPokrycie(null);"
+zamien = ""
+test = "tests/e2e/test_run_bez_bramek.py::test_komunikat_poprzedniego_runu_znika_zanim_nadejdzie_odpowiedz_o_nowym_runie"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "setPokrycie(run.pokrycie ?? null);"
+zamien = ""
+test = "tests/e2e/test_run_bez_bramek.py::test_run_ktorego_nic_nie_sprawdzilo_pokazuje_komunikat_o_pominietych_bramkach"
+
+# Odpowiedz bez pola (starszy serwer): bez `?? null` stan to undefined i widok sie wywraca.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "setPokrycie(run.pokrycie ?? null);"
+zamien = "setPokrycie(run.pokrycie);"
+test = "tests/e2e/test_run_bez_bramek.py::test_odpowiedz_serwera_bez_pola_pokrycia_nie_psuje_widoku_runu_i_nie_pokazuje_sekcji"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "useState<PokrycieRunu | null>(null)"
+zamien = "useState<PokrycieRunu | null>(undefined as unknown as null)"
+test = "tests/e2e/test_run_bez_bramek.py::test_run_w_toku_nie_pokazuje_sekcji_pokrycia_ani_zera_bramek"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'pokrycie.stan === "niesprawdzony" ? ('
+zamien = 'pokrycie.stan !== "niesprawdzony" ? ('
+test = "tests/e2e/test_run_bez_bramek.py::test_komunikat_o_braku_sprawdzenia_jest_alertem_a_komunikat_o_sprawdzeniu_nim_nie_jest"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'pokrycie.stan === "niesprawdzony" ? ('
+zamien = 'pokrycie.stan === "czesciowo" ? ('
+test = "tests/e2e/test_run_bez_bramek.py::test_run_ktorego_nic_nie_sprawdzilo_pokazuje_komunikat_o_pominietych_bramkach"
+
+# Rola alert: osobna linia, bo `<p role="alert"` wystepuje w pliku wiecej niz raz.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''<p role="alert" style={{ color: "#A5201A" }}>
+              {`Nic tego'''
+zamien = '''<p style={{ color: "#A5201A" }}>
+              {`Nic tego'''
+test = "tests/e2e/test_run_bez_bramek.py::test_komunikat_o_braku_sprawdzenia_jest_alertem_a_komunikat_o_sprawdzeniu_nim_nie_jest"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "pominięto ${pokrycie.pominiete}"
+zamien = "pominięto ${pokrycie.wykonane}"
+test = "tests/e2e/test_run_bez_bramek.py::test_komunikat_o_braku_sprawdzenia_liczy_pominiete_osobno_od_zaplanowanych"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "${pokrycie.pominiete} z ${pokrycie.zaplanowane}"
+zamien = "${pokrycie.pominiete} z ${pokrycie.pominiete}"
+test = "tests/e2e/test_run_bez_bramek.py::test_komunikat_o_braku_sprawdzenia_liczy_pominiete_osobno_od_zaplanowanych"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "Sprawdzono ${pokrycie.wykonane} z"
+zamien = "Sprawdzono ${pokrycie.zaplanowane} z"
+test = "tests/e2e/test_run_bez_bramek.py::test_run_z_czesciowo_wykonanymi_bramkami_pokazuje_ile_sprawdzono_i_powod_pominiecia"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = " z ${pokrycie.zaplanowane} bramek`}</p>"
+zamien = " z ${pokrycie.wykonane} bramek`}</p>"
+test = "tests/e2e/test_run_bez_bramek.py::test_run_z_czesciowo_wykonanymi_bramkami_pokazuje_ile_sprawdzono_i_powod_pominiecia"
+
+# Pusta lista powodow nie daje elementu <ul>.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "Object.keys(pokrycie.powody).length > 0 &&"
+zamien = "Object.keys(pokrycie.powody).length >= 0 &&"
+test = "tests/e2e/test_run_bez_bramek.py::test_run_sprawdzony_bez_powodow_pominiec_nie_ma_w_sekcji_pokrycia_listy"
+
+# Jeden powod tez daje liste.
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "Object.keys(pokrycie.powody).length > 0 &&"
+zamien = "Object.keys(pokrycie.powody).length > 1 &&"
+test = "tests/e2e/test_run_bez_bramek.py::test_run_z_czesciowo_wykonanymi_bramkami_pokazuje_ile_sprawdzono_i_powod_pominiecia"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "`${krok}: ${kod}`"
+zamien = "`${kod}: ${krok}`"
+test = "tests/e2e/test_run_bez_bramek.py::test_run_ktorego_nic_nie_sprawdzilo_pokazuje_przy_kazdej_bramce_powod_pominiecia"

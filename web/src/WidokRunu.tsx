@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchZSesja } from "./Konto";
 import type { DecyzjaIn, DecyzjaPrzyjeta, KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
+import type { PokrycieRunu } from "./api";
 
 // "nieznany": brak odpowiedzi albo blad pobrania. Nie blokujemy akcji, bo backend i tak broni sie 409.
 export type StanRunnera = "nieznany" | "online" | "offline";
@@ -87,6 +88,7 @@ export function WidokRunu({
   const [kroki, setKroki] = useState<KrokRunu[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
+  const [pokrycie, setPokrycie] = useState<PokrycieRunu | null>(null);
   const [blad, setBlad] = useState<string | null>(null);
   // Osobno od bledu historii: udany GET nie moze zgasic komunikatu o strumieniu.
   const [bladStrumienia, setBladStrumienia] = useState<string | null>(null);
@@ -109,6 +111,7 @@ export function WidokRunu({
     setKroki([]);
     setStatus(null);
     setReason(null);
+    setPokrycie(null);
     setBlad(null);
     setBladStrumienia(null);
     setPowod("");
@@ -135,6 +138,7 @@ export function WidokRunu({
         setStatus(run.status);
         setReason(run.reason);
         setKroki(run.steps);
+        setPokrycie(run.pokrycie ?? null);
         setZdarzenia((p) => scal(p, run.events));
       } catch {
         if (!anulowano) setBlad(KOMUNIKAT_SIEC);
@@ -337,6 +341,24 @@ export function WidokRunu({
       )}
       {runId && status === "rejected" && <p style={{ color: "#A5201A" }}>odrzucony{reason ? `: ${reason}` : ""}</p>}
       {runId && status !== "rejected" && reason && <p style={{ color: "#A5201A" }}>{reason}</p>}
+      {runId && pokrycie !== null && (
+        <div>
+          {pokrycie.stan === "niesprawdzony" ? (
+            <p role="alert" style={{ color: "#A5201A" }}>
+              {`Nic tego nie sprawdziło: pominięto ${pokrycie.pominiete} z ${pokrycie.zaplanowane} bramek`}
+            </p>
+          ) : (
+            <p>{`Sprawdzono ${pokrycie.wykonane} z ${pokrycie.zaplanowane} bramek`}</p>
+          )}
+          {Object.keys(pokrycie.powody).length > 0 && (
+            <ul>
+              {Object.entries(pokrycie.powody).map(([krok, kod]) => (
+                <li key={krok}>{`${krok}: ${kod}`}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {runId && kroki.length > 0 && (
         <table aria-label="Kroki runu" style={{ borderCollapse: "collapse", width: "100%", textAlign: "left" }}>
           <thead>

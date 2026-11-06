@@ -61,6 +61,7 @@ from runner.graf import StanKroku, nastepne
 from runner.kotwice import PLIK_NOTATKI
 from runner.krok import KATALOG_RUNU, WynikKroku, _zapisz_atomowo, wykonaj_krok
 from runner.krok_diff import wykonaj_diff
+from runner.weryfikacja import kroki_weryfikujace
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
 from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
 
@@ -412,7 +413,8 @@ async def _wykonaj_plan(
             run_id, "step_failed", oczekiwanie.step_id, oczekiwanie.step_id,
             f"zapis checkpointu nieudany: {blad_zapisu}"))
     await emit(_zdarzenie(
-        run_id, "run_finished", ostatni, "", "", cost_usd=None, cost_source="unavailable"))
+        run_id, "run_finished", ostatni, "", "", cost_usd=None, cost_source="unavailable",
+        kroki_weryfikujace=kroki_weryfikujace(p.workflow, p.rejestr)))
 
 
 def _zapisz_decyzje(
