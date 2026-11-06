@@ -7,7 +7,7 @@
 plik = "src/runner/krok.py"
 szukaj = "LIMIT_NA_STRAZNIKA_S = 8"
 zamien = "LIMIT_NA_STRAZNIKA_S = 1"
-test = "tests/test_brak_sierot.py::test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_w_15_sekund"
+test = "tests/test_brak_sierot.py::test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_sigkillem_straznika"
 
 # Pakiet `runner` biezacego drzewa lezy w src/, nie w src/runner/.
 [[mutant]]

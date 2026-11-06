@@ -49,6 +49,10 @@ from runner.krok import WynikKroku, wykonaj_krok
 KORZEN = Path(__file__).resolve().parent.parent
 LIMIT_ZNIKNIECIA = 10.0
 LIMIT_START = 20.0
+# Zabezpieczenie przed zawieszeniem (HAR-226), nie oczekiwany czas: koniec zadania kroku po
+# anulowaniu to karencja straznika (5 s) plus fork/exec, ktore pod obciazeniem trwaja dluzej
+# niz 15 s. Skutek (agent nie zostaje sierota) sprawdza `grupa_umarla`, nie zegar.
+LIMIT_KONCA_KROKU = 120.0
 
 # Agent: opcjonalnie ignoruje SIGTERM, zapisuje "pid pgid" (atomowo), potem spi.
 KOD_SPIACEGO_AGENTA = r"""
@@ -1646,12 +1650,14 @@ async def test_straznik_startuje_z_korzenia_repozytorium_nowa_sesja_i_potokiem_n
     assert kwargs["pass_fds"] == (numer_fd,)
 
 
-async def test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_w_15_sekund(
+async def test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_sigkillem_straznika(
     tmp_path, katalog_kroku, pgid_do_sprzatania
 ):
     # Straznik daje agentowi 5 s na SIGTERM, potem SIGKILL. Gdyby runner czekal na
     # straznika krocej (LIMIT_NA_STRAZNIKA_S < 5), zabilby go przed jego SIGKILL-em
-    # i agent ignorujacy SIGTERM zostalby sierota.
+    # i agent ignorujacy SIGTERM zostalby sierota - to wykrywa `grupa_umarla`.
+    # Czas od anulowania do konca zadania nie jest tu sprawdzany: pod obciazeniem nie da
+    # sie go zagwarantowac, wiec LIMIT_KONCA_KROKU to tylko zabezpieczenie przed zawieszeniem.
     plik = tmp_path / "agent.pid"
     zadanie = asyncio.create_task(
         wykonaj_krok(spec(), agent_spiacy(plik, ignoruj_sigterm=True), katalog_kroku, emit_pusty)
@@ -1663,9 +1669,11 @@ async def test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_
 
         zadanie.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await czekaj_bez_anulowania(zadanie, 15, "koniec zadania kroku po anulowaniu")
+            await czekaj_bez_anulowania(
+                zadanie, LIMIT_KONCA_KROKU, "koniec zadania kroku po anulowaniu"
+            )
     finally:
         zadanie.cancel()
-        await asyncio.wait({zadanie}, timeout=15)
+        await asyncio.wait({zadanie}, timeout=LIMIT_KONCA_KROKU)
 
     assert await grupa_umarla(pgid, limit=LIMIT_ZNIKNIECIA)

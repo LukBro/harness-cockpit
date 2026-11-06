@@ -1,0 +1,123 @@
+# Tabela recznych mutantow HAR-226: testy czasowe pod obciazeniem rownoleglych sesji.
+# Kazdy limit, ktory urosl albo zmienil mechanizm (zegar od zdarzenia, zabezpieczenie 120 s),
+# ma mutant usuwajacy mechanizm limitu - test nadal oblewa.
+
+# --- test_brak_sierot: koniec kroku to zabezpieczenie 120 s, skutek sprawdza grupa_umarla ---
+
+# Runner czeka na straznika krocej niz jego karencja 5 s: zabija go przed jego SIGKILL-em,
+# agent ignorujacy SIGTERM zostaje sierota (spi 300 s), wiec grupa_umarla oblewa niezaleznie od
+# limitu konca kroku.
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "LIMIT_NA_STRAZNIKA_S = 8"
+zamien = "LIMIT_NA_STRAZNIKA_S = 1"
+test = "tests/test_brak_sierot.py::test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_sigkillem_straznika"
+
+# Straznik nie wysyla SIGKILL po karencji: agent ignorujacy SIGTERM zyje, runner po
+# LIMIT_NA_STRAZNIKA_S zabija samego straznika, a grupa agenta zostaje - grupa_umarla oblewa.
+[[mutant]]
+plik = "src/runner/straznik.py"
+szukaj = "    _wyslij_sygnal(pgid, signal.SIGKILL)"
+zamien = "    pass"
+test = "tests/test_brak_sierot.py::test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_sigkillem_straznika"
+
+# --- test_mutanty_reczne: limit budowania npm (zegar od zapisu PID potomka) ---
+
+# Bez zabicia grupy po limicie potomek atrapy (sleep 60) zyje dalej; czekanie na jego
+# znikniecie ma limit 30 s < 60 s, wiec test oblewa.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "            os.killpg(proces.pid, signal.SIGKILL)"
+zamien = "            pass"
+test = "tests/test_mutanty_reczne.py::test_przekroczony_limit_budowania_to_blad_narzedzia_a_proces_npm_ginie"
+
+# Bez limitu communicate() czeka na koniec atrapy (60 s): brak BladNarzedzia, a czas od
+# zapisu PID przekracza 50 s - test oblewa.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "proces.communicate(timeout=limit)"
+zamien = "proces.communicate()"
+test = "tests/test_mutanty_reczne.py::test_przekroczony_limit_budowania_to_blad_narzedzia_a_proces_npm_ginie"
+
+# --- test_mutanty_reczne: limit testu, potomek (wnuk) testu ginie z grupa ---
+
+# Bez zabicia grupy wnuk (sleep 60) zyje; czekanie na jego znikniecie ma limit 30 s < 60 s.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "            os.killpg(proces.pid, signal.SIGKILL)"
+zamien = "            pass"
+test = "tests/test_mutanty_reczne.py::test_po_przekroczeniu_limitu_ginie_takze_proces_potomny_testu"
+
+# Bez limitu communicate() test w kopii spi 60 s i konczy sie sam: brak BladNarzedzia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "proces.communicate(timeout=limit)"
+zamien = "proces.communicate()"
+test = "tests/test_mutanty_reczne.py::test_po_przekroczeniu_limitu_ginie_takze_proces_potomny_testu"
+
+# --- test_testy_pelne: przerwanie sygnalem zwalnia blokade, kod 143 ---
+
+# Bez trapu TERM skrypt ginie od sygnalu (kod -15, nie 143) i bez trapu EXIT dla TERM.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "trap 'exit 143' TERM"
+zamien = ":"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_sygnalem_zwalnia_swoja_blokade"
+
+# Sprzatanie nie zwalnia wlasnej blokady: po koncu procesu katalog blokady nadal istnieje.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ \"$wlasciciel\" = \"$$\" ]; then\n    rm -rf \"$BLOKADA\""
+zamien = "if [ \"$wlasciciel\" = \"$$\" ]; then\n    :"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_sygnalem_zwalnia_swoja_blokade"
+
+# Pomocnik wysyla SIGKILL zamiast SIGTERM: kod -9 zamiast 143 i blokada zostaje.
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "    zabij_grupe(pgid, SIGTERM)\n    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+zamien = "    zabij_grupe(pgid, SIGKILL)\n    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_sygnalem_zwalnia_swoja_blokade"
+
+# Ten sam mutant lapie tez wlasny test pomocnika (proces reagujacy na SIGTERM konczy sie -SIGTERM).
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "    zabij_grupe(pgid, SIGTERM)\n    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+zamien = "    zabij_grupe(pgid, SIGKILL)\n    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+test = "tests/test_procesy_testowe.py::test_przerwanie_sigtermem_konczy_proces_reagujacy_na_sigterm_jego_sygnalem"
+
+# Pomocnik nie czeka na koniec procesu: proces nie ma kodu wyjscia, a ignorujacy SIGTERM nie daje bledu limitu.
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+zamien = "    pass"
+test = "tests/test_procesy_testowe.py::test_przerwanie_sigtermem_procesu_ignorujacego_sigterm_daje_blad_z_nazwa_i_nie_dobija_go"
+
+# --- tests/procesy.py: galezie przerwij_sigtermem_sync (tests/ jest poza zasiegiem mutmuta) ---
+
+# Zakonczony proces bez strazy: pomocnik pyta o grupe i wysyla sygnal - test zapisuje kazde getpgid.
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "    Zakonczony proces: no-op.\"\"\"\n    if proc.poll() is not None:\n        return\n"
+zamien = "    Zakonczony proces: no-op.\"\"\"\n"
+test = "tests/test_procesy_testowe.py::test_przerwanie_sigtermem_zakonczonego_procesu_nie_dotyka_grup_procesow"
+
+# Proces bez ustalonej grupy: bez `return` pomocnik dochodzi do zabij_grupe i wysyla sygnal do grupy.
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "        _czekaj_sync(proc, limit, f\"koniec procesu {nazwa}\")\n        return\n    zabij_grupe(pgid, SIGTERM)"
+zamien = "        _czekaj_sync(proc, limit, f\"koniec procesu {nazwa}\")\n    zabij_grupe(pgid, SIGTERM)"
+test = "tests/test_procesy_testowe.py::test_przerwanie_sigtermem_procesu_bez_ustalonej_grupy_tylko_go_odbiera"
+
+# Proces bez ustalonej grupy nie jest odbierany: returncode zostaje None.
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "    if pgid is None:\n        _czekaj_sync(proc, limit, f\"koniec procesu {nazwa}\")\n        return\n    zabij_grupe(pgid, SIGTERM)"
+zamien = "    if pgid is None:\n        pass\n        return\n    zabij_grupe(pgid, SIGTERM)"
+test = "tests/test_procesy_testowe.py::test_przerwanie_sigtermem_procesu_bez_ustalonej_grupy_tylko_go_odbiera"
+
+# Bez wyslania SIGTERM proces reagujacy na SIGTERM spi dalej: LimitCzasuTestu po limicie testu (10 s).
+[[mutant]]
+plik = "tests/procesy.py"
+szukaj = "    zabij_grupe(pgid, SIGTERM)\n    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+zamien = "    _czekaj_sync(proc, limit, f\"koniec procesu {nazwa} po SIGTERM\")"
+test = "tests/test_procesy_testowe.py::test_przerwanie_sigtermem_konczy_proces_reagujacy_na_sigterm_jego_sygnalem"

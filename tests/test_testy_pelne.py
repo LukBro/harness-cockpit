@@ -23,13 +23,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from procesy import uruchom_proces_sync, zakoncz_proces_sync
+from procesy import przerwij_sigtermem_sync, uruchom_proces_sync, zakoncz_proces_sync
 
 KORZEN = Path(__file__).resolve().parent.parent
 SKRYPT = KORZEN / "tools" / "testy_pelne.sh"
 # Wartosc tylko do podstawienia w falszywym `docker compose port`; nic nie slucha.
 PORT = "54329"
 LIMIT_PROCESU = 60
+# Zabezpieczenie (HAR-226), nie oczekiwany czas: start falszywego przebiegu to fork/exec skryptu
+# i kilku powlok, ktore pod obciazeniem rownoleglych sesji trwaja dziesiatki sekund.
+LIMIT_STARTU_PRZEBIEGU = 120
 
 FALSZYWY_DOCKER = """#!/bin/sh
 echo "$*" >> "${FALSZYWY_DZIENNIK_DOCKERA:-/dev/null}"
@@ -708,16 +711,18 @@ def test_przebieg_przerwany_sygnalem_zwalnia_swoja_blokade(tmp_path):
     )
     proc, _ = _start(env)
     try:
-        koniec = time.monotonic() + 20
+        # Start przebiegu to zdarzenie (wpis w dzienniku), nie upyw czasu: limit jest tylko
+        # zabezpieczeniem przed zawieszeniem, wiec obciazona maszyna nie oblewa testu.
+        koniec = time.monotonic() + LIMIT_STARTU_PRZEBIEGU
         while not (dziennik.exists() and "start" in dziennik.read_text()):
-            assert time.monotonic() < koniec, "przebieg testow nie ruszyl w limicie 20 s"
+            assert time.monotonic() < koniec, (
+                f"przebieg testow nie ruszyl w limicie {LIMIT_STARTU_PRZEBIEGU} s"
+            )
             time.sleep(0.05)
         assert (blokada / "pid").read_text().strip() == str(proc.pid)  # przebieg trzyma blokade
-        zakoncz_proces_sync(proc, nazwa="przerywany przebieg")
-        koniec = time.monotonic() + 5
-        while blokada.exists() and time.monotonic() < koniec:
-            time.sleep(0.05)
-        proc.communicate(timeout=10)
+        # Sam SIGTERM, bez eskalacji do SIGKILL; po koncu procesu trap EXIT juz zwolnil blokade.
+        przerwij_sigtermem_sync(proc, nazwa="przerywany przebieg")
+        proc.communicate(timeout=LIMIT_STARTU_PRZEBIEGU)
     finally:
         zakoncz_proces_sync(proc, nazwa="przerywany przebieg")
     assert not blokada.exists()
