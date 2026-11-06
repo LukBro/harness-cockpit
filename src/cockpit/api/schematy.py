@@ -68,6 +68,14 @@ class KrokRunu(BaseModel):
     reason: str | None
 
 
+class PokrycieRunu(BaseModel):
+    zaplanowane: int
+    wykonane: int
+    pominiete: int
+    powody: dict[str, str]    # krok -> kod powodu pominiecia (lista D4)
+    stan: Literal["sprawdzony", "czesciowo", "niesprawdzony"]
+
+
 class RunSzczegoly(BaseModel):
     id: str
     workflow: str
@@ -76,6 +84,7 @@ class RunSzczegoly(BaseModel):
     reason: str | None
     events: list[ZdarzenieRunu]
     steps: list[KrokRunu]
+    pokrycie: PokrycieRunu | None    # brak pomiaru to null, nigdy "0 z 0" (HAR-178)
 
 
 class RunNaLiscie(BaseModel):

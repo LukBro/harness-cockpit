@@ -112,6 +112,12 @@ class Run(Base):
     project_id: Mapped[str | None] = mapped_column(
         ForeignKey("project.id"), index=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # pokrycie bramkami (HAR-178); brak pomiaru to None w kazdej z pieciu kolumn, nigdy 0
+    bramki_zaplanowane: Mapped[int | None] = mapped_column(Integer, default=None)
+    bramki_wykonane: Mapped[int | None] = mapped_column(Integer, default=None)
+    bramki_pominiete: Mapped[int | None] = mapped_column(Integer, default=None)
+    stan_pokrycia: Mapped[str | None] = mapped_column(String(16), default=None)
+    bramki_powody: Mapped[dict | None] = mapped_column(JSON, default=None)  # krok -> kod D4
 
     events: Mapped[list["Event"]] = relationship(back_populates="run")
 
