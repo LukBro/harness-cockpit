@@ -291,3 +291,26 @@ jako sprawdzenie w CI to ticket z retro M1.8.
 
 Co sprawdzić w review: linia z listy kodu 3 bez wiersza i bez uzasadnienia = **-25**; każdy
 z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
+
+
+## Regresja (retro M1.9)
+
+Źródło: 4 z 5 ticketów M1.9 dostały odjęcie z tej reguły w rundzie 1 (HAR-174 test-writer -25, HAR-176 test-writer -25 i
+backend-python -25, HAR-178 test-writer -25, HAR-228 test-writer -15). Za każdym razem brak wskazał krytyk, nie autor. Nowe kształty:
+
+- **Każdy element wyrażenia regularnego w stałej modułu** — klasa znaków, wykluczony znak (`[^\[\]:]`), kotwica i końcowy
+  literał (`\]`) mają wejście, na którym tylko ten element decyduje o dopasowaniu (HAR-176, `KOTWICA` w `src/runner/kotwice.py`).
+- **Element krotki `except`, którego nie da się wyzwolić w pojedynkę** (podklasa innego elementu: `UnicodeDecodeError` obok
+  `ValueError`) — usuwasz go albo opisujesz jako mutant równoważny (`[[rownowazny]]` z uzasadnieniem), zamiast zostawiać bez
+  testu (HAR-176).
+- **Agregacja po kilku wierszach** (agenci, próby, kroki) ma test z co najmniej dwoma wierszami tego samego klucza w różnych
+  stanach; na wejściu z jednym wierszem każdy element zbioru stanów i klucz grupowania są równoważne z ich brakiem (HAR-178,
+  `src/cockpit/services/runs.py:325-329`).
+- **Zwolnienie zasobu w `finally`** (deskryptor, uchwyt pliku) ma test obserwujący zwolnienie — stan deskryptora po wyjściu —
+  i wiersz tabeli; korekta WRACA za HAR-49 z M1.4 (HAR-174, `--stdin-plik` w `src/runner/straznik.py`).
+- **Wywołanie istniejącego strażnika wewnątrz nowej funkcji** (`_wymagaj_dokladnie_raz(...)`) jest elementem nowej logiki i ma
+  własny wiersz z testem, w którym tylko to wywołanie decyduje o kodzie błędu (HAR-228).
+- **Mutant, którego nie da się zaimportować** (mutowalna wartość domyślna dataclass, dataclass bez `frozen` jako pole `frozen`)
+  nie trafia do tabeli — pytest kończy się błędem zbierania, a narzędzie zgłasza błąd, nie zabicie (HAR-174).
+
+Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
