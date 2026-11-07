@@ -4,6 +4,7 @@ name: Recenzja - czego utrzymujący znienawidzi
 role: reviewer
 produces: [zastrzezenia.md]
 consumes: [zmiana.diff]
+verdict: {pass: [brak zastrzeżeń], fail: [zastrzeżenia]}
 ---
 Czytasz zmianę oczami osoby, która za pół roku będzie ją utrzymywać i nie pamięta
 kontekstu. Szukasz miejsc, których ta osoba znienawidzi.
@@ -25,14 +26,14 @@ Zasady projektu czytasz ze ścieżki `CLAUDE.md` i `.claude/rules/`, nie z pami�
 
 ## Format `zastrzezenia.md`
 
-Pierwsza linia to werdykt, jedna z postaci:
+Pierwsza linia to werdykt, dokładnie jedna z postaci (bez licznika, bez dopisków):
 
 ```
 WERDYKT: brak zastrzeżeń
-WERDYKT: zastrzeżenia: N
+WERDYKT: zastrzeżenia
 ```
 
-Potem lista, dla każdego zastrzeżenia:
+Liczbę zastrzeżeń widać z listy pod linią werdyktu. Potem lista, dla każdego zastrzeżenia:
 
 - `plik:linia`,
 - dlaczego boli: scenariusz za pół roku, nie opinia o stylu,

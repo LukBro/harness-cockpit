@@ -118,6 +118,42 @@ def test_krok_systemowy_bez_skilla_nie_jest_weryfikujacy_a_recenzent_po_nim_jest
     assert _weryfikujace(workflow, rejestr) == ["rec"]
 
 
+# --- krok systemowy check (HAR-177): dowod silnika to krok weryfikujacy ---
+
+def _workflow_z_krokiem_systemowym(system: str, capability: str | None) -> Workflow:
+    """Jeden krok `k`; jedyna roznica miedzy parami to wartosc pola `system`."""
+    return Workflow(nazwa="w", kroki=[Krok(id="k", system=system, capability=capability)])
+
+
+@pytest.mark.parametrize("capability", [None, "docker", "typecheck"])
+def test_krok_systemowy_check_jest_weryfikujacy_a_diff_o_tym_samym_ksztalcie_nie(capability):
+    rejestr = _rejestr()
+
+    assert _weryfikujace(_workflow_z_krokiem_systemowym("diff", capability), rejestr) == []
+    assert _weryfikujace(_workflow_z_krokiem_systemowym("check", capability), rejestr) == ["k"]
+
+
+def test_krok_check_jest_weryfikujacy_takze_gdy_jego_capability_nie_jest_bramka():
+    assert "docker" not in BRAMKI
+
+    workflow = _workflow_z_krokiem_systemowym("check", "docker")
+
+    assert _weryfikujace(workflow, _rejestr()) == ["k"]
+
+
+def test_kroki_check_diff_i_recenzent_sa_wskazane_w_kolejnosci_workflow_bez_diffu():
+    rejestr = _rejestr(_skill("zwykly"), _skill("recenzent", Rola.reviewer))
+    workflow = Workflow(nazwa="w", kroki=[
+        Krok(id="autor", skill="zwykly"),
+        Krok(id="diff", system="diff", needs=["autor"]),
+        Krok(id="typy", system="check", capability="typecheck", needs=["diff"]),
+        Krok(id="rec", skill="recenzent", needs=["diff", "typy"]),
+        Krok(id="kontrakt", system="check", capability="contract", needs=["diff"]),
+    ])
+
+    assert _weryfikujace(workflow, rejestr) == ["typy", "rec", "kontrakt"]
+
+
 # --- silnik: pole w run_finished ---
 
 async def test_koniec_wykonanego_runu_niesie_liste_krokow_weryfikujacych(tmp_path):

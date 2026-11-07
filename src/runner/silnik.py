@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from cockpit.services.errors import BladDziedziny
-from cockpit.services.kroki_systemowe import PLIK_LINII, opis_kroku_systemowego
+from cockpit.services.kroki_systemowe import PLIK_LINII, SYSTEM_CHECK, opis_kroku
 from cockpit.services.projekt import Projekt, wczytaj_projekt
 from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Krok, Problem, Workflow, ma_bledy, wczytaj_workflow
@@ -64,6 +64,7 @@ from runner.checkpoint import (
     wczytaj_checkpoint,
     zapisz_checkpoint,
 )
+from runner.dowody import wykonaj_check
 from runner.graf import StanKroku, nastepne
 from runner.kotwice import PLIK_NOTATKI
 from runner.krok import KATALOG_RUNU, PomiarKroku, WynikKroku, _zapisz_atomowo, wykonaj_krok
@@ -74,11 +75,6 @@ from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
 
 Emit = Callable[[dict], Awaitable[None]]
 UruchomAgenta = Callable[..., Awaitable[WynikKroku]]
-# Wykonawca kroku systemowego: (worktree, base_commit, katalog kroku w katalogu runu) -> wynik.
-# Rejestr jest jedynym miejscem, ktore zna nazwy krokow systemowych po stronie runnera; opis
-# kontraktu (produces/consumes/needs) lezy w `cockpit.services.kroki_systemowe`.
-WykonawcaSystemowy = Callable[[Path, str, Path], Awaitable[WynikKroku]]
-WYKONAWCY_SYSTEMOWI: Mapping[str, WykonawcaSystemowy] = {"diff": wykonaj_diff}
 
 NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # Katalog workflow w repozytorium: odczyt idzie z worktree (stan z commita). Stala, bo literal
@@ -113,6 +109,34 @@ class Przygotowany:
     rejestr: Rejestr
     projekt: Projekt
     repozytorium: Path
+
+
+# Wykonawca kroku systemowego: (krok, przygotowany run) -> wynik. Kazdy krok systemowy ma
+# katalog `<katalog_runu>/<id kroku>`. Rejestr jest jedynym miejscem, ktore zna nazwy krokow
+# systemowych po stronie runnera; opis kontraktu (produces/consumes/needs) lezy w
+# `cockpit.services.kroki_systemowe`.
+WykonawcaSystemowy = Callable[[Krok, Przygotowany], Awaitable[WynikKroku]]
+
+
+async def _wykonaj_diff(krok: Krok, p: Przygotowany) -> WynikKroku:
+    return await wykonaj_diff(
+        p.worktree.sciezka, p.worktree.base_commit, p.worktree.katalog_runu / krok.id)
+
+
+async def _wykonaj_check(krok: Krok, p: Przygotowany) -> WynikKroku:
+    """Komenda capability kroku z project.yaml; jej brak tu (graf pomija krok wczesniej) to porazka."""
+    capability = krok.capability
+    if capability is None or capability not in p.projekt.capabilities:
+        raise PorazkaKroku(f"brak capability {capability}")
+    komenda = p.projekt.capabilities[capability]
+    return await wykonaj_check(
+        p.worktree.sciezka, capability, komenda, p.worktree.katalog_runu / krok.id)
+
+
+WYKONAWCY_SYSTEMOWI: Mapping[str, WykonawcaSystemowy] = {
+    "diff": _wykonaj_diff,
+    SYSTEM_CHECK: _wykonaj_check,
+}
 
 
 def _linia(problem: Problem) -> str:
@@ -187,7 +211,7 @@ def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | Non
             continue
         odwiedzeni.add(kandydat)
         krok = kroki[kandydat]
-        if krok.skill is None and artefakt in opis_kroku_systemowego(krok.system).produces:
+        if krok.skill is None and artefakt in opis_kroku(krok).produces:
             return kandydat
         stos.extend(krok.needs)
     return None
@@ -206,8 +230,7 @@ async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
     wykonawca = WYKONAWCY_SYSTEMOWI.get(krok.system)
     if wykonawca is None:
         raise PorazkaKroku(f"nieznany krok systemowy: {krok.system}")
-    return await wykonawca(
-        p.worktree.sciezka, p.worktree.base_commit, p.worktree.katalog_runu / krok.id)
+    return await wykonawca(krok, p)
 
 
 async def _krok(
@@ -239,11 +262,13 @@ async def _krok(
         argv = polecenie_agenta(spec, profil)
     except (BrakModelu, ValueError) as e:      # brak modelu tieru, zly budzet albo limit tur
         raise PorazkaKroku(str(e)) from e
-    dodatkowe: dict[str, Path] = {}
+    dodatkowe: dict[str, object] = {}
     if PLIK_NOTATKI in skill.produces:
         producent = _krok_producenta(p, id_kroku, PLIK_LINII)
         if producent is not None:
             dodatkowe["zmienione_linie"] = p.worktree.katalog_runu / producent / PLIK_LINII
+    if skill.verdict is not None:
+        dodatkowe["werdykt"] = skill.verdict
     return await uruchom_agenta(
         spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu,
         prompt=prompt, **dodatkowe)
@@ -398,7 +423,7 @@ async def _wykonaj_plan(
             gotowe, _ = await asyncio.wait(w_toku, return_when=asyncio.FIRST_COMPLETED)
             for zadanie in [z for z in w_toku if z in gotowe]:
                 id_kroku, start = w_toku.pop(zadanie)
-                kotwice = None
+                dodatkowe: dict[str, object] = {}
                 try:
                     wynik = zadanie.result()
                 except PorazkaKroku as e:
@@ -406,12 +431,15 @@ async def _wykonaj_plan(
                 else:
                     udany, powod, pomiar = wynik.status == "zakonczony", wynik.powod, wynik.pomiar
                     if udany and _produkuje_notatke(p, id_kroku):
-                        kotwice = list(wynik.kotwice)
+                        dodatkowe["kotwice"] = list(wynik.kotwice)
+                    if wynik.dowod is not None:
+                        dodatkowe["dowod"] = dict(wynik.dowod)
+                    if wynik.werdykt is not None:
+                        dodatkowe["verdict"] = wynik.werdykt
                 czas_ms = int((time.monotonic() - start) * 1000)
                 stany[id_kroku] = StanKroku.ZAKONCZONY if udany else StanKroku.NIEUDANY
                 ostatni = id_kroku
                 # nieudany krok ma powod (krok.py); text zakonczonego to pusty napis
-                dodatkowe = {} if kotwice is None else {"kotwice": kotwice}
                 await emit(_zdarzenie(
                     run_id, "step_finished" if udany else "step_failed", id_kroku, id_kroku,
                     "" if udany else powod,

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from cockpit.services.invariants import Rola
+from cockpit.services.projekt import wczytaj_projekt
 from cockpit.services.skills import Rejestr, rozstrzygnij_rejestr
 from cockpit.services.workflow import Poziom, Workflow, ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import (
@@ -143,15 +144,64 @@ def test_workflow_budowy_ma_krok_diff_systemowy_bez_skilla_zaraz_po_scenariuszu_
     assert diff.optional is False
 
 
-def test_krok_diff_jest_jedynym_krokiem_systemowym_budowy(tmp_path):
+def test_krokami_systemowymi_budowy_sa_diff_i_dwa_kroki_check(tmp_path):
     workflow, _, _ = wczytaj(tmp_path)
-    assert [k.id for k in workflow.kroki if k.system is not None] == ["diff"]
+    systemowe = [k for k in workflow.kroki if k.system is not None]
+    assert sorted(k.id for k in systemowe) == ["contract", "diff", "typecheck"]
+    assert [k.skill for k in systemowe] == [None, None, None]
+
+
+@pytest.mark.parametrize(
+    ("id_kroku", "capability"), [("typecheck", "typecheck"), ("contract", "contract")]
+)
+def test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff(
+    tmp_path, id_kroku, capability
+):
+    workflow, _, _ = wczytaj(tmp_path)
+    krok = krok_po_id(workflow, id_kroku)
+    assert (krok.system, krok.capability, krok.skill) == ("check", capability, None)
+    assert krok.needs == ["diff"]
+    assert krok.approval is False
+    assert krok.optional is False
+
+
+def test_kroki_check_stoja_w_workflow_po_kroku_diff_i_przed_recenzentem_kontraktu(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    kolejnosc = [k.id for k in workflow.kroki]
+    for id_kroku in ("typecheck", "contract"):
+        assert kolejnosc.index("diff") < kolejnosc.index(id_kroku) < kolejnosc.index("contract-check")
+
+
+def test_kazdy_krok_check_budowy_ma_komende_capability_w_project_yaml_repozytorium(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    projekt, problemy = wczytaj_projekt(KORZEN_REPO)
+    assert projekt is not None, problemy
+    capability_krokow = {k.capability for k in workflow.kroki if k.system == "check"}
+    assert capability_krokow == {"typecheck", "contract"}
+    assert capability_krokow <= set(projekt.capabilities)
+
+
+# kroki `needs` recenzentow: stala lista niezalezna od workflow (HAR-177: contract-check czeka
+# jeszcze na oba kroki check, bo dowody dostaje przez consumes)
+OCZEKIWANE_NEEDS_RECENZENTOW = {
+    "contract-check": ["diff", "typecheck", "contract"],
+    "review-unknown": ["diff"],
+    "explain-change": ["diff"],
+}
+
+
+@pytest.mark.parametrize("id_kroku", RECENZENCI)
+def test_recenzent_budowy_ma_dokladnie_ustalone_zaleznosci(tmp_path, id_kroku):
+    workflow, _, _ = wczytaj(tmp_path)
+    assert krok_po_id(workflow, id_kroku).needs == OCZEKIWANE_NEEDS_RECENZENTOW[id_kroku]
 
 
 @pytest.mark.parametrize("id_kroku", RECENZENCI)
 def test_recenzent_budowy_czeka_na_krok_diff_a_nie_na_scenariusz_e2e(tmp_path, id_kroku):
     workflow, _, _ = wczytaj(tmp_path)
-    assert krok_po_id(workflow, id_kroku).needs == ["diff"]
+    needs = krok_po_id(workflow, id_kroku).needs
+    assert "diff" in needs
+    assert "e2e-scenario" not in needs
 
 
 def test_krok_diff_stoi_w_workflow_po_scenariuszu_e2e_i_przed_recenzentami(tmp_path):
@@ -166,27 +216,83 @@ def test_proba_dymna_nadal_czeka_na_trzech_recenzentow(tmp_path):
     assert krok_po_id(workflow, "smoke").needs == RECENZENCI
 
 
-def test_po_zakonczonym_kroku_diff_startuja_trzej_recenzenci_a_po_nieudanym_sa_pominieci_z_brakiem_wejscia(
+PO_PRACY_AUTORA = ("plan", "tdd-task", "e2e-scenario")
+
+
+def stany_po_pracy_autora(workflow: Workflow, **reszta: StanKroku) -> dict[str, StanKroku]:
+    stany = {k.id: StanKroku.ZAKONCZONY for k in workflow.kroki if k.id in PO_PRACY_AUTORA}
+    return {**stany, **reszta}
+
+
+def test_po_zakonczonym_kroku_diff_startuja_oba_checki_i_dwaj_recenzenci_a_recenzent_kontraktu_czeka(
     tmp_path,
 ):
     workflow, rejestr, _ = wczytaj(tmp_path)
-    poczatek = {
-        k.id: StanKroku.ZAKONCZONY
-        for k in workflow.kroki
-        if k.id in ("plan", "tdd-task", "e2e-scenario")
-    }
+    stany = stany_po_pracy_autora(workflow, diff=StanKroku.ZAKONCZONY)
 
-    po_sukcesie = nastepne(
-        workflow, rejestr, CAPABILITIES_REPO, {**poczatek, "diff": StanKroku.ZAKONCZONY})
-    po_porazce = nastepne(
-        workflow, rejestr, CAPABILITIES_REPO, {**poczatek, "diff": StanKroku.NIEUDANY})
+    wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO, stany)
 
-    assert po_sukcesie.do_startu == RECENZENCI
-    assert po_sukcesie.do_pominiecia == {}
+    assert sorted(wynik.do_startu) == sorted(
+        ["typecheck", "contract", "review-unknown", "explain-change"])
+    assert "contract-check" not in wynik.do_startu
+    assert wynik.do_pominiecia == {}
+
+
+def test_recenzent_kontraktu_startuje_dopiero_gdy_oba_checki_sa_zakonczone(tmp_path):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    ok = StanKroku.ZAKONCZONY
+    jeden_w_toku = stany_po_pracy_autora(
+        workflow, diff=ok, typecheck=ok, contract=StanKroku.W_TOKU)
+    oba_gotowe = stany_po_pracy_autora(workflow, diff=ok, typecheck=ok, contract=ok)
+
+    assert "contract-check" not in nastepne(
+        workflow, rejestr, CAPABILITIES_REPO, jeden_w_toku).do_startu
+    assert "contract-check" in nastepne(
+        workflow, rejestr, CAPABILITIES_REPO, oba_gotowe).do_startu
+
+
+def test_po_nieudanym_kroku_diff_checki_sa_pominiete_jako_zaleznosc_a_recenzenci_traca_wejscie(
+    tmp_path,
+):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    stany = stany_po_pracy_autora(workflow, diff=StanKroku.NIEUDANY)
+
+    wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO, stany)
+
+    for id_kroku in ("typecheck", "contract"):
+        assert wynik.powody[id_kroku] == PowodPominiecia.ZALEZNOSC_NIEUDANA
+        assert wynik.do_pominiecia[id_kroku] == "zależność nieudana: diff"
     for id_kroku in RECENZENCI:
-        assert po_porazce.powody[id_kroku] == PowodPominiecia.BRAK_WEJSCIA
-        assert po_porazce.do_pominiecia[id_kroku] == "brak wejścia: zmiana.diff z kroku diff"
-    assert po_porazce.do_startu == []
+        assert wynik.powody[id_kroku] == PowodPominiecia.BRAK_WEJSCIA
+        assert wynik.do_pominiecia[id_kroku] == "brak wejścia: zmiana.diff z kroku diff"
+    assert wynik.do_startu == []
+
+
+def test_czerwony_krok_typecheck_pomija_recenzenta_kontraktu_jako_zaleznosc_nieudana(tmp_path):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    ok = StanKroku.ZAKONCZONY
+    stany = stany_po_pracy_autora(workflow, diff=ok, typecheck=StanKroku.NIEUDANY, contract=ok)
+
+    wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO, stany)
+
+    assert wynik.powody["contract-check"] == PowodPominiecia.ZALEZNOSC_NIEUDANA
+    assert wynik.do_pominiecia["contract-check"] == "zależność nieudana: typecheck"
+
+
+def test_projekt_bez_capability_contract_pomija_krok_contract_a_recenzent_kontraktu_traci_dowod(
+    tmp_path,
+):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    ok = StanKroku.ZAKONCZONY
+    stany = stany_po_pracy_autora(workflow, diff=ok, typecheck=ok)
+
+    wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO - {"contract"}, stany)
+
+    assert wynik.powody["contract"] == PowodPominiecia.BRAK_CAPABILITY
+    assert wynik.do_pominiecia["contract"] == "brak capability contract"
+    assert wynik.powody["contract-check"] == PowodPominiecia.BRAK_WEJSCIA
+    assert wynik.do_pominiecia["contract-check"] == (
+        "brak wejścia: dowod-contract.json z kroku contract")
 
 
 def mutmut_kopiuje(also_copy: list[str], sciezka: str) -> bool:

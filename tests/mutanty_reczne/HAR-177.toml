@@ -1,0 +1,667 @@
+# Tabela recznych mutantow HAR-177 (krok systemowy `check`, werdykt jako kontrakt skilla).
+# Mutmut nie mutuje stalych modulu, pol dataclass i modeli, zbiorow, wartosci domyslnych pol,
+# krotki sprawdzen niezmiennika, wariantow oznaczonych `# pragma: no mutate` (kodowanie
+# `utf-8`, `errors="replace"`), budowa.yaml ani SKILL.md. Kazde `szukaj` wystepuje w pliku
+# dokladnie raz (przy wpisach HAR-176.toml o tej samej tresci - w osobnych tabelach).
+#
+# Lista kodu 3 z tools/mutanty_zmian.py: kazda linia ma wiersz [[mutant]] (szukaj obejmuje
+# linie) albo [[rownowazny]] (na koncu pliku): kroki_systemowe.py (`if TYPE_CHECKING:` -
+# rownowazny; stale i wpis `check` - wiersze), skills.py (stale i pole `verdict`), workflow.py
+# (pole `capability`), workflow_walidacja.py (kody problemow i wzorzec nazwy), walidacja.py
+# (prefiks, KontraktWerdyktu, Werdykt, krotka SPRAWDZENIA), dowody.py (stale, opcje JSON,
+# dataclass _Wyjscie), krok.py (pola werdykt i dowod WynikKroku), silnik.py (alias
+# WykonawcaSystemowy - rownowazny; rejestr WYKONAWCY_SYSTEMOWI - wiersze).
+# Poza kodem 3: ręczne mutanty dla wariantow pod pragma (XXutf-8XX w obu liniach dowody.py,
+# errors="strict"), walidacja.py `read_text` bez kodowania (test w srodowisku locale ascii),
+# `stdin=None` (test w osobnym procesie z otwartym stdin), czekanie na drenaz bez limitu,
+# elementy budowa.yaml i trzech SKILL.md (kazda wartosc verdict, consumes, needs osobno).
+
+# Nazwa kroku `check` inna niz w budowa.yaml: walidator uznaje go za nieznany krok systemowy.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = "SYSTEM_CHECK = \"check\""
+zamien = "SYSTEM_CHECK = \"chek\""
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_przechodzi_walidacje_bez_bledow_na_rejestrze_repozytorium"
+
+# Szablon nazwy pliku dowodu z innym separatorem.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = "SZABLON_DOWODU = \"dowod-{}.json\""
+zamien = "SZABLON_DOWODU = \"dowod_{}.json\""
+test = "tests/test_krok_check.py::test_dowod_check_nazywa_plik_wedlug_capability_a_nie_wedlug_kroku"
+
+# Rejestr krokow systemowych bez wpisu `check`: krok check jest nieznany.
+[[mutant]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+szukaj = "    SYSTEM_CHECK: OpisKrokuSystemowego(produces=()),\n"
+zamien = ""
+test = "tests/test_workflow_walidacja.py::test_krok_check_to_znany_krok_systemowy_a_nie_nieznany_krok_systemowy"
+
+# Klucz kontraktu werdyktu we frontmatterze inny niz `verdict`.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "KLUCZ_WERDYKTU = \"verdict\""
+zamien = "KLUCZ_WERDYKTU = \"verdikt\""
+test = "tests/test_werdykt_kroku.py::test_skill_z_pelnym_verdict_ma_kontrakt_z_wartosciami_z_frontmattera"
+
+# Zbior dozwolonych kluczy mapy verdict bez `line`: ten klucz staje sie nieznany.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\", \"fail\"})"
+zamien = "_KLUCZE_WERDYKTU = frozenset({\"prefix\", \"pass\", \"fail\"})"
+test = "tests/test_werdykt_kroku.py::test_skill_z_pelnym_verdict_ma_kontrakt_z_wartosciami_z_frontmattera"
+
+# Zbior dozwolonych kluczy mapy verdict bez `prefix`: ten klucz staje sie nieznany.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\", \"fail\"})"
+zamien = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"pass\", \"fail\"})"
+test = "tests/test_werdykt_kroku.py::test_skill_z_pelnym_verdict_ma_kontrakt_z_wartosciami_z_frontmattera"
+
+# Zbior dozwolonych kluczy mapy verdict bez `pass`: ten klucz staje sie nieznany.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\", \"fail\"})"
+zamien = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"fail\"})"
+test = "tests/test_werdykt_kroku.py::test_skill_z_pelnym_verdict_ma_kontrakt_z_wartosciami_z_frontmattera"
+
+# Zbior dozwolonych kluczy mapy verdict bez `fail`: ten klucz staje sie nieznany.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\", \"fail\"})"
+zamien = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\"})"
+test = "tests/test_werdykt_kroku.py::test_skill_z_pelnym_verdict_ma_kontrakt_z_wartosciami_z_frontmattera"
+
+# Zbior dozwolonych kluczy mapy verdict z dodatkowym kluczem: nieznany klucz przechodzi.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\", \"fail\"})"
+zamien = "_KLUCZE_WERDYKTU = frozenset({\"line\", \"prefix\", \"pass\", \"fail\", \"extra\"})"
+test = "tests/test_werdykt_kroku.py::test_niepoprawny_verdict_nie_przechodzi_wczytania_z_pelnym_komunikatem[nieznany-klucz]"
+
+# Pole `verdict` modelu Skill bez wartosci domyslnej: skill zbudowany bez werdyktu nie powstaje.
+[[mutant]]
+plik = "src/cockpit/services/skills.py"
+szukaj = "    verdict: KontraktWerdyktu | None = None"
+zamien = "    verdict: KontraktWerdyktu | None"
+test = "tests/test_weryfikacja_krokow.py::test_krok_ze_skillem_recenzenta_jest_weryfikujacy"
+
+# Pole `capability` kroku z domyslna wartoscia pusta zamiast braku.
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = "    capability: str | None = None"
+zamien = "    capability: str | None = \"\""
+test = "tests/test_workflow_walidacja.py::test_krok_bez_pola_capability_ma_je_ustawione_na_brak"
+
+# Kod problemu `check_bez_capability` zmieniony.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "CHECK_BEZ_CAPABILITY = \"check_bez_capability\""
+zamien = "CHECK_BEZ_CAPABILITY = \"check_bez_capability_x\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_bez_capability_albo_z_pustym_napisem_ma_blad_i_nic_nie_produkuje"
+
+# Kod problemu `zla_nazwa_capability` zmieniony.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "ZLA_NAZWA_CAPABILITY = \"zla_nazwa_capability\""
+zamien = "ZLA_NAZWA_CAPABILITY = \"zla_nazwa_capability_x\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_spoza_wzorca_ma_blad_z_nazwa_w_komunikacie[a.b]"
+
+# Kod problemu `capability_bez_check` zmieniony.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "CAPABILITY_BEZ_CHECK = \"capability_bez_check\""
+zamien = "CAPABILITY_BEZ_CHECK = \"capability_bez_check_x\""
+test = "tests/test_workflow_walidacja.py::test_pole_capability_przy_kroku_ze_skillem_ma_blad_capability_bez_check"
+
+# Wzorzec nazwy capability bez wielkich liter.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[a-z0-9_-]{1,64}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[Z]"
+
+# Wzorzec nazwy capability bez malych liter.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Z0-9_-]{1,64}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[a]"
+
+# Wzorzec nazwy capability bez cyfr.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Za-z_-]{1,64}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[7]"
+
+# Wzorzec nazwy capability bez podkreslenia.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9-]{1,64}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[a_b]"
+
+# Wzorzec nazwy capability bez myslnika.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_]{1,64}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[a-b]"
+
+# Wzorzec nazwy capability z dolnym limitem dlugosci 2.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{2,64}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[a]"
+
+# Wzorzec nazwy capability z gornym limitem dlugosci 63.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,63}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_mieszczaca_sie_we_wzorcu_jest_poprawny[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+# Wzorzec nazwy capability z gornym limitem dlugosci 65.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,64}\""
+zamien = "WZORZEC_CAPABILITY = r\"[A-Za-z0-9_-]{1,65}\""
+test = "tests/test_workflow_walidacja.py::test_krok_check_z_nazwa_capability_spoza_wzorca_ma_blad_z_nazwa_w_komunikacie[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+# Domyslny prefiks linii werdyktu inny niz `WERDYKT:`.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "PREFIKS_WERDYKTU = \"WERDYKT:\""
+zamien = "PREFIKS_WERDYKTU = \"XXWERDYKT:XX\""
+test = "tests/test_werdykt_kroku.py::test_prefiks_werdyktu_to_werdykt_z_dwukropkiem"
+
+# KontraktWerdyktu zmienny (bez frozen): nieskracalny hash i dopuszczone przypisanie pola.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "@dataclass(frozen=True)\nclass KontraktWerdyktu:"
+zamien = "@dataclass\nclass KontraktWerdyktu:"
+test = "tests/test_werdykt_kroku.py::test_kontrakt_werdyktu_wymaga_wartosci_pass_a_kontrakt_i_wynik_werdyktu_sa_niemutowalne"
+
+# Pole `pass_` kontraktu z wartoscia domyslna: kontrakt bez wartosci przejscia powstaje.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "    pass_: tuple[str, ...]\n"
+zamien = "    pass_: tuple[str, ...] = ()\n"
+test = "tests/test_werdykt_kroku.py::test_kontrakt_werdyktu_wymaga_wartosci_pass_a_kontrakt_i_wynik_werdyktu_sa_niemutowalne"
+
+# Domyslna lista `fail` niepusta.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "    fail: tuple[str, ...] = ()"
+zamien = "    fail: tuple[str, ...] = (\"x\",)"
+test = "tests/test_werdykt_kroku.py::test_kontrakt_werdyktu_ma_domyslnie_pierwsza_linie_prefiks_werdykt_i_brak_wartosci_porazki"
+
+# Domyslna linia werdyktu 2 zamiast 1.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "    line: int = 1"
+zamien = "    line: int = 2"
+test = "tests/test_werdykt_kroku.py::test_kontrakt_werdyktu_ma_domyslnie_pierwsza_linie_prefiks_werdykt_i_brak_wartosci_porazki"
+
+# Domyslny prefiks kontraktu inny niz stala.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "    prefix: str = PREFIKS_WERDYKTU"
+zamien = "    prefix: str = \"X\""
+test = "tests/test_werdykt_kroku.py::test_kontrakt_werdyktu_ma_domyslnie_pierwsza_linie_prefiks_werdykt_i_brak_wartosci_porazki"
+
+# Werdykt zmienny (bez frozen).
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "@dataclass(frozen=True)\nclass Werdykt:"
+zamien = "@dataclass\nclass Werdykt:"
+test = "tests/test_werdykt_kroku.py::test_kontrakt_werdyktu_wymaga_wartosci_pass_a_kontrakt_i_wynik_werdyktu_sa_niemutowalne"
+
+# Pole `wartosc` wyniku werdyktu pod inna nazwa.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "    wartosc: str "
+zamien = "    wartosci: str "
+test = "tests/test_werdykt_kroku.py::test_artefakt_z_werdyktem_z_listy_pass_konczy_krok_sukcesem_i_niesie_werdykt"
+
+# Pole `zdany` wyniku werdyktu pod inna nazwa.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "    zdany: bool "
+zamien = "    zdane: bool "
+test = "tests/test_werdykt_kroku.py::test_artefakt_z_werdyktem_z_listy_pass_konczy_krok_sukcesem_i_niesie_werdykt"
+
+# Sprawdzenie werdyktu wypada ze sprawdzen niezmiennika evidence_required.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku, sprawdz_werdykt),"
+zamien = "Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku),"
+test = "tests/test_werdykt_kroku.py::test_sprawdzenie_werdyktu_jest_wsrod_sprawdzen_niezmiennika_evidence_required"
+
+# Sprawdzenie dowodu z komendy wypada ze sprawdzen niezmiennika evidence_required.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku, sprawdz_werdykt),"
+zamien = "Niezmiennik.evidence_required: (dowod_z_pliku, sprawdz_werdykt),"
+test = "tests/test_werdykt_kroku.py::test_sprawdzenie_werdyktu_jest_wsrod_sprawdzen_niezmiennika_evidence_required"
+
+# Sprawdzenie dowodu z pliku wypada ze sprawdzen niezmiennika evidence_required.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "Niezmiennik.evidence_required: (dowod_z_komendy, dowod_z_pliku, sprawdz_werdykt),"
+zamien = "Niezmiennik.evidence_required: (dowod_z_komendy, sprawdz_werdykt),"
+test = "tests/test_werdykt_kroku.py::test_sprawdzenie_werdyktu_jest_wsrod_sprawdzen_niezmiennika_evidence_required"
+
+# Odczyt artefaktu werdyktu bez jawnego kodowania (kodowanie locale; test w srodowisku ascii).
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "plik.read_text(encoding=\"utf-8\").splitlines()"
+zamien = "plik.read_text().splitlines()"
+test = "tests/test_werdykt_kroku.py::test_artefakt_utf8_z_polskimi_znakami_jest_czytany_jako_utf8_takze_w_srodowisku_z_locale_ascii"
+
+# Odczyt artefaktu werdyktu z nieznanym kodowaniem: LookupError nie jest tlumaczony.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = "plik.read_text(encoding=\"utf-8\").splitlines()"
+zamien = "plik.read_text(encoding=\"XXutf-8XX\").splitlines()"
+test = "tests/test_werdykt_kroku.py::test_werdykt_z_listy_pass_jest_zdany_a_wartosc_pochodzi_z_kontraktu"
+
+# Limit czasu checku inny niz 600 s.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "LIMIT_CHECKU_S = 600.0"
+zamien = "LIMIT_CHECKU_S = 601.0"
+test = "tests/test_krok_check.py::test_stale_dowodu_silnika_maja_ustalone_wartosci"
+
+# Limit ogona wyjscia 4001 bajtow.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "LIMIT_OGONA = 4000"
+zamien = "LIMIT_OGONA = 4001"
+test = "tests/test_krok_check.py::test_stale_dowodu_silnika_maja_ustalone_wartosci"
+
+# Zrodlo dowodu inne niz `engine`.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "ZRODLO = \"engine\""
+zamien = "ZRODLO = \"agent\""
+test = "tests/test_krok_check.py::test_stale_dowodu_silnika_maja_ustalone_wartosci"
+
+# Limit drenazu inny niz 5 s (test drenazu podmienia stala, wiec pilnuje jej test stalych).
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "LIMIT_DRENAZU_S = 5.0"
+zamien = "LIMIT_DRENAZU_S = 50.0"
+test = "tests/test_krok_check.py::test_stale_dowodu_silnika_maja_ustalone_wartosci"
+
+# Czekanie na drenaz bez limitu: potomek poza grupa wiesza krok do konca swojego zycia.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "await asyncio.wait({zadanie}, timeout=LIMIT_DRENAZU_S)"
+zamien = "await asyncio.wait({zadanie})"
+test = "tests/test_krok_check.py::test_potomek_ktory_uciekl_z_grupy_i_trzyma_potok_nie_wiesza_kroku_ponad_limit_drenazu"
+
+# Opcje zapisu JSON z ensure_ascii=True: polskie znaki jako sekwencje \u.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "OPCJE_JSON = {\"ensure_ascii\": False, \"indent\": 2}"
+zamien = "OPCJE_JSON = {\"ensure_ascii\": True, \"indent\": 2}"
+test = "tests/test_krok_check.py::test_plik_dowodu_ma_znaki_spoza_ascii_doslownie_w_utf8_i_wciecie_dwoch_spacji"
+
+# Opcje zapisu JSON z wcieciem 4 zamiast 2.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "OPCJE_JSON = {\"ensure_ascii\": False, \"indent\": 2}"
+zamien = "OPCJE_JSON = {\"ensure_ascii\": False, \"indent\": 4}"
+test = "tests/test_krok_check.py::test_plik_dowodu_ma_znaki_spoza_ascii_doslownie_w_utf8_i_wciecie_dwoch_spacji"
+
+# Zapis dowodu bez opcji OPCJE_JSON.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "json.dumps(zapis, **OPCJE_JSON)"
+zamien = "json.dumps(zapis)"
+test = "tests/test_krok_check.py::test_plik_dowodu_ma_znaki_spoza_ascii_doslownie_w_utf8_i_wciecie_dwoch_spacji"
+
+# Pole stdout_tail dowodu puste zamiast ogona wyjscia.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "\"stdout_tail\": ogon,"
+zamien = "\"stdout_tail\": \"\","
+test = "tests/test_krok_check.py::test_zielony_check_konczy_krok_sukcesem_a_plik_dowodu_ma_dokladnie_ustalone_klucze"
+
+# _Wyjscie nie jest dataclass: pola sa polami klasy, nie instancji.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "@dataclass\nclass _Wyjscie:"
+zamien = "class _Wyjscie:"
+test = "tests/test_krok_check.py::test_zielony_check_konczy_krok_sukcesem_a_plik_dowodu_ma_dokladnie_ustalone_klucze"
+
+# Skrot wyjscia sha1 zamiast sha256.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "default_factory=hashlib.sha256"
+zamien = "default_factory=hashlib.sha1"
+test = "tests/test_krok_check.py::test_zielony_check_konczy_krok_sukcesem_a_plik_dowodu_ma_dokladnie_ustalone_klucze"
+
+# Poczatkowy ogon wyjscia niepusty.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "    ogon: bytes = b\"\""
+zamien = "    ogon: bytes = b\"X\""
+test = "tests/test_krok_check.py::test_zielony_check_konczy_krok_sukcesem_a_plik_dowodu_ma_dokladnie_ustalone_klucze"
+
+# Poczatkowa flaga tresci prawdziwa: pusty wynik z kodem 0 nie jest brakiem dowodu.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "    ma_tresc: bool = False"
+zamien = "    ma_tresc: bool = True"
+test = "tests/test_krok_check.py::test_kod_zero_z_pustym_wyjsciem_to_brak_dowodu_evidence_required_a_dowod_jest_zapisany"
+
+# Kodowanie ogona wyjscia (pragma no mutate): nieznane kodowanie.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "wyjscie.ogon.decode(\"utf-8\", errors=\"replace\")"
+zamien = "wyjscie.ogon.decode(\"XXutf-8XX\", errors=\"replace\")"
+test = "tests/test_krok_check.py::test_zielony_check_konczy_krok_sukcesem_a_plik_dowodu_ma_dokladnie_ustalone_klucze"
+
+# Dekodowanie ogona wyjscia ze ścisłą obsługą bajtow spoza UTF-8: wyjatek zamiast znaku zastepczego.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "wyjscie.ogon.decode(\"utf-8\", errors=\"replace\")"
+zamien = "wyjscie.ogon.decode(\"utf-8\", errors=\"strict\")"
+test = "tests/test_krok_check.py::test_ogon_zastepuje_bajty_niepoprawne_w_utf8_a_skrot_liczy_surowe_bajty"
+
+# Kodowanie pliku dowodu (pragma no mutate): nieznane kodowanie.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "tekst.encode(\"utf-8\")"
+zamien = "tekst.encode(\"XXutf-8XX\")"
+test = "tests/test_krok_check.py::test_zielony_check_konczy_krok_sukcesem_a_plik_dowodu_ma_dokladnie_ustalone_klucze"
+
+# Komenda checku dziedziczy stdin silnika zamiast /dev/null.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "stdin=asyncio.subprocess.DEVNULL"
+zamien = "stdin=None"
+test = "tests/test_krok_check.py::test_komenda_checku_nie_dziedziczy_stdin_procesu_silnika_i_czyta_koniec_pliku"
+
+# Komenda checku dziedziczy stdin silnika zamiast /dev/null (test w procesie dla mutmuta).
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "stdin=asyncio.subprocess.DEVNULL"
+zamien = "stdin=None"
+test = "tests/test_krok_check.py::test_komenda_checku_startuje_z_dev_null_na_stdin_wlasna_sesja_i_stderr_w_stdout"
+
+# Wywolanie komendy checku bez argumentu stdin.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = " stdin=asyncio.subprocess.DEVNULL,"
+zamien = ""
+test = "tests/test_krok_check.py::test_komenda_checku_startuje_z_dev_null_na_stdin_wlasna_sesja_i_stderr_w_stdout"
+
+# Domyslny werdykt wyniku kroku niepusty (porazka bez werdyktu niesie napis).
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "    werdykt: str | None = None"
+zamien = "    werdykt: str | None = \"x\""
+test = "tests/test_werdykt_kroku.py::test_recenzent_ktory_zmienil_repozytorium_ma_porazke_reviewer_readonly_a_nie_werdykt"
+
+# Domyslny dowod wyniku kroku to pusty napis zamiast braku (niezmienny, wiec dataclass go przyjmuje).
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "    dowod: Mapping[str, object] | None = None"
+zamien = "    dowod: Mapping[str, object] | None = \"\""
+test = "tests/test_krok_check.py::test_blad_zapisu_dowodu_konczy_krok_porazka_z_nazwa_wyjatku_i_kodem_komendy[0]"
+
+# Rejestr wykonawcow krokow systemowych bez wykonawcy `check`.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "WYKONAWCY_SYSTEMOWI: Mapping[str, WykonawcaSystemowy] = {\n    \"diff\": _wykonaj_diff,\n    SYSTEM_CHECK: _wykonaj_check,\n}"
+zamien = "WYKONAWCY_SYSTEMOWI: Mapping[str, WykonawcaSystemowy] = {\n    \"diff\": _wykonaj_diff,\n}"
+test = "tests/test_krok_check.py::test_rejestr_wykonawcow_krokow_systemowych_zna_diff_i_check"
+
+# Wykonawca `check` zarejestrowany pod inna nazwa.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "    SYSTEM_CHECK: _wykonaj_check,"
+zamien = "    \"chek\": _wykonaj_check,"
+test = "tests/test_krok_check.py::test_rejestr_wykonawcow_krokow_systemowych_zna_diff_i_check"
+
+# Krok typecheck jako system diff zamiast check.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "typecheck: {system: check,"
+zamien = "typecheck: {system: diff,"
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff[typecheck-typecheck]"
+
+# Krok typecheck z capability contract.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "capability: typecheck, needs: [diff]}"
+zamien = "capability: contract, needs: [diff]}"
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff[typecheck-typecheck]"
+
+# Krok typecheck czeka na scenariusz e2e zamiast na diff.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "capability: typecheck, needs: [diff]}"
+zamien = "capability: typecheck, needs: [e2e-scenario]}"
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff[typecheck-typecheck]"
+
+# Krok contract jako system diff zamiast check.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "contract: {system: check,"
+zamien = "contract: {system: diff,"
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff[contract-contract]"
+
+# Krok contract z capability typecheck.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "capability: contract, needs: [diff]}"
+zamien = "capability: typecheck, needs: [diff]}"
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff[contract-contract]"
+
+# Krok contract czeka na scenariusz e2e zamiast na diff.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "capability: contract, needs: [diff]}"
+zamien = "capability: contract, needs: [e2e-scenario]}"
+test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_check_z_capability_zaraz_po_kroku_diff[contract-contract]"
+
+# Recenzent kontraktu nie czeka na krok typecheck.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}"
+zamien = "contract-check: {skill: contract-check, needs: [diff, contract]}"
+test = "tests/test_workflow_budowa.py::test_recenzent_budowy_ma_dokladnie_ustalone_zaleznosci[contract-check]"
+
+# Recenzent kontraktu nie czeka na krok contract.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}"
+zamien = "contract-check: {skill: contract-check, needs: [diff, typecheck]}"
+test = "tests/test_workflow_budowa.py::test_recenzent_budowy_ma_dokladnie_ustalone_zaleznosci[contract-check]"
+
+# Recenzent kontraktu nie czeka na krok diff.
+[[mutant]]
+plik = ".cockpit/workflows/budowa.yaml"
+szukaj = "contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}"
+zamien = "contract-check: {skill: contract-check, needs: [typecheck, contract]}"
+test = "tests/test_workflow_budowa.py::test_recenzent_budowy_ma_dokladnie_ustalone_zaleznosci[contract-check]"
+
+# Recenzent kontraktu nie konsumuje dowodu typecheck.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "consumes: [zmiana.diff, dowod-typecheck.json, dowod-contract.json]"
+zamien = "consumes: [zmiana.diff, dowod-contract.json]"
+test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_jako_wejscie[contract-check]"
+
+# Recenzent kontraktu nie konsumuje dowodu contract.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "consumes: [zmiana.diff, dowod-typecheck.json, dowod-contract.json]"
+zamien = "consumes: [zmiana.diff, dowod-typecheck.json]"
+test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_jako_wejscie[contract-check]"
+
+# Recenzent kontraktu bez kontraktu werdyktu.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "verdict: {pass: [zgodny], fail: [rozjazd, brak dowodu]}\n"
+zamien = ""
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[contract-check]"
+
+# Recenzent kontraktu: wartosc przejscia `zgodny` zmieniona.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "verdict: {pass: [zgodny], fail: [rozjazd, brak dowodu]}"
+zamien = "verdict: {pass: [zgodni], fail: [rozjazd, brak dowodu]}"
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[contract-check]"
+
+# Recenzent kontraktu: wartosc porazki `rozjazd` zmieniona.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "verdict: {pass: [zgodny], fail: [rozjazd, brak dowodu]}"
+zamien = "verdict: {pass: [zgodny], fail: [rozjazdy, brak dowodu]}"
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[contract-check]"
+
+# Recenzent kontraktu: wartosc porazki `brak dowodu` usunieta.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "verdict: {pass: [zgodny], fail: [rozjazd, brak dowodu]}"
+zamien = "verdict: {pass: [zgodny], fail: [rozjazd]}"
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[contract-check]"
+
+# Brief kontraktu wskazuje dowod contract pod inna nazwa pliku.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "1. `dowod-contract.json` —"
+zamien = "1. `dowod-kontrakt.json` —"
+test = "tests/test_skille_przegladu.py::test_recenzent_kontraktu_czyta_dowody_silnika_z_wejsc_a_nie_uruchamia_komend"
+
+# Brief kontraktu wskazuje dowod typecheck pod inna nazwa pliku.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "2. `dowod-typecheck.json` —"
+zamien = "2. `dowod-typy.json` —"
+test = "tests/test_skille_przegladu.py::test_recenzent_kontraktu_czyta_dowody_silnika_z_wejsc_a_nie_uruchamia_komend"
+
+# Brief kontraktu uznaje za dowod plik z innym zrodlem niz engine.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "Dowodem jest tylko plik z `source: engine`."
+zamien = "Dowodem jest tylko plik z `source: agent`."
+test = "tests/test_skille_przegladu.py::test_recenzent_kontraktu_czyta_dowody_silnika_z_wejsc_a_nie_uruchamia_komend"
+
+# Brief kontraktu: linia werdyktu `zgodny` z literowka.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "WERDYKT: zgodny\n"
+zamien = "WERDYKT: zgodni\n"
+test = "tests/test_skille_przegladu.py::test_brief_recenzenta_kontraktu_podaje_trzy_linie_werdyktu_z_kontraktu"
+
+# Brief kontraktu: linia werdyktu `rozjazd` z literowka.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "WERDYKT: rozjazd\n"
+zamien = "WERDYKT: rozjazt\n"
+test = "tests/test_skille_przegladu.py::test_brief_recenzenta_kontraktu_podaje_trzy_linie_werdyktu_z_kontraktu"
+
+# Brief kontraktu: linia werdyktu `brak dowodu` z literowka.
+[[mutant]]
+plik = ".cockpit/skills/contract-check/SKILL.md"
+szukaj = "WERDYKT: brak dowodu\n"
+zamien = "WERDYKT: brak dowod\n"
+test = "tests/test_skille_przegladu.py::test_brief_recenzenta_kontraktu_podaje_trzy_linie_werdyktu_z_kontraktu"
+
+# Recenzent zastrzezen bez kontraktu werdyktu.
+[[mutant]]
+plik = ".cockpit/skills/review-unknown/SKILL.md"
+szukaj = "verdict: {pass: [brak zastrzeżeń], fail: [zastrzeżenia]}\n"
+zamien = ""
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[review-unknown]"
+
+# Recenzent zastrzezen: wartosc przejscia zmieniona.
+[[mutant]]
+plik = ".cockpit/skills/review-unknown/SKILL.md"
+szukaj = "verdict: {pass: [brak zastrzeżeń], fail: [zastrzeżenia]}"
+zamien = "verdict: {pass: [brak zastrzezen], fail: [zastrzeżenia]}"
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[review-unknown]"
+
+# Recenzent zastrzezen: wartosc porazki zmieniona.
+[[mutant]]
+plik = ".cockpit/skills/review-unknown/SKILL.md"
+szukaj = "verdict: {pass: [brak zastrzeżeń], fail: [zastrzeżenia]}"
+zamien = "verdict: {pass: [brak zastrzeżeń], fail: [zastrzezenia]}"
+test = "tests/test_skille_przegladu.py::test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki[review-unknown]"
+
+# Brief zastrzezen: linia werdyktu przejscia z literowka.
+[[mutant]]
+plik = ".cockpit/skills/review-unknown/SKILL.md"
+szukaj = "WERDYKT: brak zastrzeżeń\n"
+zamien = "WERDYKT: brak zastrzezen\n"
+test = "tests/test_skille_przegladu.py::test_brief_review_unknown_podaje_linie_werdyktu_bez_licznika"
+
+# Brief zastrzezen: linia werdyktu porazki z licznikiem N (dawny format).
+[[mutant]]
+plik = ".cockpit/skills/review-unknown/SKILL.md"
+szukaj = "WERDYKT: zastrzeżenia\n"
+zamien = "WERDYKT: zastrzeżenia: N\n"
+test = "tests/test_skille_przegladu.py::test_brief_review_unknown_podaje_linie_werdyktu_bez_licznika"
+
+# Proba dymna bez kontraktu werdyktu.
+[[mutant]]
+plik = ".cockpit/skills/smoke/SKILL.md"
+szukaj = "verdict: {pass: [TAK], fail: [NIE]}\n"
+zamien = ""
+test = "tests/test_skille_budowy.py::test_proba_dymna_deklaruje_werdykt_tak_przechodzi_nie_oblewa"
+
+# Proba dymna: wartosc przejscia zmieniona.
+[[mutant]]
+plik = ".cockpit/skills/smoke/SKILL.md"
+szukaj = "verdict: {pass: [TAK], fail: [NIE]}"
+zamien = "verdict: {pass: [TAKI], fail: [NIE]}"
+test = "tests/test_skille_budowy.py::test_proba_dymna_deklaruje_werdykt_tak_przechodzi_nie_oblewa"
+
+# Proba dymna: wartosc porazki zmieniona.
+[[mutant]]
+plik = ".cockpit/skills/smoke/SKILL.md"
+szukaj = "verdict: {pass: [TAK], fail: [NIE]}"
+zamien = "verdict: {pass: [TAK], fail: [NIEE]}"
+test = "tests/test_skille_budowy.py::test_proba_dymna_deklaruje_werdykt_tak_przechodzi_nie_oblewa"
+
+# Brief proby dymnej: linia TAK bez prefiksu WERDYKT.
+[[mutant]]
+plik = ".cockpit/skills/smoke/SKILL.md"
+szukaj = "`WERDYKT: TAK` albo"
+zamien = "`TAK` albo"
+test = "tests/test_skille_budowy.py::test_brief_proby_dymnej_wymaga_linii_werdyktu_na_poczatku_artefaktu"
+
+# Brief proby dymnej: linia NIE bez prefiksu WERDYKT.
+[[mutant]]
+plik = ".cockpit/skills/smoke/SKILL.md"
+szukaj = "albo `WERDYKT: NIE`,"
+zamien = "albo `NIE`,"
+test = "tests/test_skille_budowy.py::test_brief_proby_dymnej_wymaga_linii_werdyktu_na_poczatku_artefaktu"
+
+[[rownowazny]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+linia_tekst = "if TYPE_CHECKING:"
+uzasadnienie = "Blok chroni wylacznie import typu Krok uzywany w adnotacji; modul ma `from __future__ import annotations`, wiec adnotacja nie jest wartosciowana. Zamiana warunku na zawsze prawdziwy robi tylko dodatkowy import cockpit.services.workflow w czasie ladowania (workflow.py nie importuje kroki_systemowe, wiec bez cyklu); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = "src/cockpit/services/kroki_systemowe.py"
+linia_tekst = "SYSTEM_CHECK: OpisKrokuSystemowego(produces=()),"
+uzasadnienie = "Wariant z innym `produces` jest nieodroznialny: opis kroku check liczy `opis_kroku` (produces z nazwy capability), a wpis w KROKI_SYSTEMOWE czyta tylko walidator przez czlonkostwo (`krok.system not in KROKI_SYSTEMOWE`), nikt nie czyta jego `produces` (grep opis_kroku_systemowego: tylko opis_kroku dla systemow innych niz check). Usuniecie wpisu ma wiersz [[mutant]] wyzej."
+
+[[rownowazny]]
+plik = "src/runner/silnik.py"
+linia_tekst = "WykonawcaSystemowy = Callable[[Krok, Przygotowany], Awaitable[WynikKroku]]"
+uzasadnienie = "Alias uzywany tylko w adnotacji WYKONAWCY_SYSTEMOWI; modul ma `from __future__ import annotations`, wiec adnotacja nie jest wartosciowana i zadna sciezka wykonania nie czyta aliasu (grep WykonawcaSystemowy: silnik.py, definicja i adnotacja)."
+
+[[rownowazny]]
+plik = "src/runner/dowody.py"
+linia_tekst = "argv = []  # pragma: no mutate"
+uzasadnienie = "Wariant `argv = None` jest rownowazny: nastepna linia `if not argv:` traktuje None i [] tak samo (wynik ten sam: porazka `komenda nieczytelna`); inny kod wejscia nie odroznia wersji."

@@ -22,19 +22,21 @@ import os
 import signal
 import sys
 import tempfile
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from cockpit.services.invariants import profil_roli
 from cockpit.services.walidacja import (
+    KontraktWerdyktu,
     Naruszenie,
     Niezmiennik,
     dowod_z_pliku,
     migawka,
     sprawdz_katalog_runu,
     sprawdz_tylko_odczyt,
+    sprawdz_werdykt,
 )
 from cockpit.services.kroki_systemowe import PLIK_LINII
 from runner.agent import SpecKroku
@@ -107,6 +109,10 @@ class WynikKroku:
     pomiar: PomiarKroku = PomiarKroku()
     # kotwice `plik:linia` z notatki zmiany (HAR-176); puste dla kazdego innego kroku
     kotwice: tuple[str, ...] = ()
+    # werdykt z linii artefaktu wedlug kontraktu skilla (HAR-177); None bez kontraktu
+    werdykt: str | None = None
+    # metadane dowodu silnika kroku `check` (HAR-177), bez wyjscia komendy i argv
+    dowod: Mapping[str, object] | None = None
 
 
 @dataclass
@@ -440,11 +446,15 @@ async def wykonaj_krok(
     katalog_runu: Path | None = None,
     prompt: str | None = None,
     zmienione_linie: Path | None = None,
+    werdykt: KontraktWerdyktu | None = None,
 ) -> WynikKroku:
     """Uruchamia polecenie kroku i ocenia wynik: kod wyjscia, artefakty, tylko-odczyt.
 
     Gdy `wyjscia` zawieraja `notatka-zmiany.md`, kotwice jej ryzyk sprawdza `kotwice`
     wzgledem `zmienione_linie` (plik `zmienione-linie.json` kroku diff, HAR-176).
+
+    Z kontraktem `werdykt` linia werdyktu pierwszego artefaktu rozstrzyga o wyniku: wartosc
+    z `fail` to porazka, brak linii albo wartosc spoza list to `evidence_required`.
 
     Rola bez zapisu z artefaktem w `wyjscia` oddaje go jako wynik agenta (stdout);
     runner zapisuje go w `katalog_runu/<step_id>/`, poza repozytorium (HAR-160).
@@ -595,12 +605,24 @@ async def wykonaj_krok(
         if naruszenie is not None:
             return _porazka(str(naruszenie), kod, pomiar)
 
+    wartosc_werdyktu = None
+    if werdykt is not None:
+        ocena = sprawdz_werdykt(katalog_dowodu / spec.wyjscia[0], werdykt)
+        if isinstance(ocena, Naruszenie):
+            return _porazka(str(ocena), kod, pomiar)
+        if not ocena.zdany:
+            return WynikKroku(
+                "nieudany", f"werdykt: {ocena.wartosc}", kod, pomiar=pomiar,
+                werdykt=ocena.wartosc)
+        wartosc_werdyktu = ocena.wartosc
+
     if PLIK_NOTATKI in spec.wyjscia:
         powod, kotwice = await asyncio.to_thread(
             _ocen_notatke, katalog_dowodu / PLIK_NOTATKI, zmienione_linie
         )
         if powod is not None:
             return _porazka(powod, kod, pomiar)
-        return WynikKroku("zakonczony", None, kod, pomiar=pomiar, kotwice=kotwice)
+        return WynikKroku(
+            "zakonczony", None, kod, pomiar=pomiar, kotwice=kotwice, werdykt=wartosc_werdyktu)
 
-    return WynikKroku("zakonczony", None, kod, pomiar=pomiar)
+    return WynikKroku("zakonczony", None, kod, pomiar=pomiar, werdykt=wartosc_werdyktu)

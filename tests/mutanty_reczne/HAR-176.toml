@@ -124,8 +124,8 @@ test = "tests/test_graf_krokow.py::test_nieudany_krok_diff_odbiera_recenzentowi_
 # Silnik traci wykonawce kroku `diff`: krok konczy sie porazka zamiast zapisac artefakty.
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '{"diff": wykonaj_diff}'
-zamien = '{}'
+szukaj = "    \"diff\": _wykonaj_diff,\n"
+zamien = ""
 test = "tests/test_krok_diff.py::test_run_z_krokiem_diff_zapisuje_oba_artefakty_w_katalogu_runu_pod_id_kroku"
 
 # Wynik kroku ma domyslnie niepuste kotwice.
@@ -166,8 +166,8 @@ test = "tests/test_workflow_budowa.py::test_workflow_budowy_ma_krok_diff_systemo
 # budowa.yaml: recenzent contract-check czeka na scenariusz e2e zamiast na krok diff.
 [[mutant]]
 plik = ".cockpit/workflows/budowa.yaml"
-szukaj = 'contract-check: {skill: contract-check, needs: [diff]}'
-zamien = 'contract-check: {skill: contract-check, needs: [e2e-scenario]}'
+szukaj = 'contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}'
+zamien = 'contract-check: {skill: contract-check, needs: [e2e-scenario, typecheck, contract]}'
 test = "tests/test_workflow_budowa.py::test_recenzent_budowy_czeka_na_krok_diff_a_nie_na_scenariusz_e2e[contract-check]"
 
 # budowa.yaml: recenzent review-unknown czeka na scenariusz e2e zamiast na krok diff.
@@ -201,8 +201,8 @@ test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_j
 # contract-check nie konsumuje diffu.
 [[mutant]]
 plik = ".cockpit/skills/contract-check/SKILL.md"
-szukaj = 'consumes: [zmiana.diff]'
-zamien = 'consumes: []'
+szukaj = 'consumes: [zmiana.diff, dowod-typecheck.json, dowod-contract.json]'
+zamien = 'consumes: [dowod-typecheck.json, dowod-contract.json]'
 test = "tests/test_skille_przegladu.py::test_skill_przegladu_dostaje_diff_runu_jako_wejscie[contract-check]"
 
 # Brief: `Jak to sprawdzic` przestaje byc obowiazkowa.
@@ -285,8 +285,8 @@ test = "tests/test_workflow_walidacja.py::test_nieznany_krok_systemowy_ma_blad_z
 # silnik.py:73: klucz wykonawcy kroku inny niz nazwa kroku systemowego.
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '{"diff": wykonaj_diff}'
-zamien = '{"dif": wykonaj_diff}'
+szukaj = '"diff": _wykonaj_diff,'
+zamien = '"dif": _wykonaj_diff,'
 test = "tests/test_krok_diff.py::test_run_z_krokiem_diff_zapisuje_oba_artefakty_w_katalogu_runu_pod_id_kroku"
 
 # krok_diff.py: bez warunku `biezacy is not None` hunk przed naglowkiem pliku rzuca TypeError.
@@ -381,12 +381,8 @@ test = "tests/test_krok_diff.py::test_opis_kroku_systemowego_wymaga_podania_arte
 # przestaje byc tylko do odczytu i da sie do niego dopisac krok w czasie dzialania.
 [[mutant]]
 plik = "src/cockpit/services/kroki_systemowe.py"
-szukaj = """MappingProxyType({
-    "diff": OpisKrokuSystemowego(produces=(PLIK_DIFFU, PLIK_LINII)),
-})"""
-zamien = """dict({
-    "diff": OpisKrokuSystemowego(produces=(PLIK_DIFFU, PLIK_LINII)),
-})"""
+szukaj = 'MappingProxyType({'
+zamien = 'dict({'
 test = "tests/test_krok_diff.py::test_rejestr_krokow_systemowych_jest_tylko_do_odczytu"
 
 # graf.py:62-67: pola `consumes` i `produces` `_Kontrakt` zamienione miejscami; konstruktor

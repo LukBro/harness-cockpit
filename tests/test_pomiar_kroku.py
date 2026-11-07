@@ -33,7 +33,7 @@ from cockpit.db import session as db_session
 from cockpit.db.models import Event, Run, StepRun
 from cockpit.services.invariants import Rola, Tier
 from cockpit.services.skills import rozstrzygnij_rejestr
-from cockpit.services.walidacja import Naruszenie, Niezmiennik
+from cockpit.services.walidacja import KontraktWerdyktu, Naruszenie, Niezmiennik
 from cockpit.services.workflow import (
     BLAD_POLA,
     ma_bledy,
@@ -763,6 +763,45 @@ async def test_porazka_kotwic_notatki_zmiany_niesie_pomiar_kroku_agenta(
         "nieudany",
         "niezmiennik evidence_required: kotwica src/a.py:90: linia poza zmienionymi liniami "
         "(tolerancja 3)",
+        0, pomiar=POMIAR_PELNY)
+
+
+KONTRAKT_WERDYKTU = KontraktWerdyktu(pass_=("zgodny",), fail=("rozjazd",))
+
+
+async def uruchom_z_werdyktem(tekst_wyniku: str, katalog: Path, katalog_runu: Path):
+    async def emit(zdarzenie: dict) -> None:
+        pass
+
+    return await asyncio.wait_for(wykonaj_krok(
+        spec(Rola.reviewer, ["rozjazdy.md"]), atrapa(result(result=tekst_wyniku)),
+        katalog, emit, katalog_runu=katalog_runu, prompt="prompt kroku",
+        werdykt=KONTRAKT_WERDYKTU), LIMIT_S)
+
+
+async def test_zdany_werdykt_z_wyniku_agenta_konczy_krok_sukcesem_z_pomiarem(
+    katalog, katalog_runu
+):
+    wynik = await uruchom_z_werdyktem("WERDYKT: zgodny\n\nBez rozjazdów.\n", katalog, katalog_runu)
+
+    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY, werdykt="zgodny")
+
+
+async def test_werdykt_porazki_z_wyniku_agenta_niesie_pomiar_kroku(katalog, katalog_runu):
+    wynik = await uruchom_z_werdyktem("WERDYKT: rozjazd\n\nPlik A.\n", katalog, katalog_runu)
+
+    assert wynik == WynikKroku(
+        "nieudany", "werdykt: rozjazd", 0, pomiar=POMIAR_PELNY, werdykt="rozjazd")
+
+
+async def test_brak_linii_werdyktu_w_wyniku_agenta_to_brak_dowodu_z_pomiarem_kroku(
+    katalog, katalog_runu
+):
+    wynik = await uruchom_z_werdyktem("Wszystko jest w porządku.\n", katalog, katalog_runu)
+
+    assert wynik == WynikKroku(
+        "nieudany",
+        "niezmiennik evidence_required: linia 1 w rozjazdy.md nie zaczyna się od WERDYKT:",
         0, pomiar=POMIAR_PELNY)
 
 

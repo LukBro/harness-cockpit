@@ -6,13 +6,20 @@
 # `zmiana.diff` i `zmienione-linie.json` względem commita bazowego. Recenzenci czekają
 # na niego i dostają diff przez `consumes`; pusty diff to brak dowodu (krok nieudany,
 # recenzenci pominięci z `brak_wejscia`).
+# Kroki `typecheck` i `contract` (HAR-177) to kroki systemowe `check`: silnik sam uruchamia
+# komendę capability z `.cockpit/project.yaml` i zapisuje dowód `dowod-<capability>.json`
+# (`source: engine`, kod wyjścia, ogon i skrót wyjścia). `contract-check` czeka na oba i czyta
+# ich dowody przez `consumes`; czerwony check pomija go jako `zaleznosc_nieudana`, brak
+# capability w projekcie jako `brak_wejscia`.
 name: budowa
 steps:
   plan: {skill: plan}
   tdd-task: {skill: tdd-task, needs: [plan], approval: true}
   e2e-scenario: {skill: e2e-scenario, needs: [tdd-task]}
   diff: {system: diff, needs: [e2e-scenario]}
-  contract-check: {skill: contract-check, needs: [diff]}
+  typecheck: {system: check, capability: typecheck, needs: [diff]}
+  contract: {system: check, capability: contract, needs: [diff]}
+  contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}
   review-unknown: {skill: review-unknown, needs: [diff]}
   explain-change: {skill: explain-change, needs: [diff]}
   smoke: {skill: smoke, needs: [contract-check, review-unknown, explain-change]}
