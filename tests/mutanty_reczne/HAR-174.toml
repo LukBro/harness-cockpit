@@ -1175,3 +1175,87 @@ test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zosta
 # wiec uruchomienie testow konczy sie kodem 4, a nie oblanym testem.
 # HAR-174 (TM): bez wiersza `wynik ... = None` -> `= {}` w _StanStrumienia. Mutant nie daje sie
 # zaimportowac (mutowalna wartosc domyslna pola dataclass), kod 4.
+
+# HAR-174 (TM, po merge HAR-177): wiersze dla listy kodu 3 `tools/mutanty_zmian.py` (--pokrycie-kod3).
+# Zamiast zdjecia `frozen` (mutant nieimportowalny, wyzej) zabijalny wariant: eq=False sprawia, ze
+# dwa rowne pomiary sa rozne, a testy porownuja WynikKroku z oczekiwanym pomiarem.
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = """
+@dataclass(frozen=True)
+class PomiarKroku:"""
+zamien = """
+@dataclass(frozen=True, eq=False)
+class PomiarKroku:"""
+test = 'tests/test_pomiar_kroku.py::test_krok_z_wynikiem_agenta_zapisuje_koszt_tokeny_tury_i_sesje'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = """
+@dataclass
+class _StanStrumienia:"""
+zamien = """
+@dataclass(frozen=True)
+class _StanStrumienia:"""
+test = 'tests/test_pomiar_kroku.py::test_krok_z_wynikiem_agenta_zapisuje_koszt_tokeny_tury_i_sesje'
+
+# Wartosc domyslna niebedaca None (ale niemutowalna, wiec mutant sie importuje): brak zdarzenia
+# result nie jest juz rozpoznany jako brak dowodu.
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'wynik: dict[str, Any] | None = None'
+zamien = 'wynik: dict[str, Any] | None = ()'
+test = 'tests/test_pomiar_kroku.py::test_brak_zdarzenia_result_przy_kodzie_zero_jest_brakiem_dowodu_a_nie_sukcesem[pusty-stdout]'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = ') for k in wiersze_krokow],'
+zamien = ') for k in wiersze_krokow[:0]],'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = '"""Profil domyslny per backend; jedyny znany backend to `claude`."""'
+uzasadnienie = "Napis jako samodzielne wyrazenie po przypisaniu stalej (docstring atrybutu): interpreter go wylicza i odrzuca, nikt nie czyta go przez __doc__ (stala modulu nie ma wlasnego __doc__). Zadna zmiana tresci nie zmienia zachowania; zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = '"""Strumien zdarzen NDJSON (HAR-174). Zweryfikowane na Claude Code 2.1.319: `--output-format'
+uzasadnienie = "Pierwsza linia docstringu atrybutu FLAGI_STRUMIENIA: samodzielne wyrazenie napisowe, wyliczane i odrzucane, bez __doc__. Wartosc stalej ma osobne wiersze [[mutant]]; zadne wejscie nie odroznia wersji tekstu."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'stream-json` wymaga `--verbose` w trybie `-p`. Bez argumentu promptu `claude -p` czyta prompt'
+uzasadnienie = "Srodkowa linia tego samego docstringu atrybutu FLAGI_STRUMIENIA (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'ze stdin."""'
+uzasadnienie = "Ostatnia linia docstringu atrybutu FLAGI_STRUMIENIA (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = '"""`--max-budget-usd <amount>` jest w `claude --help` (2.1.319). `--max-turns <turns>` istnieje'
+uzasadnienie = "Pierwsza linia docstringu atrybutu FLAGA_TUR: samodzielne wyrazenie napisowe, wyliczane i odrzucane, bez __doc__. Wartosci FLAGA_BUDZETU i FLAGA_TUR maja osobne testy argv; zadne wejscie nie odroznia wersji tekstu."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'w 2.1.319, ale jest UKRYTA w `--help` (tekst w binarce: "Maximum number of agentic turns in'
+uzasadnienie = "Srodkowa linia docstringu atrybutu FLAGA_TUR (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'non-interactive mode"); po zmianie wersji CLI sprawdz, czy flaga nadal dziala."""'
+uzasadnienie = "Ostatnia linia docstringu atrybutu FLAGA_TUR (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+# Linia `})` zamykajaca PROFIL_DOMYSLNY (kod 3): drugi backend w profilu domyslnym sprawia, ze
+# nieznany backend `gpt` dostaje modele zamiast bledu profilu.
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = """
+    "claude": DOMYSLNE_MODELE,
+})"""
+zamien = """
+    "claude": DOMYSLNE_MODELE, "gpt": DOMYSLNE_MODELE,
+})"""
+test = 'tests/test_profil_backendu.py::test_nieznany_backend_to_blad_profilu_z_jego_nazwa'
