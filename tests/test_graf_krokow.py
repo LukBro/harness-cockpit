@@ -60,7 +60,8 @@ def swiat(tmp_path: Path, kroki: list[tuple]) -> tuple[Workflow, Rejestr]:
 
     Opcje skilla: consumes, produces, needs (capabilities). Skill każdego kroku
     nazywa się `s_<id>`. Kolejność kroków w YAML = kolejność w `workflow.kroki`.
-    Opcje `{"system": "diff"}` robią z kroku krok systemowy (HAR-176): bez skilla.
+    Opcje `{"system": "diff"}` robią z kroku krok systemowy (HAR-176): bez skilla; `{"system":
+    "check", "capability": "typecheck"}` to krok sprawdzający z komendą capability (HAR-177).
     """
     repo = tmp_path / "repo"
     dom = tmp_path / "dom"
@@ -73,7 +74,8 @@ def swiat(tmp_path: Path, kroki: list[tuple]) -> tuple[Workflow, Rejestr]:
         opcje = wpis[2] if len(wpis) > 2 else {}
         zaleznosci = f", needs: [{', '.join(needs)}]" if needs else ""
         if "system" in opcje:
-            linie.append(f"  {id}: {{system: {opcje['system']}{zaleznosci}}}")
+            capability = f", capability: {opcje['capability']}" if "capability" in opcje else ""
+            linie.append(f"  {id}: {{system: {opcje['system']}{capability}{zaleznosci}}}")
             continue
         napisz_skill(skille, f"s_{id}", **opcje)
         linie.append(f"  {id}: {{skill: s_{id}{zaleznosci}}}")
@@ -622,6 +624,162 @@ def test_nieudany_autor_pomija_krok_diff_jako_zaleznosc_nieudana_a_recenzent_tra
             "rec": "brak wejścia: zmiana.diff z kroku diff",
         },
         powody={"diff": ZALEZNOSC, "rec": BRAK_WEJSCIA},
+    )
+
+
+# --- krok systemowy check (HAR-177) ----------------------------------------------
+
+DOWOD_TYPY = "dowod-typecheck.json"
+DOWOD_KONTRAKT = "dowod-contract.json"
+
+CHECK_I_RECENZENT = [
+    ("diff", [], {"system": "diff"}),
+    ("typy", ["diff"], {"system": "check", "capability": "typecheck"}),
+    ("rec", ["typy"], {"consumes": [DOWOD_TYPY]}),
+]
+
+DWA_CHECKI_I_RECENZENT = [
+    ("diff", [], {"system": "diff"}),
+    ("typy", ["diff"], {"system": "check", "capability": "typecheck"}),
+    ("kontrakt", ["diff"], {"system": "check", "capability": "contract"}),
+    ("rec", ["diff", "typy", "kontrakt"], {"consumes": ["zmiana.diff", DOWOD_TYPY, DOWOD_KONTRAKT]}),
+]
+
+
+def test_krok_check_jest_planowany_po_swoich_zaleznosciach_gdy_projekt_ma_jego_capability(tmp_path):
+    assert plan(tmp_path, CHECK_I_RECENZENT, {"diff": ZAKONCZONY}, {"typecheck"}) == Plan(
+        do_startu=["typy"], do_pominiecia={}, powody={})
+
+
+def test_krok_check_bez_capability_w_projekcie_jest_pominiety_z_powodem_brak_capability(tmp_path):
+    wynik = plan(tmp_path, CHECK_I_RECENZENT, {"diff": ZAKONCZONY}, capabilities={"contract"})
+
+    assert wynik.do_pominiecia["typy"] == "brak capability typecheck"
+    assert wynik.powody["typy"] == BRAK_CAP
+
+
+def test_krok_check_wymaga_dokladnie_swojej_capability_a_nie_dowolnej(tmp_path):
+    wynik = plan(tmp_path, DWA_CHECKI_I_RECENZENT, {"diff": ZAKONCZONY}, capabilities={"typecheck"})
+
+    assert wynik.do_startu == ["typy"]
+    assert wynik.do_pominiecia["kontrakt"] == "brak capability contract"
+    assert wynik.powody["kontrakt"] == BRAK_CAP
+    assert "typy" not in wynik.do_pominiecia
+
+
+def test_nieudany_krok_check_pomija_konsumenta_dowodu_jako_zaleznosc_nieudana(tmp_path):
+    wynik = plan(
+        tmp_path, CHECK_I_RECENZENT, {"diff": ZAKONCZONY, "typy": NIEUDANY}, {"typecheck"})
+
+    assert wynik == Plan(
+        do_startu=[],
+        do_pominiecia={"rec": "zależność nieudana: typy"},
+        powody={"rec": ZALEZNOSC},
+    )
+
+
+def test_pominiety_krok_check_odbiera_konsumentowi_wejscie_dowod_jako_brak_wejscia(tmp_path):
+    wynik = plan(
+        tmp_path, CHECK_I_RECENZENT, {"diff": ZAKONCZONY, "typy": POMINIETY}, {"typecheck"})
+
+    assert wynik == Plan(
+        do_startu=[],
+        do_pominiecia={"rec": "brak wejścia: dowod-typecheck.json z kroku typy"},
+        powody={"rec": BRAK_WEJSCIA},
+    )
+
+
+def test_krok_check_pominiety_z_braku_capability_odbiera_konsumentowi_wejscie_w_jednym_planie(tmp_path):
+    wynik = plan(tmp_path, CHECK_I_RECENZENT, {"diff": ZAKONCZONY}, capabilities=set())
+
+    assert wynik == Plan(
+        do_startu=[],
+        do_pominiecia={
+            "typy": "brak capability typecheck",
+            "rec": "brak wejścia: dowod-typecheck.json z kroku typy",
+        },
+        powody={"typy": BRAK_CAP, "rec": BRAK_WEJSCIA},
+    )
+
+
+def test_nieudany_krok_diff_nadal_odbiera_konsumentowi_diffu_wejscie_gdy_check_istnieje(tmp_path):
+    kroki = [
+        ("diff", [], {"system": "diff"}),
+        ("typy", ["diff"], {"system": "check", "capability": "typecheck"}),
+        ("rec", ["diff"], {"consumes": ["zmiana.diff"]}),
+    ]
+
+    wynik = plan(tmp_path, kroki, {"diff": NIEUDANY}, {"typecheck"})
+
+    assert wynik.do_pominiecia["rec"] == "brak wejścia: zmiana.diff z kroku diff"
+    assert wynik.powody["rec"] == BRAK_WEJSCIA
+    assert wynik.do_pominiecia["typy"] == "zależność nieudana: diff"
+    assert wynik.powody["typy"] == ZALEZNOSC
+
+
+def test_nieudany_krok_check_nie_odbiera_wejscia_zmiana_diff_ktorego_nie_produkuje(tmp_path):
+    kroki = [
+        ("diff", [], {"system": "diff"}),
+        ("typy", ["diff"], {"system": "check", "capability": "typecheck"}),
+        ("rec", ["diff", "typy"], {"consumes": ["zmiana.diff", DOWOD_TYPY]}),
+    ]
+
+    wynik = plan(tmp_path, kroki, {"diff": ZAKONCZONY, "typy": NIEUDANY}, {"typecheck"})
+
+    # diff zakonczony, dowod nieudanego checka nie jest utracony: zostaje sama nieudana zaleznosc
+    assert wynik.do_pominiecia == {"rec": "zależność nieudana: typy"}
+    assert wynik.powody == {"rec": ZALEZNOSC}
+
+
+def test_konsument_dwoch_dowodow_z_jednym_czerwonym_a_drugim_pominietym_traci_wejscie_pominietego(
+    tmp_path,
+):
+    stany = {"diff": ZAKONCZONY, "typy": NIEUDANY, "kontrakt": POMINIETY}
+
+    wynik = plan(tmp_path, DWA_CHECKI_I_RECENZENT, stany, {"typecheck", "contract"})
+
+    assert wynik.do_pominiecia == {"rec": "brak wejścia: dowod-contract.json z kroku kontrakt"}
+    assert wynik.powody == {"rec": BRAK_WEJSCIA}
+
+
+def test_konsument_dwoch_dowodow_z_jednym_czerwonym_wskazuje_ten_czerwony_krok(tmp_path):
+    stany = {"diff": ZAKONCZONY, "typy": ZAKONCZONY, "kontrakt": NIEUDANY}
+
+    wynik = plan(tmp_path, DWA_CHECKI_I_RECENZENT, stany, {"typecheck", "contract"})
+
+    assert wynik.do_pominiecia == {"rec": "zależność nieudana: kontrakt"}
+    assert wynik.powody == {"rec": ZALEZNOSC}
+
+
+def test_konsument_startuje_gdy_oba_checki_sa_zakonczone(tmp_path):
+    stany = {"diff": ZAKONCZONY, "typy": ZAKONCZONY, "kontrakt": ZAKONCZONY}
+
+    wynik = plan(tmp_path, DWA_CHECKI_I_RECENZENT, stany, {"typecheck", "contract"})
+
+    assert wynik == Plan(do_startu=["rec"], do_pominiecia={}, powody={})
+
+
+def test_konsument_czeka_gdy_jeden_z_dwoch_checkow_jest_w_toku(tmp_path):
+    stany = {"diff": ZAKONCZONY, "typy": ZAKONCZONY, "kontrakt": W_TOKU}
+
+    assert plan(tmp_path, DWA_CHECKI_I_RECENZENT, stany, {"typecheck", "contract"}) == PUSTY
+
+
+def test_nazwa_artefaktu_dowodu_zalezy_od_capability_a_nie_od_id_kroku(tmp_path):
+    # krok `sprawdz` z capability contract produkuje dowod-contract.json, nie dowod-sprawdz.json
+    kroki = [
+        ("sprawdz", [], {"system": "check", "capability": "contract"}),
+        ("rec", ["sprawdz"], {"consumes": [DOWOD_KONTRAKT]}),
+        ("inny", ["sprawdz"], {"consumes": ["dowod-sprawdz.json"]}),
+    ]
+
+    wynik = plan(tmp_path, kroki, {"sprawdz": POMINIETY}, {"contract"})
+
+    # `inny` czyta artefakt, ktorego nikt nie produkuje: pominiety krok nie odbiera mu wejscia
+    assert wynik == Plan(
+        do_startu=["inny"],
+        do_pominiecia={"rec": "brak wejścia: dowod-contract.json z kroku sprawdz"},
+        powody={"rec": BRAK_WEJSCIA},
     )
 
 

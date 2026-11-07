@@ -5,6 +5,7 @@ role: gatherer
 produces:
   - smoke.md
 needs: [smoke]
+verdict: {pass: [TAK], fail: [NIE]}
 ---
 # Próba dymna
 
@@ -18,7 +19,7 @@ Jedno uruchomienie, które sprawdza, że całość wstaje. Wynik to `TAK` albo `
 
 ## Wynik: `smoke.md`
 
-Pierwsza linia to `TAK` albo `NIE`. Pod nią dowód: komenda, kod wyjścia, końcówka wyjścia.
+Pierwsza linia to `WERDYKT: TAK` albo `WERDYKT: NIE`, dokładnie w tej postaci. Pod nią dowód: komenda, kod wyjścia, końcówka wyjścia.
 
 `TAK` tylko gdy kod wyjścia to 0 i w wyjściu jest linia `WYNIK: szkielet dziala na wylot`. Pusty wynik, brak linii `WYNIK`, nieuruchomione capability albo `BLAD` to `NIE`, nigdy `TAK`.
 

@@ -42,7 +42,7 @@ OCZEKIWANE_CAPABILITIES = {
 OCZEKIWANE_NEEDS = {
     "smoke": ["smoke"],
     "e2e-scenario": ["test_e2e"],
-    "contract-check": ["contract", "typecheck"],
+    "contract-check": [],  # HAR-177: dowody komend daja kroki check silnika (R8)
     "tdd-task": ["test_narrow"],
     "plan": [],
     "review-unknown": [],

@@ -11,6 +11,7 @@ import pytest
 
 from cockpit.services.invariants import Rola, profil_roli
 from cockpit.services.skills import Rejestr, Skill, rozstrzygnij_rejestr
+from cockpit.services.walidacja import KontraktWerdyktu, Naruszenie, Niezmiennik, Werdykt, sprawdz_werdykt
 
 # parents[1], nie `git rev-parse`: pod mutmut testy czytają kopię w `mutants/`.
 KORZEN_REPO = Path(__file__).resolve().parents[1]
@@ -69,7 +70,8 @@ def test_skill_przegladu_oddaje_wynik_jako_artefakt_runu(tmp_path, id):
 
 # HAR-176: recenzenci dostaja dowod z kroku diff; stala lista niezalezna od kodu.
 OCZEKIWANE_WEJSCIA = {
-    "contract-check": ["zmiana.diff"],
+    # HAR-177: dowody komend uruchamia silnik w krokach check, recenzent dostaje je jako wejscia
+    "contract-check": ["zmiana.diff", "dowod-typecheck.json", "dowod-contract.json"],
     "explain-change": ["zmiana.diff", "zmienione-linie.json"],
     "review-unknown": ["zmiana.diff"],
 }
@@ -81,19 +83,9 @@ def test_skill_przegladu_dostaje_diff_runu_jako_wejscie(tmp_path, id):
     assert skill.consumes == OCZEKIWANE_WEJSCIA[id]
 
 
-@pytest.mark.parametrize("id", ["explain-change", "review-unknown"])
-def test_skill_przegladu_bez_komend_nie_deklaruje_capability(tmp_path, id):
+@pytest.mark.parametrize("id", IDENTYFIKATORY)
+def test_skill_przegladu_nie_deklaruje_capability_bo_komendy_uruchamia_silnik(tmp_path, id):
     assert skill_przegladu(tmp_path, id).needs == []
-
-
-def test_recenzent_kontraktu_deklaruje_capability_kontraktu_i_typow(tmp_path):
-    assert skill_przegladu(tmp_path, "contract-check").needs == ["contract", "typecheck"]
-
-
-def test_recenzent_kontraktu_wskazuje_capability_kontraktu_i_typow_jako_dowod(tmp_path):
-    brief = skill_przegladu(tmp_path, "contract-check").brief
-    assert "capability `contract`" in brief
-    assert "capability `typecheck`" in brief
 
 
 def brief_znormalizowany(tmp_path: Path, id: str) -> str:
@@ -101,20 +93,20 @@ def brief_znormalizowany(tmp_path: Path, id: str) -> str:
     return " ".join(skill_przegladu(tmp_path, id).brief.split())
 
 
-def test_recenzent_kontraktu_nie_stwierdza_zgodnosci_gdy_brakuje_wyniku_komendy(tmp_path):
+def test_recenzent_kontraktu_czyta_dowody_silnika_z_wejsc_a_nie_uruchamia_komend(tmp_path):
     brief = brief_znormalizowany(tmp_path, "contract-check")
-    assert (
-        "Jeśli wyniku którejkolwiek komendy brakuje (pusty wynik, brak pliku), "
-        "to jest `brak dowodu`: napisz to wprost i NIGDY nie stwierdzaj zgodności"
-    ) in brief
+    assert "dowod-typecheck.json" in brief
+    assert "dowod-contract.json" in brief
+    assert "source: engine" in brief
+    assert "exit_code" in brief
+    assert "brak dowodu" in brief
 
 
-def test_recenzent_kontraktu_pisze_zgodny_tylko_gdy_oba_wyniki_sa_zielone(tmp_path):
+def test_recenzent_kontraktu_nie_odsyla_do_dawnego_uruchamiania_komend_przez_poprzedni_krok(tmp_path):
     brief = brief_znormalizowany(tmp_path, "contract-check")
-    assert (
-        "`zgodny` wolno ci napisać tylko, gdy oba wyniki komend są w wejściu "
-        "i oba są zielone"
-    ) in brief
+    assert "capability `contract`" not in brief
+    assert "capability `typecheck`" not in brief
+    assert "Komendy uruchamia wcześniejszy krok" not in brief
 
 
 def test_wyjasnienie_zmiany_ma_notatke_w_ksztalcie_co_zmieniono_jakie_ryzyko_jak_to_sprawdzic(
@@ -167,3 +159,70 @@ def test_wyjasnienie_zmiany_podaje_zly_przyklad_oceny_stylu_bez_warunku_i_skutku
     brief = brief_znormalizowany(tmp_path, "explain-change")
     assert "Zły: „Funkcja jest długa i trudna do czytania.”" in brief
     assert "Zły nie ma żadnego z trzech." in brief
+
+
+# --- werdykt jako kontrakt skilla (HAR-177) -------------------------------------------------
+
+# stala lista niezalezna od frontmatteru: (pass, fail) kazdego recenzenta z werdyktem
+OCZEKIWANE_WERDYKTY = {
+    "contract-check": (("zgodny",), ("rozjazd", "brak dowodu")),
+    "review-unknown": (("brak zastrzeżeń",), ("zastrzeżenia",)),
+}
+
+
+@pytest.mark.parametrize("id", sorted(OCZEKIWANE_WERDYKTY))
+def test_recenzent_deklaruje_werdykt_z_ustalonymi_wartosciami_przejscia_i_porazki(tmp_path, id):
+    przechodzi, oblewa = OCZEKIWANE_WERDYKTY[id]
+
+    assert skill_przegladu(tmp_path, id).verdict == KontraktWerdyktu(
+        pass_=przechodzi, fail=oblewa)
+
+
+def test_wyjasnienie_zmiany_nie_deklaruje_werdyktu_bo_jego_wynik_to_notatka(tmp_path):
+    assert skill_przegladu(tmp_path, "explain-change").verdict is None
+
+
+@pytest.mark.parametrize(
+    ("id", "linia", "oczekiwany"),
+    [
+        ("contract-check", "WERDYKT: zgodny", Werdykt("zgodny", True)),
+        ("contract-check", "WERDYKT: rozjazd", Werdykt("rozjazd", False)),
+        ("contract-check", "WERDYKT: brak dowodu", Werdykt("brak dowodu", False)),
+        ("review-unknown", "WERDYKT: brak zastrzeżeń", Werdykt("brak zastrzeżeń", True)),
+        ("review-unknown", "WERDYKT: zastrzeżenia", Werdykt("zastrzeżenia", False)),
+    ],
+)
+def test_linia_werdyktu_z_briefu_recenzenta_jest_przyjmowana_przez_jego_kontrakt(
+    tmp_path, id, linia, oczekiwany
+):
+    skill = skill_przegladu(tmp_path, id)
+    assert skill.verdict is not None
+    plik = tmp_path / "artefakt" / skill.produces[0]
+    plik.parent.mkdir()
+    plik.write_text(linia + "\n- pozycja listy\n", encoding="utf-8")
+
+    assert sprawdz_werdykt(plik, skill.verdict) == oczekiwany
+
+
+def test_werdykt_zastrzezen_z_licznikiem_nie_miesci_sie_w_kontrakcie_review_unknown(tmp_path):
+    skill = skill_przegladu(tmp_path, "review-unknown")
+    assert skill.verdict is not None
+    plik = tmp_path / "zastrzezenia.md"
+    plik.write_text("WERDYKT: zastrzeżenia: 3\n- plik:1\n", encoding="utf-8")
+
+    assert sprawdz_werdykt(plik, skill.verdict) == Naruszenie(
+        Niezmiennik.evidence_required, "werdykt spoza kontraktu w zastrzezenia.md")
+
+
+def test_brief_review_unknown_podaje_linie_werdyktu_bez_licznika(tmp_path):
+    brief = brief_znormalizowany(tmp_path, "review-unknown")
+    assert "WERDYKT: brak zastrzeżeń" in brief
+    assert "WERDYKT: zastrzeżenia" in brief
+    assert re.search(r"WERDYKT: zastrzeżenia:", brief) is None
+    assert "zastrzeżenia: N" not in brief
+
+
+def test_brief_recenzenta_kontraktu_podaje_trzy_linie_werdyktu_z_kontraktu(tmp_path):
+    brief = brief_znormalizowany(tmp_path, "contract-check")
+    for linia in ("WERDYKT: zgodny", "WERDYKT: rozjazd", "WERDYKT: brak dowodu"):
+        assert linia in brief
