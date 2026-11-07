@@ -1,0 +1,47 @@
+# Tabela recznych mutantow HAR-234: elementy stalej RODZAJE_CZLOWIEKA i warunek odrzucenia.
+#
+# Linia 274 `})` (zamkniecie wywolania frozenset): rownowazna - brak mutacji zmieniajacej
+# znaczenie; usuniecie albo zmiana znaku daje blad skladni, a zadne wejscie nie odroznia
+# wersji z zamknieciem od wersji bez niego, bo taka wersja sie nie importuje.
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "    \"decision\",\n"
+zamien = ""
+test = "tests/test_decyzja_na_bramce.py::test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone[decision]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "    \"integrated\",\n"
+zamien = ""
+test = "tests/test_decyzja_na_bramce.py::test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone[integrated]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "    \"committed\",\n"
+zamien = ""
+test = "tests/test_decyzja_na_bramce.py::test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone[committed]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "    \"acceptance\",\n"
+zamien = ""
+test = "tests/test_decyzja_na_bramce.py::test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone[acceptance]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "if kind in RODZAJE_CZLOWIEKA:"
+zamien = "if False:"
+test = "tests/test_decyzja_na_bramce.py::test_runner_nie_odblokuje_bramki_zdarzeniem_decyzji_a_czlowiek_nadal_moze"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "RODZAJE_CZLOWIEKA: frozenset[str] = frozenset({"
+zamien = "RODZAJE_CZLOWIEKA: frozenset[str] = set({"
+test = "tests/test_decyzja_na_bramce.py::test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_cztery"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "\"runner nie moze go zapisac\","
+zamien = "\"\","
+test = "tests/test_decyzja_na_bramce.py::test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone[decision]"
