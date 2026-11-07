@@ -22,6 +22,13 @@ program bledem (kod 2) i NIGDY nie jest cicho nadpisywany pierwszym
 pomiarem - plik baseline jest commitowany przez wlasciciela repo docelowego,
 a ciche nadpisanie skasowaloby jego historie bez sladu w diffie.
 
+Tryb --previous-summary (HAR-233): odniesieniem jest summary ostatniego zielonego
+przebiegu (artefakt CI), nie plik baseline w repozytorium - reczna aktualizacja
+pliku zostawiala zapadke na starym wyniku, wiec spadek wzgledem ostatniego
+pomiaru byl niewidoczny. Tu nie ma czego zapisywac: plik baseline nie powstaje
+ani przy "up", ani przy --commit. Brak poprzedniego summary albo score=null to
+blad wejscia (kod 2), nigdy cichy status "first" - brak dowodu to nie zielone.
+
 Status "no-mutants" (total == 0, np. merge request dotyczacy wylacznie
 dokumentacji) nie wykonuje porownania do baseline - scoru nie ma z czym
 porownac, wiec sam status jest sygnalem informacyjnym, nie ocena trendu.
@@ -35,6 +42,10 @@ charakter wylacznie orientacyjny.
 CLI:
     python3 mutation_baseline.py --summary <plik|-> --baseline <plik>
         [--scope full|diff] [--commit <sha>] [--tool <nazwa>] [--dry-run]
+    python3 mutation_baseline.py --summary <plik|-> --previous-summary <plik>
+        [--scope full|diff]
+
+    Dokladnie jedno z --baseline / --previous-summary jest wymagane.
 
     --summary - (myslnik) czyta podsumowanie ze stdin zamiast z pliku.
     --scope domyslnie "diff".
@@ -51,7 +62,8 @@ Kody wyjscia:
     2  - blad wejscia: niepoprawny JSON, brak pliku podsumowania, zly
          ksztalt podsumowania, uszkodzony plik baseline albo odmowa zapisu
          baseline bez --commit.
-    64 - blad uzycia CLI: brak wymaganego argumentu, nieznany argument,
+    64 - blad uzycia CLI: brak wymaganego argumentu (w tym brak obu
+         --baseline i --previous-summary), oba naraz, nieznany argument,
          albo niepoprawna wartosc --scope.
 
 Wejscie (plik podsumowania i plik baseline) jest granica systemu - zly
@@ -166,6 +178,26 @@ def load_baseline(path: str | Path) -> dict[str, Any] | None:
     if not isinstance(data["scope"], str):
         raise _InputError("baseline: klucz 'scope' musi byc stringiem")
     return data
+
+
+def load_previous_summary(path: str | Path, scope: str) -> dict[str, Any]:
+    """Wczytaj summary poprzedniego zielonego przebiegu jako baseline porownania.
+
+    Brak pliku, zly JSON albo zly ksztalt -> _InputError z etykieta "poprzedni
+    wynik"; score=null (przebieg niczego nie zmierzyl) tez, bo nie ma z czym
+    porownywac. Zakres bierzemy z biezacego przebiegu: artefakt nie niesie
+    zakresu, a porownanie pelnego przebiegu z pelnym nie moze wyjsc jako
+    "scope-mismatch".
+    """
+    previous = _validate_summary(_load_json_file(Path(path), "poprzedni wynik"), "poprzedni wynik")
+    if previous["score"] is None:
+        raise _InputError("poprzedni wynik: brak wyniku (score=null) - poprzedni przebieg nie zmierzyl mutantow")
+    return {
+        "score": previous["score"],
+        "survived": previous["survived"],
+        "total": previous["total"],
+        "scope": scope,
+    }
 
 
 def compare(summary: dict[str, Any], baseline: dict[str, Any] | None, scope: str) -> dict[str, Any]:
@@ -313,6 +345,8 @@ def format_report(result: dict[str, Any]) -> str:
     baseline_path = result.get("baseline_path")
 
     def _save_line(written: bool) -> str:
+        if result.get("previous_mode"):
+            return "baseline: nie zapisywany - porownanie z poprzednim przebiegiem"
         if written:
             return f"Nowy baseline zapisany: {baseline_path}" if baseline_path else "Nowy baseline zapisany."
         suffix = f" (bylby: {baseline_path})" if baseline_path else ""
@@ -357,7 +391,9 @@ def main(argv: list[str]) -> int:
         description=("Zapadka baseline dla mutation score: porownuje przebieg z zapisanym baseline i raportuje trend bez blokowania builda."),
     )
     parser.add_argument("--summary", required=True, help="plik JSON z mutation_report.py, albo '-' dla stdin")
-    parser.add_argument("--baseline", required=True, help="plik baseline (JSON), commitowany przez wlasciciela repo")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--baseline", help="plik baseline (JSON), commitowany przez wlasciciela repo")
+    source.add_argument("--previous-summary", help="summary poprzedniego zielonego przebiegu (JSON); baseline nie jest zapisywany")
     parser.add_argument("--scope", default="diff", choices=["full", "diff"], help="zakres pomiaru (domyslnie diff)")
     parser.add_argument("--commit", default=None, help="sha commita mierzonego przebiegu")
     parser.add_argument("--tool", default=None, help="nazwa narzedzia mutacyjnego")
@@ -380,7 +416,11 @@ def main(argv: list[str]) -> int:
         else:
             summary = load_summary(args.summary)
 
-        baseline = load_baseline(args.baseline)
+        previous_mode = args.previous_summary is not None
+        if previous_mode:
+            baseline = load_previous_summary(args.previous_summary, args.scope)
+        else:
+            baseline = load_baseline(args.baseline)
         result = compare(summary, baseline, args.scope)
 
         # "written" jest niezalezny od "write": write=True mowi ze WYPADALOBY
@@ -389,7 +429,8 @@ def main(argv: list[str]) -> int:
         # nie oglaszac zapisu, ktorego --dry-run celowo nie wykonal.
         result["baseline_path"] = args.baseline
         result["written"] = False
-        if result["write"] and not args.dry_run:
+        result["previous_mode"] = previous_mode
+        if result["write"] and not args.dry_run and not previous_mode:
             if not args.commit:
                 # Baseline bez commita z historii repozytorium nie da sie
                 # odtworzyc - odmawiamy zapisu zamiast zapisac "commit": null.

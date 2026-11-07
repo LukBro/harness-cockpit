@@ -8,7 +8,7 @@ Workflow ma dwa zadania:
 Czytamy prawdziwy workflow, wyciagamy skrypt kroku decydujacego i uruchamiamy go powloka tak jak GitHub
 Actions, na kopii baseline w tmp_path. Prawdziwe `mutmut` i `git` zastepuja atrapy na PATH; skutek czytamy
 z kodu wyjscia kroku, podsumowania zadania, pliku baseline i dziennika wywolan atrapy mutmut.
-Zmienne kroku (BASE_REF, COMMIT_SHA) test czyta z jego `env` w YAML i podstawia za wyrazenia GitHub Actions.
+Zmienne kroku (BASE_REF, GH_TOKEN, RUN_ID, REPO) test czyta z jego `env` w YAML i podstawia za wyrazenia GitHub Actions.
 """
 import json
 import re
@@ -31,6 +31,7 @@ ZADANIE_PR = "mutation"
 ZADANIE_MAIN = "mutation-main"
 KROK_PR = "mutanty zmienionych funkcji"
 KROK_MAIN = "pelny przebieg mutacyjny i zapadka"
+KROK_POPRZEDNI = "poprzedni zielony wynik mutation-main"
 # HAR-225: sprawdzenie WSZYSTKICH tabel recznych mutantow na kazdym PR, bez warunku zmienionych tabel.
 KROK_TABEL = "sprawdzenie tabel mutantów ręcznych"
 
@@ -40,10 +41,19 @@ BASELINE_SCORE = json.loads((KORZEN / "cicd" / "mutation-baseline.json").read_te
 WYNIK_LEPSZY = 100.0
 GALAZ_DOCELOWA = "main"
 SHA_SCALENIA = "merge9999"
+TOKEN_GITHUB = "token-testowy"
+ID_BIEZACEGO_RUNU = "5000"
+REPOZYTORIUM = "wlasciciel/repozytorium-testowe"
+# Poprzedni zielony wynik mutation-main w testach kroku zapadki: mniejszy od kazdego "lepszego" wyniku.
+POPRZEDNI_SCORE = 50.0
 # Wartosci, ktore GitHub Actions wstawia za wyrazenia w `env` kroku.
 WYRAZENIA = {
     "${{ github.base_ref }}": GALAZ_DOCELOWA,
     "${{ github.sha }}": SHA_SCALENIA,
+    # HAR-233: krok `poprzedni zielony wynik mutation-main` pobiera artefakt przez `gh`.
+    "${{ github.token }}": TOKEN_GITHUB,
+    "${{ github.run_id }}": ID_BIEZACEGO_RUNU,
+    "${{ github.repository }}": REPOZYTORIUM,
     # Wyjscie `adres` kroku `id: postgres` (HAR-156): tak GitHub podstawia je w kroku `mutanty ręczne`.
     "${{ steps.postgres.outputs.adres }}": "postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test",
 }
@@ -221,6 +231,8 @@ def uruchom_krok(
     stdout_zmian: str = "",
     stderr_zmian: str = "",
     tresc_baseline: str | None = None,
+    poprzedni_score: float | None = None,
+    tresc_poprzedniego: str | None = None,
 ) -> Przebieg:
     praca = tmp_path / "praca"
     (praca / "cicd").mkdir(parents=True)
@@ -232,6 +244,15 @@ def uruchom_krok(
     if tresc_baseline is not None:
         # Uszkadzamy wylacznie kopie w tmp; prawdziwy baseline repozytorium zostaje nietkniety.
         baseline.write_text(tresc_baseline, encoding="utf-8")
+
+    # HAR-233: summary poprzedniego zielonego przebiegu (artefakt pobrany przez poprzedni krok).
+    if tresc_poprzedniego is None and poprzedni_score is not None:
+        tresc_poprzedniego = json.dumps(
+            {"score": poprzedni_score, "total": 100, "killed": round(poprzedni_score), "survived": 100 - round(poprzedni_score)}
+        )
+    if tresc_poprzedniego is not None:
+        (praca / "poprzedni").mkdir()
+        (praca / "poprzedni" / "mutation-summary.json").write_text(tresc_poprzedniego, encoding="utf-8")
 
     narzedzia = tmp_path / "narzedzia"
     narzedzia.mkdir()
@@ -278,6 +299,8 @@ def _krok_pr(tmp_path: Path, **kw) -> Przebieg:
 
 
 def _krok_main(tmp_path: Path, **kw) -> Przebieg:
+    # Domyslnie poprzedni zielony przebieg istnieje; `poprzedni_score=None` oznacza brak artefaktu (K2).
+    kw.setdefault("poprzedni_score", POPRZEDNI_SCORE)
     return uruchom_krok(tmp_path, ZADANIE_MAIN, KROK_MAIN, **kw)
 
 
@@ -434,12 +457,27 @@ def test_pelny_przebieg_mutacyjny_odpala_sie_tylko_na_push_do_main():
     assert _zadanie(ZADANIE_MAIN)["if"] == "github.event_name == 'push'"
 
 
-def test_krok_pelnego_przebiegu_dostaje_commit_scalenia_ze_zmiennej_srodowiska():
+def _kod_kroku_bez_komentarzy(zadanie: str, nazwa: str) -> str:
+    krok = _krok(zadanie, nazwa)
+    assert "${{" not in krok["run"], "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    return "\n".join(linia for linia in krok["run"].splitlines() if not linia.lstrip().startswith("#"))
+
+
+def test_krok_zapadki_porownuje_z_artefaktem_poprzedniego_przebiegu_a_nie_z_plikiem_baseline_w_repozytorium():
+    kod = _kod_kroku_bez_komentarzy(ZADANIE_MAIN, KROK_MAIN)
+
+    assert "--previous-summary poprzedni/mutation-summary.json" in kod
+    assert "--summary mutation-summary.json" in kod
+    assert "--scope full" in kod
+    assert "--baseline" not in kod
+    assert "mutation-baseline.json" not in kod
+
+
+def test_krok_zapadki_niczego_nie_zapisuje_w_repozytorium_wiec_nie_dostaje_commitu_scalenia():
     krok = _krok(ZADANIE_MAIN, KROK_MAIN)
 
-    assert krok["env"]["COMMIT_SHA"] == "${{ github.sha }}"
-    assert "${{" not in krok["run"]
-    assert '"$COMMIT_SHA"' in krok["run"]
+    assert "COMMIT_SHA" not in (krok.get("env") or {})
+    assert "--commit" not in _kod_kroku_bez_komentarzy(ZADANIE_MAIN, KROK_MAIN)
 
 
 def test_pelny_przebieg_mutacyjny_wola_mutmut_run_i_zbiera_raport(tmp_path):
@@ -473,30 +511,91 @@ def test_pelny_przebieg_bez_zabitego_mutanta_oblewa_zadanie_i_nie_zapisuje_basel
     assert przebieg.baseline_niezmieniony
 
 
-def test_pelny_przebieg_z_wynikiem_lepszym_od_baseline_podnosi_baseline(tmp_path):
-    # 100% zabitych jest powyzej kazdego baseline < 100; sprawdzamy wartosc w pliku, nie sam kod wyjscia.
-    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline())
+def _linia_zapadki(przebieg: Przebieg) -> str:
+    return next(linia for linia in przebieg.linie if linia.startswith("MUTATION-BASELINE:"))
+
+
+def test_pelny_przebieg_z_wynikiem_lepszym_od_poprzedniego_loguje_wzrost_i_nie_zapisuje_baseline_w_repozytorium(
+    tmp_path,
+):
+    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline(), poprzedni_score=POPRZEDNI_SCORE)
 
     assert przebieg.kod == 0, przebieg.wyjscie
     assert not przebieg.jest_blad_ci
-    assert przebieg.score_w_baseline == WYNIK_LEPSZY
-
-
-def test_baseline_zapisany_po_scaleniu_niesie_sha_commitu_z_main(tmp_path):
-    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline())
-
-    assert przebieg.kod == 0, przebieg.wyjscie
-    assert przebieg.commit_w_baseline == SHA_SCALENIA
-
-
-def test_pelny_przebieg_z_wynikiem_gorszym_od_baseline_nie_oblewa_zadania_i_zostawia_baseline(tmp_path):
-    # Spadek score nie jest bramka, ale nie wolno tez obnizyc zapadki.
-    przebieg = _krok_main(tmp_path, statusy=["killed"] + ["survived"] * 9)
-
-    assert przebieg.kod == 0, przebieg.wyjscie
-    assert not przebieg.jest_blad_ci
+    assert _linia_zapadki(przebieg).startswith("MUTATION-BASELINE: status=up score=100.0 baseline=50.0 delta=50.0 ")
     assert przebieg.baseline_niezmieniony
-    assert przebieg.score_w_baseline == BASELINE_SCORE
+
+
+def test_pelny_przebieg_z_wynikiem_nizszym_od_ostatniego_zielonego_loguje_spadek_mimo_ze_przewyzsza_stary_baseline(
+    tmp_path,
+):
+    # K1 (HAR-233): 95.0 > 94.29 (stary plik baseline), ale < 97.0 (ostatni zielony wynik main).
+    wynik, poprzedni = 95.0, 97.0
+    assert BASELINE_SCORE < wynik < poprzedni
+
+    przebieg = _krok_main(tmp_path, statusy=["killed"] * 19 + ["survived"], poprzedni_score=poprzedni)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert not przebieg.jest_blad_ci
+    assert _linia_zapadki(przebieg) == (
+        "MUTATION-BASELINE: status=down score=95.0 baseline=97.0 delta=-2.0 survived=1 total=20 scope=full"
+    )
+    assert przebieg.baseline_niezmieniony
+
+
+def test_pelny_przebieg_z_wynikiem_rownym_ostatniemu_zielonemu_loguje_brak_zmiany(tmp_path):
+    przebieg = _krok_main(tmp_path, statusy=["killed"] * 19 + ["survived"], poprzedni_score=95.0)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert _linia_zapadki(przebieg).startswith("MUTATION-BASELINE: status=same score=95.0 baseline=95.0 ")
+
+
+def test_brak_artefaktu_poprzedniego_przebiegu_oblewa_krok_z_komunikatem_zamiast_cichej_zapadki_na_pliku(tmp_path):
+    # K2 (HAR-233): wynik lepszy od starego pliku baseline, a mimo to brak poprzedniego wyniku to czerwony krok.
+    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline(), poprzedni_score=None)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "mutation_baseline: poprzedni wynik: nie znaleziono pliku 'poprzedni/mutation-summary.json'" in przebieg.linie
+    assert "::error::zapadka zakonczyla sie bledem wejscia (zly poprzedni wynik albo summary) - zapadka nie dziala" in przebieg.linie
+    assert not any(linia.startswith("MUTATION-BASELINE:") for linia in przebieg.linie)
+    assert przebieg.baseline_niezmieniony
+
+
+def test_poprzedni_zielony_wynik_bez_pomiaru_oblewa_krok_z_komunikatem(tmp_path):
+    przebieg = _krok_main(
+        tmp_path,
+        statusy=_lepszy_od_baseline(),
+        tresc_poprzedniego='{"score": null, "total": 0, "killed": 0, "survived": 0}',
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert (
+        "mutation_baseline: poprzedni wynik: brak wyniku (score=null) - poprzedni przebieg nie zmierzyl mutantow"
+        in przebieg.linie
+    )
+    assert "::error::zapadka zakonczyla sie bledem wejscia (zly poprzedni wynik albo summary) - zapadka nie dziala" in przebieg.linie
+    assert not any(linia.startswith("MUTATION-BASELINE:") for linia in przebieg.linie)
+
+
+def test_uszkodzony_poprzedni_wynik_oblewa_krok_z_linia_bledu_ci_zamiast_zielonego(tmp_path):
+    # Zapadka nie moze ukryc bledu wejscia (zly JSON poprzedniego wyniku): brak dowodu to nie zielone.
+    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline(), tresc_poprzedniego="{to nie jest json")
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert "::error::zapadka zakonczyla sie bledem wejscia (zly poprzedni wynik albo summary) - zapadka nie dziala" in przebieg.linie
+    assert any(linia.startswith("mutation_baseline: poprzedni wynik: niepoprawny JSON") for linia in przebieg.linie)
+    assert not any(linia.startswith("MUTATION-BASELINE:") for linia in przebieg.linie)
+
+
+def test_stary_plik_baseline_w_repozytorium_nie_wplywa_na_wynik_zapadki(tmp_path):
+    # Plik zostaje w repo jako historia; porownanie idzie z artefaktem, wiec jego uszkodzenie niczego nie zmienia.
+    przebieg = _krok_main(
+        tmp_path, statusy=_lepszy_od_baseline(), tresc_baseline="{to nie jest json", poprzedni_score=POPRZEDNI_SCORE
+    )
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert _linia_zapadki(przebieg).startswith("MUTATION-BASELINE: status=up ")
+    assert przebieg.baseline.read_text(encoding="utf-8") == "{to nie jest json"
 
 
 def test_pelny_przebieg_bez_narzedzia_mutacyjnego_na_runnerze_oblewa_zadanie_bez_zmiany_baseline(tmp_path):
@@ -505,15 +604,6 @@ def test_pelny_przebieg_bez_narzedzia_mutacyjnego_na_runnerze_oblewa_zadanie_bez
     assert przebieg.kod != 0, przebieg.wyjscie
     assert przebieg.baseline_niezmieniony
     assert not (przebieg.praca / "mutants").exists()
-
-
-def test_uszkodzony_baseline_po_scaleniu_oblewa_krok_z_linia_bledu_ci_zamiast_zielonego(tmp_path):
-    # Zapadka nie moze ukryc bledu wejscia (zly JSON baseline): brak dowodu to nie zielone.
-    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline(), tresc_baseline="{to nie jest json")
-
-    assert przebieg.kod != 0, przebieg.wyjscie
-    assert przebieg.jest_blad_ci, przebieg.wyjscie
-    assert przebieg.baseline.read_text(encoding="utf-8") == "{to nie jest json"
 
 
 def test_cache_mutantow_w_zadaniu_po_scaleniu_jest_do_odczytu_i_zapisu():
@@ -527,6 +617,299 @@ def test_zadanie_po_scaleniu_publikuje_raport_mutacji_nawet_po_czerwonym_kroku()
     artefakt = _artefakt(ZADANIE_MAIN, "mutation-report")
 
     assert artefakt["if"] == "always()"
+
+
+# =============================================================================
+# HAR-233: zapadka porownuje z wynikiem ostatniego zielonego przebiegu mutation-main
+# =============================================================================
+
+BLAD_LISTY = "::error::nie udalo sie pobrac listy przebiegow mutation-main (gh run list) - zapadka bez dowodu"
+BLAD_BRAKU_POPRZEDNIEGO = (
+    "::error::brak poprzedniego zielonego przebiegu mutation-main na main - zapadka nie ma z czym porownac"
+)
+ID_POPRZEDNIEGO_RUNU = "4999"
+# Atrapa `gh`: zapisuje argv kazdego wywolania; `run list` wypisuje liste ze srodowiska i konczy zadanym kodem;
+# `run download` w zaleznosci od ATRAPA_POBRANIE kladzie w --dir plik summary, nic albo katalog o nazwie pliku.
+ATRAPA_GH = """#!/bin/sh
+echo "$*" >> "$ATRAPA_LOG_GH"
+case "$1 $2" in
+  "run list")
+    [ -n "$ATRAPA_LISTA" ] && printf '%s\\n' "$ATRAPA_LISTA"
+    exit "$ATRAPA_KOD_LISTY"
+    ;;
+  "run download")
+    katalog=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "--dir" ]; then katalog="$2"; fi
+      shift
+    done
+    mkdir -p "$katalog"
+    case "$ATRAPA_POBRANIE" in
+      plik) cp "$ATRAPA_SUMMARY" "$katalog/mutation-summary.json" ;;
+      katalog) mkdir -p "$katalog/mutation-summary.json" ;;
+    esac
+    exit "$ATRAPA_KOD_POBRANIA"
+    ;;
+esac
+exit 99
+"""
+SUMMARY_POPRZEDNIEGO = '{"score": 97.0, "total": 100, "killed": 97, "survived": 3}'
+
+
+class PrzebiegPoprzedniego:
+    def __init__(self, praca: Path, log_gh: Path):
+        self.praca = praca
+        self.log_gh = log_gh
+        self.kod = -1
+        self.wyjscie = ""
+
+    @property
+    def linie(self) -> list[str]:
+        return self.wyjscie.splitlines()
+
+    @property
+    def wywolania_gh(self) -> list[list[str]]:
+        if not self.log_gh.exists():
+            return []
+        return [linia.split() for linia in self.log_gh.read_text(encoding="utf-8").splitlines()]
+
+    @property
+    def pobrania(self) -> list[list[str]]:
+        return [argv for argv in self.wywolania_gh if argv[:2] == ["run", "download"]]
+
+    @property
+    def summary(self) -> Path:
+        return self.praca / "poprzedni" / "mutation-summary.json"
+
+
+def _wartosc_flagi(argv: list[str], flaga: str) -> str:
+    assert argv.count(flaga) == 1, (flaga, argv)
+    return argv[argv.index(flaga) + 1]
+
+
+def uruchom_krok_poprzedniego(
+    tmp_path: Path,
+    *,
+    lista: str = "",
+    kod_listy: int = 0,
+    kod_pobrania: int = 0,
+    pobranie: str = "plik",
+    run_id: str | None = None,
+) -> PrzebiegPoprzedniego:
+    """Uruchamia `run` kroku `poprzedni zielony wynik mutation-main` z atrapa `gh` na PATH."""
+    praca = tmp_path / "praca"
+    praca.mkdir()
+    atrapy = tmp_path / "atrapy"
+    atrapy.mkdir()
+    _atrapa(atrapy, "gh", ATRAPA_GH)
+    summary_atrapy = tmp_path / "summary-atrapy.json"
+    summary_atrapy.write_text(SUMMARY_POPRZEDNIEGO, encoding="utf-8")
+
+    przebieg = PrzebiegPoprzedniego(praca, tmp_path / "log-gh.txt")
+    krok = _krok(ZADANIE_MAIN, KROK_POPRZEDNI)
+    skrypt_krok = krok["run"]
+    assert "${{" not in skrypt_krok, "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(skrypt_krok, encoding="utf-8")
+
+    srodowisko = {
+        "PATH": f"{atrapy}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_LOG_GH": str(przebieg.log_gh),
+        "ATRAPA_LISTA": lista,
+        "ATRAPA_KOD_LISTY": str(kod_listy),
+        "ATRAPA_KOD_POBRANIA": str(kod_pobrania),
+        "ATRAPA_POBRANIE": pobranie,
+        "ATRAPA_SUMMARY": str(summary_atrapy),
+        **_srodowisko_kroku(krok),
+    }
+    if run_id is not None:
+        srodowisko["RUN_ID"] = run_id
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+# --- struktura ------------------------------------------------------------------------
+
+
+def test_zadanie_po_scaleniu_ma_uprawnienia_tylko_do_odczytu_kodu_i_przebiegow():
+    assert _zadanie(ZADANIE_MAIN)["permissions"] == {"contents": "read", "actions": "read"}
+
+
+def test_zadanie_pull_requestu_i_caly_workflow_nie_dostaja_zmienionych_uprawnien():
+    assert "permissions" not in _zadanie(ZADANIE_PR)
+    assert "permissions" not in _workflow()
+
+
+def test_krok_poprzedniego_wyniku_stoi_w_zadaniu_po_scaleniu_przed_pelnym_przebiegiem_i_zapadka():
+    nazwy = [k.get("name") for k in _zadanie(ZADANIE_MAIN)["steps"]]
+
+    assert nazwy.count(KROK_POPRZEDNI) == 1
+    assert nazwy.index(KROK_POPRZEDNI) < nazwy.index(KROK_MAIN)
+
+
+def test_krok_poprzedniego_wyniku_dostaje_token_przebieg_i_repozytorium_ze_zmiennych_srodowiska():
+    krok = _krok(ZADANIE_MAIN, KROK_POPRZEDNI)
+
+    assert krok["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "RUN_ID": "${{ github.run_id }}",
+        "REPO": "${{ github.repository }}",
+    }
+    assert "${{" not in krok["run"]
+
+
+def test_artefakt_zadania_po_scaleniu_niesie_summary_i_raport_ale_nie_stary_plik_baseline_i_zyje_90_dni():
+    artefakt = _artefakt(ZADANIE_MAIN, "mutation-report")
+
+    assert set(artefakt["with"]["path"].splitlines()) == {"mutants/mutmut-results.txt", "mutation-summary.json"}
+    assert artefakt["with"]["retention-days"] == 90
+
+
+# --- wykonanie kroku z atrapa gh --------------------------------------------------------
+
+
+def test_brak_przebiegow_na_liscie_oblewa_krok_z_komunikatem_i_nie_pobiera_artefaktu(tmp_path):
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista="")
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert BLAD_BRAKU_POPRZEDNIEGO in przebieg.linie
+    assert przebieg.pobrania == []
+    assert not przebieg.summary.exists()
+
+
+def test_lista_z_samym_biezacym_przebiegiem_oblewa_krok_bo_nie_ma_z_czym_porownac(tmp_path):
+    # Bieżący run bywa na liście udanych przebiegów; tylko filtr jego identyfikatora odróżnia go od poprzedniego.
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista=ID_BIEZACEGO_RUNU)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert BLAD_BRAKU_POPRZEDNIEGO in przebieg.linie
+    assert przebieg.pobrania == []
+
+
+def test_blad_pobrania_listy_przebiegow_oblewa_krok_mimo_niepustego_wyjscia_gh(tmp_path):
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista=ID_POPRZEDNIEGO_RUNU, kod_listy=1)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert BLAD_LISTY in przebieg.linie
+    assert BLAD_BRAKU_POPRZEDNIEGO not in przebieg.linie
+    assert przebieg.pobrania == []
+
+
+def test_blad_pobrania_artefaktu_oblewa_krok_z_komunikatem_nawet_gdy_plik_summary_powstal(tmp_path):
+    # K2 (HAR-233): wygasly artefakt to czerwony krok, nie ciche przejscie na plik w repozytorium.
+    przebieg = uruchom_krok_poprzedniego(
+        tmp_path, lista=f"{ID_BIEZACEGO_RUNU}\n{ID_POPRZEDNIEGO_RUNU}", kod_pobrania=1, pobranie="plik"
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert (
+        f"::error::nie udalo sie pobrac artefaktu mutation-report z przebiegu {ID_POPRZEDNIEGO_RUNU} "
+        "(wygasl albo go brak) - zapadka bez dowodu"
+    ) in przebieg.linie
+
+
+@pytest.mark.parametrize(
+    "pobranie",
+    [pytest.param("nic", id="artefakt_bez_pliku_summary"), pytest.param("katalog", id="summary_jest_katalogiem")],
+)
+def test_artefakt_bez_pliku_summary_oblewa_krok_z_komunikatem(tmp_path, pobranie):
+    przebieg = uruchom_krok_poprzedniego(
+        tmp_path, lista=f"{ID_BIEZACEGO_RUNU}\n{ID_POPRZEDNIEGO_RUNU}", pobranie=pobranie
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert (
+        f"::error::artefakt mutation-report przebiegu {ID_POPRZEDNIEGO_RUNU} "
+        "nie zawiera mutation-summary.json - zapadka bez dowodu"
+    ) in przebieg.linie
+
+
+@pytest.mark.parametrize(
+    ("lista", "oczekiwany"),
+    [
+        pytest.param(f"{ID_BIEZACEGO_RUNU}\n4999\n4998", "4999", id="biezacy_pierwszy_wybrany_kolejny"),
+        pytest.param(f"4997\n{ID_BIEZACEGO_RUNU}\n4996", "4997", id="biezacy_w_srodku_wybrany_pierwszy"),
+        pytest.param(f"15000\n{ID_BIEZACEGO_RUNU}\n4999", "15000", id="identyfikator_z_biezacym_jako_podciagiem"),
+        pytest.param(f"{ID_BIEZACEGO_RUNU}\n50001", "50001", id="identyfikator_zaczynajacy_sie_od_biezacego"),
+    ],
+)
+def test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy(tmp_path, lista, oczekiwany):
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista=lista)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert len(przebieg.pobrania) == 1, przebieg.wywolania_gh
+    pobranie = przebieg.pobrania[0]
+    assert pobranie[2] == oczekiwany
+    assert _wartosc_flagi(pobranie, "--name") == "mutation-report"
+    assert _wartosc_flagi(pobranie, "--repo") == REPOZYTORIUM
+    assert _wartosc_flagi(pobranie, "--dir") == "poprzedni"
+    assert przebieg.summary.read_text(encoding="utf-8") == SUMMARY_POPRZEDNIEGO
+    assert f"poprzedni zielony przebieg: {oczekiwany}" in przebieg.linie
+
+
+def test_lista_przebiegow_pyta_tylko_o_udane_pushe_na_main_workflowu_mutacji_z_repozytorium_zadania(tmp_path):
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista=f"{ID_BIEZACEGO_RUNU}\n{ID_POPRZEDNIEGO_RUNU}")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    zapytanie = przebieg.wywolania_gh[0]
+    assert zapytanie[:2] == ["run", "list"]
+    assert _wartosc_flagi(zapytanie, "--repo") == REPOZYTORIUM
+    assert _wartosc_flagi(zapytanie, "--workflow") == "mutation.yml"
+    assert _wartosc_flagi(zapytanie, "--branch") == "main"
+    assert _wartosc_flagi(zapytanie, "--event") == "push"
+    assert _wartosc_flagi(zapytanie, "--status") == "success"
+    assert len(przebieg.wywolania_gh) == 2
+
+
+def test_zapytanie_o_przebiegi_prosi_o_identyfikatory_i_o_wiecej_niz_jeden_wynik(tmp_path):
+    # Limit 1 zwrocilby samego siebie (biezacy run), wiec poprzedni przebieg nigdy nie trafilby na liste.
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista=f"{ID_BIEZACEGO_RUNU}\n{ID_POPRZEDNIEGO_RUNU}")
+
+    zapytanie = przebieg.wywolania_gh[0]
+    assert _wartosc_flagi(zapytanie, "--json") == "databaseId"
+    assert _wartosc_flagi(zapytanie, "--jq") == ".[].databaseId"
+    assert int(_wartosc_flagi(zapytanie, "--limit")) >= 2
+
+
+def test_blad_grepa_przy_wyborze_poprzedniego_przebiegu_oblewa_krok_z_komunikatem_a_nie_brakiem_przebiegu(tmp_path):
+    # Niedomkniety nawias w wzorcu: grep konczy sie kodem 2 (blad), nie 1 (brak linii po filtrze).
+    przebieg = uruchom_krok_poprzedniego(tmp_path, lista=ID_POPRZEDNIEGO_RUNU, run_id="[")
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert (
+        "::error::grep zakonczyl sie kodem 2 przy wyborze poprzedniego przebiegu mutation-main - zapadka bez dowodu"
+        in przebieg.linie
+    )
+    assert BLAD_BRAKU_POPRZEDNIEGO not in przebieg.linie
+    assert przebieg.pobrania == []
+
+
+def test_brak_narzedzia_mutacyjnego_oblewa_krok_zapadki_pelnym_komunikatem(tmp_path):
+    przebieg = _krok_main(tmp_path, statusy=_lepszy_od_baseline(), mutmut_na_path=False)
+
+    assert (
+        "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono. "
+        "Zapadka nie porownala."
+    ) in przebieg.linie
+
+
+def test_blad_startu_testow_mutmuta_oblewa_krok_zapadki_pelnym_komunikatem(tmp_path):
+    przebieg = _krok_main(tmp_path, kod_run=1, wyjscie_run="failed to collect stats")
+
+    assert (
+        "::error::mutmut run zakonczyl sie bledem - testy nie wystartowaly w mutants/ "
+        "(blad zbierania statystyk), sprawdz log mutmut run."
+    ) in przebieg.linie
+
+
+def test_zero_zabitych_mutantow_oblewa_krok_zapadki_pelnym_komunikatem(tmp_path):
+    przebieg = _krok_main(tmp_path, statusy=["survived"] * 4)
+
+    assert (
+        "::error::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ "
+        "(sprawdz log mutmut run)."
+    ) in przebieg.linie
 
 
 # =============================================================================
