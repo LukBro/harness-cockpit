@@ -181,10 +181,13 @@ class Szpieg:
     opoznienia: dict[str, float] = field(default_factory=dict)     # per krok, przed `opoznienie`
     wywolania: list = field(default_factory=list)
 
-    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None):
+    async def __call__(
+        self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None, **dodatkowe
+    ):
+        # `dodatkowe`: kwargi spoza podstawowych (HAR-176: `zmienione_linie` tylko dla notatki zmiany)
         self.wywolania.append(SimpleNamespace(
             spec=spec, polecenie=polecenie, katalog=katalog, katalog_runu=katalog_runu,
-            prompt=prompt))
+            prompt=prompt, dodatkowe=dodatkowe))
         czekanie = self.opoznienia.get(spec.step_id, self.opoznienie)
         if czekanie:
             await asyncio.sleep(czekanie)
@@ -209,7 +212,9 @@ class Atrapa:
     repo: Path | None = None
     wywolania: list = field(default_factory=list)
 
-    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None):
+    async def __call__(
+        self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None, **dodatkowe
+    ):
         self.wywolania.append(spec.step_id)
         opis = {
             "znaczniki": str(self.znaczniki), "step_id": spec.step_id,
@@ -217,7 +222,8 @@ class Atrapa:
             "zapisz": list(spec.wyjscia), "repo": str(self.repo) if self.repo else None,
         }
         argv = [sys.executable, "-I", "-c", KOD_ATRAPY, json.dumps(opis)]
-        return await wykonaj_krok(spec, argv, katalog, emit, katalog_runu=katalog_runu)
+        return await wykonaj_krok(
+            spec, argv, katalog, emit, katalog_runu=katalog_runu, **dodatkowe)
 
     def czas(self, rodzaj: str, krok: str) -> float:
         return float((self.znaczniki / f"{rodzaj}_{krok}").read_text())

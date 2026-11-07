@@ -63,10 +63,14 @@ class Krok(BaseModel):
 
     Typy `int` i `bool` sa scisle: `fanout: true` ani `fanout: "3"` nie sa liczba,
     a w YAML-u latwo je wpisac przez przypadek ("yes", "1" przeszloby jako bool).
+
+    Krok ma `skill` (agent) albo `system` (krok silnika bez agenta, HAR-176). Brak obu
+    zglasza `wczytaj_workflow` (BRAK_SKILLA), oba naraz walidator (`skill_i_system`).
     """
 
     id: str
-    skill: str
+    skill: str | None = None
+    system: str | None = None
     needs: list[str] = []
     fanout: int = Field(default=1, ge=1, strict=True)
     consensus: int | None = Field(default=None, ge=1, strict=True)
@@ -123,10 +127,7 @@ def _problemy_kroku(id_kroku: str, exc: ValidationError) -> list[Problem]:
     problemy = []
     for blad in exc.errors():
         sciezka = ".".join(str(c) for c in blad["loc"])
-        if blad["type"] == "missing" and blad["loc"] == ("skill",):
-            problemy.append(Problem(id_kroku, BRAK_SKILLA, "krok nie ma pola skill"))
-        else:
-            problemy.append(Problem(id_kroku, BLAD_POLA, f"{sciezka}: {blad['msg']}"))
+        problemy.append(Problem(id_kroku, BLAD_POLA, f"{sciezka}: {blad['msg']}"))
     return problemy
 
 
@@ -149,11 +150,19 @@ def _zbuduj_kroki(
             continue
         # klucze nie-napisy zostaja tylko w surowej mapie (HAR-9); nie sa kwargs ani problemem
         pola = {k: v for k, v in surowy.items() if isinstance(k, str)}
+        brak_skilla = pola.get("skill") is None and pola.get("system") is None
+        if brak_skilla:
+            problemy.append(Problem(id_kroku, BRAK_SKILLA, "krok nie ma pola skill ani system"))
         try:
-            kroki.append(Krok.model_validate({**pola, "id": id_kroku}))
+            krok = Krok.model_validate({**pola, "id": id_kroku})
         except ValidationError as exc:
             problemy.extend(_problemy_kroku(id_kroku, exc))
             niepoprawne.append(id_kroku)
+            continue
+        if brak_skilla:
+            niepoprawne.append(id_kroku)
+            continue
+        kroki.append(krok)
     return kroki, niepoprawne, problemy
 
 
@@ -233,8 +242,8 @@ def _nanies_krok(mapa: CommentedMap, krok: Krok) -> None:
         wartosc = _wartosc_pola(krok, pole)
         obecna = mapa.get(pole, _BRAK)
         if obecna is _BRAK:
-            # pol domyslnych nieobecnych w pliku nie dopisujemy; skill zawsze
-            if wartosc == _domyslna(pole) and pole != "skill":
+            # pol domyslnych nieobecnych w pliku nie dopisujemy
+            if wartosc == _domyslna(pole):
                 continue
         elif obecna == wartosc and isinstance(obecna, bool) == isinstance(wartosc, bool):
             continue
@@ -295,7 +304,6 @@ def _nanies_zmiany(workflow: Workflow) -> None:
             _nanies_krok(kroki_mapa[istniejace[krok.id]], krok)
         else:
             nowy = CommentedMap()
-            nowy["skill"] = krok.skill
             kroki_mapa[krok.id] = nowy
             _nanies_krok(nowy, krok)
 

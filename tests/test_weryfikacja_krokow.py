@@ -109,6 +109,15 @@ def test_workflow_bez_krokow_weryfikujacych_daje_pusta_liste():
     assert _weryfikujace(_workflow(("a", "zwykly"), ("b", "zwykly")), rejestr) == []
 
 
+def test_krok_systemowy_bez_skilla_nie_jest_weryfikujacy_a_recenzent_po_nim_jest():
+    # HAR-176: krok `system: diff` nie ma skilla; wczesniej klasyfikacja rzucala KeyError(None)
+    rejestr = _rejestr(_skill("recenzent", Rola.reviewer))
+    workflow = Workflow(nazwa="w", kroki=[
+        Krok(id="diff", system="diff"), Krok(id="rec", skill="recenzent", needs=["diff"])])
+
+    assert _weryfikujace(workflow, rejestr) == ["rec"]
+
+
 # --- silnik: pole w run_finished ---
 
 async def test_koniec_wykonanego_runu_niesie_liste_krokow_weryfikujacych(tmp_path):

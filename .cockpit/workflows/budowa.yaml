@@ -2,13 +2,18 @@
 # (BRO-95). Po planie bramka zatwierdzenia przez człowieka, bo w nowym repozytorium
 # człowiek w pętli jest najcenniejszy (BRO-96). Krok lekcji jest opcjonalny; silnik
 # (BRO-75) jeszcze nie nadaje `optional` skutku.
+# Krok `diff` (HAR-176) to krok systemowy bez agenta: zapisuje w katalogu runu
+# `zmiana.diff` i `zmienione-linie.json` względem commita bazowego. Recenzenci czekają
+# na niego i dostają diff przez `consumes`; pusty diff to brak dowodu (krok nieudany,
+# recenzenci pominięci z `brak_wejscia`).
 name: budowa
 steps:
   plan: {skill: plan}
   tdd-task: {skill: tdd-task, needs: [plan], approval: true}
   e2e-scenario: {skill: e2e-scenario, needs: [tdd-task]}
-  contract-check: {skill: contract-check, needs: [e2e-scenario]}
-  review-unknown: {skill: review-unknown, needs: [e2e-scenario]}
-  explain-change: {skill: explain-change, needs: [e2e-scenario]}
+  diff: {system: diff, needs: [e2e-scenario]}
+  contract-check: {skill: contract-check, needs: [diff]}
+  review-unknown: {skill: review-unknown, needs: [diff]}
+  explain-change: {skill: explain-change, needs: [diff]}
   smoke: {skill: smoke, needs: [contract-check, review-unknown, explain-change]}
   capture-lesson: {skill: capture-lesson, needs: [smoke], optional: true}

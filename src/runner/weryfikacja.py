@@ -17,6 +17,11 @@ def kroki_weryfikujace(workflow: Workflow, rejestr: Rejestr) -> list[str]:
     capability-bramki. Workflow jest zwalidowany przy starcie (jak w `graf.nastepne`)."""
     wynik: list[str] = []
     for krok in workflow.kroki:
+        if krok.skill is None:
+            # jedyny krok systemowy, `diff` (HAR-176), daje dowod, nie werdykt; `check` z HAR-177
+            # weryfikuje i sam zmieni te galaz
+
+            continue
         skill = rejestr.skille[krok.skill]
         if skill.role == Rola.reviewer or CAPABILITY_BRAMKI & set(skill.needs):
             wynik.append(krok.id)

@@ -20,6 +20,7 @@ from cockpit.services.workflow_walidacja import (
     NIEPRZENOSNY_SKILL,
     NIEZNANA_ZALEZNOSC,
     NIEZNANY_KLUCZ,
+    NIEZNANY_KROK_SYSTEMOWY,
     NIEZNANY_SKILL,
     POLE_BEZ_KONSUMENTA,
     RETRY_NIE_WSTECZ,
@@ -1275,3 +1276,285 @@ steps:
     assert ROLA_W_KROKU_IGNOROWANA in kody(problemy, "a")
     assert POLE_BEZ_KONSUMENTA in kody(problemy, "a")
     assert ma_bledy(problemy)
+
+
+# --- krok systemowy (HAR-176): `system: diff` jest producentem swoich artefaktow -----------------
+
+
+def wszystkie_problemy(tmp_path: Path, tresc: str, repo: Path, dom: Path) -> list[Problem]:
+    """Problemy wczytania i walidacji razem: nie zakladamy, na ktorym etapie krok jest odrzucany."""
+    plik = tmp_path / "workflow.yaml"
+    plik.write_text(tresc, encoding="utf-8")
+    workflow, wczytania = wczytaj_workflow(plik)
+    assert workflow is not None
+    return wczytania + waliduj_workflow(workflow, rejestr_z(repo, dom), dom)
+
+
+def test_krok_z_samym_system_diff_nie_ma_zadnego_problemu_ani_ostrzezenia(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  autor: {skill: autor}
+  diff: {system: diff, needs: [autor]}
+""",
+    )
+    assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+def test_konsument_obu_artefaktow_kroku_diff_ma_producenta_wsrod_przodkow(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    napisz_skill(skille_repo, "opis", consumes=["zmiana.diff", "zmienione-linie.json"])
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  autor: {skill: autor}
+  diff: {system: diff, needs: [autor]}
+  opis: {skill: opis, needs: [diff]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy) == []
+
+
+def test_konsument_zmiana_diff_bez_kroku_diff_wsrod_przodkow_ma_brak_artefaktu(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    napisz_skill(skille_repo, "rec", consumes=["zmiana.diff"])
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  autor: {skill: autor}
+  diff: {system: diff, needs: [autor]}
+  rec: {skill: rec, needs: [autor]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, BRAK_ARTEFAKTU, "rec").komunikat == (
+        "artefakt zmiana.diff nie jest produkowany przez zadnego przodka kroku")
+    assert kody(problemy, "diff") == []
+
+
+def test_konsument_zmiana_diff_w_workflow_bez_kroku_systemowego_ma_brak_artefaktu(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    napisz_skill(skille_repo, "rec", consumes=["zmiana.diff"])
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  autor: {skill: autor}
+  rec: {skill: rec, needs: [autor]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy) == [BRAK_ARTEFAKTU]
+
+
+def test_nieznany_krok_systemowy_ma_blad_z_nazwa_wartosci_a_nie_nieznany_skill(
+    tmp_path, repo, dom, skille_repo
+):
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  x: {system: git-push}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    p = problem(problemy, NIEZNANY_KROK_SYSTEMOWY, "x")
+    assert p.komunikat == "nieznany krok systemowy: git-push"
+    assert p.poziom == Poziom.blad
+    assert kody(problemy) == [NIEZNANY_KROK_SYSTEMOWY]
+    assert ma_bledy(problemy)
+    # wartosc kodu przypieta literalem, nie stala
+    assert problemy == [
+        Problem("x", "nieznany_krok_systemowy", "nieznany krok systemowy: git-push", Poziom.blad)]
+
+
+def test_nieznany_krok_systemowy_nic_nie_produkuje_wiec_konsument_diffu_ma_brak_artefaktu(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "rec", consumes=["zmiana.diff"])
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  x: {system: git-push}
+  rec: {skill: rec, needs: [x]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert BRAK_ARTEFAKTU in kody(problemy, "rec")
+
+
+def test_krok_z_polem_skill_i_system_naraz_ma_dokladnie_jeden_blad_skill_i_system(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz")
+    problemy = wszystkie_problemy(
+        tmp_path,
+        """
+name: w
+steps:
+  oba: {skill: pisarz, system: diff}
+""",
+        repo,
+        dom,
+    )
+    trafione = [p for p in problemy if p.kod == "skill_i_system"]
+    assert trafione == [
+        Problem("oba", "skill_i_system", "krok ma naraz pole skill i system", Poziom.blad)]
+    assert ma_bledy(problemy)
+
+
+def test_krok_systemowy_podlega_walidacji_grafu_cykl_przez_krok_diff_jest_wykryty(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "rec")
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  diff: {system: diff, needs: [rec]}
+  rec: {skill: rec, needs: [diff]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert CYKL in kody(problemy, "diff")
+    assert CYKL in kody(problemy, "rec")
+
+
+def test_krok_systemowy_z_nieznana_zaleznoscia_ma_blad_nieznanej_zaleznosci(
+    tmp_path, repo, dom, skille_repo
+):
+    wf = workflow_z(
+        tmp_path,
+        """
+name: w
+steps:
+  diff: {system: diff, needs: [nikt]}
+""",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "diff") == [NIEZNANA_ZALEZNOSC]
+
+
+# --- pelne komunikaty i zasieg regul (HAR-176, mutanty zmienionych funkcji) ---------------------
+
+
+def test_cykl_w_needs_ma_dokladny_komunikat_z_trasa_od_kazdego_kroku_petli(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  plan: {skill: s, needs: [review]}\n  review: {skill: s, needs: [plan]}\n",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, CYKL, "plan").komunikat == "cykl w needs: plan → review → plan"
+    assert problem(problemy, CYKL, "review").komunikat == "cykl w needs: review → plan → review"
+
+
+def test_consensus_ponad_fanout_ma_komunikat_z_obiema_liczbami(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  g: {skill: s, fanout: 2, consensus: 3}\n")
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, CONSENSUS_PONAD_FANOUT, "g").komunikat == (
+        "consensus 3 jest wiekszy niz fanout 2")
+
+
+def test_foreach_dzieli_na_pierwszym_hashu_wiec_pole_moze_zawierac_hash(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", produces=["plan.json"])
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  a: {skill: pisarz}\n  b: {skill: s, needs: [a], foreach: 'plan.json#x#y'}\n",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "b") == []
+
+
+def test_foreach_bez_hasha_ma_komunikat_o_wymaganej_postaci(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  b: {skill: s, foreach: bezhasha}\n")
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, FOREACH_ZLY_FORMAT, "b").komunikat == (
+        "foreach musi miec postac <artefakt>#<pole>, jest: bezhasha")
+
+
+def test_foreach_artefaktu_ktorego_nikt_nie_produkuje_ma_komunikat_z_nazwa_artefaktu(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "s")
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  b: {skill: s, foreach: 'brak.json#x'}\n")
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert problem(problemy, FOREACH_BEZ_PRODUCENTA, "b").komunikat == (
+        "foreach: artefakt brak.json nie jest produkowany przez zadnego przodka kroku")
+
+
+def test_krok_z_skillem_i_system_naraz_produkuje_artefakty_swojego_skilla_a_nie_kroku_systemowego(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz", produces=["a.md"])
+    napisz_skill(skille_repo, "czytelnik", consumes=["a.md"])
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n"
+        "  oba: {skill: pisarz, system: diff}\n"
+        "  rec: {skill: czytelnik, needs: [oba]}\n",
+    )
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert BRAK_ARTEFAKTU not in kody(problemy, "rec")
+
+
+def test_krok_z_skillem_i_system_naraz_ma_wejscia_sprawdzane_wedlug_skilla(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "czytelnik", consumes=["zmiana.diff"])
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  oba: {skill: czytelnik, system: diff}\n")
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert BRAK_ARTEFAKTU in kody(problemy, "oba")
+
+
+def test_krok_systemowy_z_wejsciem_w_opisie_ma_brak_artefaktu_gdy_nikt_go_nie_produkuje(
+    tmp_path, repo, dom, monkeypatch
+):
+    # opis przyszlego kroku systemowego (np. check, HAR-177) z `consumes`; rejestr podmieniony w obu
+    # modulach, ktore go czytaja (czlonkostwo w walidatorze i opis w kroki_systemowe)
+    from types import MappingProxyType
+
+    from cockpit.services import kroki_systemowe, workflow_walidacja
+
+    rejestr_krokow = MappingProxyType({
+        **kroki_systemowe.KROKI_SYSTEMOWE,
+        "przyszly": kroki_systemowe.OpisKrokuSystemowego(
+            produces=("p.txt",), consumes=("brak.txt",)),
+    })
+    monkeypatch.setattr(kroki_systemowe, "KROKI_SYSTEMOWE", rejestr_krokow)
+    monkeypatch.setattr(workflow_walidacja, "KROKI_SYSTEMOWE", rejestr_krokow)
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  x: {system: przyszly}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problem(problemy, BRAK_ARTEFAKTU, "x").komunikat == (
+        "artefakt brak.txt nie jest produkowany przez zadnego przodka kroku")
+    assert kody(problemy, "x") == [BRAK_ARTEFAKTU]

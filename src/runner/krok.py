@@ -36,7 +36,9 @@ from cockpit.services.walidacja import (
     sprawdz_katalog_runu,
     sprawdz_tylko_odczyt,
 )
+from cockpit.services.kroki_systemowe import PLIK_LINII
 from runner.agent import SpecKroku
+from runner.kotwice import KODOWANIE, PLIK_NOTATKI, sprawdz_kotwice, wczytaj_zmienione_linie, wyciagnij_kotwice
 from runner.straznik import ZMIENNA_BRAK_PYTHONPATH_AGENTA, ZMIENNA_PYTHONPATH_AGENTA
 
 # Katalog runu to jedyne miejsce, w ktorym rola bez zapisu moze pisac (werdykty).
@@ -103,6 +105,8 @@ class WynikKroku:
     powod: str | None
     kod_wyjscia: int | None
     pomiar: PomiarKroku = PomiarKroku()
+    # kotwice `plik:linia` z notatki zmiany (HAR-176); puste dla kazdego innego kroku
+    kotwice: tuple[str, ...] = ()
 
 
 @dataclass
@@ -332,7 +336,7 @@ async def _status_startu(plik) -> str | None:
 def _porazka(
     powod: str, kod: int | None, pomiar: PomiarKroku = PomiarKroku()
 ) -> WynikKroku:
-    return WynikKroku("nieudany", powod, kod, pomiar)
+    return WynikKroku("nieudany", powod, kod, pomiar=pomiar)
 
 
 def _blad_identyfikatora(krok: str) -> str | None:
@@ -369,6 +373,29 @@ def _katalog_artefaktu(
     if naruszenie is not None:
         return None, str(naruszenie)
     return katalog_kroku, None
+
+
+def _ocen_notatke(
+    plik: Path, plik_linii: Path | None
+) -> tuple[str | None, tuple[str, ...]]:
+    """(powod porazki, kotwice) notatki zmiany wzgledem `zmienione-linie.json` kroku diff.
+
+    Brak czytelnego pliku zmienionych linii to brak dowodu: notatki nie da sie ocenic,
+    wiec krok nie przechodzi (evidence_required), zamiast przejsc bez sprawdzenia."""
+    zmienione = wczytaj_zmienione_linie(plik_linii)
+    if zmienione is None:
+        return str(Naruszenie(
+            Niezmiennik.evidence_required,
+            f"brak czytelnego {PLIK_LINII} dla {PLIK_NOTATKI}",
+        )), ()
+    try:
+        notatka = plik.read_text(encoding=KODOWANIE, errors="replace")
+    except OSError as blad:
+        return f"nie można odczytać artefaktu {PLIK_NOTATKI}: {blad}", ()
+    naruszenia = sprawdz_kotwice(notatka, zmienione)
+    if naruszenia:
+        return "; ".join(str(n) for n in naruszenia), ()
+    return None, tuple(wyciagnij_kotwice(notatka))
 
 
 def _zapisz_atomowo(cel: Path, tresc: bytes) -> None:
@@ -412,8 +439,12 @@ async def wykonaj_krok(
     *,
     katalog_runu: Path | None = None,
     prompt: str | None = None,
+    zmienione_linie: Path | None = None,
 ) -> WynikKroku:
     """Uruchamia polecenie kroku i ocenia wynik: kod wyjscia, artefakty, tylko-odczyt.
+
+    Gdy `wyjscia` zawieraja `notatka-zmiany.md`, kotwice jej ryzyk sprawdza `kotwice`
+    wzgledem `zmienione_linie` (plik `zmienione-linie.json` kroku diff, HAR-176).
 
     Rola bez zapisu z artefaktem w `wyjscia` oddaje go jako wynik agenta (stdout);
     runner zapisuje go w `katalog_runu/<step_id>/`, poza repozytorium (HAR-160).
@@ -564,4 +595,12 @@ async def wykonaj_krok(
         if naruszenie is not None:
             return _porazka(str(naruszenie), kod, pomiar)
 
-    return WynikKroku("zakonczony", None, kod, pomiar)
+    if PLIK_NOTATKI in spec.wyjscia:
+        powod, kotwice = await asyncio.to_thread(
+            _ocen_notatke, katalog_dowodu / PLIK_NOTATKI, zmienione_linie
+        )
+        if powod is not None:
+            return _porazka(powod, kod, pomiar)
+        return WynikKroku("zakonczony", None, kod, pomiar=pomiar, kotwice=kotwice)
+
+    return WynikKroku("zakonczony", None, kod, pomiar=pomiar)

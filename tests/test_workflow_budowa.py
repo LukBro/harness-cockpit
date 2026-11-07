@@ -8,6 +8,8 @@ wplywaly na wynik.
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from cockpit.services.invariants import Rola
 from cockpit.services.skills import Rejestr, rozstrzygnij_rejestr
 from cockpit.services.workflow import Poziom, Workflow, ma_bledy, wczytaj_workflow
@@ -16,6 +18,7 @@ from cockpit.services.workflow_walidacja import (
     POLE_BEZ_KONSUMENTA,
     waliduj_workflow,
 )
+from runner.graf import PowodPominiecia, StanKroku, nastepne
 
 # parents[1], nie `git rev-parse`: pod mutmut testy czytaja kopie w `mutants/`.
 KORZEN_REPO = Path(__file__).resolve().parents[1]
@@ -117,6 +120,73 @@ def test_skill_planu_jest_recenzentem_bez_prawa_zapisu_i_tworzy_plan_md(tmp_path
     plan = rejestr.skille["plan"]
     assert plan.role == Rola.reviewer
     assert "plan.md" in plan.produces
+
+
+# --- krok diff (HAR-176): dowod dla recenzentow --------------------------------------------
+
+RECENZENCI = ["contract-check", "review-unknown", "explain-change"]
+CAPABILITIES_REPO = {
+    "test_narrow", "test_full", "test_e2e", "lint", "layers", "typecheck", "contract", "smoke"}
+
+
+def krok_po_id(workflow: Workflow, id_kroku: str):
+    kroki = [k for k in workflow.kroki if k.id == id_kroku]
+    assert len(kroki) == 1, f"oczekiwano jednego kroku {id_kroku}: {kroki}"
+    return kroki[0]
+
+
+def test_workflow_budowy_ma_krok_diff_systemowy_bez_skilla_zaraz_po_scenariuszu_e2e(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    diff = krok_po_id(workflow, "diff")
+    assert (diff.system, diff.skill, diff.needs) == ("diff", None, ["e2e-scenario"])
+    assert diff.approval is False
+    assert diff.optional is False
+
+
+def test_krok_diff_jest_jedynym_krokiem_systemowym_budowy(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    assert [k.id for k in workflow.kroki if k.system is not None] == ["diff"]
+
+
+@pytest.mark.parametrize("id_kroku", RECENZENCI)
+def test_recenzent_budowy_czeka_na_krok_diff_a_nie_na_scenariusz_e2e(tmp_path, id_kroku):
+    workflow, _, _ = wczytaj(tmp_path)
+    assert krok_po_id(workflow, id_kroku).needs == ["diff"]
+
+
+def test_krok_diff_stoi_w_workflow_po_scenariuszu_e2e_i_przed_recenzentami(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    kolejnosc = [k.id for k in workflow.kroki]
+    assert kolejnosc.index("e2e-scenario") < kolejnosc.index("diff")
+    assert all(kolejnosc.index("diff") < kolejnosc.index(r) for r in RECENZENCI)
+
+
+def test_proba_dymna_nadal_czeka_na_trzech_recenzentow(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    assert krok_po_id(workflow, "smoke").needs == RECENZENCI
+
+
+def test_po_zakonczonym_kroku_diff_startuja_trzej_recenzenci_a_po_nieudanym_sa_pominieci_z_brakiem_wejscia(
+    tmp_path,
+):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    poczatek = {
+        k.id: StanKroku.ZAKONCZONY
+        for k in workflow.kroki
+        if k.id in ("plan", "tdd-task", "e2e-scenario")
+    }
+
+    po_sukcesie = nastepne(
+        workflow, rejestr, CAPABILITIES_REPO, {**poczatek, "diff": StanKroku.ZAKONCZONY})
+    po_porazce = nastepne(
+        workflow, rejestr, CAPABILITIES_REPO, {**poczatek, "diff": StanKroku.NIEUDANY})
+
+    assert po_sukcesie.do_startu == RECENZENCI
+    assert po_sukcesie.do_pominiecia == {}
+    for id_kroku in RECENZENCI:
+        assert po_porazce.powody[id_kroku] == PowodPominiecia.BRAK_WEJSCIA
+        assert po_porazce.do_pominiecia[id_kroku] == "brak wejścia: zmiana.diff z kroku diff"
+    assert po_porazce.do_startu == []
 
 
 def mutmut_kopiuje(also_copy: list[str], sciezka: str) -> bool:
