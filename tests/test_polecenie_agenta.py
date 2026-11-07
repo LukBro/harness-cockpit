@@ -176,58 +176,182 @@ def test_specyfikacja_kroku_jest_niezmienna():
 
 
 def test_autor_dostaje_model_tieru_judgment():
-    argv = polecenie_agenta(spec(Rola.author), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.author), PROFIL)
 
-    assert argv[:5] == ["claude", "-p", "p", "--model", "model-sedziego"]
+    assert argv[:4] == ["claude", "-p", "--model", "model-sedziego"]
 
 
 def test_recenzent_dostaje_model_tieru_judgment():
-    argv = polecenie_agenta(spec(Rola.reviewer), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.reviewer), PROFIL)
 
-    assert argv[:5] == ["claude", "-p", "p", "--model", "model-sedziego"]
+    assert argv[:4] == ["claude", "-p", "--model", "model-sedziego"]
 
 
 def test_wykonawca_dostaje_model_tieru_execution():
-    argv = polecenie_agenta(spec(Rola.executor), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.executor), PROFIL)
 
-    assert argv[:5] == ["claude", "-p", "p", "--model", "model-wykonawcy"]
+    assert argv[:4] == ["claude", "-p", "--model", "model-wykonawcy"]
 
 
 def test_zbieracz_dostaje_model_tieru_retrieval():
-    argv = polecenie_agenta(spec(Rola.gatherer), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.gatherer), PROFIL)
 
-    assert argv[:5] == ["claude", "-p", "p", "--model", "model-zbieracza"]
+    assert argv[:4] == ["claude", "-p", "--model", "model-zbieracza"]
 
 
 # --- tryb bez zapisu ---------------------------------------------------
 
+FLAGI_STRUMIENIA = ["--output-format", "stream-json", "--verbose"]
+
 
 def test_recenzent_dostaje_backend_w_trybie_bez_zapisu():
-    argv = polecenie_agenta(spec(Rola.reviewer), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.reviewer), PROFIL)
 
     assert argv == [
-        "claude", "-p", "p", "--model", "model-sedziego", *FLAGI_BEZ_ZAPISU
+        "claude", "-p", "--model", "model-sedziego", *FLAGI_STRUMIENIA, *FLAGI_BEZ_ZAPISU
     ]
 
 
 def test_zbieracz_dostaje_backend_w_trybie_bez_zapisu():
-    argv = polecenie_agenta(spec(Rola.gatherer), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.gatherer), PROFIL)
 
     assert argv == [
-        "claude", "-p", "p", "--model", "model-zbieracza", *FLAGI_BEZ_ZAPISU
+        "claude", "-p", "--model", "model-zbieracza", *FLAGI_STRUMIENIA, *FLAGI_BEZ_ZAPISU
     ]
 
 
 def test_autor_dostaje_backend_z_prawem_zapisu_bez_flag_ograniczajacych():
-    argv = polecenie_agenta(spec(Rola.author), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.author), PROFIL)
 
-    assert argv == ["claude", "-p", "p", "--model", "model-sedziego"]
+    assert argv == ["claude", "-p", "--model", "model-sedziego", *FLAGI_STRUMIENIA]
 
 
 def test_wykonawca_dostaje_backend_z_prawem_zapisu_bez_flag_ograniczajacych():
-    argv = polecenie_agenta(spec(Rola.executor), "p", PROFIL)
+    argv = polecenie_agenta(spec(Rola.executor), PROFIL)
 
-    assert argv == ["claude", "-p", "p", "--model", "model-wykonawcy"]
+    assert argv == ["claude", "-p", "--model", "model-wykonawcy", *FLAGI_STRUMIENIA]
+
+
+# --- HAR-174: strumien zdarzen, budzet i limit tur, prompt poza argv ----------
+
+
+def test_polecenie_agenta_prosi_o_strumien_zdarzen_z_trybem_gadatliwym():
+    argv = polecenie_agenta(spec(Rola.author), PROFIL)
+
+    assert argv[argv.index("--output-format") + 1] == "stream-json"
+    assert "--verbose" in argv
+
+
+def test_polecenie_agenta_nie_niesie_promptu_w_argv():
+    zadanie = spec(Rola.author, skill_id="unikalny-skill-8812")
+
+    argv = polecenie_agenta(zadanie, PROFIL)
+
+    assert not any("unikalny-skill-8812" in a or "SKILL.md" in a for a in argv)
+    assert "-p" in argv
+    assert argv[argv.index("-p") + 1].startswith("--")
+
+
+def test_krok_z_budzetem_przekazuje_limit_do_cli_jako_liczbe_zmiennoprzecinkowa():
+    argv = polecenie_agenta(spec(budget_usd=0.5), PROFIL)
+
+    assert argv[argv.index("--max-budget-usd") + 1] == "0.5"
+
+
+def test_budzet_calkowity_jest_zapisany_z_czescia_ulamkowa():
+    argv = polecenie_agenta(spec(budget_usd=2), PROFIL)
+
+    assert argv[argv.index("--max-budget-usd") + 1] == "2.0"
+
+
+def test_krok_bez_budzetu_nie_ma_flagi_budzetu():
+    assert "--max-budget-usd" not in polecenie_agenta(spec(), PROFIL)
+
+
+def test_krok_z_limitem_tur_przekazuje_go_do_cli():
+    argv = polecenie_agenta(spec(max_turns=3), PROFIL)
+
+    assert argv[argv.index("--max-turns") + 1] == "3"
+
+
+def test_limit_jednej_tury_jest_poprawny_i_trafia_do_cli():
+    argv = polecenie_agenta(spec(max_turns=1), PROFIL)
+
+    assert argv[argv.index("--max-turns") + 1] == "1"
+
+
+def test_krok_bez_limitu_tur_nie_ma_flagi_limitu_tur():
+    assert "--max-turns" not in polecenie_agenta(spec(), PROFIL)
+
+
+def test_budzet_i_limit_tur_stoja_miedzy_strumieniem_a_ustawieniami_w_dokladnym_ksztalcie(
+    tmp_path,
+):
+    ustawienia = tmp_path / "s.json"
+
+    argv = polecenie_agenta(
+        spec(Rola.reviewer, budget_usd=0.5, max_turns=3), PROFIL, ustawienia=ustawienia
+    )
+
+    assert argv == [
+        "claude", "-p", "--model", "model-sedziego", *FLAGI_STRUMIENIA,
+        "--max-budget-usd", "0.5", "--max-turns", "3",
+        "--settings", str(ustawienia), *FLAGI_BEZ_ZAPISU,
+    ]
+
+
+@pytest.mark.parametrize(("zly", "powod"), [
+    pytest.param(True, "budget_usd musi być liczbą, jest True", id="bool"),
+    pytest.param(0, "budget_usd musi być skończony i dodatni, jest 0", id="zero"),
+    pytest.param(0.0, "budget_usd musi być skończony i dodatni, jest 0.0",
+                 id="zero-zmiennoprzecinkowe"),
+    pytest.param(-1, "budget_usd musi być skończony i dodatni, jest -1", id="ujemny"),
+    pytest.param(float("inf"), "budget_usd musi być skończony i dodatni, jest inf",
+                 id="nieskonczonosc"),
+    pytest.param(float("nan"), "budget_usd musi być skończony i dodatni, jest nan", id="nan"),
+    pytest.param("5", "budget_usd musi być liczbą, jest '5'", id="napis"),
+])
+def test_niepoprawny_budzet_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem(
+    zly, powod
+):
+    with pytest.raises(ValueError) as wyjatek:
+        polecenie_agenta(spec(budget_usd=zly), PROFIL)
+
+    assert type(wyjatek.value) is ValueError
+    assert str(wyjatek.value) == powod
+
+
+@pytest.mark.parametrize(("zly", "powod"), [
+    pytest.param(True, "max_turns musi być liczbą całkowitą, jest True", id="bool"),
+    pytest.param(0, "max_turns musi być dodatni, jest 0", id="zero"),
+    pytest.param(-2, "max_turns musi być dodatni, jest -2", id="ujemny"),
+    pytest.param(2.5, "max_turns musi być liczbą całkowitą, jest 2.5", id="ulamek"),
+    pytest.param("3", "max_turns musi być liczbą całkowitą, jest '3'", id="napis"),
+])
+def test_niepoprawny_limit_tur_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem(
+    zly, powod
+):
+    with pytest.raises(ValueError) as wyjatek:
+        polecenie_agenta(spec(max_turns=zly), PROFIL)
+
+    assert type(wyjatek.value) is ValueError
+    assert str(wyjatek.value) == powod
+
+
+def test_specyfikacja_kroku_bez_budzetu_i_limitu_tur_ma_oba_pola_puste():
+    s = spec()
+
+    assert s.budget_usd is None
+    assert s.max_turns is None
+
+
+def test_rola_dochodzi_do_modelu_tylko_przez_tier_z_profilu_roli():
+    from cockpit.services.invariants import profil_roli
+
+    profil = ProfilBackendu.z_srodowiska({})
+    for rola in Rola:
+        argv = polecenie_agenta(spec(rola), profil)
+        assert argv[argv.index("--model") + 1] == profil.model(profil_roli(rola).tier)
 
 
 # --- profil backendu: domyslne i nadpisania z srodowiska ---------------
@@ -245,7 +369,7 @@ def test_autor_recenzent_wykonawca_i_zbieracz_dostaja_domyslne_modele_ich_tierow
     profil = ProfilBackendu.z_srodowiska({})
 
     def model(rola):
-        return polecenie_agenta(spec(rola), "p", profil)[4]
+        return polecenie_agenta(spec(rola), profil)[3]
 
     assert model(Rola.author) == "opus"
     assert model(Rola.reviewer) == "opus"
@@ -306,7 +430,7 @@ def test_polecenie_zbieracza_bez_modelu_retrieval_w_profilu_jest_odrzucone():
     profil = ProfilBackendu(modele={Tier.judgment: "opus"})
 
     with pytest.raises(BrakModelu):
-        polecenie_agenta(spec(Rola.gatherer), "p", profil)
+        polecenie_agenta(spec(Rola.gatherer), profil)
 
 
 def test_pusty_napis_jako_model_tieru_to_brak_modelu():
@@ -545,7 +669,7 @@ def test_polecenie_z_ustawieniami_kroku_niesie_flage_settings_ze_sciezka_pliku_o
 ):
     ustawienia = tmp_path / "hooks" / "run-1" / "krok-1.settings.json"
 
-    argv = polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=ustawienia)
+    argv = polecenie_agenta(spec(rola), PROFIL, ustawienia=ustawienia)
 
     assert argv.count("--settings") == 1
     assert argv[argv.index("--settings") + 1] == str(ustawienia)
@@ -554,25 +678,25 @@ def test_polecenie_z_ustawieniami_kroku_niesie_flage_settings_ze_sciezka_pliku_o
 @pytest.mark.parametrize("rola", WSZYSTKIE_ROLE)
 def test_ustawienia_kroku_niczego_nie_zmieniaja_w_reszcie_polecenia_agenta(tmp_path, rola):
     ustawienia = tmp_path / "krok-1.settings.json"
-    bez = polecenie_agenta(spec(rola), "p", PROFIL)
+    bez = polecenie_agenta(spec(rola), PROFIL)
 
-    z = polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=ustawienia)
+    z = polecenie_agenta(spec(rola), PROFIL, ustawienia=ustawienia)
 
     i = z.index("--settings")
     assert z[:i] + z[i + 2:] == bez
-    assert z[:5] == bez[:5]
+    assert z[:7] == bez[:7]
 
 
 @pytest.mark.parametrize("rola", WSZYSTKIE_ROLE)
 def test_polecenie_bez_ustawien_kroku_nie_ma_flagi_settings(rola):
-    assert "--settings" not in polecenie_agenta(spec(rola), "p", PROFIL)
-    assert "--settings" not in polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=None)
+    assert "--settings" not in polecenie_agenta(spec(rola), PROFIL)
+    assert "--settings" not in polecenie_agenta(spec(rola), PROFIL, ustawienia=None)
 
 
 def test_sciezka_ustawien_ze_spacja_jest_jednym_argumentem_polecenia(tmp_path):
     ustawienia = tmp_path / "katalog ze spacja" / "krok 1.settings.json"
 
-    argv = polecenie_agenta(spec(Rola.executor), "p", PROFIL, ustawienia=ustawienia)
+    argv = polecenie_agenta(spec(Rola.executor), PROFIL, ustawienia=ustawienia)
 
     assert str(ustawienia) in argv
 
@@ -596,8 +720,8 @@ async def test_realne_polecenie_agenta_ma_settings_a_plik_hookow_kroku_lezy_poza
         stan, "run-1", "krok-1", ustawienia_hookow(plik, rola=rola, worktree=worktree)
     )
     zapis_argv = tmp_path / "argv-atrapy.json"
-    argv = polecenie_agenta(spec(rola), "p", PROFIL, ustawienia=ustawienia)
-    polecenie = [sys.executable, "-I", "-c", KOD_ATRAPY_ARGV, *argv[1:], str(zapis_argv)]
+    argv = polecenie_agenta(spec(rola), PROFIL, ustawienia=ustawienia)
+    polecenie =[sys.executable, "-I", "-c", KOD_ATRAPY_ARGV, *argv[1:], str(zapis_argv)]
     zdarzenia: list[dict] = []
 
     async def emit(zdarzenie: dict) -> None:

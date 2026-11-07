@@ -302,6 +302,7 @@
           "cost_usd": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -347,9 +348,35 @@
             ],
             "title": "Kroki Weryfikujace"
           },
+          "num_turns": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Turns"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "step_id": {
             "minLength": 1,
@@ -384,6 +411,32 @@
               }
             ],
             "title": "Tokens"
+          },
+          "tokens_in": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
           },
           "wyslane_output": {
             "anyOf": [
@@ -477,6 +530,28 @@
             "title": "Attempt",
             "type": "integer"
           },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "num_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Turns"
+          },
           "reason": {
             "anyOf": [
               {
@@ -487,6 +562,17 @@
               }
             ],
             "title": "Reason"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "status": {
             "enum": [
@@ -502,6 +588,28 @@
           "step_id": {
             "title": "Step Id",
             "type": "string"
+          },
+          "tokens_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
           }
         },
         "required": [
@@ -509,7 +617,12 @@
           "agent_id",
           "attempt",
           "status",
-          "reason"
+          "reason",
+          "cost_usd",
+          "tokens_in",
+          "tokens_out",
+          "num_turns",
+          "session_id"
         ],
         "title": "KrokRunu",
         "type": "object"

@@ -197,8 +197,8 @@ test = "tests/test_silnik_runu.py::test_znak_sterujacy_w_komendzie_capability_ko
 # Brak modelu w profilu (BrakModelu) konczy krok porazka.
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = 'except BrakModelu as e:'
-zamien = 'except KeyError as e:'
+szukaj = 'except (BrakModelu, ValueError) as e:'
+zamien = 'except (KeyError, ValueError) as e:'
 test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej"
 
 # --- stan kroku w toku (linia z `# pragma: no mutate`) ---

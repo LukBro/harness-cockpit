@@ -236,10 +236,8 @@ test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_ko
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = '''        attempt=body.attempt,
-'''
-zamien = '''        attempt=None,
-'''
+szukaj = '''        attempt=body.attempt, tokens_in=body.tokens_in,'''
+zamien = '''        attempt=None, tokens_in=body.tokens_in,'''
 test = "tests/test_stan_krokow.py::test_dwie_proby_tego_samego_kroku_maja_osobne_stany"
 
 [[mutant]]
@@ -268,8 +266,8 @@ test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = "reason=k.reason) for k in wiersze_krokow],"
-zamien = "reason=None) for k in wiersze_krokow],"
+szukaj = "reason=k.reason, cost_usd=k.cost_usd,"
+zamien = "reason=None, cost_usd=k.cost_usd,"
 test = "tests/test_stan_krokow.py::test_szczegoly_runu_zwracaja_kroki_ze_stanem_i_powodem_w_stalym_porzadku"
 
 # --- models.py: StepStatus i StepRun ---

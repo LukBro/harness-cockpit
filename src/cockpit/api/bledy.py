@@ -7,9 +7,12 @@ do odpowiedzi. Podklasy z `runner.*` sa poza tabela: API nie importuje runnera.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Mapping
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from cockpit.services.errors import (
@@ -72,6 +75,24 @@ async def _obsluz_nieoczekiwany_blad(_: Request, exc: Exception) -> JSONResponse
     return _blad_wewnetrzny(exc)
 
 
+def _bezpieczne_dla_json(wartosc: object) -> object:
+    """Liczby nieskonczone i NaN (JSON ich nie zna) zamienia na napis, rekurencyjnie."""
+    if isinstance(wartosc, float) and not math.isfinite(wartosc):
+        return str(wartosc)
+    if isinstance(wartosc, dict):
+        return {k: _bezpieczne_dla_json(v) for k, v in wartosc.items()}
+    if isinstance(wartosc, (list, tuple)):
+        return [_bezpieczne_dla_json(v) for v in wartosc]
+    return wartosc
+
+
+async def _obsluz_blad_walidacji(_: Request, exc: RequestValidationError) -> JSONResponse:
+    # Ksztalt jak domyslny handler FastAPI; `input: inf` nie moze zrobic z 422 kodu 500.
+    szczegoly = jsonable_encoder(_bezpieczne_dla_json(exc.errors()))
+    return JSONResponse(status_code=422, content={"detail": szczegoly})
+
+
 def zarejestruj_obsluge_bledow(app: FastAPI) -> None:
+    app.add_exception_handler(RequestValidationError, _obsluz_blad_walidacji)
     app.add_exception_handler(BladDziedziny, _obsluz_blad_dziedziny)
     app.add_exception_handler(Exception, _obsluz_nieoczekiwany_blad)

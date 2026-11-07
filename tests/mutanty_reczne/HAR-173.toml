@@ -673,36 +673,36 @@ test = "tests/test_wznowienie_runu.py::test_zepsuty_project_yaml_w_worktree_to_p
 # Wartosci domyslne profilu i katalogu domowego.
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
-    dom = dom if dom is not None else Path.home()
+szukaj = '''    dom = dom if dom is not None else Path.home()
     try:
-        async with'''
-zamien = '''profil = ProfilBackendu.z_srodowiska()
-    dom = dom if dom is not None else Path.home()
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()'''
+zamien = '''    dom = dom if dom is not None else Path.home()
     try:
-        async with'''
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = ProfilBackendu.z_konfiguracji()'''
 test = "tests/test_wznowienie_runu.py::test_wznowienie_z_podanym_profilem_nie_siega_do_profilu_srodowiska"
 
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
-    dom = dom if dom is not None else Path.home()
+szukaj = '''    dom = dom if dom is not None else Path.home()
     try:
-        async with'''
-zamien = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
-    dom = Path.home()
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()'''
+zamien = '''    dom = Path.home()
     try:
-        async with'''
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()'''
 test = "tests/test_wznowienie_runu.py::test_wznowienie_z_podanym_dom_przekazuje_go_do_rejestru_a_nie_katalog_domowy"
 
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
-    dom = dom if dom is not None else Path.home()
+szukaj = '''    dom = dom if dom is not None else Path.home()
     try:
-        async with'''
-zamien = '''profil = profil if profil is not None else ProfilBackendu.z_srodowiska()
-    dom = dom
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()'''
+zamien = '''    dom = dom
     try:
-        async with'''
+        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()'''
 test = "tests/test_wznowienie_runu.py::test_wznowienie_bez_dom_buduje_rejestr_z_katalogu_domowego"

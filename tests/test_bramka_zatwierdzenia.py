@@ -299,11 +299,12 @@ class SzpiegCzytajacyCheckpoint(Szpieg):
         super().__init__(**opcje)
         self.checkpointy: dict[str, dict | None] = {}
 
-    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None):
+    async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None):
         plik = katalog_runu / PLIK
         self.checkpointy[spec.step_id] = (
             json.loads(plik.read_text(encoding="utf-8")) if plik.is_file() else None)
-        return await super().__call__(spec, polecenie, katalog, emit, katalog_runu=katalog_runu)
+        return await super().__call__(
+            spec, polecenie, katalog, emit, katalog_runu=katalog_runu, prompt=prompt)
 
 
 async def test_checkpoint_z_waiting_on_lezy_na_dysku_zanim_krok_niezalezny_od_bramki_sie_skonczy(tmp_path):

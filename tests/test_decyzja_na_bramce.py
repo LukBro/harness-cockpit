@@ -995,7 +995,9 @@ async def test_run_czekajacy_na_bramce_po_restarcie_kokpitu_pokazuje_ten_sam_kro
 
     assert po["status"] == "waiting"
     assert po["steps"] == [{"step_id": "wdrozenie", "agent_id": "wdrozenie", "attempt": 1,
-                            "status": "waiting", "reason": None}]
+                            "status": "waiting", "reason": None, "cost_usd": None,
+                            "tokens_in": None, "tokens_out": None, "num_turns": None,
+                            "session_id": None}]
     (czekanie,) = [e for e in po["events"] if e["kind"] == "step_waiting"]
     assert (czekanie["step_id"], czekanie["text"]) == ("wdrozenie", TEKST_CZEKANIA)
     assert po == przed

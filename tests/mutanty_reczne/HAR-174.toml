@@ -1,0 +1,1261 @@
+# Tabela recznych mutantow HAR-174: elementy, ktorych mutmut nie mutuje (Field/Mapped, stale modulu,
+# krotki except, czlony warunkow, domyslne argumenty, zwolnienie zasobu w finally, migracja, schemat).
+# Kazde `szukaj` wystepuje w pliku dokladnie raz; kazdy wiersz zweryfikowany skryptem (liczba wystapien,
+# zamien != szukaj, skladnia pliku po mutacji, istnienie testu).
+
+
+# --- EventIn: ograniczenia i wartosci domyslne pol pomiaru (Field nie jest mutowany przez mutmut) ---
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_in: int | None = Field(default=None, ge=1, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_in: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_648)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_646)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_in: int | None = Field(default=0, ge=0, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_out: int | None = Field(default=None, ge=1, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_out: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_648)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_646)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    tokens_out: int | None = Field(default=0, ge=0, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    num_turns: int | None = Field(default=None, ge=1, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    num_turns: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_648)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_646)'
+test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = '    num_turns: int | None = Field(default=0, ge=0, le=2_147_483_647)'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
+zamien = '    session_id: str | None = Field(default=None, min_length=0, max_length=100)'
+test = 'tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_odrzucony_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
+zamien = '    session_id: str | None = Field(default=None, min_length=2, max_length=100)'
+test = 'tests/test_pomiar_kroku.py::test_session_id_o_jednym_znaku_jest_przyjety_i_zapisany'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
+zamien = '    session_id: str | None = Field(default=None, min_length=1, max_length=101)'
+test = 'tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_odrzucony_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
+zamien = '    session_id: str | None = Field(default=None, min_length=1, max_length=99)'
+test = 'tests/test_pomiar_kroku.py::test_session_id_o_stu_znakach_jest_przyjety_i_zapisany'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
+zamien = '    session_id: str | None = Field(default="", min_length=1, max_length=100)'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
+
+
+# --- ingest_event i get_run (trasy z dekoratorem, mutmut ich nie mutuje): przekazanie pomiaru ---
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'tokens_in=body.tokens_in,'
+zamien = 'tokens_in=None,'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_z_pomiarem_zapisuje_go_w_wierszu_kroku'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'tokens_out=body.tokens_out,'
+zamien = 'tokens_out=None,'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_z_pomiarem_zapisuje_go_w_wierszu_kroku'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'num_turns=body.num_turns,'
+zamien = 'num_turns=None,'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_z_pomiarem_zapisuje_go_w_wierszu_kroku'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'session_id=body.session_id,'
+zamien = 'session_id=None,'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_z_pomiarem_zapisuje_go_w_wierszu_kroku'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'cost_usd=k.cost_usd,'
+zamien = 'cost_usd=None,'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'tokens_in=k.tokens_in,'
+zamien = 'tokens_in=None,'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'tokens_out=k.tokens_out,'
+zamien = 'tokens_out=None,'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'num_turns=k.num_turns,'
+zamien = 'num_turns=None,'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'session_id=k.session_id,'
+zamien = 'session_id=None,'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+
+# --- KrokRunu: pola pomiaru dopuszczaja null (brak pomiaru, nigdy 0) ---
+
+[[mutant]]
+plik = 'src/cockpit/api/schematy.py'
+szukaj = '''    cost_usd: float | None
+    tokens_in'''
+zamien = '''    cost_usd: float
+    tokens_in'''
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_null_dla_kroku_bez_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/api/schematy.py'
+szukaj = '''    tokens_in: int | None
+    tokens_out'''
+zamien = '''    tokens_in: int
+    tokens_out'''
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_null_dla_kroku_bez_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/api/schematy.py'
+szukaj = '''    tokens_out: int | None
+    num_turns'''
+zamien = '''    tokens_out: int
+    num_turns'''
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_null_dla_kroku_bez_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/api/schematy.py'
+szukaj = '''    num_turns: int | None
+    session_id'''
+zamien = '''    num_turns: int
+    session_id'''
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_null_dla_kroku_bez_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/api/schematy.py'
+szukaj = '''    session_id: str | None
+'''
+zamien = '''    session_id: str
+'''
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_null_dla_kroku_bez_pomiaru'
+
+
+# --- Krok: budget_usd i max_turns (Field nie jest mutowany przez mutmut) ---
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=False)'
+zamien = 'budget_usd: float | None = Field(default=None, ge=0, strict=True, allow_inf_nan=False)'
+test = 'tests/test_pomiar_kroku.py::test_zly_budzet_albo_limit_tur_robi_krok_niepoprawnym_z_bledem_pola'
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=False)'
+zamien = 'budget_usd: float | None = Field(default=None, gt=0, strict=False, allow_inf_nan=False)'
+test = 'tests/test_pomiar_kroku.py::test_zly_budzet_albo_limit_tur_robi_krok_niepoprawnym_z_bledem_pola'
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=False)'
+zamien = 'budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=True)'
+test = 'tests/test_pomiar_kroku.py::test_zly_budzet_albo_limit_tur_robi_krok_niepoprawnym_z_bledem_pola'
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=False)'
+zamien = 'budget_usd: float | None = Field(default=1.0, gt=0, strict=True, allow_inf_nan=False)'
+test = 'tests/test_pomiar_kroku.py::test_krok_bez_budzetu_i_limitu_tur_ma_oba_pola_puste'
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'max_turns: int | None = Field(default=None, ge=1, strict=True)'
+zamien = 'max_turns: int | None = Field(default=None, ge=0, strict=True)'
+test = 'tests/test_pomiar_kroku.py::test_zly_budzet_albo_limit_tur_robi_krok_niepoprawnym_z_bledem_pola'
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'max_turns: int | None = Field(default=None, ge=1, strict=True)'
+zamien = 'max_turns: int | None = Field(default=None, ge=1, strict=False)'
+test = 'tests/test_pomiar_kroku.py::test_zly_budzet_albo_limit_tur_robi_krok_niepoprawnym_z_bledem_pola'
+
+[[mutant]]
+plik = 'src/cockpit/services/workflow.py'
+szukaj = 'max_turns: int | None = Field(default=None, ge=1, strict=True)'
+zamien = 'max_turns: int | None = Field(default=1, ge=1, strict=True)'
+test = 'tests/test_pomiar_kroku.py::test_krok_bez_budzetu_i_limitu_tur_ma_oba_pola_puste'
+
+
+# --- StepRun: typ i brak wartosci domyslnej kolumn pomiaru (measured_or_null) ---
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    cost_usd: Mapped[float | None] = mapped_column(Float, default=None)
+    tokens_in'''
+zamien = '''    cost_usd: Mapped[float | None] = mapped_column(Integer, default=None)
+    tokens_in'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    cost_usd: Mapped[float | None] = mapped_column(Float, default=None)
+    tokens_in'''
+zamien = '''    cost_usd: Mapped[float | None] = mapped_column(Float, default=0.0)
+    tokens_in'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    tokens_in: Mapped[int | None] = mapped_column(Integer, default=None)
+    tokens_out'''
+zamien = '''    tokens_in: Mapped[int | None] = mapped_column(Float, default=None)
+    tokens_out'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    tokens_in: Mapped[int | None] = mapped_column(Integer, default=None)
+    tokens_out'''
+zamien = '''    tokens_in: Mapped[int | None] = mapped_column(Integer, default=0)
+    tokens_out'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    tokens_out: Mapped[int | None] = mapped_column(Integer, default=None)
+    num_turns'''
+zamien = '''    tokens_out: Mapped[int | None] = mapped_column(Float, default=None)
+    num_turns'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    tokens_out: Mapped[int | None] = mapped_column(Integer, default=None)
+    num_turns'''
+zamien = '''    tokens_out: Mapped[int | None] = mapped_column(Integer, default=0)
+    num_turns'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    num_turns: Mapped[int | None] = mapped_column(Integer, default=None)
+    session_id'''
+zamien = '''    num_turns: Mapped[int | None] = mapped_column(Float, default=None)
+    session_id'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '''    num_turns: Mapped[int | None] = mapped_column(Integer, default=None)
+    session_id'''
+zamien = '''    num_turns: Mapped[int | None] = mapped_column(Integer, default=0)
+    session_id'''
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '    session_id: Mapped[str | None] = mapped_column(String(100), default=None)'
+zamien = '    session_id: Mapped[str | None] = mapped_column(Integer, default=None)'
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '    session_id: Mapped[str | None] = mapped_column(String(100), default=None)'
+zamien = '    session_id: Mapped[str | None] = mapped_column(String(99), default=None)'
+test = 'tests/test_pomiar_kroku.py::test_identyfikator_sesji_kroku_miesci_sie_w_kolumnie_o_stu_znakach'
+
+[[mutant]]
+plik = 'src/cockpit/db/models.py'
+szukaj = '    session_id: Mapped[str | None] = mapped_column(String(100), default=None)'
+zamien = '    session_id: Mapped[str | None] = mapped_column(String(100), default="")'
+test = 'tests/test_pomiar_kroku.py::test_kolumna_pomiaru_kroku_ma_swoj_typ_dopuszcza_brak_pomiaru_i_nie_ma_wartosci_domyslnej'
+
+
+# --- kroki.py: rodzaje zdarzen konczace krok (stala modulu) ---
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = 'KONCZACE_KROK = frozenset({"step_finished", "step_failed"})'
+zamien = 'KONCZACE_KROK = frozenset({"step_failed"})'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_z_pomiarem_zapisuje_go_w_wierszu_kroku'
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = 'KONCZACE_KROK = frozenset({"step_finished", "step_failed"})'
+zamien = 'KONCZACE_KROK = frozenset({"step_finished"})'
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_z_pomiarem_zapisuje_go_w_wierszu_kroku'
+
+
+# --- kroki.py i runs.py: wartosci domyslne pomiaru w sygnaturach ---
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+zamien = '''    *, cost_usd: float | None = 0.0, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+test = 'tests/test_pomiar_kroku.py::test_zastosowanie_zdarzenia_konca_kroku_bez_podanego_pomiaru_zapisuje_brak_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+zamien = '''    *, cost_usd: float | None = None, tokens_in: int | None = 0,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+test = 'tests/test_pomiar_kroku.py::test_zastosowanie_zdarzenia_konca_kroku_bez_podanego_pomiaru_zapisuje_brak_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+zamien = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = 0, num_turns: int | None = None,
+    session_id: str | None = None,'''
+test = 'tests/test_pomiar_kroku.py::test_zastosowanie_zdarzenia_konca_kroku_bez_podanego_pomiaru_zapisuje_brak_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+zamien = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = 0,
+    session_id: str | None = None,'''
+test = 'tests/test_pomiar_kroku.py::test_zastosowanie_zdarzenia_konca_kroku_bez_podanego_pomiaru_zapisuje_brak_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/services/kroki.py'
+szukaj = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = None,'''
+zamien = '''    *, cost_usd: float | None = None, tokens_in: int | None = None,
+    tokens_out: int | None = None, num_turns: int | None = None,
+    session_id: str | None = "",'''
+test = 'tests/test_pomiar_kroku.py::test_zastosowanie_zdarzenia_konca_kroku_bez_podanego_pomiaru_zapisuje_brak_pomiaru'
+
+[[mutant]]
+plik = 'src/cockpit/services/runs.py'
+szukaj = '''    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+zamien = '''    tokens_in: int | None = 0,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
+
+[[mutant]]
+plik = 'src/cockpit/services/runs.py'
+szukaj = '''    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+zamien = '''    tokens_in: int | None = None,
+    tokens_out: int | None = 0,
+    num_turns: int | None = None,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
+
+[[mutant]]
+plik = 'src/cockpit/services/runs.py'
+szukaj = '''    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+zamien = '''    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = 0,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
+
+[[mutant]]
+plik = 'src/cockpit/services/runs.py'
+szukaj = '''    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = None,
+    kroki_weryfikujace: Sequence[str] | None = None,
+) -> tuple[Event, bool]:'''
+zamien = '''    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = "",
+) -> tuple[Event, bool]:'''
+test = 'tests/test_pomiar_kroku.py::test_zapis_zdarzenia_konca_kroku_przez_serwis_bez_podanego_pomiaru_zostawia_null'
+
+
+# --- krok.py: stale modulu ---
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'LIMIT_LINII_AGENTA = 8 * 1024 * 1024'
+zamien = 'LIMIT_LINII_AGENTA = 8 * 1024 * 1024 - 1'
+test = 'tests/test_pomiar_kroku.py::test_linia_dokladnie_o_dlugosci_limitu_jest_przyjeta'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'LIMIT_LINII_AGENTA = 8 * 1024 * 1024'
+zamien = 'LIMIT_LINII_AGENTA = 8 * 1024 * 1024 + 1'
+test = 'tests/test_pomiar_kroku.py::test_linia_dluzsza_niz_limit_konczy_krok_bledem_z_limitem_w_bajtach'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'DLUGOSC_FRAGMENTU_LINII = 200'
+zamien = 'DLUGOSC_FRAGMENTU_LINII = 201'
+test = 'tests/test_pomiar_kroku.py::test_niezrozumiala_linia_w_powodzie_jest_obcieta_do_200_znakow'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'DLUGOSC_FRAGMENTU_LINII = 200'
+zamien = 'DLUGOSC_FRAGMENTU_LINII = 199'
+test = 'tests/test_pomiar_kroku.py::test_niezrozumiala_linia_w_powodzie_jest_obcieta_do_200_znakow'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'KATALOG_PROMPTOW = "prompty"'
+zamien = 'KATALOG_PROMPTOW = "prompt"'
+test = 'tests/test_pomiar_kroku.py::test_prompt_lezy_w_pliku_prompty_krok_txt_w_katalogu_runu_bajt_w_bajt'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'INT4_MAX = 2_147_483_647'
+zamien = 'INT4_MAX = 2_147_483_648'
+test = 'tests/test_pomiar_kroku.py::test_zla_albo_brakujaca_liczba_zdarzenia_result_jest_brakiem_pomiaru_tylko_swojego_pola'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'INT4_MAX = 2_147_483_647'
+zamien = 'INT4_MAX = 2_147_483_646'
+test = 'tests/test_pomiar_kroku.py::test_liczba_zdarzenia_result_na_granicach_zakresu_jest_zapisana'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'LIMIT_SESSION_ID = 100'
+zamien = 'LIMIT_SESSION_ID = 101'
+test = 'tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_brakiem_pomiaru'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'LIMIT_SESSION_ID = 100'
+zamien = 'LIMIT_SESSION_ID = 99'
+test = 'tests/test_pomiar_kroku.py::test_session_id_dlugi_na_100_znakow_miesci_sie_w_kolumnie_i_jest_zapisany'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'PODTYPY_BUDZETU = frozenset({"error_max_budget_usd", "error_max_turns"})'
+zamien = 'PODTYPY_BUDZETU = frozenset({"error_max_turns"})'
+test = 'tests/test_pomiar_kroku.py::test_wyczerpanie_budzetu_albo_tur_konczy_krok_porazka_z_nazwanym_powodem'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'PODTYPY_BUDZETU = frozenset({"error_max_budget_usd", "error_max_turns"})'
+zamien = 'PODTYPY_BUDZETU = frozenset({"error_max_budget_usd"})'
+test = 'tests/test_pomiar_kroku.py::test_wyczerpanie_budzetu_albo_tur_konczy_krok_porazka_z_nazwanym_powodem'
+
+
+# --- krok.py: dataklasy PomiarKroku, WynikKroku, _StanStrumienia i domyslny pomiar porazki ---
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '    cost_usd: float | None = None'
+zamien = '    cost_usd: float | None = 0.0'
+test = 'tests/test_pomiar_kroku.py::test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '    tokens_in: int | None = None'
+zamien = '    tokens_in: int | None = 0'
+test = 'tests/test_pomiar_kroku.py::test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '    tokens_out: int | None = None'
+zamien = '    tokens_out: int | None = 0'
+test = 'tests/test_pomiar_kroku.py::test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '    num_turns: int | None = None'
+zamien = '    num_turns: int | None = 0'
+test = 'tests/test_pomiar_kroku.py::test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '    session_id: str | None = None'
+zamien = '    session_id: str | None = ""'
+test = 'tests/test_pomiar_kroku.py::test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '''    kod_wyjscia: int | None
+    pomiar: PomiarKroku = PomiarKroku()'''
+zamien = '''    kod_wyjscia: int | None
+    pomiar: PomiarKroku = PomiarKroku(cost_usd=0.0)'''
+test = 'tests/test_pomiar_kroku.py::test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'powod: str, kod: int | None, pomiar: PomiarKroku = PomiarKroku()'
+zamien = 'powod: str, kod: int | None, pomiar: PomiarKroku = PomiarKroku(cost_usd=0.0)'
+test = 'tests/test_pomiar_kroku.py::test_tryb_agenta_bez_katalogu_runu_to_porazka_i_agent_nie_rusza'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '    blad_linii: str | None = None'
+zamien = '    blad_linii: str | None = ""'
+test = 'tests/test_pomiar_kroku.py::test_krok_z_wynikiem_agenta_zapisuje_koszt_tokeny_tury_i_sesje'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'except (ValueError, RecursionError):'
+zamien = 'except RecursionError:'
+test = 'tests/test_pomiar_kroku.py::test_niezrozumiala_linia_wyjscia_agenta_konczy_krok_bledem_z_trescia_linii'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'except (ValueError, RecursionError):'
+zamien = 'except ValueError:'
+test = 'tests/test_pomiar_kroku.py::test_gleboko_zagniezdzona_linia_wyjscia_agenta_jest_niezrozumiala_a_nie_wyjatkiem'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '''    except OverflowError:
+        return None'''
+zamien = '''    except KeyError:
+        return None'''
+test = 'tests/test_pomiar_kroku.py::test_koszt_ponad_zakres_liczby_zmiennoprzecinkowej_jest_brakiem_pomiaru_a_nie_wyjatkiem'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'dane = tresc.encode(errors="replace")'
+zamien = 'dane = tresc.encode()'
+test = 'tests/test_pomiar_kroku.py::test_wynik_recenzenta_z_samotnym_surogatem_zapisuje_artefakt_ze_znakiem_zastepczym'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = '''    except OSError as blad:
+        return None, f"nie można zapisać pliku promptu'''
+zamien = '''    except KeyError as blad:
+        return None, f"nie można zapisać pliku promptu'''
+test = 'tests/test_pomiar_kroku.py::test_nieudany_zapis_pliku_promptu_to_porazka_z_przyczyna_systemu_i_bez_startu_agenta'
+
+
+# --- agent.py: stale modulu, profil domyslny, klasa bledu ---
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-format", "stream-json", "--verbose")'
+zamien = 'FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-formats", "stream-json", "--verbose")'
+test = 'tests/test_polecenie_agenta.py::test_polecenie_agenta_prosi_o_strumien_zdarzen_z_trybem_gadatliwym'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-format", "stream-json", "--verbose")'
+zamien = 'FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-format", "json", "--verbose")'
+test = 'tests/test_polecenie_agenta.py::test_polecenie_agenta_prosi_o_strumien_zdarzen_z_trybem_gadatliwym'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-format", "stream-json", "--verbose")'
+zamien = 'FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-format", "stream-json", "--verbosee")'
+test = 'tests/test_polecenie_agenta.py::test_polecenie_agenta_prosi_o_strumien_zdarzen_z_trybem_gadatliwym'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'FLAGA_BUDZETU = "--max-budget-usd"'
+zamien = 'FLAGA_BUDZETU = "--max-budget"'
+test = 'tests/test_polecenie_agenta.py::test_krok_z_budzetem_przekazuje_limit_do_cli_jako_liczbe_zmiennoprzecinkowa'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'FLAGA_TUR = "--max-turns"'
+zamien = 'FLAGA_TUR = "--turns"'
+test = 'tests/test_polecenie_agenta.py::test_krok_z_limitem_tur_przekazuje_go_do_cli'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'NAZWA_PLIKU_PROFILU = "backendy.json"'
+zamien = 'NAZWA_PLIKU_PROFILU = "backendy.jsn"'
+test = 'tests/test_profil_backendu.py::test_plik_profilu_lezy_obok_pliku_z_cockpit_config_gdy_nie_podano_cockpit_backendy'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = '    "claude": DOMYSLNE_MODELE,'
+zamien = '    "claude-code": DOMYSLNE_MODELE,'
+test = 'tests/test_profil_backendu.py::test_profil_domyslny_claude_to_domyslne_modele_tierow'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'PROFIL_DOMYSLNY: Mapping[str, Mapping[Tier, str]] = MappingProxyType({'
+zamien = 'PROFIL_DOMYSLNY: Mapping[str, Mapping[Tier, str]] = dict({'
+test = 'tests/test_profil_backendu.py::test_profil_domyslny_jest_tylko_do_odczytu'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'class BladProfiluBackendu(BladDziedziny):'
+zamien = 'class BladProfiluBackendu(Exception):'
+test = 'tests/test_profil_backendu.py::test_nieznany_backend_to_blad_profilu_z_jego_nazwa'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = '    budget_usd: float | None = None'
+zamien = '    budget_usd: float | None = 1.0'
+test = 'tests/test_polecenie_agenta.py::test_krok_bez_budzetu_nie_ma_flagi_budzetu'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = '    max_turns: int | None = None'
+zamien = '    max_turns: int | None = 1'
+test = 'tests/test_polecenie_agenta.py::test_krok_bez_limitu_tur_nie_ma_flagi_limitu_tur'
+
+
+# --- agent.py: krotki except i czlony warunkow walidacji ---
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'except (OSError, UnicodeDecodeError) as blad:'
+zamien = 'except OSError as blad:'
+test = 'tests/test_profil_backendu.py::test_plik_nie_w_utf8_to_blad_profilu_z_nazwa_pliku_i_przyczyna_dekodowania'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'except (OSError, UnicodeDecodeError) as blad:'
+zamien = 'except UnicodeDecodeError as blad:'
+test = 'tests/test_profil_backendu.py::test_katalog_zamiast_pliku_profilu_to_blad_profilu_z_przyczyna_systemu'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'except (ValueError, RecursionError) as blad:'
+zamien = 'except RecursionError as blad:'
+test = 'tests/test_profil_backendu.py::test_uszkodzony_json_to_blad_profilu_z_nazwa_pliku_i_przyczyna_parsera'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'except (ValueError, RecursionError) as blad:'
+zamien = 'except ValueError as blad:'
+test = 'tests/test_profil_backendu.py::test_gleboko_zagniezdzony_plik_profilu_to_blad_profilu_a_nie_przepelnienie_stosu'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = '''    except FileNotFoundError:
+        return {}'''
+zamien = '''    except NotADirectoryError:
+        return {}'''
+test = 'tests/test_profil_backendu.py::test_brak_pliku_profilu_daje_profil_domyslny_a_nie_blad'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if not isinstance(model, str) or not model:'
+zamien = 'if not model:'
+test = 'tests/test_profil_backendu.py::test_model_ktory_nie_jest_napisem_to_blad_profilu_wskazujacy_tier'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if not isinstance(model, str) or not model:'
+zamien = 'if not isinstance(model, str):'
+test = 'tests/test_profil_backendu.py::test_pusty_model_w_pliku_to_blad_profilu_wskazujacy_tier'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if isinstance(budzet, bool) or not isinstance(budzet, (int, float)):'
+zamien = 'if not isinstance(budzet, (int, float)):'
+test = 'tests/test_polecenie_agenta.py::test_niepoprawny_budzet_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if isinstance(budzet, bool) or not isinstance(budzet, (int, float)):'
+zamien = 'if isinstance(budzet, bool):'
+test = 'tests/test_polecenie_agenta.py::test_niepoprawny_budzet_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if not math.isfinite(budzet) or budzet <= 0:'
+zamien = 'if budzet <= 0:'
+test = 'tests/test_polecenie_agenta.py::test_niepoprawny_budzet_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if not math.isfinite(budzet) or budzet <= 0:'
+zamien = 'if not math.isfinite(budzet):'
+test = 'tests/test_polecenie_agenta.py::test_niepoprawny_budzet_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if isinstance(tury, bool) or not isinstance(tury, int):'
+zamien = 'if not isinstance(tury, int):'
+test = 'tests/test_polecenie_agenta.py::test_niepoprawny_limit_tur_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem'
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'if isinstance(tury, bool) or not isinstance(tury, int):'
+zamien = 'if isinstance(tury, bool):'
+test = 'tests/test_polecenie_agenta.py::test_niepoprawny_limit_tur_kroku_jest_odrzucony_przed_startem_agenta_z_dokladnym_powodem'
+
+
+# --- silnik.py: krotka except kroku, blad profilu przed startem, kolejnosc profilu przy wznowieniu ---
+
+[[mutant]]
+plik = 'src/runner/silnik.py'
+szukaj = 'except (BrakModelu, ValueError) as e:'
+zamien = 'except BrakModelu as e:'
+test = 'tests/test_pomiar_kroku.py::test_niepoprawne_polecenie_agenta_konczy_krok_porazka_z_komunikatem_a_run_idzie_dalej'
+
+[[mutant]]
+plik = 'src/runner/silnik.py'
+szukaj = 'except (BrakModelu, ValueError) as e:'
+zamien = 'except ValueError as e:'
+test = 'tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej'
+
+[[mutant]]
+plik = 'src/runner/silnik.py'
+szukaj = '''    except BladProfiluBackendu as e:
+        await _blad_przed_startem('''
+zamien = '''    except KeyError as e:
+        await _blad_przed_startem('''
+test = 'tests/test_profil_backendu.py::test_uszkodzony_plik_profilu_konczy_run_bledem_przed_startem_zadnego_kroku'
+
+[[mutant]]
+plik = 'src/runner/silnik.py'
+szukaj = '''        # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()
+        async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+            start = await _przyjmij_decyzje(run_id, step_id, decyzja, powod, dom, root, emit)
+'''
+zamien = '''        async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+            start = await _przyjmij_decyzje(run_id, step_id, decyzja, powod, dom, root, emit)
+        profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()
+'''
+test = 'tests/test_profil_backendu.py::test_wznowienie_z_uszkodzonym_plikiem_profilu_konczy_sie_porazka_a_decyzja_nie_przepada'
+
+
+# --- migracja 0013 (przemianowana po HAR-178 z 0012): identyfikatory, kolumny i ich typy, dopuszczenie NULL, nazwy w downgrade ---
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'revision: str = "0013"'
+zamien = 'revision: str = "0014"'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'down_revision: Union[str, None] = "0012"'
+zamien = 'down_revision: Union[str, None] = "0011"'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=False))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("cost_usd", sa.Integer(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("cost_usd", sa.Float(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("cost_usd_x", sa.Float(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.drop_column("step_run", "cost_usd")'
+zamien = 'op.drop_column("step_run", "cost_usd_x")'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=False))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("tokens_in", sa.Float(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("tokens_in", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("tokens_in_x", sa.Integer(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.drop_column("step_run", "tokens_in")'
+zamien = 'op.drop_column("step_run", "tokens_in_x")'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=False))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("tokens_out", sa.Float(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("tokens_out", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("tokens_out_x", sa.Integer(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.drop_column("step_run", "tokens_out")'
+zamien = 'op.drop_column("step_run", "tokens_out_x")'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=False))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("num_turns", sa.Float(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("num_turns", sa.Integer(), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("num_turns_x", sa.Integer(), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.drop_column("step_run", "num_turns")'
+zamien = 'op.drop_column("step_run", "num_turns_x")'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=False))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=99), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.add_column("step_run", sa.Column("session_id", sa.String(length=100), nullable=True))'
+zamien = 'op.add_column("step_run", sa.Column("session_id_x", sa.String(length=100), nullable=True))'
+test = 'tests/test_pomiar_kroku.py::test_migracja_pomiaru_kroku_dodaje_piec_kolumn_bez_not_null_i_przesuwa_wersje_na_0013'
+
+[[mutant]]
+plik = 'alembic/versions/0013_pomiar_kroku.py'
+szukaj = 'op.drop_column("step_run", "session_id")'
+zamien = 'op.drop_column("step_run", "session_id_x")'
+test = 'tests/test_pomiar_kroku.py::test_cofniecie_migracji_pomiaru_kroku_usuwa_piec_kolumn_i_wraca_do_wersji_0012'
+
+
+# --- web/openapi.json: pola pomiaru w EventIn (limity) i KrokRunu (typy, wymagalnosc) ---
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"num_turns": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,'''
+zamien = '''"num_turns": {
+            "anyOf": [
+              {
+                "maximum": 2147483646.0,'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"tokens_in": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,'''
+zamien = '''"tokens_in": {
+            "anyOf": [
+              {
+                "maximum": 2147483646.0,'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"tokens_out": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,'''
+zamien = '''"tokens_out": {
+            "anyOf": [
+              {
+                "maximum": 2147483646.0,'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"session_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,'''
+zamien = '''"session_id": {
+            "anyOf": [
+              {
+                "maxLength": 101,
+                "minLength": 1,'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"session_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,'''
+zamien = '''"session_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 0,'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"tokens_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+'''
+zamien = '''"tokens_in": {
+            "anyOf": [
+              {
+                "type": "number"
+'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"tokens_out": {
+            "anyOf": [
+              {
+                "type": "integer"
+'''
+zamien = '''"tokens_out": {
+            "anyOf": [
+              {
+                "type": "number"
+'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"num_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+'''
+zamien = '''"num_turns": {
+            "anyOf": [
+              {
+                "type": "number"
+'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+'''
+zamien = '''"session_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+[[mutant]]
+plik = 'web/openapi.json'
+szukaj = '''"reason",
+          "cost_usd",'''
+zamien = '''"reason",
+          "cost_usd_x",'''
+test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
+
+# --- runda 5: zwolnienie deskryptora pliku stdin w strazniku, limit cyfr JSON, koszt zdarzenia ---
+
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = 'except (ValueError, RecursionError) as blad:'
+zamien = 'except (json.JSONDecodeError, RecursionError) as blad:'
+test = 'tests/test_profil_backendu.py::test_liczba_o_pieciu_tysiacach_cyfr_w_pliku_profilu_to_blad_profilu_a_nie_blad_biblioteki'
+
+[[mutant]]
+plik = 'src/runner/straznik.py'
+szukaj = '''    finally:
+        # dziecko ma wlasna kopie deskryptora; straznik nie trzyma pliku do konca kroku
+        if wejscie is not None:
+            os.close(wejscie)
+'''
+zamien = '''    finally:
+        # dziecko ma wlasna kopie deskryptora; straznik nie trzyma pliku do konca kroku
+        if wejscie is not None:
+            pass
+'''
+test = 'tests/test_brak_sierot.py::test_udany_start_agenta_zwalnia_deskryptor_pliku_stdin'
+
+[[mutant]]
+plik = 'src/runner/straznik.py'
+szukaj = '''    finally:
+        # dziecko ma wlasna kopie deskryptora; straznik nie trzyma pliku do konca kroku
+        if wejscie is not None:
+            os.close(wejscie)
+'''
+zamien = '''    else:
+        if wejscie is not None:
+            os.close(wejscie)
+'''
+test = 'tests/test_brak_sierot.py::test_nieudany_start_agenta_zwalnia_deskryptor_pliku_stdin'
+
+[[mutant]]
+plik = 'src/runner/straznik.py'
+szukaj = '''    finally:
+        # dziecko ma wlasna kopie deskryptora; straznik nie trzyma pliku do konca kroku
+        if wejscie is not None:
+            os.close(wejscie)
+'''
+zamien = '''    else:
+        if wejscie is not None:
+            os.close(wejscie)
+'''
+test = 'tests/test_brak_sierot.py::test_katalog_zamiast_pliku_stdin_to_blad_startu_i_zwolniony_deskryptor'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
+zamien = 'cost_usd: float | None = Field(default=None, ge=-1, allow_inf_nan=False)'
+test = 'tests/test_pomiar_kroku.py::test_koszt_zdarzenia_ujemny_nieskonczony_albo_nie_liczba_jest_odrzucony_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
+zamien = 'cost_usd: float | None = Field(default=None, ge=1, allow_inf_nan=False)'
+test = 'tests/test_pomiar_kroku.py::test_koszt_zdarzenia_rowny_zero_jest_przyjety_i_zapisany_jako_zero_a_nie_null'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
+zamien = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=True)'
+test = 'tests/test_pomiar_kroku.py::test_koszt_zdarzenia_ujemny_nieskonczony_albo_nie_liczba_jest_odrzucony_i_nic_nie_zapisuje'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
+zamien = 'cost_usd: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)'
+# HAR-174 (TM): domyslna wartosc decyduje tylko, gdy pola brak w zdarzeniu (jawny null jej nie uzywa)
+test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
+
+# HAR-174 (TM): bez wiersza `@dataclass(frozen=True)` -> `@dataclass` dla PomiarKroku. Mutant nie daje
+# sie zaimportowac (domyslna wartosc `PomiarKroku()` w zamrozonym WynikKroku jest wtedy niehaszowalna),
+# wiec uruchomienie testow konczy sie kodem 4, a nie oblanym testem.
+# HAR-174 (TM): bez wiersza `wynik ... = None` -> `= {}` w _StanStrumienia. Mutant nie daje sie
+# zaimportowac (mutowalna wartosc domyslna pola dataclass), kod 4.
+
+# HAR-174 (TM, po merge HAR-177): wiersze dla listy kodu 3 `tools/mutanty_zmian.py` (--pokrycie-kod3).
+# Zamiast zdjecia `frozen` (mutant nieimportowalny, wyzej) zabijalny wariant: eq=False sprawia, ze
+# dwa rowne pomiary sa rozne, a testy porownuja WynikKroku z oczekiwanym pomiarem.
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = """
+@dataclass(frozen=True)
+class PomiarKroku:"""
+zamien = """
+@dataclass(frozen=True, eq=False)
+class PomiarKroku:"""
+test = 'tests/test_pomiar_kroku.py::test_krok_z_wynikiem_agenta_zapisuje_koszt_tokeny_tury_i_sesje'
+
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = """
+@dataclass
+class _StanStrumienia:"""
+zamien = """
+@dataclass(frozen=True)
+class _StanStrumienia:"""
+test = 'tests/test_pomiar_kroku.py::test_krok_z_wynikiem_agenta_zapisuje_koszt_tokeny_tury_i_sesje'
+
+# Wartosc domyslna niebedaca None (ale niemutowalna, wiec mutant sie importuje): brak zdarzenia
+# result nie jest juz rozpoznany jako brak dowodu.
+[[mutant]]
+plik = 'src/runner/krok.py'
+szukaj = 'wynik: dict[str, Any] | None = None'
+zamien = 'wynik: dict[str, Any] | None = ()'
+test = 'tests/test_pomiar_kroku.py::test_brak_zdarzenia_result_przy_kodzie_zero_jest_brakiem_dowodu_a_nie_sukcesem[pusty-stdout]'
+
+[[mutant]]
+plik = 'src/cockpit/api/app.py'
+szukaj = ') for k in wiersze_krokow],'
+zamien = ') for k in wiersze_krokow[:0]],'
+test = 'tests/test_pomiar_kroku.py::test_szczegoly_runu_zwracaja_pomiar_kroku_z_bazy'
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = '"""Profil domyslny per backend; jedyny znany backend to `claude`."""'
+uzasadnienie = "Napis jako samodzielne wyrazenie po przypisaniu stalej (docstring atrybutu): interpreter go wylicza i odrzuca, nikt nie czyta go przez __doc__ (stala modulu nie ma wlasnego __doc__). Zadna zmiana tresci nie zmienia zachowania; zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = '"""Strumien zdarzen NDJSON (HAR-174). Zweryfikowane na Claude Code 2.1.319: `--output-format'
+uzasadnienie = "Pierwsza linia docstringu atrybutu FLAGI_STRUMIENIA: samodzielne wyrazenie napisowe, wyliczane i odrzucane, bez __doc__. Wartosc stalej ma osobne wiersze [[mutant]]; zadne wejscie nie odroznia wersji tekstu."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'stream-json` wymaga `--verbose` w trybie `-p`. Bez argumentu promptu `claude -p` czyta prompt'
+uzasadnienie = "Srodkowa linia tego samego docstringu atrybutu FLAGI_STRUMIENIA (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'ze stdin."""'
+uzasadnienie = "Ostatnia linia docstringu atrybutu FLAGI_STRUMIENIA (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = '"""`--max-budget-usd <amount>` jest w `claude --help` (2.1.319). `--max-turns <turns>` istnieje'
+uzasadnienie = "Pierwsza linia docstringu atrybutu FLAGA_TUR: samodzielne wyrazenie napisowe, wyliczane i odrzucane, bez __doc__. Wartosci FLAGA_BUDZETU i FLAGA_TUR maja osobne testy argv; zadne wejscie nie odroznia wersji tekstu."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'w 2.1.319, ale jest UKRYTA w `--help` (tekst w binarce: "Maximum number of agentic turns in'
+uzasadnienie = "Srodkowa linia docstringu atrybutu FLAGA_TUR (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = 'src/runner/agent.py'
+linia_tekst = 'non-interactive mode"); po zmianie wersji CLI sprawdz, czy flaga nadal dziala."""'
+uzasadnienie = "Ostatnia linia docstringu atrybutu FLAGA_TUR (napis odrzucany przez interpreter); zadne wejscie nie odroznia wersji."
+
+# Linia `})` zamykajaca PROFIL_DOMYSLNY (kod 3): drugi backend w profilu domyslnym sprawia, ze
+# nieznany backend `gpt` dostaje modele zamiast bledu profilu.
+[[mutant]]
+plik = 'src/runner/agent.py'
+szukaj = """
+    "claude": DOMYSLNE_MODELE,
+})"""
+zamien = """
+    "claude": DOMYSLNE_MODELE, "gpt": DOMYSLNE_MODELE,
+})"""
+test = 'tests/test_profil_backendu.py::test_nieznany_backend_to_blad_profilu_z_jego_nazwa'

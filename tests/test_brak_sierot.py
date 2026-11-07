@@ -1119,6 +1119,129 @@ def test_main_przekazuje_deskryptor_statusu_a_udany_start_zamyka_go_bez_danych(
         status.zamknij(status.odczyt)
 
 
+# Agent: kod 0, gdy jego stdin to dokladnie zadana tresc; 5 w kazdym innym przypadku.
+TRESC_PROMPTU = b"\xff\x00prompt\r\n\xc4\x85 bez konca"
+KOD_AGENTA_CZYTAJACEGO_PROMPT = (
+    "import sys\n"
+    f"sys.exit(0 if sys.stdin.buffer.read() == {TRESC_PROMPTU!r} else 5)\n"
+)
+
+
+def test_agent_pod_straznikiem_czyta_na_stdin_zawartosc_pliku_z_opcji_stdin_plik(tmp_path):
+    plik = tmp_path / "prompt.txt"
+    plik.write_bytes(TRESC_PROMPTU)
+
+    wynik = Zadanie(
+        lambda: straznik._uruchom(
+            [sys.executable, "-I", "-c", KOD_AGENTA_CZYTAJACEGO_PROMPT],
+            str(tmp_path), None, threading.Event(), str(plik),
+        )
+    ).wynik()
+
+    assert wynik == 0
+
+
+@pytest.fixture
+def uchwyty_pliku_stdin(monkeypatch):
+    """Rejestr deskryptorow otwartych przez `os.open` dla zadanej sciezki i zamknietych przez
+    `os.close`; obserwuje zwolnienie zasobu, a nie tylko wynik `_uruchom`."""
+    otwarte: list[int] = []
+    zamkniete: list[int] = []
+    sledzone: set[str] = set()
+    prawdziwe_open, prawdziwe_close = os.open, os.close
+
+    def szpieg_open(sciezka, *args, **kwargs):
+        fd = prawdziwe_open(sciezka, *args, **kwargs)
+        if str(sciezka) in sledzone:
+            otwarte.append(fd)
+        return fd
+
+    def szpieg_close(fd):
+        if fd in otwarte:
+            zamkniete.append(fd)
+        return prawdziwe_close(fd)
+
+    monkeypatch.setattr(os, "open", szpieg_open)
+    monkeypatch.setattr(os, "close", szpieg_close)
+    return types.SimpleNamespace(otwarte=otwarte, zamkniete=zamkniete, sledz=sledzone.add)
+
+
+def test_udany_start_agenta_zwalnia_deskryptor_pliku_stdin(tmp_path, uchwyty_pliku_stdin):
+    plik = tmp_path / "prompt.txt"
+    plik.write_bytes(TRESC_PROMPTU)
+    uchwyty_pliku_stdin.sledz(str(plik))
+
+    wynik = Zadanie(
+        lambda: straznik._uruchom(
+            [sys.executable, "-I", "-c", KOD_AGENTA_CZYTAJACEGO_PROMPT],
+            str(tmp_path), None, threading.Event(), str(plik),
+        )
+    ).wynik()
+
+    assert wynik == 0
+    assert len(uchwyty_pliku_stdin.otwarte) == 1
+    assert uchwyty_pliku_stdin.zamkniete == uchwyty_pliku_stdin.otwarte
+
+
+def test_nieudany_start_agenta_zwalnia_deskryptor_pliku_stdin(
+    tmp_path, uchwyty_pliku_stdin, capfd
+):
+    plik = tmp_path / "prompt.txt"
+    plik.write_bytes(TRESC_PROMPTU)
+    uchwyty_pliku_stdin.sledz(str(plik))
+
+    wynik = Zadanie(
+        lambda: straznik._uruchom(
+            ["polecenie-ktorego-nie-ma-har174"], str(tmp_path), None, threading.Event(),
+            str(plik),
+        )
+    ).wynik()
+
+    assert wynik == 127
+    assert "polecenie-ktorego-nie-ma-har174" in capfd.readouterr().err
+    assert len(uchwyty_pliku_stdin.otwarte) == 1
+    assert uchwyty_pliku_stdin.zamkniete == uchwyty_pliku_stdin.otwarte
+
+
+def test_katalog_zamiast_pliku_stdin_to_blad_startu_i_zwolniony_deskryptor(
+    tmp_path, potok, uchwyty_pliku_stdin
+):
+    katalog_promptu = tmp_path / "katalog-promptu"
+    katalog_promptu.mkdir()
+    znacznik = tmp_path / "agent-wystartowal.znacznik"
+    uchwyty_pliku_stdin.sledz(str(katalog_promptu))
+
+    wynik = Zadanie(
+        lambda: straznik._uruchom(
+            [sys.executable, "-I", "-c", f"open({str(znacznik)!r}, 'w').close()"],
+            str(tmp_path), potok.zapis, threading.Event(), str(katalog_promptu),
+        )
+    ).wynik()
+    potok.uznaj_za_zamkniety(potok.zapis)
+
+    assert wynik == 127
+    assert not znacznik.exists()
+    komunikat = czytaj_do_konca(potok.odczyt).decode()
+    assert komunikat == f"[Errno 21] Is a directory: {str(katalog_promptu)!r}"
+    assert len(uchwyty_pliku_stdin.otwarte) == 1
+    assert uchwyty_pliku_stdin.zamkniete == uchwyty_pliku_stdin.otwarte
+
+
+def test_main_przekazuje_plik_stdin_plik_agentowi_jako_jego_stdin(
+    tmp_path, potok, handler_sigterm_przywrocony
+):
+    plik = tmp_path / "prompt.txt"
+    plik.write_bytes(TRESC_PROMPTU)
+
+    kod = straznik.main(
+        ["--cwd", str(tmp_path), "--stdin-plik", str(plik), "--",
+         sys.executable, "-I", "-c", KOD_AGENTA_CZYTAJACEGO_PROMPT],
+        fd_wejscia=potok.odczyt,
+    )
+
+    assert kod == 0
+
+
 def test_main_uruchamia_agenta_w_katalogu_z_opcji_cwd(tmp_path, potok, handler_sigterm_przywrocony):
     kod_agenta = (
         "import os, sys\n"

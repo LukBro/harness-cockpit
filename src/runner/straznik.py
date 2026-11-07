@@ -1,6 +1,6 @@
 """Straznik agenta: zabija grupe agenta, gdy runner umrze (HAR-85).
 
-    python -m runner.straznik [--status-fd N] --cwd <katalog> -- <argv agenta>
+    python -m runner.straznik [--status-fd N] [--stdin-plik <plik>] --cwd <katalog> -- <argv agenta>
 
 `start_new_session=True` odcina agenta od sygnalow runnera, wiec po SIGKILL runnera
 agent zostawalby sierota. Straznik jest procesem posrednim: agent dziala w jego
@@ -10,6 +10,10 @@ agenta, po CZAS_NA_ZAKONCZENIE_S SIGKILL, wyjscie.
 
 Kod wyjscia: kod agenta; agent zabity sygnalem N -> 128+N. stdout/stderr agenta to
 deskryptory straznika (dziedziczone), wiec wyjscie przechodzi bez zmian.
+
+Stdin agenta: domyslnie /dev/null; z `--stdin-plik` agent czyta zawartosc pliku (prompt kroku,
+HAR-174). Blad otwarcia pliku to blad startu (ten sam kanal co nieudany exec). Kanal
+sterujacy (fd 0 straznika, EOF = zabij grupe) nie zmienia sie.
 
 Blad startu agenta nie idzie kodem wyjscia (agent tez moglby go zwrocic): gdy podano
 `--status-fd`, straznik zapisuje tam komunikat bledu; udany start zamyka deskryptor
@@ -25,8 +29,10 @@ sys.path[0] = src/runner zasloniloby stdlib modulem runner/secrets.py.
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -138,17 +144,28 @@ def _uruchom(
     katalog: str,
     status_fd: int | None,
     zdarzenie: threading.Event,
+    stdin_plik: str | None = None,
 ) -> int:
+    wejscie: int | None = None
     try:
+        # otwarcie w tym samym try co Popen: obie porazki to blad startu agenta
+        if stdin_plik is not None:
+            wejscie = os.open(stdin_plik, os.O_RDONLY)
+            if stat.S_ISDIR(os.fstat(wejscie).st_mode):
+                raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), stdin_plik)
         agent = subprocess.Popen(
             argv_agenta,
             cwd=katalog,
             start_new_session=True,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL if wejscie is None else wejscie,
             env=_srodowisko_agenta(os.environ),
         )
     except OSError as blad:
         return _zglos_blad_startu(status_fd, blad)
+    finally:
+        # dziecko ma wlasna kopie deskryptora; straznik nie trzyma pliku do konca kroku
+        if wejscie is not None:
+            os.close(wejscie)
     if status_fd is not None:
         os.close(status_fd)
 
@@ -168,6 +185,7 @@ def main(argv: list[str], fd_wejscia: int) -> int:
     parser = argparse.ArgumentParser(prog="runner.straznik")
     parser.add_argument("--cwd", required=True)
     parser.add_argument("--status-fd", type=int)
+    parser.add_argument("--stdin-plik")
     opcje = parser.parse_args(argv[:granica])
     polecenie = argv[granica + 1:]
     if not polecenie:
@@ -175,7 +193,7 @@ def main(argv: list[str], fd_wejscia: int) -> int:
         return 2
     zdarzenie = threading.Event()
     _uzbroj(zdarzenie, fd_wejscia)
-    return _uruchom(polecenie, opcje.cwd, opcje.status_fd, zdarzenie)
+    return _uruchom(polecenie, opcje.cwd, opcje.status_fd, zdarzenie, opcje.stdin_plik)
 
 
 if __name__ == "__main__":
