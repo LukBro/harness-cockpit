@@ -95,6 +95,49 @@ def _otworz_run(page, adres, run_id):
     expect(page.get_by_text(re.compile(r"status: \w+"))).to_be_visible(timeout=LIMIT_WYNIKU_MS)
 
 
+class _OpoznioneOtwarcie:
+    """Strumien runu wstrzymany w przegladarce i licznik odpowiedzi na GET szczegolow runu."""
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        self.strumien: list = []
+        self.odpowiedzi_get = 0
+
+    def licz(self, odpowiedz) -> None:
+        sciezka = odpowiedz.url.split("?")[0]
+        if odpowiedz.request.method == "GET" and sciezka.endswith(f"/api/runs/{self.run_id}"):
+            self.odpowiedzi_get += 1
+
+
+def _opoznij_otwarcie_strumienia(page, run_id) -> _OpoznioneOtwarcie:
+    """Przed wejsciem na strone: strumien SSE runu czeka na test, GET-y szczegolow sa liczone.
+
+    Front pobiera run dwa razy: od razu przy wejsciu i drugi raz po otwarciu strumienia
+    (`onopen`). Wstrzymany strumien nie otwiera sie sam, wiec drugi GET wychodzi dopiero
+    po zwolnieniu strumienia przez test (HAR-232)."""
+    stan = _OpoznioneOtwarcie(run_id)
+    page.route("**/api/runs/*/stream", lambda r: stan.strumien.append(r))
+    page.on("response", stan.licz)
+    return stan
+
+
+def _poczekaj_na_otwarcie_strumienia(page, stan: _OpoznioneOtwarcie) -> None:
+    """Zwalnia strumien i czeka, az serwer odpowie na oba GET-y szczegolow (wejscie i `onopen`).
+
+    Po tym kroku zadne zapytanie o run nie jest w drodze, wiec boczna zmiana stanu w bazie
+    nie wyprzedzi odczytu, ktory front wyslal w reakcji na wejscie."""
+    while stan.strumien:
+        stan.strumien.pop().continue_()
+    _czekaj_na(page, lambda: stan.odpowiedzi_get >= 2, "odpowiedz serwera na GET po otwarciu strumienia")
+
+
+def _zmien_stan_runu_bocznie(page, stan: _OpoznioneOtwarcie, run_id: str, status: str) -> None:
+    """Zmiana statusu w bazie bez zdarzenia; zaleglosci sieci (wstrzymany strumien) dochodza po niej."""
+    _w_bazie("UPDATE run SET status = :status WHERE id = :id",
+             {"id": run_id, "status": status}, zapis=True)
+    _poczekaj_na_otwarcie_strumienia(page, stan)
+
+
 def _zatwierdz(page):
     return page.get_by_role("button", name="Zatwierdź", exact=True)
 
@@ -264,10 +307,12 @@ def test_decyzja_na_run_ktory_juz_nie_czeka_pokazuje_komunikat_decyzja_nieprzyje
 ):
     page = zalogowana_strona
     run_id = _run_czekajacy_na_bramce(adres_kokpitu, token_runnera)
+    stan = _opoznij_otwarcie_strumienia(page, run_id)
     _otworz_run(page, adres_kokpitu, run_id)
     expect(_zatwierdz(page)).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    _poczekaj_na_otwarcie_strumienia(page, stan)
     # stan zmieniony bocznie, bez zdarzenia: strona nadal pokazuje bramke, kokpit juz nie
-    _w_bazie("UPDATE run SET status = 'running' WHERE id = :id", {"id": run_id}, zapis=True)
+    _zmien_stan_runu_bocznie(page, stan, run_id, "running")
 
     _zatwierdz(page).click()
 
@@ -286,15 +331,18 @@ def test_odrzucenie_runu_ktory_juz_nie_czeka_pokazuje_komunikat_i_nie_zmienia_st
 ):
     page = zalogowana_strona
     run_id = _run_czekajacy_na_bramce(adres_kokpitu, token_runnera)
+    stan = _opoznij_otwarcie_strumienia(page, run_id)
     _otworz_run(page, adres_kokpitu, run_id)
     expect(_odrzuc(page)).to_be_visible(timeout=LIMIT_WYNIKU_MS)
-    _w_bazie("UPDATE run SET status = 'running' WHERE id = :id", {"id": run_id}, zapis=True)
+    _poczekaj_na_otwarcie_strumienia(page, stan)
+    _zmien_stan_runu_bocznie(page, stan, run_id, "running")
     _pole_powodu(page).fill("za pozno")
 
     _odrzuc(page).click()
 
     alert = page.get_by_role("alert").filter(has_text=re.compile(r"^\s*Decyzja nieprzyjęta:"))
-    expect(alert).to_be_visible(timeout=LIMIT_WYNIKU_MS)
+    expect(alert).to_have_text(
+        "Decyzja nieprzyjęta: run nie czeka na decyzje czlowieka", timeout=LIMIT_WYNIKU_MS)
     assert _status(run_id) == "running"
     assert _powod(run_id) is None
 

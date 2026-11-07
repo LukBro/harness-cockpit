@@ -1,0 +1,47 @@
+# Tabela recznych mutantow HAR-232: komunikat "Decyzja nieprzyjeta" we froncie (web/) i czekanie na
+# otwarcie strumienia w testach e2e, ktore zmieniaja stan runu bocznie. Kazde `szukaj` wystepuje
+# w pliku dokladnie raz. Testy wymagaja PostgreSQL, zbudowanego frontu i przegladarki.
+#
+# Brak wiersza dla `stan.odpowiedzi_get >= 2` -> `>= 1` w `_poczekaj_na_otwarcie_strumienia`: po
+# zwolnieniu strumienia pierwszy GET jest juz policzony, wiec mutant tylko wyscigowo (nie
+# deterministycznie) wyprzedza boczny UPDATE - zadne wejscie testu nie odroznia go stabilnie.
+
+# =====================================================================================
+# web/src/WidokRunu.tsx: komunikat odmowy decyzji (409 z kokpitu)
+# =====================================================================================
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''        setBladDecyzji(`Decyzja nieprzyjęta: ${detail ?? `błąd ${r.status}`}`);'''
+zamien = '''        void detail;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_decyzja_na_run_ktory_juz_nie_czeka_pokazuje_komunikat_decyzja_nieprzyjeta"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''        setBladDecyzji(`Decyzja nieprzyjęta: ${detail ?? `błąd ${r.status}`}`);'''
+zamien = '''        void detail;'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_runu_ktory_juz_nie_czeka_pokazuje_komunikat_i_nie_zmienia_stanu_w_bazie"
+
+# =====================================================================================
+# tests/e2e/test_bramka_w_przegladarce.py: czekanie na GET po otwarciu strumienia
+# Bez niego strumien wstrzymany w tescie zwalnia dopiero boczny UPDATE, wiec GET z `onopen`
+# widzi `running`, blok przyciskow bramki znika i klikniecie nie ma celu.
+# =====================================================================================
+
+[[mutant]]
+plik = "tests/e2e/test_bramka_w_przegladarce.py"
+szukaj = '''_poczekaj_na_otwarcie_strumienia(page, stan)
+    # stan zmieniony bocznie'''
+zamien = '''pass
+    # stan zmieniony bocznie'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_decyzja_na_run_ktory_juz_nie_czeka_pokazuje_komunikat_decyzja_nieprzyjeta"
+
+[[mutant]]
+plik = "tests/e2e/test_bramka_w_przegladarce.py"
+szukaj = '''_poczekaj_na_otwarcie_strumienia(page, stan)
+    _zmien_stan_runu_bocznie(page, stan, run_id, "running")
+    _pole_powodu'''
+zamien = '''pass
+    _zmien_stan_runu_bocznie(page, stan, run_id, "running")
+    _pole_powodu'''
+test = "tests/e2e/test_bramka_w_przegladarce.py::test_odrzucenie_runu_ktory_juz_nie_czeka_pokazuje_komunikat_i_nie_zmienia_stanu_w_bazie"
