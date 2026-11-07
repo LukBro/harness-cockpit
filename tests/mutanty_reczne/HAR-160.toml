@@ -12,6 +12,10 @@ test = "tests/test_artefakt_recenzenta.py::test_wynik_dokladnie_8_mib_jest_zapis
 
 [[mutant]]
 plik = "src/runner/krok.py"
-szukaj = "            zadanie.cancel()"
-zamien = "            pass"
+szukaj = '''        # wyjatek jednego czytnika albo anulowanie nie zostawia drugiego w tle
+        for zadanie in zadania:
+            zadanie.cancel()'''
+zamien = '''        # wyjatek jednego czytnika albo anulowanie nie zostawia drugiego w tle
+        for zadanie in zadania:
+            pass'''
 test = "tests/test_artefakt_recenzenta.py::test_wyjatek_z_odbiorcy_zdarzen_zatrzymuje_tez_czytnik_stderr_recenzenta"

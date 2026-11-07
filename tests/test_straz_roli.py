@@ -1272,7 +1272,7 @@ async def _uruchom_krok(tmp_path: Path, repo: Path, rola: Rola, proby: list[dict
         "proby": proby,
     }
     argv = polecenie_agenta(
-        _spec(rola), "prompt", ProfilBackendu.z_srodowiska({}), ustawienia=ustawienia
+        _spec(rola), ProfilBackendu.z_srodowiska({}), ustawienia=ustawienia
     )
     polecenie = [sys.executable, "-I", "-c", KOD_ATRAPY_CLAUDE, *argv[1:], json.dumps(sterowanie)]
 

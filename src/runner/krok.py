@@ -6,11 +6,18 @@ nie konczy sie sam (anulowanie, wyjatek odbiorcy zdarzen) albo runner umrze, EOF
 kaze straznikowi zabic grupe agenta (SIGTERM, po 5 s SIGKILL). Blad startu agenta
 straznik zglasza osobnym potokiem statusu, nie kodem wyjscia. Polecenie jest
 wstrzykiwane - testy podstawiaja atrape zamiast `claude`.
+
+Tryb agenta (HAR-174, `prompt` podany): prompt leci plikiem w katalogu runu jako stdin agenta
+(`--stdin-plik` straznika), a stdout agenta (`claude -p --output-format stream-json`) to NDJSON
+czytany linia po linii. Koszt, tokeny, tury i session_id pochodza z ostatniego zdarzenia
+`result`; brak pomiaru to None, nigdy zero (measured_or_null). Bez `prompt` wyjscie jest surowe.
 """
 from __future__ import annotations
 
 import asyncio
 import io
+import json
+import math
 import os
 import signal
 import sys
@@ -18,7 +25,7 @@ import tempfile
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from cockpit.services.invariants import profil_roli
 from cockpit.services.walidacja import (
@@ -41,6 +48,14 @@ KATALOG_RUNU = Path(".cockpit") / "_run"
 ROZMIAR_KAWALKA = 64 * 1024
 # Najwiekszy wynik agenta (stdout), jaki runner zapisze jako artefakt roli bez zapisu.
 LIMIT_ARTEFAKTU = 8 * 1024 * 1024
+# Najdluzsza linia NDJSON agenta (w bajtach, bez znaku nowej linii); dluzsza to blad kroku.
+LIMIT_LINII_AGENTA = 8 * 1024 * 1024
+# Ile znakow niezrozumialej linii trafia do powodu porazki.
+DLUGOSC_FRAGMENTU_LINII = 200
+KATALOG_PROMPTOW = "prompty"
+INT4_MAX = 2_147_483_647
+LIMIT_SESSION_ID = 100   # kolumna step_run.session_id to String(100)
+PODTYPY_BUDZETU = frozenset({"error_max_budget_usd", "error_max_turns"})
 # Straznik daje agentowi 5 s na SIGTERM, potem SIGKILL; runner czeka dluzej.
 LIMIT_NA_STRAZNIKA_S = 8
 # Katalog z pakietem `runner` biezacego drzewa (bez resolve: pod mutmut sciezka
@@ -76,10 +91,22 @@ def _srodowisko_straznika() -> dict[str, str]:
 
 
 @dataclass(frozen=True)
+class PomiarKroku:
+    """Pomiar kroku z wyniku agenta; None = brak pomiaru (nigdy zero)."""
+
+    cost_usd: float | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    num_turns: int | None = None
+    session_id: str | None = None
+
+
+@dataclass(frozen=True)
 class WynikKroku:
     status: Literal["zakonczony", "nieudany"]
     powod: str | None
     kod_wyjscia: int | None
+    pomiar: PomiarKroku = PomiarKroku()
     # kotwice `plik:linia` z notatki zmiany (HAR-176); puste dla kazdego innego kroku
     kotwice: tuple[str, ...] = ()
     # werdykt z linii artefaktu wedlug kontraktu skilla (HAR-177); None bez kontraktu
@@ -88,14 +115,23 @@ class WynikKroku:
     dowod: Mapping[str, object] | None = None
 
 
+@dataclass
+class _StanStrumienia:
+    """Co parser NDJSON wyniosl z wyjscia agenta: pierwszy blad linii i ostatni `result`."""
+
+    blad_linii: str | None = None
+    wynik: dict[str, Any] | None = None
+
+
 async def _emituj_strumien(
     strumien: asyncio.StreamReader,
     spec: SpecKroku,
     emit: Callable[[dict], Awaitable[None]],
-    bufor: bytearray | None,
-    limit: int,
+    bufor: bytearray | None = None,
+    limit: int | None = None,
 ) -> None:
-    """Linie strumienia po kolei do emit; z `bufor` zbiera surowe bajty (do limit + 1).
+    """Linie strumienia po kolei do emit; z `bufor` zbiera surowe bajty (do limit + 1;
+    `limit` czyta tylko zbieranie, wiec bez bufora zostaje nieustawiony).
 
     Wlasne dzielenie na linie zamiast readline(): readline rzuca na linii dluzszej
     niz limit StreamReadera, a agent moze taka wypisac.
@@ -149,6 +185,125 @@ async def _emituj_wyjscie(
             zadanie.cancel()
 
 
+async def _czytaj_zdarzenia_agenta(
+    strumien: asyncio.StreamReader,
+    spec: SpecKroku,
+    emit: Callable[[dict], Awaitable[None]],
+    stan: _StanStrumienia,
+) -> None:
+    """Parser NDJSON stdout agenta. Po bledzie linii czyta wyjscie do konca bez parsowania,
+    zeby agent nie zawisl na pelnym potoku."""
+    limit = LIMIT_LINII_AGENTA     # odczyt w chwili wywolania (testy podmieniaja stala)
+
+    async def przetworz(surowa: bytes) -> None:
+        if stan.blad_linii is not None:
+            return
+        tekst = surowa.decode(errors="replace")
+        if not tekst.strip():
+            return
+        niezrozumiala = (
+            f"niezrozumiała linia wyjścia agenta: {tekst[:DLUGOSC_FRAGMENTU_LINII]}"
+        )
+        try:
+            zdarzenie = json.loads(tekst)
+        except (ValueError, RecursionError):
+            stan.blad_linii = niezrozumiala
+            return
+        if not isinstance(zdarzenie, dict) or not isinstance(zdarzenie.get("type"), str):
+            stan.blad_linii = niezrozumiala
+            return
+        if zdarzenie["type"] == "result":
+            stan.wynik = zdarzenie
+        elif zdarzenie["type"] == "assistant":
+            wiadomosc = zdarzenie.get("message")
+            tresc = wiadomosc.get("content") if isinstance(wiadomosc, dict) else None
+            if not isinstance(tresc, list):
+                stan.blad_linii = niezrozumiala
+                return
+            for element in tresc:
+                if (isinstance(element, dict) and element.get("type") == "text"
+                        and isinstance(element.get("text"), str)):
+                    for linia in element["text"].splitlines():
+                        await emit({
+                            "kind": "output", "run_id": spec.run_id, "step_id": spec.step_id,
+                            "agent_id": spec.agent_id, "text": linia,
+                        })
+
+    async def linia_gotowa(surowa: bytes) -> None:
+        if len(surowa) > limit:
+            if stan.blad_linii is None:
+                stan.blad_linii = f"linia wyjścia agenta przekracza {limit} bajtów"
+            return
+        await przetworz(surowa)
+
+    reszta = bytearray()
+    while kawalek := await strumien.read(ROZMIAR_KAWALKA):
+        if stan.blad_linii is not None:
+            continue       # po bledzie tylko opróżniamy potok; nic nie jest buforowane
+        *pelne, ogon = kawalek.split(b"\n")
+        for segment in pelne:
+            reszta += segment
+            await linia_gotowa(bytes(reszta))
+            reszta.clear()
+        reszta += ogon
+        if len(reszta) > limit:
+            await linia_gotowa(bytes(reszta))
+            reszta.clear()
+    if reszta:
+        await linia_gotowa(bytes(reszta))
+
+
+async def _czytaj_wyjscie_agenta(
+    proc: asyncio.subprocess.Process,
+    spec: SpecKroku,
+    emit: Callable[[dict], Awaitable[None]],
+    stan: _StanStrumienia,
+) -> None:
+    """stdout przez parser NDJSON, stderr jako `output`; oba czytane rownolegle."""
+    zadania = [
+        asyncio.ensure_future(_czytaj_zdarzenia_agenta(proc.stdout, spec, emit, stan)),
+        asyncio.ensure_future(_emituj_strumien(proc.stderr, spec, emit)),
+    ]
+    try:
+        await asyncio.gather(*zadania)
+    finally:
+        for zadanie in zadania:
+            zadanie.cancel()
+
+
+def _liczba_calkowita(wartosc: object) -> int | None:
+    """int4 >= 0; bool, ulamek, napis i liczba spoza zakresu to brak pomiaru."""
+    if isinstance(wartosc, bool) or not isinstance(wartosc, int):
+        return None
+    return wartosc if 0 <= wartosc <= INT4_MAX else None
+
+
+def _koszt(wartosc: object) -> float | None:
+    if isinstance(wartosc, bool) or not isinstance(wartosc, (int, float)):
+        return None
+    try:
+        koszt = float(wartosc)
+    except OverflowError:
+        return None
+    return koszt if math.isfinite(koszt) and koszt >= 0 else None
+
+
+def _pomiar_z_wyniku(wynik: dict[str, Any] | None) -> PomiarKroku:
+    if wynik is None:
+        return PomiarKroku()
+    usage = wynik.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    sesja = wynik.get("session_id")
+    return PomiarKroku(
+        cost_usd=_koszt(wynik.get("total_cost_usd")),
+        tokens_in=_liczba_calkowita(usage.get("input_tokens")),
+        tokens_out=_liczba_calkowita(usage.get("output_tokens")),
+        num_turns=_liczba_calkowita(wynik.get("num_turns")),
+        session_id=sesja if isinstance(sesja, str) and 0 < len(sesja) <= LIMIT_SESSION_ID else None,
+    )
+
+
 async def _czekaj_na_straznika(proc: asyncio.subprocess.Process) -> None:
     """EOF na stdin straznika, potem czekanie z limitem na jego wyjscie.
 
@@ -184,8 +339,17 @@ async def _status_startu(plik) -> str | None:
     return os.fsdecode(dane) if dane else None
 
 
-def _porazka(powod: str, kod: int | None) -> WynikKroku:
-    return WynikKroku("nieudany", powod, kod)
+def _porazka(
+    powod: str, kod: int | None, pomiar: PomiarKroku = PomiarKroku()
+) -> WynikKroku:
+    return WynikKroku("nieudany", powod, kod, pomiar=pomiar)
+
+
+def _blad_identyfikatora(krok: str) -> str | None:
+    """Powod odrzucenia id kroku uzywanego jako nazwa pliku albo katalogu."""
+    if krok in ("", ".", "..") or "/" in krok or "\\" in krok:
+        return f"niedozwolony identyfikator kroku: {krok!r}"
+    return None
 
 
 def _katalog_artefaktu(
@@ -208,10 +372,9 @@ def _katalog_artefaktu(
     sciezka = Path(nazwa)
     if sciezka.is_absolute() or ".." in sciezka.parts or not sciezka.parts:
         return None, f"niedozwolona ścieżka artefaktu: {nazwa!r}"
-    krok = spec.step_id
-    if krok in ("", ".", "..") or "/" in krok or "\\" in krok:
-        return None, f"niedozwolony identyfikator kroku: {krok!r}"
-    katalog_kroku = katalog_runu / krok
+    if (powod := _blad_identyfikatora(spec.step_id)) is not None:
+        return None, powod
+    katalog_kroku = katalog_runu / spec.step_id
     naruszenie = sprawdz_katalog_runu(katalog_kroku, katalog)
     if naruszenie is not None:
         return None, str(naruszenie)
@@ -254,6 +417,26 @@ def _zapisz_atomowo(cel: Path, tresc: bytes) -> None:
         raise
 
 
+async def _zapisz_prompt(
+    spec: SpecKroku, katalog: Path, katalog_runu: Path | None, prompt: str
+) -> tuple[Path | None, str | None]:
+    """(plik promptu w katalogu runu, powod porazki); plik leci do agenta jako stdin."""
+    if katalog_runu is None:
+        return None, "brak katalogu runu dla pliku promptu"
+    if (powod := _blad_identyfikatora(spec.step_id)) is not None:
+        return None, powod
+    katalog_promptow = katalog_runu / KATALOG_PROMPTOW
+    naruszenie = sprawdz_katalog_runu(katalog_promptow, katalog)
+    if naruszenie is not None:
+        return None, str(naruszenie)
+    plik = katalog_promptow / f"{spec.step_id}.txt"
+    try:
+        await asyncio.to_thread(_zapisz_atomowo, plik, prompt.encode())
+    except OSError as blad:
+        return None, f"nie można zapisać pliku promptu: {blad}"
+    return plik, None
+
+
 async def wykonaj_krok(
     spec: SpecKroku,
     polecenie: list[str],
@@ -261,6 +444,7 @@ async def wykonaj_krok(
     emit: Callable[[dict], Awaitable[None]],
     *,
     katalog_runu: Path | None = None,
+    prompt: str | None = None,
     zmienione_linie: Path | None = None,
     werdykt: KontraktWerdyktu | None = None,
 ) -> WynikKroku:
@@ -274,7 +458,12 @@ async def wykonaj_krok(
 
     Rola bez zapisu z artefaktem w `wyjscia` oddaje go jako wynik agenta (stdout);
     runner zapisuje go w `katalog_runu/<step_id>/`, poza repozytorium (HAR-160).
+
+    Z `prompt` dziala tryb agenta (stream-json, pomiar kroku): kolejnosc oceny to linia
+    niezrozumiala, wyczerpany budzet, kod wyjscia, brak `result`, blad zgloszony przez
+    agenta, artefakty. Bez `prompt` wyjscie jest surowe i pomiar pusty.
     """
+    tryb_agenta = prompt is not None
     tylko_odczyt = not profil_roli(spec.rola).zapis
     artefakt_z_wyniku = tylko_odczyt and bool(spec.wyjscia)
     katalog_dowodu = katalog
@@ -283,6 +472,12 @@ async def wykonaj_krok(
         if katalog_kroku is None:
             return _porazka(str(powod), None)
         katalog_dowodu = katalog_kroku
+    opcje_stdin: list[str] = []
+    if prompt is not None:
+        plik_promptu, powod = await _zapisz_prompt(spec, katalog, katalog_runu, prompt)
+        if plik_promptu is None:
+            return _porazka(str(powod), None)
+        opcje_stdin = ["--stdin-plik", os.path.abspath(plik_promptu)]
     przed = None
     if tylko_odczyt:
         try:
@@ -298,6 +493,7 @@ async def wykonaj_krok(
             sys.executable, "-m", "runner.straznik",
             "--status-fd", str(zapis),
             "--cwd", os.path.abspath(katalog),
+            *opcje_stdin,
             "--",
             *polecenie,
             cwd=KATALOG_KORZENIA,
@@ -305,7 +501,9 @@ async def wykonaj_krok(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=(
-                asyncio.subprocess.PIPE if artefakt_z_wyniku else asyncio.subprocess.STDOUT
+                asyncio.subprocess.PIPE
+                if artefakt_z_wyniku or tryb_agenta
+                else asyncio.subprocess.STDOUT
             ),
             start_new_session=True,
             pass_fds=(zapis,),
@@ -320,18 +518,52 @@ async def wykonaj_krok(
     finally:
         os.close(zapis)
 
-    wynik_agenta = bytearray() if artefakt_z_wyniku else None
+    wynik_agenta = bytearray() if artefakt_z_wyniku and not tryb_agenta else None
+    stan = _StanStrumienia()
     try:
         blad_startu = await _status_startu(plik_statusu)
         if blad_startu is not None:
             return _porazka(f"nie można uruchomić polecenia: {blad_startu}", None)
-        await _emituj_wyjscie(proc, spec, emit, wynik_agenta, LIMIT_ARTEFAKTU)
+        if tryb_agenta:
+            await _czytaj_wyjscie_agenta(proc, spec, emit, stan)
+        else:
+            await _emituj_wyjscie(proc, spec, emit, wynik_agenta, LIMIT_ARTEFAKTU)
         kod = await proc.wait()
     finally:
         await _czekaj_na_straznika(proc)
 
+    pomiar = _pomiar_z_wyniku(stan.wynik)     # dla trybu surowego stan jest pusty
+    podtyp = stan.wynik.get("subtype") if stan.wynik is not None else None
+    if stan.blad_linii is not None:
+        return _porazka(stan.blad_linii, kod, pomiar)
+    if isinstance(podtyp, str) and podtyp in PODTYPY_BUDZETU:
+        return _porazka(f"budżet kroku wyczerpany ({podtyp})", kod, pomiar)
+
     if kod != 0:
-        return _porazka(f"kod wyjścia {kod}", kod)
+        return _porazka(f"kod wyjścia {kod}", kod, pomiar)
+
+    if tryb_agenta:
+        if stan.wynik is None:
+            return _porazka(str(Naruszenie(
+                Niezmiennik.evidence_required, "brak zdarzenia result w wyjściu agenta"
+            )), kod)
+        if stan.wynik.get("is_error") is True or podtyp != "success":
+            return _porazka(f"agent zakończył się błędem: {podtyp}", kod, pomiar)
+        if artefakt_z_wyniku:
+            nazwa = spec.wyjscia[0]
+            tresc = stan.wynik.get("result")
+            tresc = tresc if isinstance(tresc, str) else ""
+            dane = tresc.encode(errors="replace")
+            if len(dane) > LIMIT_ARTEFAKTU:
+                return _porazka(f"wynik agenta przekracza {LIMIT_ARTEFAKTU} bajtów", kod, pomiar)
+            if not tresc.strip():
+                return _porazka(str(Naruszenie(
+                    Niezmiennik.evidence_required, f"pusty wynik agenta, brak artefaktu {nazwa}"
+                )), kod, pomiar)
+            try:
+                await asyncio.to_thread(_zapisz_atomowo, katalog_dowodu / nazwa, dane)
+            except OSError as blad:
+                return _porazka(f"nie można zapisać artefaktu {nazwa}: {blad}", kod, pomiar)
 
     if wynik_agenta is not None:
         nazwa = spec.wyjscia[0]
@@ -353,13 +585,13 @@ async def wykonaj_krok(
         # os.path.isfile zwraca False przy dowolnym OSError; Path.is_file przed
         # Pythonem 3.14 przepuszcza np. EACCES. Niedostepny artefakt = brak dowodu.
         if not os.path.isfile(katalog_dowodu / nazwa):
-            return _porazka(f"brak artefaktu {nazwa}", kod)
+            return _porazka(f"brak artefaktu {nazwa}", kod, pomiar)
         try:
             naruszenie = dowod_z_pliku(katalog_dowodu / nazwa)
         except OSError as blad:
-            return _porazka(f"nie można odczytać artefaktu {nazwa}: {blad}", kod)
+            return _porazka(f"nie można odczytać artefaktu {nazwa}: {blad}", kod, pomiar)
         if naruszenie is not None:
-            return _porazka(str(naruszenie), kod)
+            return _porazka(str(naruszenie), kod, pomiar)
 
     if przed is not None:
         try:
@@ -368,19 +600,20 @@ async def wykonaj_krok(
             )
         except OSError as blad:
             return _porazka(
-                f"nie można sprawdzić niezmiennika reviewer_readonly: {blad}", kod
+                f"nie można sprawdzić niezmiennika reviewer_readonly: {blad}", kod, pomiar
             )
         if naruszenie is not None:
-            return _porazka(str(naruszenie), kod)
+            return _porazka(str(naruszenie), kod, pomiar)
 
     wartosc_werdyktu = None
     if werdykt is not None:
         ocena = sprawdz_werdykt(katalog_dowodu / spec.wyjscia[0], werdykt)
         if isinstance(ocena, Naruszenie):
-            return _porazka(str(ocena), kod)
+            return _porazka(str(ocena), kod, pomiar)
         if not ocena.zdany:
             return WynikKroku(
-                "nieudany", f"werdykt: {ocena.wartosc}", kod, werdykt=ocena.wartosc)
+                "nieudany", f"werdykt: {ocena.wartosc}", kod, pomiar=pomiar,
+                werdykt=ocena.wartosc)
         wartosc_werdyktu = ocena.wartosc
 
     if PLIK_NOTATKI in spec.wyjscia:
@@ -388,7 +621,8 @@ async def wykonaj_krok(
             _ocen_notatke, katalog_dowodu / PLIK_NOTATKI, zmienione_linie
         )
         if powod is not None:
-            return _porazka(powod, kod)
-        return WynikKroku("zakonczony", None, kod, kotwice, wartosc_werdyktu)
+            return _porazka(powod, kod, pomiar)
+        return WynikKroku(
+            "zakonczony", None, kod, pomiar=pomiar, kotwice=kotwice, werdykt=wartosc_werdyktu)
 
-    return WynikKroku("zakonczony", None, kod, werdykt=wartosc_werdyktu)
+    return WynikKroku("zakonczony", None, kod, pomiar=pomiar, werdykt=wartosc_werdyktu)

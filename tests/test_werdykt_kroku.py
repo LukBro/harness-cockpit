@@ -667,8 +667,11 @@ class AgentZWerdyktem:
     async def __call__(self, spec_kroku, polecenie, katalog, emit, *, katalog_runu=None, **dodatkowe):
         self.wywolania.append(spec_kroku.step_id)
         tresc = self.wyjscia.get(spec_kroku.step_id, "gotowe\n")
+        # silnik podaje prompt, wiec krok idzie w trybie agenta (HAR-174): wynik agenta
+        # przychodzi jako zdarzenie `result` strumienia stream-json, nie surowy tekst
+        wynik = json.dumps({"type": "result", "subtype": "success", "result": tresc}) + "\n"
         return await wykonaj_krok(
-            spec_kroku, atrapa(bajty=tresc.encode("utf-8").hex()), katalog, emit,
+            spec_kroku, atrapa(bajty=wynik.encode("utf-8").hex()), katalog, emit,
             katalog_runu=katalog_runu, **dodatkowe)
 
 

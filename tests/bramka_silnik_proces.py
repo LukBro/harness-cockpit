@@ -45,7 +45,7 @@ def main() -> None:
     async def emit(zdarzenie: dict) -> None:
         _dopisz(plik_zdarzen, json.dumps(zdarzenie))
 
-    async def agent(spec, polecenie, katalog, emit_, *, katalog_runu=None) -> WynikKroku:
+    async def agent(spec, polecenie, katalog, emit_, *, katalog_runu=None, prompt=None) -> WynikKroku:
         _dopisz(plik_agenta, spec.step_id)
         await asyncio.sleep(opis.get("spanie", 0))
         return WynikKroku("zakonczony", None, 0)

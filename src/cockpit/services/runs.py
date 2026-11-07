@@ -378,6 +378,10 @@ async def zapisz_zdarzenie(
     wyslane_output: int | None = None,
     text_full_len: int | None = None,
     attempt: int | None = None,
+    tokens_in: int | None = None,
+    tokens_out: int | None = None,
+    num_turns: int | None = None,
+    session_id: str | None = None,
     kroki_weryfikujace: Sequence[str] | None = None,
 ) -> tuple[Event, bool]:
     """Zapisuje zdarzenie od runnera; zwraca `(zdarzenie, nowe)`.
@@ -441,7 +445,10 @@ async def zapisz_zdarzenie(
         # wiersze krokow z wczesniejszych zdarzen, a w tej transakcji jest jedno zdarzenie.
         with s.no_autoflush:
             s.add(ev)
-            await zastosuj_zdarzenie_kroku(s, run, kind, step_id, agent_id, attempt, zapisany)
+            await zastosuj_zdarzenie_kroku(
+                s, run, kind, step_id, agent_id, attempt, zapisany,
+                cost_usd=cost_usd, tokens_in=tokens_in, tokens_out=tokens_out,
+                num_turns=num_turns, session_id=session_id)
             nieudane = await nieudane_kroki(s, run) if kind == _KONIEC_RUNU else []
             run.status = nastepny_status(status_przed, kind, nieudane)
             if (kind == "step_aborted" and status_przed != RunStatus.aborted

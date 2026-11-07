@@ -819,3 +819,47 @@ def test_cofniecie_migracji_pokrycia_usuwa_piec_kolumn_i_zostawia_run(cfg):
 
     assert not KOLUMNY_POKRYCIA & set(_kolumny_tabeli("run"))
     assert _statusy_i_powody_runow() == {"r1": ("to_accept", None)}
+
+
+# --- HAR-174: pomiar kroku (koszt, tokeny, tury, sesja) ---
+
+POLA_POMIARU_KROKU = ("cost_usd", "tokens_in", "tokens_out", "num_turns", "session_id")
+
+
+def test_migracja_pomiaru_kroku_dodaje_pieciu_kolumn_dopuszczajacych_brak_pomiaru(cfg):
+    command.upgrade(cfg, "0012")
+    assert not set(POLA_POMIARU_KROKU) & set(_kolumny_tabeli("step_run"))  # kontrast
+
+    command.upgrade(cfg, "0013")
+
+    kolumny = _kolumny_tabeli("step_run")
+    assert {pole: kolumny.get(pole) for pole in POLA_POMIARU_KROKU} == {
+        pole: "YES" for pole in POLA_POMIARU_KROKU}
+
+
+def test_cofniecie_migracji_pomiaru_kroku_usuwa_kolumny_pomiaru_i_zostawia_reszte_kroku(cfg):
+    command.upgrade(cfg, "head")
+    assert set(POLA_POMIARU_KROKU) <= set(_kolumny_tabeli("step_run"))  # kontrast
+
+    command.downgrade(cfg, "0012")
+
+    kolumny = _kolumny_tabeli("step_run")
+    assert not set(POLA_POMIARU_KROKU) & set(kolumny)
+    assert {"step_id", "agent_id", "attempt", "status", "reason"} <= set(kolumny)
+
+
+def test_krok_zapisany_przez_model_bez_pomiaru_ma_pomiar_nieznany_a_nie_zero(cfg):
+    command.upgrade(cfg, "head")
+
+    def zapytaj(c):
+        _wstaw_run_do_krokow(c)
+        c.execute(
+            StepRun.__table__.insert().values(
+                id="k1", tenant_id="t1", run_id="r1", step_id="s", status=StepStatus.finished,
+            )
+        )
+        return tuple(c.execute(
+            text(f"SELECT {', '.join(POLA_POMIARU_KROKU)} FROM step_run WHERE id = 'k1'")
+        ).one())
+
+    assert _z_polaczeniem(zapytaj) == (None, None, None, None, None)

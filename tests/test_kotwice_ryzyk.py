@@ -789,8 +789,11 @@ class AgentZPrawdziwymKrokiem:
             zmien_drzewo(katalog)
             return WynikKroku("zakonczony", None, 0)
         if spec.step_id == "opis":
+            # silnik podaje prompt, wiec krok idzie w trybie agenta (HAR-174): wynik recenzenta
+            # przychodzi jako zdarzenie `result` strumienia stream-json, nie surowy tekst
+            wynik = json.dumps({"type": "result", "subtype": "success", "result": self.notatka})
             return await wykonaj_krok(
-                spec, wypisz(self.notatka), katalog, emit,
+                spec, wypisz(wynik + "\n"), katalog, emit,
                 katalog_runu=katalog_runu, **dodatkowe)
         return WynikKroku("zakonczony", None, 0)
 
