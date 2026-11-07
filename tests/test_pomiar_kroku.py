@@ -720,6 +720,52 @@ async def test_autor_w_trybie_agenta_bez_zapisanego_artefaktu_nie_dostaje_go_z_t
     assert wynik == WynikKroku("nieudany", "brak artefaktu plan.md", 0, pomiar=POMIAR_PELNY)
 
 
+ZMIENIONE_LINIE_NOTATKI = [{"plik": "src/a.py", "linie": [[10, 12]]}]
+NOTATKA_ZMIANY = (
+    "## Co zmieniono\n\nRun ma nowy stan.\n\n"
+    "## Jakie ryzyko\n\n{ryzyko}\n\n"
+    "## Jak to sprawdzić\n\nOtwórz ekran odbioru i sprawdź stan.\n"
+)
+
+
+async def uruchom_notatke(ryzyko: str, katalog: Path, katalog_runu: Path, tmp_path: Path):
+    plik_linii = tmp_path / "zmienione-linie.json"
+    plik_linii.write_text(json.dumps(ZMIENIONE_LINIE_NOTATKI), encoding="utf-8")
+
+    async def emit(zdarzenie: dict) -> None:
+        pass
+
+    return await asyncio.wait_for(wykonaj_krok(
+        spec(Rola.reviewer, ["notatka-zmiany.md"]),
+        atrapa(result(result=NOTATKA_ZMIANY.format(ryzyko=ryzyko))),
+        katalog, emit, katalog_runu=katalog_runu, prompt="prompt kroku",
+        zmienione_linie=plik_linii), LIMIT_S)
+
+
+async def test_notatka_zmiany_z_wyniku_agenta_konczy_krok_sukcesem_z_kotwicami_i_pomiarem(
+    tmp_path, katalog, katalog_runu
+):
+    wynik = await uruchom_notatke(
+        "- [src/a.py:11] scenariusz: Run przerwany w zapisie zostawi plik bez werdyktu.",
+        katalog, katalog_runu, tmp_path)
+
+    assert wynik == WynikKroku(
+        "zakonczony", None, 0, pomiar=POMIAR_PELNY, kotwice=("src/a.py:11",))
+
+
+async def test_porazka_kotwic_notatki_zmiany_niesie_pomiar_kroku_agenta(
+    tmp_path, katalog, katalog_runu
+):
+    wynik = await uruchom_notatke(
+        "- [src/a.py:90] scenariusz: Cos sie zepsuje.", katalog, katalog_runu, tmp_path)
+
+    assert wynik == WynikKroku(
+        "nieudany",
+        "niezmiennik evidence_required: kotwica src/a.py:90: linia poza zmienionymi liniami "
+        "(tolerancja 3)",
+        0, pomiar=POMIAR_PELNY)
+
+
 # =================================================================================================
 # 6. Prompt: plik w katalogu runu jako stdin agenta, nigdy argv
 # =================================================================================================
