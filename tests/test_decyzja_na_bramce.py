@@ -1014,3 +1014,95 @@ async def test_zatwierdzenie_po_restarcie_kokpitu_wysyla_resume_przez_nowa_szyne
     assert _polecenia(swiat.runner_a) == [{
         "type": "resume", "run_id": run_id, "step_id": "wdrozenie",
         "decyzja": "approve", "powod": None}]
+
+
+# =====================================================================================
+# HAR-234: runner nie zapisuje zdarzen zarezerwowanych dla decyzji czlowieka
+# =====================================================================================
+
+# Lista przypadkow niezalezna od `runs.RODZAJE_CZLOWIEKA` (usuniecie wpisu z kodu nie usuwa testu).
+RODZAJE_DECYZJI_CZLOWIEKA = ("decision", "integrated", "committed", "acceptance")
+
+
+async def _zdarzenia_rodzaju(maker, run_id: str, kind: str) -> list:
+    async with maker() as s:
+        return (await s.execute(
+            select(Event).where(Event.run_id == run_id, Event.kind == kind))).scalars().all()
+
+
+async def test_runner_nie_odblokuje_bramki_zdarzeniem_decyzji_a_czlowiek_nadal_moze(swiat):
+    run_id = await _run_na_bramce(swiat, krok="wdrozenie")
+    przed = await _stan(swiat.maker, run_id)
+
+    r = await swiat.klient_a.post(
+        "/api/events",
+        json={"run_id": run_id, "kind": "decision", "step_id": "wdrozenie",
+              "agent_id": "wdrozenie", "text": "approve", "event_id": str(uuid.uuid4())},
+        headers={"Authorization": f"Bearer {TOKEN_A}"})
+
+    assert r.status_code == 422
+    assert await _stan(swiat.maker, run_id) == przed
+    assert przed[0] == "waiting"
+    assert await _zdarzenia_decyzji(swiat.maker, run_id) == []
+
+    czlowiek = await _decyzja_http(swiat.klient_a, run_id, decyzja="approve")
+
+    assert czlowiek.status_code == 200
+    assert (await _stan(swiat.maker, run_id))[0] == "running"
+    assert len(await _zdarzenia_decyzji(swiat.maker, run_id)) == 1
+
+
+@pytest.mark.parametrize("rodzaj", RODZAJE_DECYZJI_CZLOWIEKA, ids=RODZAJE_DECYZJI_CZLOWIEKA)
+async def test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone(
+    swiat, rodzaj,
+):
+    run_id = await _run_na_bramce(swiat)
+    przed = await _stan(swiat.maker, run_id)
+
+    with pytest.raises(NaruszonyNiezmiennik) as wyjatek:
+        await _zdarzenie_runu(swiat.maker, run_id, rodzaj, "a")
+
+    assert wyjatek.value.nazwa == "approval_required"
+    assert str(wyjatek.value) == (
+        f"niezmiennik approval_required: rodzaj zdarzenia {rodzaj!r} jest zarezerwowany "
+        "dla decyzji czlowieka; runner nie moze go zapisac")
+    assert await _zdarzenia_rodzaju(swiat.maker, run_id, rodzaj) == []
+    assert await _stan(swiat.maker, run_id) == przed
+
+
+async def test_ponowienie_istniejacego_event_id_z_rodzajem_czlowieka_jest_odrzucone_nie_idempotentne(
+    swiat,
+):
+    run_id = await _run_na_bramce(swiat)
+    event_id = str(uuid.uuid4())
+    async with swiat.maker() as s:
+        run = await s.get(Run, run_id)
+        await runs.zapisz_zdarzenie(s, run, event_id=event_id, kind="step_started",
+                                    step_id="b", agent_id="b")
+    przed = await _stan(swiat.maker, run_id)
+
+    async with swiat.maker() as s:
+        run = await s.get(Run, run_id)
+        with pytest.raises(NaruszonyNiezmiennik) as wyjatek:
+            await runs.zapisz_zdarzenie(s, run, event_id=event_id, kind="decision",
+                                        step_id="b", agent_id="b")
+
+    assert wyjatek.value.nazwa == "approval_required"
+    assert await _stan(swiat.maker, run_id) == przed
+
+
+async def test_zwykle_zdarzenie_od_runnera_nadal_sie_zapisuje(swiat):
+    run_id = await _run_na_bramce(swiat)
+    przed = await _stan(swiat.maker, run_id)
+
+    await _zdarzenie_runu(swiat.maker, run_id, "step_started", "b")
+
+    po = await _stan(swiat.maker, run_id)
+    assert len(po[2]) == len(przed[2]) + 1
+    assert po[2][-1][1] == "step_started"
+
+
+def test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_cztery():
+    assert runs.RODZAJE_CZLOWIEKA == frozenset({"decision", "integrated", "committed", "acceptance"})
+    # niezmienna lista: kod nie moze jej rozszerzyc w runtime (set == frozenset daje True)
+    assert type(runs.RODZAJE_CZLOWIEKA) is frozenset
