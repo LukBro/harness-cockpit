@@ -36,3 +36,9 @@ plik = "src/runner/dowody.py"
 szukaj = "        if not wyjscie.ma_tresc:\n            wyjscie.ma_tresc = bool(wyjscie.dekoder.decode(kawalek)"
 zamien = "        if True:\n            wyjscie.ma_tresc = bool(wyjscie.dekoder.decode(kawalek)"
 test = "tests/test_krok_check.py::test_tresc_wyjscia_w_dowolnym_kawalku_strumienia_wystarcza_za_dowod"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "    dekoder: Any = field(\n"
+zamien = "    dekoder_: Any = field(\n"
+test = "tests/test_krok_check.py::test_kod_zero_z_jedna_spacja_nielamliwa_i_nowa_linia_to_brak_dowodu"
