@@ -33,6 +33,7 @@ NIEZNANY_KROK_SYSTEMOWY = "nieznany_krok_systemowy"
 CHECK_BEZ_CAPABILITY = "check_bez_capability"
 ZLA_NAZWA_CAPABILITY = "zla_nazwa_capability"
 CAPABILITY_BEZ_CHECK = "capability_bez_check"
+LIMIT_NA_KROKU_SYSTEMOWYM = "limit_na_kroku_systemowym"
 
 # Nazwa capability trafia do nazwy pliku dowodu (`dowod-<capability>.json`).
 WZORZEC_CAPABILITY = r"[A-Za-z0-9_-]{1,64}"
@@ -171,6 +172,23 @@ def _problemy_capability(krok: Krok) -> list[Problem]:
     return []
 
 
+def _problemy_limitow_kroku_systemowego(krok: Krok) -> list[Problem]:
+    """Krok systemowy nie uruchamia agenta, wiec `budget_usd` i `max_turns` nie maja skutku
+    (silnik wraca przez `_krok_systemowy` przed `SpecKroku`): ustawione pole to blad, nie
+    cicha ignorancja (HAR-229)."""
+    if krok.skill is not None or krok.system is None:
+        return []
+    return [
+        Problem(
+            krok.id,
+            LIMIT_NA_KROKU_SYSTEMOWYM,
+            f"pole {pole} nie ma skutku na kroku systemowym {krok.id}: limit dotyczy tylko kroku agentowego",
+        )
+        for pole in ("budget_usd", "max_turns")
+        if getattr(krok, pole) is not None
+    ]
+
+
 def _w_katalogu(sciezka: Path, katalog: Path) -> bool:
     try:
         sciezka.resolve().relative_to(katalog.resolve())
@@ -247,6 +265,7 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
         else:
             konsumowane = tuple(skill.consumes)
         problemy.extend(_problemy_capability(krok))
+        problemy.extend(_problemy_limitow_kroku_systemowego(krok))
         problemy.extend(_niezmienniki_kroku(krok, skill, workflow))
         dostepne = _produkowane(przodkowie, produkcja)
         for artefakt in konsumowane:
