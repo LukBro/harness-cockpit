@@ -45,3 +45,8 @@ plik = "src/cockpit/services/runs.py"
 szukaj = "\"runner nie moze go zapisac\","
 zamien = "\"\","
 test = "tests/test_decyzja_na_bramce.py::test_zdarzenie_runnera_z_rodzajem_zarezerwowanym_dla_czlowieka_jest_odrzucone[decision]"
+
+[[rownowazny]]
+plik = "src/cockpit/services/runs.py"
+linia_tekst = "})"
+uzasadnienie = "Zamkniecie wywolania frozenset w RODZAJE_CZLOWIEKA: usuniecie albo zmiana daje blad skladni i modul sie nie importuje, wiec zadne wejscie nie odroznia wersji. Elementy zbioru i typ zbioru maja wiersze [[mutant]] wyzej."
