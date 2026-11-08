@@ -1,0 +1,492 @@
+# Tabela recznych mutantow HAR-233: zapadka mutation-main porownuje z artefaktem poprzedniego zielonego
+# przebiegu (krok `poprzedni zielony wynik mutation-main` w .github/workflows/mutation.yml, tryb
+# `--previous-summary` w cicd/mutation_baseline.py). Wiersz: element | mutacja | test, ktory po mutacji oblewa.
+#
+# Bez wierszy (mutacja rownowazna, zadne wejscie nie odroznia wersji):
+# - komentarze naglowka i job `mutation-main` (tresc komentarzy YAML i docstringa modulu nie jest wykonywana),
+# - job `mutation` (PR) i jego uprawnienia: bez zmian w tym tickecie.
+# - kolejnosc krokow `poprzedni zielony wynik...` przed `pelny przebieg...` nie wyraza sie podstawieniem tekstu;
+#   chroni ja porownanie indeksow w teście z wiersza o nazwie kroku (nazwa kroku musi istniec).
+
+# Uprawnienie actions bez odczytu przebiegow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "\n      actions: read"
+zamien = "\n      actions: write"
+test = "tests/test_workflow_mutacje.py::test_zadanie_po_scaleniu_ma_uprawnienia_tylko_do_odczytu_kodu_i_przebiegow"
+
+# Uprawnienie contents: zapis zamiast odczytu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "contents: read"
+zamien = "contents: write"
+test = "tests/test_workflow_mutacje.py::test_zadanie_po_scaleniu_ma_uprawnienia_tylko_do_odczytu_kodu_i_przebiegow"
+
+# Lista przebiegow bez --repo.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "gh run list --repo \"$REPO\""
+zamien = "gh run list"
+test = "tests/test_workflow_mutacje.py::test_lista_przebiegow_pyta_tylko_o_udane_pushe_na_main_workflowu_mutacji_z_repozytorium_zadania"
+
+# Zly workflow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--workflow mutation.yml"
+zamien = "--workflow inny.yml"
+test = "tests/test_workflow_mutacje.py::test_lista_przebiegow_pyta_tylko_o_udane_pushe_na_main_workflowu_mutacji_z_repozytorium_zadania"
+
+# Zla galaz.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--branch main"
+zamien = "--branch dev"
+test = "tests/test_workflow_mutacje.py::test_lista_przebiegow_pyta_tylko_o_udane_pushe_na_main_workflowu_mutacji_z_repozytorium_zadania"
+
+# Zle zdarzenie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--event push"
+zamien = "--event pull_request"
+test = "tests/test_workflow_mutacje.py::test_lista_przebiegow_pyta_tylko_o_udane_pushe_na_main_workflowu_mutacji_z_repozytorium_zadania"
+
+# Zly status (nie tylko udane).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--status success"
+zamien = "--status completed"
+test = "tests/test_workflow_mutacje.py::test_lista_przebiegow_pyta_tylko_o_udane_pushe_na_main_workflowu_mutacji_z_repozytorium_zadania"
+
+# Limit 1 zwrocilby tylko biezacy run.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--limit 20"
+zamien = "--limit 1"
+test = "tests/test_workflow_mutacje.py::test_zapytanie_o_przebiegi_prosi_o_identyfikatory_i_o_wiecej_niz_jeden_wynik"
+
+# Zle pole JSON.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--json databaseId"
+zamien = "--json number"
+test = "tests/test_workflow_mutacje.py::test_zapytanie_o_przebiegi_prosi_o_identyfikatory_i_o_wiecej_niz_jeden_wynik"
+
+# Zle wyrazenie jq.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--jq '.[].databaseId'"
+zamien = "--jq '.[].number'"
+test = "tests/test_workflow_mutacje.py::test_zapytanie_o_przebiegi_prosi_o_identyfikatory_i_o_wiecej_niz_jeden_wynik"
+
+# Odwrocony warunek bledu gh run list.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if ! gh run list"
+zamien = "if gh run list"
+test = "tests/test_workflow_mutacje.py::test_blad_pobrania_listy_przebiegow_oblewa_krok_mimo_niepustego_wyjscia_gh"
+
+# Tresc komunikatu bledu listy.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "(gh run list) - zapadka bez dowodu"
+zamien = "(gh run list)"
+test = "tests/test_workflow_mutacje.py::test_blad_pobrania_listy_przebiegow_oblewa_krok_mimo_niepustego_wyjscia_gh"
+
+# Filtr biezacego runu bez -x (podciag zamiast pelnej linii).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "grep -vx \"$RUN_ID\""
+zamien = "grep -v \"$RUN_ID\""
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Wybor tylko biezacego runu zamiast odrzucenia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "grep -vx \"$RUN_ID\""
+zamien = "grep -x \"$RUN_ID\""
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Kod grepa zapisany zawsze jako 1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "kandydaci=\"$(grep -vx \"$RUN_ID\" poprzednie-runy.txt)\" || kod=$?"
+zamien = "kandydaci=\"$(grep -vx \"$RUN_ID\" poprzednie-runy.txt)\" || kod=1"
+test = "tests/test_workflow_mutacje.py::test_blad_grepa_przy_wyborze_poprzedniego_przebiegu_oblewa_krok_z_komunikatem_a_nie_brakiem_przebiegu"
+
+# Kod 0 grepa traktowany jak blad.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "[ \"$kod\" != \"0\" ] &&"
+zamien = "[ \"$kod\" != \"9\" ] &&"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Kod 1 grepa (brak linii) traktowany jak blad.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "&& [ \"$kod\" != \"1\" ]"
+zamien = "&& [ \"$kod\" != \"9\" ]"
+test = "tests/test_workflow_mutacje.py::test_brak_przebiegow_na_liscie_oblewa_krok_z_komunikatem_i_nie_pobiera_artefaktu"
+
+# Alternatywa zamiast koniunkcji w warunku kodu grepa.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "[ \"$kod\" != \"0\" ] && [ \"$kod\" != \"1\" ]"
+zamien = "[ \"$kod\" != \"0\" ] || [ \"$kod\" != \"1\" ]"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Tresc komunikatu bledu grepa.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "grep zakonczyl sie kodem $kod przy wyborze"
+zamien = "grep zakonczyl sie $kod przy wyborze"
+test = "tests/test_workflow_mutacje.py::test_blad_grepa_przy_wyborze_poprzedniego_przebiegu_oblewa_krok_z_komunikatem_a_nie_brakiem_przebiegu"
+
+# Drugi kandydat zamiast pierwszego.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "head -n 1"
+zamien = "head -n 2"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Ostatni kandydat zamiast pierwszego.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "| head -n 1"
+zamien = "| tail -n 1"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Odwrocony warunek braku poprzedniego przebiegu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if [ -z \"$poprzedni\" ]"
+zamien = "if [ -n \"$poprzedni\" ]"
+test = "tests/test_workflow_mutacje.py::test_brak_przebiegow_na_liscie_oblewa_krok_z_komunikatem_i_nie_pobiera_artefaktu"
+
+# Tresc komunikatu braku poprzedniego przebiegu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "zapadka nie ma z czym porownac"
+zamien = "zapadka nie ma z czym porownywac"
+test = "tests/test_workflow_mutacje.py::test_brak_przebiegow_na_liscie_oblewa_krok_z_komunikatem_i_nie_pobiera_artefaktu"
+
+# Odwrocony warunek bledu gh run download.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if ! gh run download"
+zamien = "if gh run download"
+test = "tests/test_workflow_mutacje.py::test_blad_pobrania_artefaktu_oblewa_krok_z_komunikatem_nawet_gdy_plik_summary_powstal"
+
+# Pobranie bez --repo.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "gh run download \"$poprzedni\" --repo \"$REPO\""
+zamien = "gh run download \"$poprzedni\""
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Pobranie biezacego runu zamiast poprzedniego.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "gh run download \"$poprzedni\""
+zamien = "gh run download \"$RUN_ID\""
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Zla nazwa artefaktu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--name mutation-report"
+zamien = "--name raport"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Zly katalog pobrania.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--dir poprzedni"
+zamien = "--dir inny"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Tresc komunikatu bledu pobrania.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "(wygasl albo go brak)"
+zamien = "(wygasl)"
+test = "tests/test_workflow_mutacje.py::test_blad_pobrania_artefaktu_oblewa_krok_z_komunikatem_nawet_gdy_plik_summary_powstal"
+
+# Test pliku jako istnienia (katalog przechodzi).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "[ ! -f poprzedni/mutation-summary.json ]"
+zamien = "[ ! -e poprzedni/mutation-summary.json ]"
+test = "tests/test_workflow_mutacje.py::test_artefakt_bez_pliku_summary_oblewa_krok_z_komunikatem"
+
+# Odwrocony test pliku summary.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "[ ! -f poprzedni"
+zamien = "[ -f poprzedni"
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Tresc komunikatu braku summary w artefakcie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "nie zawiera mutation-summary.json"
+zamien = "nie ma mutation-summary.json"
+test = "tests/test_workflow_mutacje.py::test_artefakt_bez_pliku_summary_oblewa_krok_z_komunikatem"
+
+# Informacja o biezacym runie zamiast poprzedniego.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "echo \"poprzedni zielony przebieg: $poprzedni\""
+zamien = "echo \"poprzedni zielony przebieg: $RUN_ID\""
+test = "tests/test_workflow_mutacje.py::test_krok_pobiera_artefakt_pierwszego_udanego_przebiegu_innego_niz_biezacy"
+
+# Token spoza kontekstu GitHub.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "GH_TOKEN: ${{ github.token }}"
+zamien = "GH_TOKEN: token"
+test = "tests/test_workflow_mutacje.py::test_krok_poprzedniego_wyniku_dostaje_token_przebieg_i_repozytorium_ze_zmiennych_srodowiska"
+
+# Identyfikator biezacego runu spoza kontekstu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "RUN_ID: ${{ github.run_id }}"
+zamien = "RUN_ID: 1"
+test = "tests/test_workflow_mutacje.py::test_krok_poprzedniego_wyniku_dostaje_token_przebieg_i_repozytorium_ze_zmiennych_srodowiska"
+
+# Repozytorium spoza kontekstu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "REPO: ${{ github.repository }}"
+zamien = "REPO: a/b"
+test = "tests/test_workflow_mutacje.py::test_krok_poprzedniego_wyniku_dostaje_token_przebieg_i_repozytorium_ze_zmiennych_srodowiska"
+
+# Nazwa nowego kroku (krok musi istniec pod ta nazwa przed zapadka).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: poprzedni zielony wynik mutation-main"
+zamien = "- name: poprzedni wynik"
+test = "tests/test_workflow_mutacje.py::test_krok_poprzedniego_wyniku_stoi_w_zadaniu_po_scaleniu_przed_pelnym_przebiegiem_i_zapadka"
+
+# Zapadka znow z plikiem baseline.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--previous-summary poprzedni/mutation-summary.json"
+zamien = "--baseline cicd/mutation-baseline.json"
+test = "tests/test_workflow_mutacje.py::test_krok_zapadki_porownuje_z_artefaktem_poprzedniego_przebiegu_a_nie_z_plikiem_baseline_w_repozytorium"
+
+# Zapadka w zakresie diff.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--scope full; then"
+zamien = "--scope diff; then"
+test = "tests/test_workflow_mutacje.py::test_krok_zapadki_porownuje_z_artefaktem_poprzedniego_przebiegu_a_nie_z_plikiem_baseline_w_repozytorium"
+
+# Zapadka znow z --commit.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--scope full; then"
+zamien = "--scope full --commit abc; then"
+test = "tests/test_workflow_mutacje.py::test_krok_zapadki_niczego_nie_zapisuje_w_repozytorium_wiec_nie_dostaje_commitu_scalenia"
+
+# Powrot zmiennej COMMIT_SHA do kroku zapadki.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "      - name: pelny przebieg mutacyjny i zapadka\n        run: |"
+zamien = "      - name: pelny przebieg mutacyjny i zapadka\n        env:\n          COMMIT_SHA: ${{ github.sha }}\n        run: |"
+test = "tests/test_workflow_mutacje.py::test_krok_zapadki_niczego_nie_zapisuje_w_repozytorium_wiec_nie_dostaje_commitu_scalenia"
+
+# Tresc komunikatu bledu zapadki.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "(zly poprzedni wynik albo summary) - zapadka nie dziala"
+zamien = "(zly poprzedni wynik albo summary) - zapadka dziala"
+test = "tests/test_workflow_mutacje.py::test_brak_artefaktu_poprzedniego_przebiegu_oblewa_krok_z_komunikatem_zamiast_cichej_zapadki_na_pliku"
+
+# Tresc komunikatu braku mutmuta.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "Zapadka nie porownala."
+zamien = "Zapadka porownala."
+test = "tests/test_workflow_mutacje.py::test_brak_narzedzia_mutacyjnego_oblewa_krok_zapadki_pelnym_komunikatem"
+
+# Tresc komunikatu bledu startu mutmuta.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "statystyk), sprawdz log mutmut run."
+zamien = "statystyk), sprawdz log."
+test = "tests/test_workflow_mutacje.py::test_blad_startu_testow_mutmuta_oblewa_krok_zapadki_pelnym_komunikatem"
+
+# Tresc komunikatu zera zabitych.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "(sprawdz log mutmut run)."
+zamien = "(sprawdz log)."
+test = "tests/test_workflow_mutacje.py::test_zero_zabitych_mutantow_oblewa_krok_zapadki_pelnym_komunikatem"
+
+# Stary plik baseline wraca do artefaktu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutation-summary.json\n          retention-days: 90"
+zamien = "mutation-summary.json\n            cicd/mutation-baseline.json\n          retention-days: 90"
+test = "tests/test_workflow_mutacje.py::test_artefakt_zadania_po_scaleniu_niesie_summary_i_raport_ale_nie_stary_plik_baseline_i_zyje_90_dni"
+
+# Summary znika z artefaktu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutants/mutmut-results.txt\n            mutation-summary.json\n          retention-days: 90"
+zamien = "mutants/mutmut-results.txt\n          retention-days: 90"
+test = "tests/test_workflow_mutacje.py::test_artefakt_zadania_po_scaleniu_niesie_summary_i_raport_ale_nie_stary_plik_baseline_i_zyje_90_dni"
+
+# Retencja artefaktu 90 dni.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "retention-days: 90"
+zamien = "retention-days: 9"
+test = "tests/test_workflow_mutacje.py::test_artefakt_zadania_po_scaleniu_niesie_summary_i_raport_ale_nie_stary_plik_baseline_i_zyje_90_dni"
+
+# load_previous_summary: etykieta bledu odczytu pliku.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "_load_json_file(Path(path), \"poprzedni wynik\")"
+zamien = "_load_json_file(Path(path), \"x\")"
+test = "tests/test_zapadka_mutacji.py::test_brak_pliku_poprzedniego_wyniku_jest_bledem_wejscia_a_nie_pierwszym_pomiarem"
+
+# load_previous_summary: etykieta bledu ksztaltu.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "\"poprzedni wynik\"), \"poprzedni wynik\")"
+zamien = "\"poprzedni wynik\"), \"x\")"
+test = "tests/test_zapadka_mutacji.py::test_poprzedni_wynik_o_zlym_ksztalcie_jest_bledem_wejscia_z_etykieta_poprzedniego_wyniku"
+
+# load_previous_summary: score=null przepuszczony.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "if previous[\"score\"] is None:"
+zamien = "if previous[\"score\"] is not None:"
+test = "tests/test_zapadka_mutacji.py::test_poprzedni_wynik_bez_pomiaru_jest_bledem_wejscia_a_nie_zielonym_porownaniem"
+
+# load_previous_summary: tresc bledu score=null.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "brak wyniku (score=null) - poprzedni"
+zamien = "brak wyniku - poprzedni"
+test = "tests/test_zapadka_mutacji.py::test_wczytanie_poprzedniego_wyniku_bez_pomiaru_rzuca_blad_wejscia_z_pelnym_komunikatem"
+
+# load_previous_summary: score zerowany.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "\"score\": previous[\"score\"],"
+zamien = "\"score\": 0.0,"
+test = "tests/test_zapadka_mutacji.py::test_wczytanie_poprzedniego_wyniku_zwraca_baseline_z_wynikiem_licznikami_i_zakresem_z_argumentu"
+
+# load_previous_summary: survived zerowane.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "\"survived\": previous[\"survived\"],"
+zamien = "\"survived\": 0,"
+test = "tests/test_zapadka_mutacji.py::test_wczytanie_poprzedniego_wyniku_zwraca_baseline_z_wynikiem_licznikami_i_zakresem_z_argumentu"
+
+# load_previous_summary: total zerowane.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "\"total\": previous[\"total\"],"
+zamien = "\"total\": 0,"
+test = "tests/test_zapadka_mutacji.py::test_wczytanie_poprzedniego_wyniku_zwraca_baseline_z_wynikiem_licznikami_i_zakresem_z_argumentu"
+
+# load_previous_summary: zakres staly zamiast z argumentu.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "\"total\": previous[\"total\"],\n        \"scope\": scope,"
+zamien = "\"total\": previous[\"total\"],\n        \"scope\": \"full\","
+test = "tests/test_zapadka_mutacji.py::test_wczytanie_poprzedniego_wyniku_zwraca_baseline_z_wynikiem_licznikami_i_zakresem_z_argumentu"
+
+# main: grupa zrodel nieobowiazkowa.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "add_mutually_exclusive_group(required=True)"
+zamien = "add_mutually_exclusive_group(required=False)"
+test = "tests/test_zapadka_mutacji.py::test_brak_zrodla_porownania_jest_bledem_uzycia"
+
+# main: zrodla nie wykluczaja sie.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "source = parser.add_mutually_exclusive_group(required=True)"
+zamien = "source = parser.add_argument_group()"
+test = "tests/test_zapadka_mutacji.py::test_baseline_i_poprzedni_wynik_naraz_to_blad_uzycia_i_baseline_zostaje_nietkniety"
+
+# main: zmieniona nazwa opcji.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "\"--previous-summary\", help"
+zamien = "\"--poprzedni\", help"
+test = "tests/test_zapadka_mutacji.py::test_wynik_nizszy_od_poprzedniego_przebiegu_jest_spadkiem_nawet_gdy_przewyzsza_stary_baseline"
+
+# main: tryb previous zawsze wylaczony.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "previous_mode = args.previous_summary is not None"
+zamien = "previous_mode = False"
+test = "tests/test_zapadka_mutacji.py::test_wynik_nizszy_od_poprzedniego_przebiegu_jest_spadkiem_nawet_gdy_przewyzsza_stary_baseline"
+
+# main: tryb previous odwrocony.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "previous_mode = args.previous_summary is not None"
+zamien = "previous_mode = args.previous_summary is None"
+test = "tests/test_zapadka_mutacji.py::test_wynik_nizszy_od_poprzedniego_przebiegu_jest_spadkiem_nawet_gdy_przewyzsza_stary_baseline"
+
+# main: odwrocony wybor zrodla baseline.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "        if previous_mode:\n            baseline = load_previous_summary"
+zamien = "        if not previous_mode:\n            baseline = load_previous_summary"
+test = "tests/test_zapadka_mutacji.py::test_wynik_nizszy_od_poprzedniego_przebiegu_jest_spadkiem_nawet_gdy_przewyzsza_stary_baseline"
+
+# main: zakres staly przy wczytaniu poprzedniego.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "load_previous_summary(args.previous_summary, args.scope)"
+zamien = "load_previous_summary(args.previous_summary, \"full\")"
+test = "tests/test_zapadka_mutacji.py::test_zakres_przebiegu_z_argumentu_trafia_do_linii_statusu_przy_porownaniu_z_poprzednim"
+
+# main: previous_mode nie trafia do wyniku.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "result[\"previous_mode\"] = previous_mode"
+zamien = "result[\"previous_mode\"] = False"
+test = "tests/test_zapadka_mutacji.py::test_porownanie_z_poprzednim_przebiegiem_nigdy_nie_zapisuje_pliku_takze_przy_wzroscie_wyniku"
+
+# main: zapis w trybie previous (bez --commit wymusza odmowe).
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "not args.dry_run and not previous_mode:"
+zamien = "not args.dry_run:"
+test = "tests/test_zapadka_mutacji.py::test_porownanie_z_poprzednim_przebiegiem_nie_wymaga_commita_nawet_przy_wzroscie"
+
+# main: zapis w trybie previous z --commit.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "not args.dry_run and not previous_mode:"
+zamien = "not args.dry_run and previous_mode:"
+test = "tests/test_zapadka_mutacji.py::test_porownanie_z_poprzednim_przebiegiem_nie_zapisuje_pliku_takze_gdy_podano_commit"
+
+# format_report: odwrocony warunek trybu previous.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "if result.get(\"previous_mode\"):"
+zamien = "if not result.get(\"previous_mode\"):"
+test = "tests/test_zapadka_mutacji.py::test_porownanie_z_poprzednim_przebiegiem_nigdy_nie_zapisuje_pliku_takze_przy_wzroscie_wyniku"
+
+# format_report: zly klucz trybu previous.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "result.get(\"previous_mode\")"
+zamien = "result.get(\"previous_mod\")"
+test = "tests/test_zapadka_mutacji.py::test_porownanie_z_poprzednim_przebiegiem_nigdy_nie_zapisuje_pliku_takze_przy_wzroscie_wyniku"
+
+# format_report: tresc linii o braku zapisu.
+[[mutant]]
+plik = "cicd/mutation_baseline.py"
+szukaj = "baseline: nie zapisywany - porownanie z poprzednim przebiegiem"
+zamien = "baseline: zapisany"
+test = "tests/test_zapadka_mutacji.py::test_porownanie_z_poprzednim_przebiegiem_nigdy_nie_zapisuje_pliku_takze_przy_wzroscie_wyniku"
