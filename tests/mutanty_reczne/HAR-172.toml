@@ -295,56 +295,6 @@ szukaj = "await bus.send_to_runner(wynik.run.runner_id, wynik.polecenie)"
 zamien = "await bus.send_to_runner(wynik.run.id, wynik.polecenie)"
 test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_kolejkuje_runnerowi_runu_polecenie_resume_z_id_kroku"
 
-# Zdarzenie `decision` nie trafia na szyne albo trafia do innego runu.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(wynik.run.id, {"
-zamien = "await bus.publish_event(wynik.run.id + 'x', {"
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = 'await bus.publish_event(wynik.run.id, {"seq": ev.seq,'
-zamien = 'await bus.publish_event(wynik.run.id, {"seq": 0,'
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
-zamien = "\"kind\": \"x\", \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
-zamien = "\"kind\": ev.kind, \"text\": \"\",\n                                           \"step_id\": ev.step_id,"
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": ev.step_id,"
-zamien = "\"kind\": ev.kind, \"text\": ev.text,\n                                           \"step_id\": \"\","
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
-zamien = "                                           \"text_truncated\": True,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
-zamien = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": 0})\n    return DecyzjaPrzyjeta("
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
-# Klucze zdarzenia na szynie: zmieniona nazwa klucza.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "                                           \"text_truncated\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
-zamien = "                                           \"text_truncated_\": ev.text_truncated,\n                                           \"text_full_len\": ev.text_full_len})\n    return DecyzjaPrzyjeta("
-test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
-
 # Deklaracja odpowiedzi bledow trasy: brak kodu 401, 403, 404, 409 albo 422 w schemacie.
 [[mutant]]
 plik = "src/cockpit/api/app.py"

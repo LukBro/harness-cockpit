@@ -1,0 +1,74 @@
+# Tabela recznych mutantow HAR-121: czas zdarzenia (`at`) w API i na szynie. Trasy w api/app.py
+# maja dekorator, wiec mutmut ich nie mutuje; ksztalt zdarzenia na szynie zyje w
+# `runs.zdarzenie_na_szyne` (mutmut) i zastepuje wiersze HAR-172 #41-48 oraz HAR-179 #47-54,
+# #75-82, ktore mutowaly slownik wpisany wczesniej w kazdej trasie.
+
+# Szczegoly runu bez czasu przeliczonego na UTC (data z SQLite bez strefy).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "at=uslugi.czas_zdarzenia(e)) for e in rows],"
+zamien = "at=e.at) for e in rows],"
+test = "tests/test_run_przerwany.py::test_szczegoly_runu_podaja_czas_zapisu_kazdego_zdarzenia"
+
+# Pole `at` opcjonalne w modelu odpowiedzi.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    at: datetime                # czas zapisu zdarzenia w UTC"
+zamien = "    at: datetime | None = None  # czas zapisu zdarzenia w UTC"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+# Decyzja na bramce: pusta tresc zdarzenia na szynie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(wynik.run.id, uslugi.zdarzenie_na_szyne(ev))"
+zamien = "await bus.publish_event(wynik.run.id, {})"
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+# Decyzja na bramce: zdarzenie na szynie innego runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(wynik.run.id, uslugi.zdarzenie_na_szyne(ev))"
+zamien = "await bus.publish_event(wynik.run.id + 'x', uslugi.zdarzenie_na_szyne(ev))"
+test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
+
+# Zdarzenie od runnera: pusta tresc na szynie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run.id, uslugi.zdarzenie_na_szyne(ev))"
+zamien = "await bus.publish_event(run.id, {})"
+test = "tests/test_obciecie_tekstu.py::test_strumien_dla_przegladarki_niesie_znacznik_obciecia_i_pelna_dlugosc"
+
+# Zdarzenie od runnera: szyna innego runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run.id, uslugi.zdarzenie_na_szyne(ev))"
+zamien = "await bus.publish_event(run.id + 'x', uslugi.zdarzenie_na_szyne(ev))"
+test = "tests/test_obciecie_tekstu.py::test_strumien_dla_przegladarki_niesie_znacznik_obciecia_i_pelna_dlugosc"
+
+# Integrate: pusta tresc zdarzenia na szynie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))\n    return Zintegrowano("
+zamien = "await bus.publish_event(run_id, {})\n    return Zintegrowano("
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# Integrate: szyna innego runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))\n    return Zintegrowano("
+zamien = "await bus.publish_event(run_id + 'x', uslugi.zdarzenie_na_szyne(ev))\n    return Zintegrowano("
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# Commit: pusta tresc zdarzenia na szynie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))\n    return Zacommitowano("
+zamien = "await bus.publish_event(run_id, {})\n    return Zacommitowano("
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# Commit: szyna innego runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))\n    return Zacommitowano("
+zamien = "await bus.publish_event(run_id + 'x', uslugi.zdarzenie_na_szyne(ev))\n    return Zacommitowano("
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"

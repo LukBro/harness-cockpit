@@ -336,62 +336,6 @@ szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.
 zamien = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), None)"
 test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
 
-# integrate: zdarzenie do publikacji czytane z wyniku odbioru zamiast ze zdarzenia.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "ev = wynik.zdarzenie\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "ev = wynik\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, identyfikator runu zdarzenia zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(\"\", {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, seq zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(run_id, {\"seq\": 0, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, kind zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": \"\", \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, text zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": \"\",\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, step_id zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": \"x\",\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, text_truncated zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": True,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
-# integrate: publikacja na szynie, text_full_len zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": 0})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
-test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
-
 # integrate: odpowiedz, run_id=run_id zmienione.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
@@ -531,62 +475,6 @@ plik = "src/cockpit/api/app.py"
 szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
 zamien = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), None)"
 test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
-
-# commit: zdarzenie do publikacji czytane z wyniku odbioru zamiast ze zdarzenia.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "ev = wynik.zdarzenie\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "ev = wynik\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, identyfikator runu zdarzenia zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(\"\", {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, seq zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(run_id, {\"seq\": 0, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, kind zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": \"\", \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, text zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": \"\",\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, step_id zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": \"x\",\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, text_truncated zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": True,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
-
-# commit: publikacja na szynie, text_full_len zmienione.
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": 0})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
-test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
 
 # commit: odpowiedz, run_id=run_id zmienione.
 [[mutant]]

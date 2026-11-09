@@ -291,10 +291,7 @@ async def podejmij_decyzje(
     ev = wynik.zdarzenie
     if wynik.polecenie is not None:
         await bus.send_to_runner(wynik.run.runner_id, wynik.polecenie)
-    await bus.publish_event(wynik.run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
-                                           "step_id": ev.step_id,
-                                           "text_truncated": ev.text_truncated,
-                                           "text_full_len": ev.text_full_len})
+    await bus.publish_event(wynik.run.id, uslugi.zdarzenie_na_szyne(ev))
     return DecyzjaPrzyjeta(run_id=wynik.run.id, status=wynik.run.status,
                            step_id=wynik.step_id, reason=wynik.run.reason)
 
@@ -318,10 +315,7 @@ async def ingest_event(
         kroki_weryfikujace=body.kroki_weryfikujace,
     )
     if nowe:
-        await bus.publish_event(run.id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
-                                         "step_id": ev.step_id,
-                                         "text_truncated": ev.text_truncated,
-                                         "text_full_len": ev.text_full_len})
+        await bus.publish_event(run.id, uslugi.zdarzenie_na_szyne(ev))
     return ZdarzeniePrzyjete(seq=ev.seq)
 
 
@@ -344,7 +338,8 @@ async def get_run(
         reason=run.reason,
         events=[ZdarzenieRunu(
             seq=e.seq, kind=e.kind, text=e.text, step_id=e.step_id, agent_type=e.agent_type,
-            text_truncated=e.text_truncated, text_full_len=e.text_full_len) for e in rows],
+            text_truncated=e.text_truncated, text_full_len=e.text_full_len,
+            at=uslugi.czas_zdarzenia(e)) for e in rows],
         steps=[KrokRunu(
             step_id=k.step_id, agent_id=k.agent_id, attempt=k.attempt, status=k.status.value,
             reason=k.reason, cost_usd=k.cost_usd, tokens_in=k.tokens_in,
@@ -376,10 +371,7 @@ async def integruj_run(
     wynik = await odbior.integruj_run(
         s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)
     ev = wynik.zdarzenie
-    await bus.publish_event(run_id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
-                                     "step_id": ev.step_id,
-                                     "text_truncated": ev.text_truncated,
-                                     "text_full_len": ev.text_full_len})
+    await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))
     return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)
 
 
@@ -394,10 +386,7 @@ async def commituj_run(
     wynik = await odbior.commituj_run(
         s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)
     ev = wynik.zdarzenie
-    await bus.publish_event(run_id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
-                                     "step_id": ev.step_id,
-                                     "text_truncated": ev.text_truncated,
-                                     "text_full_len": ev.text_full_len})
+    await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))
     return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)
 
 

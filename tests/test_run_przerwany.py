@@ -374,6 +374,7 @@ async def test_przerwanie_jest_publikowane_przegladarce_z_numerem_zdarzenia_i_st
         bus.unsubscribe_run(run_id, q)
         bus._run_subscribers.pop(run_id, None)
 
+    assert ev.pop("at").endswith("+00:00")     # czas zdarzenia w UTC (HAR-121)
     assert ev == {"seq": 3, "kind": "run_aborted", "text": POWOD, "step_id": "",
                   "status": "aborted", "reason": POWOD,
                   "text_truncated": False, "text_full_len": len(POWOD)}
@@ -419,6 +420,7 @@ async def test_zdarzenia_przerwania_zwracaja_ostatnie_zdarzenie_przerwania_kazde
     async with db_session.SessionLocal() as s:
         wynik = await uslugi.zdarzenia_przerwania(s, [a, b, bez, "nieznany-run"])
 
+    assert all(e.pop("at").endswith("+00:00") for _, e in wynik)   # czas w UTC (HAR-121)
     assert dict(wynik) == {
         a: {"seq": 2, "kind": "run_aborted", "text": "l2", "step_id": "",
             "status": "aborted", "reason": POWOD,
@@ -865,3 +867,60 @@ async def test_zdarzenie_przerwania_innego_zespolu_o_tym_samym_runie_nie_jest_br
         wynik = await uslugi.zdarzenia_przerwania(s, [run_id])
 
     assert [(r, e["seq"], e["text"]) for r, e in wynik] == [(run_id, 1, "l1")]
+
+
+# --- HAR-121: czas zdarzenia w odpowiedzi API i na szynie ----------------------
+
+@pytest.fixture
+def strefa_procesu_daleko_od_utc(monkeypatch):
+    """Strefa procesu UTC+9: odczyt daty bez strefy jako czasu lokalnego przesunalby ja o 9 h."""
+    import os
+    tz_przed = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Etc/GMT-9")
+    time.tzset()
+    yield
+    if tz_przed is None:
+        monkeypatch.delenv("TZ")
+    else:
+        monkeypatch.setenv("TZ", tz_przed)
+    time.tzset()
+
+
+def test_czas_zdarzenia_bez_strefy_jest_czytany_jako_utc_niezaleznie_od_strefy_procesu(
+    strefa_procesu_daleko_od_utc,
+):
+    ev = Event(at=datetime(2026, 11, 9, 8, 30, 15))
+
+    assert uslugi.czas_zdarzenia(ev) == "2026-11-09T08:30:15+00:00"
+
+
+def test_czas_zdarzenia_w_innej_strefie_jest_przeliczony_na_utc():
+    ev = Event(at=datetime(2026, 11, 9, 10, 30, 15, tzinfo=timezone(timedelta(hours=2))))
+
+    assert uslugi.czas_zdarzenia(ev) == "2026-11-09T08:30:15+00:00"
+
+
+def test_zdarzenie_na_szyne_niesie_czas_zapisu_obok_pol_zdarzenia():
+    ev = Event(seq=4, kind="integrated", text="t", step_id="", text_truncated=False,
+               text_full_len=1, at=datetime(2026, 11, 9, 8, 30, 15))
+
+    assert uslugi.zdarzenie_na_szyne(ev) == {
+        "seq": 4, "kind": "integrated", "text": "t", "step_id": "", "text_truncated": False,
+        "text_full_len": 1, "at": "2026-11-09T08:30:15+00:00"}
+
+
+async def test_szczegoly_runu_podaja_czas_zapisu_kazdego_zdarzenia(swiat):
+    run_id = await _run(swiat.browarek, R_STARY, RunStatus.to_accept)
+    pierwszy = datetime(2026, 11, 9, 8, 30, 15, tzinfo=timezone.utc)
+    drugi = datetime(2026, 11, 9, 9, 45, 1, tzinfo=timezone.utc)
+    async with db_session.SessionLocal() as s:
+        s.add(Event(tenant_id=swiat.browarek, run_id=run_id, seq=1, kind="output", text="a",
+                    at=pierwszy))
+        s.add(Event(tenant_id=swiat.browarek, run_id=run_id, seq=2, kind="integrated", text="b",
+                    at=drugi))
+        await s.commit()
+
+    r = await swiat.klient.get(f"/api/runs/{run_id}")
+
+    assert r.status_code == 200
+    assert [datetime.fromisoformat(e["at"]) for e in r.json()["events"]] == [pierwszy, drugi]

@@ -19,6 +19,7 @@ import stat
 import subprocess
 import time
 from dataclasses import FrozenInstanceError
+from datetime import timezone
 from pathlib import Path
 
 import pytest
@@ -829,7 +830,8 @@ async def test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie(
     run_id, zdarzenie = publikacje[0]
     assert run_id == RUN_ID
     assert zdarzenie == {"seq": ev.seq, "kind": "committed", "text": ev.text, "step_id": "",
-                         "text_truncated": False, "text_full_len": len(ev.text)}
+                         "text_truncated": False, "text_full_len": len(ev.text),
+                         "at": ev.at.replace(tzinfo=timezone.utc).isoformat()}
 
 
 async def test_commit_nie_zmienia_statusu_runu(

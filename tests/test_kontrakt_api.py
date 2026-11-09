@@ -362,7 +362,7 @@ POLA_MODELI = {
     "RunUtworzony": {"run_id": {S}},
     "ZdarzeniePrzyjete": {"seq": {INT}},
     "ZdarzenieRunu": {"seq": {INT}, "kind": {S}, "text": {S}, "step_id": {S}, "agent_type": {S},
-                      "text_truncated": {B}, "text_full_len": {INT, N}},
+                      "text_truncated": {B}, "text_full_len": {INT, N}, "at": {S}},
     "RunSzczegoly": {"id": {S}, "workflow": {S}, "status": {S}, "runner_kind": {S},
                      "reason": {S, N}, "events": {"array"}, "steps": {"array"},
                      "pokrycie": {"object", N}},
@@ -545,7 +545,7 @@ async def test_szczegoly_runu_niosa_klucze_reason_i_text_full_len_takze_gdy_sa_p
     assert "reason" in tresc and tresc["reason"] is None
     assert "pokrycie" in tresc and tresc["pokrycie"] is None      # brak pomiaru, nie zera
     pola_zdarzenia = {"seq", "kind", "text", "step_id", "agent_type", "text_truncated",
-                      "text_full_len"}
+                      "text_full_len", "at"}
     zdarzenia = sorted(tresc["events"], key=lambda e: e["seq"])
     assert [set(e) for e in zdarzenia] == [pola_zdarzenia, pola_zdarzenia]
     assert (zdarzenia[0]["text"], zdarzenia[0]["agent_type"]) == ("abc", "szkielet")

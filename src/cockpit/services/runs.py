@@ -592,11 +592,25 @@ async def zdarzenia_przerwania(
         if ev is None:
             continue
         wynik.append((run_id, {
-            "seq": ev.seq, "kind": ev.kind, "text": ev.text, "step_id": ev.step_id,
-            "status": run.status.value, "reason": run.reason,
-            "text_truncated": ev.text_truncated, "text_full_len": ev.text_full_len,
+            **zdarzenie_na_szyne(ev), "status": run.status.value, "reason": run.reason,
         }))
     return wynik
+
+
+def czas_zdarzenia(ev: Event) -> str:
+    """Czas zdarzenia jako ISO 8601 w UTC (HAR-121); SQLite oddaje daty bez strefy - to UTC."""
+    if ev.at.tzinfo is None:
+        return ev.at.replace(tzinfo=timezone.utc).isoformat()
+    return ev.at.astimezone(timezone.utc).isoformat()
+
+
+def zdarzenie_na_szyne(ev: Event) -> dict:
+    """Ksztalt zdarzenia runu w strumieniu SSE; `at` jak w `GET /api/runs/{id}` (HAR-121)."""
+    return {
+        "seq": ev.seq, "kind": ev.kind, "text": ev.text, "step_id": ev.step_id,
+        "text_truncated": ev.text_truncated, "text_full_len": ev.text_full_len,
+        "at": czas_zdarzenia(ev),
+    }
 
 
 async def polecenie_aktualne(
