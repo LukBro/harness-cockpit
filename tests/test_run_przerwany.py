@@ -894,7 +894,10 @@ def test_czas_zdarzenia_bez_strefy_jest_czytany_jako_utc_niezaleznie_od_strefy_p
     assert uslugi.czas_zdarzenia(ev) == "2026-11-09T08:30:15+00:00"
 
 
-def test_czas_zdarzenia_w_innej_strefie_jest_przeliczony_na_utc():
+def test_czas_zdarzenia_w_innej_strefie_jest_przeliczony_na_utc_a_nie_na_strefe_procesu(
+    strefa_procesu_daleko_od_utc,
+):
+    # CI biegnie w UTC: bez innej strefy procesu `astimezone()` bez argumentu dawalby to samo
     ev = Event(at=datetime(2026, 11, 9, 10, 30, 15, tzinfo=timezone(timedelta(hours=2))))
 
     assert uslugi.czas_zdarzenia(ev) == "2026-11-09T08:30:15+00:00"
