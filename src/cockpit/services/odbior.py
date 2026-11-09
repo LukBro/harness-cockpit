@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Event, Membership, Run, RunStatus, User
@@ -70,10 +70,10 @@ class WynikOdbioru:
 
 async def _zdarzenie_istnieje(s: AsyncSession, run: Run, kind: str) -> bool:
     return (await s.execute(
-        select(Event.id).where(
+        select(exists().where(
             Event.run_id == run.id, Event.tenant_id == run.tenant_id, Event.kind == kind
-        ).limit(1)
-    )).first() is not None
+        ))
+    )).scalar_one()
 
 
 async def _run_pod_blokada(s: AsyncSession, run_id: str, tenant_id: str) -> Run:
@@ -92,8 +92,10 @@ async def _email_uzytkownika(s: AsyncSession, tenant_id: str, user_id: str) -> s
     """Adres czlonka TEGO zespolu; uzytkownik spoza zespolu nie jest autorem akcji."""
     email = (await s.execute(
         select(User.email)
-        .join(Membership, Membership.user_id == User.id)
-        .where(User.id == user_id, Membership.tenant_id == tenant_id)
+        .where(
+            Membership.user_id == User.id, User.id == user_id,
+            Membership.tenant_id == tenant_id,
+        )
     )).scalar_one_or_none()
     if email is None:
         await s.rollback()

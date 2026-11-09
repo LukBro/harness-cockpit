@@ -609,3 +609,25 @@ szukaj = "return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
 zamien = "return Zacommitowano(run_id=run_id, at=ev.at, sha=\"\")"
 test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
 
+
+# repozytorium_docelowe: wynik gita przycinany z kazdego bialego znaku zamiast samej nowej linii.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "wspolny = Path(os.fsdecode(wynik.rstrip(b\"\\n\")))"
+zamien = "wspolny = Path(os.fsdecode(wynik.rstrip(None)))"
+test = "tests/test_integrate.py::test_wspolny_katalog_gita_o_nazwie_innej_niz_dot_git_nie_wskazuje_repozytorium_docelowego"
+
+# repozytorium_docelowe: wynik gita przycinany tez z litery X.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "wspolny = Path(os.fsdecode(wynik.rstrip(b\"\\n\")))"
+zamien = "wspolny = Path(os.fsdecode(wynik.rstrip(b\"XX\\nXX\")))"
+test = "tests/test_integrate.py::test_wspolny_katalog_gita_o_nazwie_innej_niz_dot_git_nie_wskazuje_repozytorium_docelowego"
+
+# Kodek nazwy pliku z naglowka diffu inny niz utf-8 (linia z `# pragma: no mutate`; zapis
+# "UTF-8" to alias, wiec mutant mutmuta byl rownowazny): polskie znaki przestaja byc doslowne.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "return nazwa.decode(\"utf-8\")  # pragma: no mutate"
+zamien = "return nazwa.decode(\"latin-1\")  # pragma: no mutate"
+test = "tests/test_integrate.py::test_pliki_runu_podaja_nazwy_z_polskimi_znakami_i_spacjami_doslownie"

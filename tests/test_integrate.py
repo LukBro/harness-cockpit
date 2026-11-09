@@ -272,6 +272,32 @@ def test_worktree_repozytorium_bez_katalogu_dot_git_nie_ma_repozytorium_docelowe
     assert str(bare) not in str(blad.value)
 
 
+@pytest.mark.parametrize("nazwa_katalogu_gita", [".git ", ".gitX"])
+def test_wspolny_katalog_gita_o_nazwie_innej_niz_dot_git_nie_wskazuje_repozytorium_docelowego(
+    repo, tmp_path, nazwa_katalogu_gita,
+):
+    """Nazwa katalogu gita z bialym znakiem albo literalem na koncu to nie `.git`: wynik gita
+    przycinamy tylko o znak nowej linii, wiec taka nazwa nie jest brana za repozytorium."""
+    magazyn = tmp_path / "magazyn_gita"
+    magazyn.mkdir()
+    r = tmp_path / "repo_z_osobnym_katalogiem_gita"
+    r.mkdir()
+    git(r, "init", "-q", f"--separate-git-dir={magazyn / nazwa_katalogu_gita}")
+    git(r, "config", "user.name", TOZSAMOSC_REPO[0])
+    git(r, "config", "user.email", TOZSAMOSC_REPO[1])
+    git(r, "config", "commit.gpgsign", "false")
+    # fixture testowy (nie silnik): commit w repozytorium testowym w tmp_path
+    git(r, "commit", "-q", "--allow-empty", "-m", "init")
+    wt_obce = tmp_path / "wt_z_osobnego_katalogu"
+    git(r, "worktree", "add", "--detach", str(wt_obce), "HEAD")
+
+    with pytest.raises(BladOdbioru) as blad:
+        repozytorium_docelowe(wt_obce)
+
+    assert type(blad.value) is BladOdbioru
+    assert str(blad.value) == "git nie wskazal repozytorium uzytkownika"
+
+
 def test_pliki_runu_to_posortowana_lista_zmienionych_usunietych_i_nowych_bez_artefaktow(wt):
     zmiany_runu(wt)
 

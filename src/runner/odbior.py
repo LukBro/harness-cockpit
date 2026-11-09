@@ -144,12 +144,14 @@ def _nazwa_z_naglowka(reszta: bytes) -> str:
     """Nazwa pliku z `a/NAZWA b/NAZWA`: obie nazwy sa rowne (diff bez wykrywania zmian nazw),
     wiec dlugosc nazwy wynika z dlugosci naglowka i nazwa moze zawierac spacje oraz ` b/`.
     Nazwa w cudzyslowie (znaki sterujace) albo niezgodna z formatem to blad, nie pominiecie."""
-    dlugosc = (len(reszta) - 4) // 2
+    dlugosc = len(reszta) // 2 - 2
     nazwa = reszta[2:2 + dlugosc]
     if dlugosc <= 0 or reszta != b"a/" + nazwa + b" b/" + nazwa:
         raise BladOdbioru(_BLAD_NAZWY)
     try:
-        return nazwa.decode("utf-8")
+        # mutant rownowazny: "UTF-8" i inne zapisy to alias tego samego kodeka; kodek inny
+        # niz utf-8 chroni wiersz recznego mutanta HAR-179 (nazwa nie-UTF-8 to blad)
+        return nazwa.decode("utf-8")  # pragma: no mutate
     except UnicodeDecodeError:
         raise BladOdbioru(_BLAD_NAZWY) from None
 
@@ -230,7 +232,9 @@ def commituj(worktree: Path, pliki: list[str], opis: str) -> str:
         komunikat=_BLAD_COMMITU)
     wynik, _ = _git_z_kodem(repo, ["rev-parse", "HEAD"], (0,), komunikat=_BLAD_COMMITU)
     try:
-        sha = wynik.decode("ascii").strip()
+        # mutant rownowazny: "ASCII" i inne zapisy to alias tego samego kodeka; wynik
+        # `rev-parse HEAD` sprawdza dalej SHA_PELNY, wiec bajt spoza ASCII i tak jest bledem
+        sha = wynik.decode("ascii").strip()  # pragma: no mutate
     except UnicodeDecodeError:
         raise BladOdbioru(_BLAD_COMMITU) from None
     if not SHA_PELNY.fullmatch(sha):
