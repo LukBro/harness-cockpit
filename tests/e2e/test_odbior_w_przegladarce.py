@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import faulthandler
+import gc
 import json
 import os
 import re
@@ -62,6 +63,42 @@ def browser_context_args(browser_context_args):
 LIMIT_TESTU_S = 300
 
 
+def _zrzuc_zadania_asyncio() -> None:
+    """Niezakonczone zadania kazdej zywej petli asyncio w procesie (diagnostyka zawieszenia)."""
+    try:
+        for petla in [o for o in gc.get_objects() if isinstance(o, asyncio.AbstractEventLoop)]:
+            if petla.is_closed():
+                continue
+            zadania = asyncio.all_tasks(petla)
+            sys.stderr.write(f"\n+++ petla {petla!r}: {len(zadania)} zadan\n")
+            for zadanie in zadania:
+                zadanie.print_stack(file=sys.stderr)
+    except Exception as blad:  # diagnostyka nie moze przykryc zrzutu stosu
+        sys.stderr.write(f"\n+++ zrzut zadan asyncio nieudany: {blad!r}\n")
+
+
+def _zrzuc_aktywnosc_bazy() -> None:
+    """Sesje bazy i na co czekaja (pg_stat_activity), z limitem czasu."""
+    async def _pytaj():
+        engine = create_async_engine(os.environ["COCKPIT_TEST_DATABASE_URL"])
+        try:
+            async with engine.connect() as conn:
+                return (await conn.execute(text(
+                    "SELECT pid, state, wait_event_type, wait_event, now() - query_start, "
+                    "left(query, 200) FROM pg_stat_activity WHERE datname = current_database() "
+                    "AND pid <> pg_backend_pid()"))).all()
+        finally:
+            await engine.dispose()
+
+    try:
+        wiersze = asyncio.run(asyncio.wait_for(_pytaj(), timeout=20))
+        sys.stderr.write(f"\n+++ pg_stat_activity ({len(wiersze)} sesji):\n")
+        for wiersz in wiersze:
+            sys.stderr.write(f"  {tuple(wiersz)!r}\n")
+    except Exception as blad:  # diagnostyka nie moze przykryc zrzutu stosu
+        sys.stderr.write(f"\n+++ pg_stat_activity nieudane: {blad!r}\n")
+
+
 @pytest.fixture(autouse=True)
 def _limit_czasu_testu(request):
     """Zawieszony test nie blokuje CI bez konca: po limicie stos wszystkich watkow w logu i koniec procesu.
@@ -79,6 +116,9 @@ def _limit_czasu_testu(request):
         sys.stderr.write(f"\n+++ ZAWIESZONY TEST po {LIMIT_TESTU_S} s: {request.node.nodeid}\n")
         sys.stderr.flush()
         faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+        sys.stderr.flush()
+        _zrzuc_zadania_asyncio()
+        _zrzuc_aktywnosc_bazy()
         sys.stderr.flush()
         os._exit(1)
 
