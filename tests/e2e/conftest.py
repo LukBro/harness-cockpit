@@ -19,8 +19,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -126,19 +124,22 @@ def czysta_baza():
         )
     if not INDEX_FRONTU.is_file():
         pytest.fail("brak zbudowanego frontu: zbuduj front: npm ci && npm run build w web/")
-    cfg = Config(str(KORZEN / "alembic.ini"))
-    cfg.set_main_option("script_location", str(KORZEN / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", URL_BAZY.replace("%", "%%"))
-    # env.py Alembica robi asyncio.run, a plugin playwrighta moze juz trzymac petle
-    # w watku testu: migracje ida w osobnym watku.
-    def _migruj(akcja, rewizja: str) -> None:
-        with ThreadPoolExecutor(max_workers=1) as pula:
-            pula.submit(akcja, cfg, rewizja).result()
+    # Migracje w osobnym procesie, nie w watku procesu testu. Watek dzielil proces z
+    # Playwrightem: do petli asyncio.run z env.py Alembica trafialo zadanie Playwrighta
+    # (`Connection.wrap_api_call`), ktore czekalo na glowny watek, a ten na migracje -
+    # zakleszczenie w CI (HAR-121, zrzut stosu i zadan asyncio z przebiegu e2e PR #167).
+    def _migruj(akcja: str, rewizja: str) -> None:
+        wynik = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", str(KORZEN / "alembic.ini"), akcja, rewizja],
+            env={**os.environ, "COCKPIT_DATABASE_URL": URL_BAZY},
+            cwd=KORZEN, capture_output=True, text=True, timeout=120,
+        )
+        assert wynik.returncode == 0, f"alembic {akcja} {rewizja} nie powiodl sie: {wynik.stderr[-1500:]}"
 
-    _migruj(command.downgrade, "base")   # czysta baza: zasiew zaklada jeden zespol i jednego wlasciciela
-    _migruj(command.upgrade, "head")
+    _migruj("downgrade", "base")   # czysta baza: zasiew zaklada jeden zespol i jednego wlasciciela
+    _migruj("upgrade", "head")
     yield URL_BAZY
-    _migruj(command.downgrade, "base")
+    _migruj("downgrade", "base")
 
 
 @pytest.fixture
