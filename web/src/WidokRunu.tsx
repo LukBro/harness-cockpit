@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchZSesja } from "./Konto";
 import type { DecyzjaIn, DecyzjaPrzyjeta, KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
 import type { PokrycieRunu } from "./api";
+import { Odbior } from "./Odbior";
 
 // "nieznany": brak odpowiedzi albo blad pobrania. Nie blokujemy akcji, bo backend i tak broni sie 409.
 export type StanRunnera = "nieznany" | "online" | "offline";
@@ -341,6 +342,9 @@ export function WidokRunu({
       )}
       {runId && status === "rejected" && <p style={{ color: "#A5201A" }}>odrzucony{reason ? `: ${reason}` : ""}</p>}
       {runId && status !== "rejected" && reason && <p style={{ color: "#A5201A" }}>{reason}</p>}
+      {runId && status === "to_accept" && (
+        <Odbior key={runId} runId={runId} zdarzenia={zdarzenia} odswiez={() => void dociagnijRef.current?.()} />
+      )}
       {runId && pokrycie !== null && (
         <div>
           {pokrycie.stan === "niesprawdzony" ? (
