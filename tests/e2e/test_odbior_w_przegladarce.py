@@ -14,6 +14,7 @@ istnieje. Dwie grupy testow:
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import json
 import os
 import re
@@ -57,6 +58,19 @@ def browser_context_args(browser_context_args):
     return {**browser_context_args, "locale": "en-US"}
 
 
+LIMIT_TESTU_S = 300
+
+
+@pytest.fixture(autouse=True)
+def _limit_czasu_testu():
+    """Zawieszony test nie blokuje CI bez konca: po limicie zrzut stosu wszystkich watkow i koniec procesu."""
+    faulthandler.dump_traceback_later(LIMIT_TESTU_S, exit=True)
+    try:
+        yield
+    finally:
+        faulthandler.cancel_dump_traceback_later()
+
+
 @pytest.fixture(autouse=True)
 def _git_bez_konfiguracji_maszyny(monkeypatch):
     """Config globalny i systemowy gita oraz tozsamosc ze srodowiska nie wplywaja na test ani na runnera."""
@@ -87,7 +101,7 @@ def _w_bazie(zapytanie: str, parametry: dict | None = None, *, zapis: bool = Fal
             await engine.dispose()
 
     with ThreadPoolExecutor(max_workers=1) as pula:
-        return pula.submit(lambda: asyncio.run(_wykonaj())).result()
+        return pula.submit(lambda: asyncio.run(_wykonaj())).result(timeout=60)
 
 
 def _git(repo: Path, *argumenty: str) -> str:
