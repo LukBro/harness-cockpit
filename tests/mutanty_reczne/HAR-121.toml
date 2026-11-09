@@ -136,7 +136,7 @@ test = "tests/e2e/test_odbior_w_przegladarce.py::test_czas_wpisu_historii_jest_w
 [[mutant]]
 plik = "web/src/Odbior.tsx"
 szukaj = '{czas(z.at)}'
-zamien = '{z.at}'
+zamien = '{czas(z.at) && z.at}'
 test = "tests/e2e/test_odbior_w_przegladarce.py::test_czas_wpisu_historii_jest_w_formacie_polskim_a_nie_w_domyslnym_formacie_przegladarki"
 
 # --- opisWpisu() ---
@@ -218,7 +218,7 @@ test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha
 [[mutant]]
 plik = "web/src/Odbior.tsx"
 szukaj = 'return `${rekord.email}${sha}`;'
-zamien = 'return `${rekord.email}`;'
+zamien = "void sha;\n  return `${rekord.email}`;"
 test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-commit_z_sha]"
 
 # --- detailLubKod() ---
@@ -318,7 +318,7 @@ szukaj = '''    zywy.current = true;
     return () => {'''
 zamien = '''    zywy.current = false;
     return () => {'''
-test = "tests/e2e/test_odbior_w_przegladarce.py::test_pokaz_diff_wyswietla_zmiany_runu_i_nie_dotyka_repozytorium"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_po_udanej_integracji_widok_pobiera_run_ponownie_i_pokazuje_commituj"
 
 [[mutant]]
 plik = "web/src/Odbior.tsx"
@@ -339,7 +339,7 @@ test = "tests/e2e/test_odbior_w_przegladarce.py::test_odpowiedz_na_integracje_po
 [[mutant]]
 plik = "web/src/Odbior.tsx"
 szukaj = 'onClick={() => void pokazDiff()}'
-zamien = 'onClick={() => {}}'
+zamien = "onClick={() => void pokazDiff}"
 test = "tests/e2e/test_odbior_w_przegladarce.py::test_pokaz_diff_wyswietla_zmiany_runu_i_nie_dotyka_repozytorium"
 
 [[mutant]]
@@ -604,7 +604,7 @@ test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_se
 [[mutant]]
 plik = "web/src/Odbior.tsx"
 szukaj = '{zintegrowany && !zacommitowany && ('
-zamien = '{zintegrowany && ('
+zamien = "{zintegrowany && (zacommitowany || true) && ("
 test = "tests/e2e/test_odbior_w_przegladarce.py::test_commituj_dodaje_jeden_commit_z_plikami_runu_i_zostawia_czyste_drzewo"
 
 [[mutant]]
@@ -686,3 +686,10 @@ plik = "web/src/WidokRunu.tsx"
 szukaj = 'odswiez={() => void dociagnijRef.current?.()}'
 zamien = 'odswiez={() => {}}'
 test = "tests/e2e/test_odbior_w_przegladarce.py::test_po_udanej_integracji_widok_pobiera_run_ponownie_i_pokazuje_commituj"
+
+# Linia GET z polami obciecia (zmieniona przy dodaniu `at`, lista kodu 3): pelna dlugosc z bazy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "text_truncated=e.text_truncated, text_full_len=e.text_full_len,\n            at=uslugi.czas_zdarzenia(e))"
+zamien = "text_truncated=e.text_truncated, text_full_len=None,\n            at=uslugi.czas_zdarzenia(e))"
+test = "tests/test_obciecie_tekstu.py::test_historia_runu_oddaje_znacznik_obciecia"
