@@ -19,7 +19,16 @@ from typing import Any
 
 from cockpit.services.errors import BlednySkill
 from cockpit.services.skills import NAZWA_PLIKU, ZRODLA, _podziel
-from runner.odbior import SHA_PELNY, BladOdbioru, zbierz_diff
+from runner.odbior import (
+    SHA_PELNY,
+    BladIntegracji,
+    BladOdbioru,
+    BrakZmianRunu,
+    commituj,
+    integruj,
+    pliki_runu,
+    zbierz_diff,
+)
 from runner.worktree import BladWorktree, katalog_runu
 from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_sekretem
 
@@ -411,7 +420,8 @@ async def detect_stack(dane: dict) -> dict:
     return await asyncio.to_thread(_wykryj_stos, sciezka)
 
 
-def _zbierz_diff_runu(run_id: str, base_commit: str) -> dict:
+def _worktree_runu(run_id: str, base_commit: str) -> Path:
+    """Worktree runu policzony przez runnera z `run_id`; sciezek od kokpitu runner nie bierze."""
     try:
         worktree = katalog_runu(run_id) / "worktree"
     except BladWorktree:
@@ -420,10 +430,38 @@ def _zbierz_diff_runu(run_id: str, base_commit: str) -> dict:
         raise BladOperacji("zle_dane", "base_commit nie jest SHA")
     if not worktree.is_dir():
         raise BladOperacji("brak_worktree", "worktree runu nie istnieje")
+    return worktree
+
+
+def _zbierz_diff_runu(run_id: str, base_commit: str) -> dict:
+    worktree = _worktree_runu(run_id, base_commit)
     try:
         return {"diff": zbierz_diff(worktree, base_commit)}
     except BladOdbioru:
         raise BladOperacji("blad_gita", "git nie zebral diffu runu") from None
+
+
+def _integruj_run(run_id: str, base_commit: str) -> dict:
+    worktree = _worktree_runu(run_id, base_commit)
+    try:
+        return {"pliki": integruj(worktree, base_commit)}
+    except BladIntegracji as e:
+        raise BladOperacji("konflikt", str(e)) from None
+    except BrakZmianRunu:
+        raise BladOperacji("brak_zmian", "run nie ma zmian do przeniesienia") from None
+    except BladOdbioru:
+        raise BladOperacji("blad_gita", "git nie wykonal integracji runu") from None
+
+
+def _zapisz_run(run_id: str, base_commit: str, opis: str) -> dict:
+    worktree = _worktree_runu(run_id, base_commit)
+    try:
+        pliki = pliki_runu(worktree, base_commit)
+        return {"sha": commituj(worktree, pliki, opis), "pliki": pliki}
+    except BrakZmianRunu:
+        raise BladOperacji("brak_zmian", "run nie ma zmian do zapisania") from None
+    except BladOdbioru:
+        raise BladOperacji("blad_gita", "git nie wykonal commita") from None
 
 
 async def collect(dane: dict) -> dict:
@@ -431,6 +469,25 @@ async def collect(dane: dict) -> dict:
     run_id = _tekst(dane, "run_id")
     base_commit = _tekst(dane, "base_commit")
     return await asyncio.to_thread(_zbierz_diff_runu, run_id, base_commit)
+
+
+async def integrate(dane: dict) -> dict:
+    """Przeniesienie zmian runu do drzewa uzytkownika (akcja czlowieka po odbiorze); worktree
+    i repozytorium runner liczy sam, sciezek od kokpitu nie bierze."""
+    run_id = _tekst(dane, "run_id")
+    base_commit = _tekst(dane, "base_commit")
+    return await asyncio.to_thread(_integruj_run, run_id, base_commit)
+
+
+async def commit(dane: dict) -> dict:
+    """Zapis zmian runu w historii repozytorium (osobna akcja czlowieka po `integrate`); liste
+    plikow liczy runner z diffu runu, kokpit jej nie podaje. Opis buduje kokpit."""
+    run_id = _tekst(dane, "run_id")
+    base_commit = _tekst(dane, "base_commit")
+    opis = _tekst(dane, "opis")
+    if not opis.strip() or "\0" in opis:
+        raise BladOperacji("zle_dane", "opis commita jest pusty albo zawiera znak NUL")
+    return await asyncio.to_thread(_zapisz_run, run_id, base_commit, opis)
 
 
 OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
@@ -441,6 +498,8 @@ OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "katalog_definicji": katalog_definicji,
     "detect_stack": detect_stack,
     "collect": collect,
+    "integrate": integrate,
+    "commit": commit,
 }
 
 

@@ -1,0 +1,641 @@
+# Tabela recznych mutantow HAR-179: elementy, ktorych mutmut nie mutuje (stale modulu, klasy,
+# wpisy rejestru operacji, pola modeli odpowiedzi, trasy z dekoratorem w api/app.py).
+# Kazde `szukaj` wystepuje w pliku dokladnie raz; `zamien` rozni sie od `szukaj`;
+# test oblewa po mutacji (`python tools/mutanty_reczne.py tests/mutanty_reczne/HAR-179.toml`).
+#
+# Linie bez wiersza (uzasadnienie rownowaznosci lub niemierzalnosci):
+# - src/cockpit/api/schematy.py linie `class Zintegrowano(BaseModel):` i
+#   `class Zacommitowano(BaseModel):` - zmiana nazwy klasy albo bazy psuje import app.py w
+#   czasie zbierania testow (kod pytesta 2, nie wynik testu); nazwy modeli chroni wiersz
+#   `response_model` z testem test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy, a pola
+#   maja wlasne wiersze.
+# - src/cockpit/api/app.py linie `) -> Zintegrowano:` i `) -> Zacommitowano:` - adnotacja
+#   zwracanego typu jest ignorowana przez FastAPI, bo `response_model` jest podany jawnie
+#   w dekoratorze (wiersze `response_model`), wiec zadne wejscie nie odroznia wersji.
+
+# Komunikat bledu zbierania diffu zmieniony.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "_BLAD_DIFFU = \"git nie zebral diffu runu\""
+zamien = "_BLAD_DIFFU = \"git nie zebral diffu runu.\""
+test = "tests/test_collect.py::test_niezerowy_kod_gita_w_dowolnym_kroku_zbierania_diffu_to_blad_odbioru"
+
+# Komunikat bledu integracji zmieniony.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "_BLAD_INTEGRACJI = \"git nie wykonal integracji runu\""
+zamien = "_BLAD_INTEGRACJI = \"git nie wykonal integracji runu.\""
+test = "tests/test_integrate.py::test_odmowa_calosci_bez_kolidujacego_kawalka_to_blad_odbioru_a_nie_pusta_lista_plikow"
+
+# Komunikat bledu commita zmieniony.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "_BLAD_COMMITU = \"git nie wykonal commita\""
+zamien = "_BLAD_COMMITU = \"git nie wykonal commita.\""
+test = "tests/test_commit_po_odbiorze.py::test_nieczytelny_wynik_odczytu_sha_po_commicie_to_blad_odbioru_z_pelnym_komunikatem"
+
+# Komunikat braku repozytorium docelowego zmieniony.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "_BLAD_REPOZYTORIUM = \"git nie wskazal repozytorium uzytkownika\""
+zamien = "_BLAD_REPOZYTORIUM = \"git nie wskazal repozytorium uzytkownika.\""
+test = "tests/test_integrate.py::test_komunikat_braku_repozytorium_docelowego_dla_worktree_z_bare_jest_staly"
+
+# Komunikat nazwy pliku zmieniony.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "_BLAD_NAZWY = \"zmiany runu zawieraja nazwe pliku, ktorej nie da sie przeniesc\""
+zamien = "_BLAD_NAZWY = \"zmiany runu zawieraja nazwe pliku, ktorej nie da sie przeniesc.\""
+test = "tests/test_integrate.py::test_nazwa_pliku_ktorej_nie_da_sie_przeniesc_to_blad_odbioru_z_pelnym_komunikatem"
+
+# Naglowek diffu bez MULTILINE: tylko pierwszy plik w diffie.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "([^\\n]*)$\", re.MULTILINE)"
+zamien = "([^\\n]*)$\")"
+test = "tests/test_integrate.py::test_pliki_runu_to_posortowana_lista_zmienionych_usunietych_i_nowych_bez_artefaktow"
+
+# Wzorzec naglowka diffu nie pasuje do zadnego naglowka.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "rb\"^diff --git ([^\\n]*)$\""
+zamien = "rb\"^diff --gitx ([^\\n]*)$\""
+test = "tests/test_integrate.py::test_integracja_przenosi_zmieniony_usuniety_i_nowe_pliki_do_drzewa_uzytkownika"
+
+# Sciezki jako wzorce (glob) zamiast doslownych.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "_SCIEZKI_DOSLOWNIE = \"--literal-pathspecs\""
+zamien = "_SCIEZKI_DOSLOWNIE = \"--no-literal-pathspecs\""
+test = "tests/test_commit_po_odbiorze.py::test_nazwa_pliku_runu_ze_znakami_wzorca_nie_zabiera_cudzych_plikow"
+
+# BrakZmianRunu poza hierarchia BladOdbioru.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "class BrakZmianRunu(BladOdbioru):"
+zamien = "class BrakZmianRunu(BladDziedziny):"
+test = "tests/test_integrate.py::test_run_bez_zmian_nie_ma_czego_integrowac"
+
+# BladIntegracji poza hierarchia BladOdbioru.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "class BladIntegracji(BladOdbioru):"
+zamien = "class BladIntegracji(BladDziedziny):"
+test = "tests/test_integrate.py::test_konflikt_z_lokalna_zmiana_to_blad_integracji_z_lista_plikow_i_pelnym_komunikatem"
+
+# Operacja integrate wskazuje na collect.
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"integrate\": integrate,"
+zamien = "\"integrate\": collect,"
+test = "tests/test_integrate.py::test_operacja_integrate_zwraca_liste_zintegrowanych_plikow_i_zmienia_drzewo"
+
+# Operacja commit wskazuje na integrate.
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "\"commit\": commit,"
+zamien = "\"commit\": integrate,"
+test = "tests/test_commit_po_odbiorze.py::test_operacja_commit_zwraca_sha_nowego_commita_i_liczy_pliki_runu_sama"
+
+# Nazwa rodzaju integracji zmieniona.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "KIND_ZINTEGROWANO = \"integrated\""
+zamien = "KIND_ZINTEGROWANO = \"integrated_x\""
+test = "tests/test_integrate.py::test_rodzaje_zdarzen_odbioru_maja_uzgodnione_nazwy"
+
+# Nazwa rodzaju commita zmieniona.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "KIND_ZACOMMITOWANO = \"committed\""
+zamien = "KIND_ZACOMMITOWANO = \"committed_x\""
+test = "tests/test_integrate.py::test_rodzaje_zdarzen_odbioru_maja_uzgodnione_nazwy"
+
+# Zakaz zdarzen odbioru od runnera: po merge HAR-234 jedynym strażnikiem jest
+# `RODZAJE_CZLOWIEKA` w runs.py (wpisy `integrated`/`committed`). Usuniecie wpisu z tego zbioru
+# zabija test sfalszowanego integrated z tego ticketu.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "    \"integrated\",\n    \"committed\",\n"
+zamien = "    \"committed\",\n"
+test = "tests/test_integrate.py::test_sfalszowane_integrated_od_runnera_nie_odblokowuje_commita"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "    \"integrated\",\n    \"committed\",\n"
+zamien = "    \"integrated\",\n"
+test = "tests/test_integrate.py::test_serwis_zdarzen_odrzuca_zdarzenie_odbioru_zgloszone_przez_runnera"
+
+# SHA o 39 znakach.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "_SHA_PELNY = re.compile(r\"[0-9a-f]{40}\")"
+zamien = "_SHA_PELNY = re.compile(r\"[0-9a-f]{39}\")"
+test = "tests/test_commit_po_odbiorze.py::test_commit_zapisuje_jedno_zdarzenie_committed_z_uzytkownikiem_i_sha"
+
+# SHA z klasa znakow szersza niz szesnastkowe.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "_SHA_PELNY = re.compile(r\"[0-9a-f]{40}\")"
+zamien = "_SHA_PELNY = re.compile(r\"[0-9a-z]{40}\")"
+test = "tests/test_commit_po_odbiorze.py::test_niepoprawny_wynik_commit_od_runnera_to_stan_niemozliwy_bez_zdarzenia"
+
+# Klasa wyniku odbioru pod inna nazwa.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "class WynikOdbioru:\n"
+zamien = "class WynikOdbiorue:\n"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Pole zdarzenia wyniku odbioru pod inna nazwa.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "    zdarzenie: Event\n    pliki:"
+zamien = "    zdarzenia: Event\n    pliki:"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Wynik odbioru modyfikowalny.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "@dataclass(frozen=True)\nclass WynikOdbioru:"
+zamien = "@dataclass(frozen=False)\nclass WynikOdbioru:"
+test = "tests/test_commit_po_odbiorze.py::test_wynik_odbioru_jest_niezmienny"
+
+# Domyslna lista plikow wyniku to slownik.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "pliki: list[str] = field(default_factory=list)"
+zamien = "pliki: list[str] = field(default_factory=dict)"
+test = "tests/test_commit_po_odbiorze.py::test_wynik_commitu_niesie_sha_i_pusta_liste_plikow_a_wynik_integracji_nie_ma_sha"
+
+# Domyslne SHA wyniku to pusty napis zamiast braku.
+[[mutant]]
+plik = "src/cockpit/services/odbior.py"
+szukaj = "sha: str | None = None"
+zamien = "sha: str | None = \"\""
+test = "tests/test_commit_po_odbiorze.py::test_wynik_commitu_niesie_sha_i_pusta_liste_plikow_a_wynik_integracji_nie_ma_sha"
+
+# Pole run_id integracji jako liczba.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class Zintegrowano(BaseModel):\n    run_id: str\n"
+zamien = "class Zintegrowano(BaseModel):\n    run_id: int\n"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Pole at integracji jako napis.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    run_id: str\n    at: datetime\n    pliki: list[str]"
+zamien = "    run_id: str\n    at: str\n    pliki: list[str]"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Pole pliki integracji jako napis.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    pliki: list[str]\n\n\nclass Zacommitowano"
+zamien = "    pliki: str\n\n\nclass Zacommitowano"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Pole run_id commita jako liczba.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class Zacommitowano(BaseModel):\n    run_id: str\n"
+zamien = "class Zacommitowano(BaseModel):\n    run_id: int\n"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# Pole at commita jako napis.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    run_id: str\n    at: datetime\n    sha: str"
+zamien = "    run_id: str\n    at: str\n    sha: str"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# Pole sha commita jako liczba.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    sha: str\n\n\nclass PlikOdczytany"
+zamien = "    sha: int\n\n\nclass PlikOdczytany"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# Sciezka trasy integrate zmieniona.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"/api/runs/{run_id}/integrate\""
+zamien = "\"/api/runs/{run_id}/integratex\""
+test = "tests/test_dostep_http.py::test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktualizacje"
+
+# Trasa integrate zwraca model drugiej trasy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "response_model=Zintegrowano,"
+zamien = "response_model=Zacommitowano,"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+# Trasa integrate nie opisuje kodu 401.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def integruj_run("
+zamien = "responses=odpowiedzi_bledow(403, 404, 409, 422))\nasync def integruj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa integrate nie opisuje kodu 403.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def integruj_run("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def integruj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa integrate nie opisuje kodu 404.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def integruj_run("
+zamien = "responses=odpowiedzi_bledow(401, 403, 409, 422))\nasync def integruj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa integrate nie opisuje kodu 409.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def integruj_run("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 422))\nasync def integruj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa integrate nie opisuje kodu 422.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def integruj_run("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 409))\nasync def integruj_run("
+test = "tests/test_kontrakt_api.py::test_schemat_nie_zawiera_domyslnego_bledu_walidacji_fastapi"
+
+# Parametr run_id trasy integrate jako liczba.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def integruj_run(\n    run_id: str,"
+zamien = "async def integruj_run(\n    run_id: int,"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Trasa integrate bez sesji zwyklej: zaleznosc strumieniowa.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def integruj_run(\n    run_id: str,\n    k: Kontekst = Depends(kontekst_sesji),"
+zamien = "async def integruj_run(\n    run_id: str,\n    k: Kontekst = Depends(kontekst_sesji_strumienia),"
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+# Trasa integrate: sesja bazy zastapiona kontekstem.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    s: AsyncSession = Depends(get_session),\n) -> Zintegrowano:"
+zamien = "    s: AsyncSession = Depends(kontekst_sesji),\n) -> Zintegrowano:"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Obserwator (integrate): uprawnienie podglad zamiast zatwierdzania.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.zatwierdzanie)\n    wynik = await odbior.integruj_run("
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)\n    wynik = await odbior.integruj_run("
+test = "tests/test_integrate.py::test_obserwator_nie_integruje_runu_a_drzewo_i_baza_zostaja_bez_zmian"
+
+# integrate: sesja bazy zastapiona None w wywolaniu serwisu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.integruj_run(\n        None, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: identyfikator runu w wywolaniu serwisu pusty.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.integruj_run(\n        s, \"\", k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: tenant_id zespolu z sesji zastapiony identyfikatorem uzytkownika.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.integruj_run(\n        s, run_id, k.user_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: user_id z sesji zastapiony identyfikatorem zespolu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: brak polaczonych runnerow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, frozenset(), bus.zapytaj)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: brak funkcji wysylki do runnera.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.integruj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), None)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: zdarzenie do publikacji czytane z wyniku odbioru zamiast ze zdarzenia.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "ev = wynik.zdarzenie\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "ev = wynik\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, identyfikator runu zdarzenia zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(\"\", {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, seq zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(run_id, {\"seq\": 0, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, kind zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": \"\", \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, text zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": \"\",\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, step_id zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": \"x\",\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, text_truncated zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": True,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: publikacja na szynie, text_full_len zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": 0})\n    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_publikuje_zdarzenie_na_szynie_po_sukcesie"
+
+# integrate: odpowiedz, run_id=run_id zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "return Zintegrowano(run_id=\"\", at=ev.at, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: odpowiedz, at=ev.at zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "return Zintegrowano(run_id=run_id, at=None, pliki=wynik.pliki)"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# integrate: odpowiedz, pliki=wynik.pliki zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)"
+zamien = "return Zintegrowano(run_id=run_id, at=ev.at, pliki=[])"
+test = "tests/test_integrate.py::test_integrate_daje_200_z_lista_plikow_a_zmiany_trafiaja_do_drzewa_uzytkownika"
+
+# Sciezka trasy commit zmieniona.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"/api/runs/{run_id}/commit\""
+zamien = "\"/api/runs/{run_id}/commitx\""
+test = "tests/test_dostep_http.py::test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktualizacje"
+
+# Trasa commit zwraca model drugiej trasy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "response_model=Zacommitowano,"
+zamien = "response_model=Zintegrowano,"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+# Trasa commit nie opisuje kodu 401.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def commituj_run("
+zamien = "responses=odpowiedzi_bledow(403, 404, 409, 422))\nasync def commituj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa commit nie opisuje kodu 403.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def commituj_run("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def commituj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa commit nie opisuje kodu 404.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def commituj_run("
+zamien = "responses=odpowiedzi_bledow(401, 403, 409, 422))\nasync def commituj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa commit nie opisuje kodu 409.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def commituj_run("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 422))\nasync def commituj_run("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+# Trasa commit nie opisuje kodu 422.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def commituj_run("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 409))\nasync def commituj_run("
+test = "tests/test_kontrakt_api.py::test_schemat_nie_zawiera_domyslnego_bledu_walidacji_fastapi"
+
+# Parametr run_id trasy commit jako liczba.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def commituj_run(\n    run_id: str,"
+zamien = "async def commituj_run(\n    run_id: int,"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# Trasa commit bez sesji zwyklej: zaleznosc strumieniowa.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def commituj_run(\n    run_id: str,\n    k: Kontekst = Depends(kontekst_sesji),"
+zamien = "async def commituj_run(\n    run_id: str,\n    k: Kontekst = Depends(kontekst_sesji_strumienia),"
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+# Trasa commit: sesja bazy zastapiona kontekstem.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    s: AsyncSession = Depends(get_session),\n) -> Zacommitowano:"
+zamien = "    s: AsyncSession = Depends(kontekst_sesji),\n) -> Zacommitowano:"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# Obserwator (commit): uprawnienie podglad zamiast zatwierdzania.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.zatwierdzanie)\n    wynik = await odbior.commituj_run("
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)\n    wynik = await odbior.commituj_run("
+test = "tests/test_commit_po_odbiorze.py::test_obserwator_nie_commituje_runu_a_repozytorium_i_baza_zostaja_bez_zmian"
+
+# commit: sesja bazy zastapiona None w wywolaniu serwisu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.commituj_run(\n        None, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: identyfikator runu w wywolaniu serwisu pusty.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.commituj_run(\n        s, \"\", k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: tenant_id zespolu z sesji zastapiony identyfikatorem uzytkownika.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.commituj_run(\n        s, run_id, k.user_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: user_id z sesji zastapiony identyfikatorem zespolu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: brak polaczonych runnerow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, frozenset(), bus.zapytaj)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: brak funkcji wysylki do runnera.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "wynik = await odbior.commituj_run(\n        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), None)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: zdarzenie do publikacji czytane z wyniku odbioru zamiast ze zdarzenia.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "ev = wynik.zdarzenie\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "ev = wynik\n    await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, identyfikator runu zdarzenia zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(\"\", {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, seq zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(run_id, {\"seq\": 0, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, kind zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": \"\", \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, text zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": \"\",\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, step_id zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": \"x\",\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, text_truncated zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": True,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: publikacja na szynie, text_full_len zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": ev.text_full_len})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "await bus.publish_event(run_id, {\"seq\": ev.seq, \"kind\": ev.kind, \"text\": ev.text,\n                                     \"step_id\": ev.step_id,\n                                     \"text_truncated\": ev.text_truncated,\n                                     \"text_full_len\": 0})\n    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# commit: odpowiedz, run_id=run_id zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "return Zacommitowano(run_id=\"\", at=ev.at, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: odpowiedz, at=ev.at zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "return Zacommitowano(run_id=run_id, at=None, sha=wynik.sha)"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+# commit: odpowiedz, sha=wynik.sha zmienione.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)"
+zamien = "return Zacommitowano(run_id=run_id, at=ev.at, sha=\"\")"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integrate_daje_200_i_jeden_nowy_commit_o_sha_zapisanym_w_historii_runu"
+
+
+# repozytorium_docelowe: wynik gita przycinany z kazdego bialego znaku zamiast samej nowej linii.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "wspolny = Path(os.fsdecode(wynik.rstrip(b\"\\n\")))"
+zamien = "wspolny = Path(os.fsdecode(wynik.rstrip(None)))"
+test = "tests/test_integrate.py::test_wspolny_katalog_gita_o_nazwie_innej_niz_dot_git_nie_wskazuje_repozytorium_docelowego"
+
+# repozytorium_docelowe: wynik gita przycinany tez z litery X.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "wspolny = Path(os.fsdecode(wynik.rstrip(b\"\\n\")))"
+zamien = "wspolny = Path(os.fsdecode(wynik.rstrip(b\"XX\\nXX\")))"
+test = "tests/test_integrate.py::test_wspolny_katalog_gita_o_nazwie_innej_niz_dot_git_nie_wskazuje_repozytorium_docelowego"
+
+# Kodek nazwy pliku z naglowka diffu inny niz utf-8 (linia z `# pragma: no mutate`; zapis
+# "UTF-8" to alias, wiec mutant mutmuta byl rownowazny): polskie znaki przestaja byc doslowne.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "return nazwa.decode(\"utf-8\")  # pragma: no mutate"
+zamien = "return nazwa.decode(\"latin-1\")  # pragma: no mutate"
+test = "tests/test_integrate.py::test_pliki_runu_podaja_nazwy_z_polskimi_znakami_i_spacjami_doslownie"
+
+# Linia dekodowania SHA z `# pragma: no mutate` (kodek "ASCII" to alias): bez `strip()` SHA
+# z koncowym "\n" nie przechodzi SHA_PELNY i commit konczy sie bledem zamiast zdarzenia.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "sha = wynik.decode(\"ascii\").strip()  # pragma: no mutate"
+zamien = "sha = wynik.decode(\"ascii\")  # pragma: no mutate"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integracji_dodaje_dokladnie_jeden_wpis_w_reflogu_i_zwraca_sha_head"

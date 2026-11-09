@@ -30,6 +30,11 @@ from .walidacja import sprawdz_pomiar
 
 POWOD_RUNNER_OFFLINE = "runner offline"  # (HAR-37)
 KIND_PRZERWANIA = "run_aborted"
+# Zdarzenia odbioru zapisuje wylacznie kokpit, na zadanie czlowieka (HAR-179): runner nie moze
+# ich zglosic (oba sa w `RODZAJE_CZLOWIEKA`, HAR-234), bo `committed` odblokowywalby sie na
+# sfalszowanym `integrated`.
+KIND_ZINTEGROWANO = "integrated"
+KIND_ZACOMMITOWANO = "committed"
 LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
