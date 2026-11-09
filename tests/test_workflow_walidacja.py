@@ -25,6 +25,7 @@ from cockpit.services.workflow_walidacja import (
     CYKL,
     FOREACH_BEZ_PRODUCENTA,
     FOREACH_ZLY_FORMAT,
+    LIMIT_NA_KROKU_SYSTEMOWYM,
     NIEPRZENOSNY_SKILL,
     NIEZNANA_ZALEZNOSC,
     NIEZNANY_KLUCZ,
@@ -33,6 +34,7 @@ from cockpit.services.workflow_walidacja import (
     POLE_BEZ_KONSUMENTA,
     RETRY_NIE_WSTECZ,
     ROLA_W_KROKU_IGNOROWANA,
+    _problemy_limitow_kroku_systemowego,
     waliduj_workflow,
 )
 
@@ -1772,3 +1774,121 @@ def test_zapis_workflow_z_nowym_krokiem_check_z_kanwy_niesie_jego_capability(tmp
     assert ponownie is not None and problemy == []
     nowy = [k for k in ponownie.kroki if k.id == "kontrakt"][0]
     assert (nowy.system, nowy.capability, nowy.needs) == ("check", "contract", ["autor"])
+
+
+# --- limity na kroku systemowym (HAR-229): budget_usd i max_turns dotycza tylko agenta -----------
+
+
+def komunikat_limitu(pole: str, krok: str) -> str:
+    return (
+        f"pole {pole} nie ma skutku na kroku systemowym {krok}: "
+        "limit dotyczy tylko kroku agentowego"
+    )
+
+
+def test_krok_system_diff_z_budzetem_jest_odrzucony_z_nazwa_kroku_i_pola(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        "  diff: {system: diff, needs: [autor], budget_usd: 1}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "diff", "limit_na_kroku_systemowym",
+        "pole budget_usd nie ma skutku na kroku systemowym diff: "
+        "limit dotyczy tylko kroku agentowego",
+        Poziom.blad)]
+    assert ma_bledy(problemy)
+    assert LIMIT_NA_KROKU_SYSTEMOWYM == "limit_na_kroku_systemowym"
+
+
+def test_krok_system_diff_z_limitem_tur_jest_odrzucony_z_nazwa_kroku_i_pola(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        "  diff: {system: diff, needs: [autor], max_turns: 3}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "diff", "limit_na_kroku_systemowym",
+        "pole max_turns nie ma skutku na kroku systemowym diff: "
+        "limit dotyczy tylko kroku agentowego",
+        Poziom.blad)]
+    assert ma_bledy(problemy)
+
+
+def test_krok_systemowy_z_budzetem_i_limitem_tur_naraz_ma_dwa_bledy_budzet_pierwszy(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        "  diff: {system: diff, needs: [autor], max_turns: 3, budget_usd: 1}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [
+        Problem("diff", "limit_na_kroku_systemowym", komunikat_limitu("budget_usd", "diff"),
+                Poziom.blad),
+        Problem("diff", "limit_na_kroku_systemowym", komunikat_limitu("max_turns", "diff"),
+                Poziom.blad),
+    ]
+
+
+def test_krok_system_check_z_budzetem_jest_odrzucony_tak_samo_jak_diff(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(
+        tmp_path, "{system: check, capability: typecheck, needs: [autor], budget_usd: 2.5}")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "typy", "limit_na_kroku_systemowym", komunikat_limitu("budget_usd", "typy"),
+        Poziom.blad)]
+
+
+def test_krok_agentowy_z_budzetem_i_limitem_tur_przechodzi_walidacje(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path, "name: w\nsteps:\n  autor: {skill: autor, budget_usd: 1, max_turns: 3}\n")
+
+    assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+def test_krok_z_skillem_i_system_naraz_z_budzetem_ma_tylko_blad_skill_i_system(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "pisarz")
+    problemy = wszystkie_problemy(
+        tmp_path,
+        "name: w\nsteps:\n  oba: {skill: pisarz, system: diff, budget_usd: 1, max_turns: 3}\n",
+        repo,
+        dom,
+    )
+
+    assert "limit_na_kroku_systemowym" not in kody(problemy)
+    assert "skill_i_system" in kody(problemy)
+
+
+def test_krok_bez_skilla_i_bez_system_z_budzetem_nie_jest_krokiem_systemowym():
+    # Loader (`_kroki`) krok bez skill i bez system odrzuca jako BRAK_SKILLA i nie wpuszcza go
+    # do `kroki`, wiec strazznik chroni wywolanie programowe; `waliduj_workflow` wymaga `_mapa`
+    # ustawianej tylko przez loader, dlatego wolamy funkcje sprawdzajaca limity bezposrednio.
+    krok = Krok(id="k", budget_usd=1, max_turns=3)
+
+    assert _problemy_limitow_kroku_systemowego(krok) == []

@@ -1,0 +1,81 @@
+# Tabela recznych mutantow HAR-229 (limity budget_usd i max_turns na kroku systemowym).
+# Mutmut nie mutuje stalej modulu LIMIT_NA_KROKU_SYSTEMOWYM (linia kodu 3); funkcje
+# _problemy_limitow_kroku_systemowego i petla waliduj_workflow maja wiersze dla pewnosci.
+# Kazde `szukaj` wystepuje w workflow_walidacja.py dokladnie raz po implementacji.
+
+# Kod problemu: stala z inna wartoscia (linia kodu 3 poza funkcja).
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "LIMIT_NA_KROKU_SYSTEMOWYM = \"limit_na_kroku_systemowym\""
+zamien = "LIMIT_NA_KROKU_SYSTEMOWYM = \"limit_na_kroku_systemowym_x\""
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_budzetem_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Wywolanie sprawdzenia limitow w petli waliduj_workflow zastapione pustym.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "problemy.extend(_problemy_limitow_kroku_systemowego(krok))"
+zamien = "problemy.extend([])"
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_budzetem_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Krotka pol bez budget_usd.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "for pole in (\"budget_usd\", \"max_turns\")"
+zamien = "for pole in (\"max_turns\",)"
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_budzetem_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Krotka pol bez max_turns.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "for pole in (\"budget_usd\", \"max_turns\")"
+zamien = "for pole in (\"budget_usd\",)"
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_limitem_tur_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Odwrocona kolejnosc pol.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "for pole in (\"budget_usd\", \"max_turns\")"
+zamien = "for pole in (\"max_turns\", \"budget_usd\")"
+test = "tests/test_workflow_walidacja.py::test_krok_systemowy_z_budzetem_i_limitem_tur_naraz_ma_dwa_bledy_budzet_pierwszy"
+
+# Strazznik bez skill is not None: krok skill+system dostaje blad limitu.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "if krok.skill is not None or krok.system is None:"
+zamien = "if krok.system is None:"
+test = "tests/test_workflow_walidacja.py::test_krok_z_skillem_i_system_naraz_z_budzetem_ma_tylko_blad_skill_i_system"
+
+# Strazznik bez system is None: krok bez skilla i bez system dostaje blad limitu.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "if krok.skill is not None or krok.system is None:"
+zamien = "if krok.skill is not None:"
+test = "tests/test_workflow_walidacja.py::test_krok_bez_skilla_i_bez_system_z_budzetem_nie_jest_krokiem_systemowym"
+
+# Strazznik jako stale prawda: krok agentowy dostaje wynik pusty zawsze, krok systemowy tez.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "if krok.skill is not None or krok.system is None:"
+zamien = "if True:"
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_budzetem_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Warunek pola zawsze prawdziwy: krok z samym budzetem dostaje tez blad max_turns.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "if getattr(krok, pole) is not None"
+zamien = "if True"
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_budzetem_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Warunek pola odwrocony.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "if getattr(krok, pole) is not None"
+zamien = "if getattr(krok, pole) is None"
+test = "tests/test_workflow_walidacja.py::test_krok_system_diff_z_limitem_tur_jest_odrzucony_z_nazwa_kroku_i_pola"
+
+# Krok systemowy check (drugi rodzaj) z budzetem.
+[[mutant]]
+plik = "src/cockpit/services/workflow_walidacja.py"
+szukaj = "if krok.skill is not None or krok.system is None:"
+zamien = "if krok.skill is not None or krok.system != \"diff\":"
+test = "tests/test_workflow_walidacja.py::test_krok_system_check_z_budzetem_jest_odrzucony_tak_samo_jak_diff"
