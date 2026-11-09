@@ -631,3 +631,11 @@ plik = "src/runner/odbior.py"
 szukaj = "return nazwa.decode(\"utf-8\")  # pragma: no mutate"
 zamien = "return nazwa.decode(\"latin-1\")  # pragma: no mutate"
 test = "tests/test_integrate.py::test_pliki_runu_podaja_nazwy_z_polskimi_znakami_i_spacjami_doslownie"
+
+# Linia dekodowania SHA z `# pragma: no mutate` (kodek "ASCII" to alias): bez `strip()` SHA
+# z koncowym "\n" nie przechodzi SHA_PELNY i commit konczy sie bledem zamiast zdarzenia.
+[[mutant]]
+plik = "src/runner/odbior.py"
+szukaj = "sha = wynik.decode(\"ascii\").strip()  # pragma: no mutate"
+zamien = "sha = wynik.decode(\"ascii\")  # pragma: no mutate"
+test = "tests/test_commit_po_odbiorze.py::test_commit_po_integracji_dodaje_dokladnie_jeden_wpis_w_reflogu_i_zwraca_sha_head"
