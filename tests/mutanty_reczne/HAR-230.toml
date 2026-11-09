@@ -1,0 +1,44 @@
+# Tabela recznych mutantow HAR-230: pole `dekoder` w `_Wyjscie` i flush dekodera w `_czytaj`
+# (lista kodu 3 z tools/mutanty_zmian.py: src/runner/dowody.py:55-56).
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "codecs.getincrementaldecoder(\"utf-8\")(errors=\"replace\")"
+zamien = "codecs.getincrementaldecoder(\"utf-8\")(errors=\"ignore\")"
+test = "tests/test_krok_check.py::test_bajty_niebedace_utf8_przy_kodzie_zero_sa_trescia_a_nie_pustka"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "codecs.getincrementaldecoder(\"utf-8\")(errors=\"replace\")"
+zamien = "codecs.getincrementaldecoder(\"latin-1\")(errors=\"replace\")"
+test = "tests/test_krok_check.py::test_kod_zero_z_jedna_spacja_nielamliwa_i_nowa_linia_to_brak_dowodu"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "default_factory=lambda: codecs.getincrementaldecoder(\"utf-8\")(errors=\"replace\"))"
+zamien = "default_factory=lambda _d=codecs.getincrementaldecoder(\"utf-8\")(errors=\"replace\"): _d)"
+test = "tests/test_krok_check.py::test_kolejne_wyjscie_nie_dziedziczy_niedokonczonego_znaku_po_poprzednim"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "decode(b\"\", final=True)"
+zamien = "decode(b\"\", final=False)"
+test = "tests/test_krok_check.py::test_niepelny_znak_na_samym_koncu_wyjscia_po_spacji_nielamliwej_jest_trescia"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "    if not wyjscie.ma_tresc:\n        # niepelny"
+zamien = "    if True:\n        # niepelny"
+test = "tests/test_krok_check.py::test_tresc_po_znaku_rozcietym_na_granicy_kawalkow_nadal_jest_dowodem"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "        if not wyjscie.ma_tresc:\n            wyjscie.ma_tresc = bool(wyjscie.dekoder.decode(kawalek)"
+zamien = "        if True:\n            wyjscie.ma_tresc = bool(wyjscie.dekoder.decode(kawalek)"
+test = "tests/test_krok_check.py::test_tresc_wyjscia_w_dowolnym_kawalku_strumienia_wystarcza_za_dowod"
+
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "    dekoder: Any = field(\n"
+zamien = "    dekoder_: Any = field(\n"
+test = "tests/test_krok_check.py::test_kod_zero_z_jedna_spacja_nielamliwa_i_nowa_linia_to_brak_dowodu"
