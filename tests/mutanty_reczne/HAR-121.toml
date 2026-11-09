@@ -72,3 +72,617 @@ plik = "src/cockpit/api/app.py"
 szukaj = "await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))\n    return Zacommitowano("
 zamien = "await bus.publish_event(run_id + 'x', uslugi.zdarzenie_na_szyne(ev))\n    return Zacommitowano("
 test = "tests/test_commit_po_odbiorze.py::test_commit_publikuje_zdarzenie_committed_na_szynie_po_sukcesie"
+
+# =====================================================================================
+# Front odbioru: web/src/Odbior.tsx i montaz w web/src/WidokRunu.tsx (testy e2e w
+# tests/e2e/test_odbior_w_przegladarce.py). Martwy kod usuniety (M1.8): `disabled={wysylam}`
+# przycisku Integruj, `typeof dane !== "object"`, oslony `zywy.current` poza ta po odpowiedzi POST.
+# Bez wiersza (zadne wejscie nie odroznia): `key={runId}` (zmiana runu i tak odmontowuje Odbior
+# przez `setStatus(null)`), `key={z.seq}` (klucz listy nie zmienia widoku), `useRef(true)`.
+# =====================================================================================
+
+# --- stale komunikatow ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Brak połączenia z kokpitem."'
+zamien = '"Brak połączenia z kokpitem!"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_zerwane_polaczenie_przy_akcji_odbioru_pokazuje_dokladny_komunikat_z_brakiem_polaczenia[chromium-diff]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Nie udało się odczytać szczegółów tego wpisu."'
+zamien = '"Nie udało się odczytać szczegółów wpisu."'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-tekst_nie_jest_json]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Brak zmian do pokazania."'
+zamien = '"Brak zmian."'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_diff_bez_zmian_pokazuje_komunikat_brak_zmian_do_pokazania[chromium-pusty_napis]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'integrated: "Zintegrowano",'
+zamien = 'integrated: "Zintegrowany",'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'committed: "Zacommitowano",'
+zamien = 'committed: "Zacommitowany",'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha"
+
+# --- czas() ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'Number.isNaN(d.getTime()) ? at :'
+zamien = '!Number.isNaN(d.getTime()) ? at :'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_nieparsowalny_czas_wpisu_historii_zostaje_surowym_napisem_a_nie_invalid_date"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'd.toLocaleString("pl-PL")'
+zamien = 'd.toLocaleString("en-US")'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_czas_wpisu_historii_jest_w_formacie_polskim_a_nie_w_domyslnym_formacie_przegladarki"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '<time dateTime={z.at}>'
+zamien = '<time dateTime="x">'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_czas_wpisu_historii_jest_w_formacie_polskim_a_nie_w_domyslnym_formacie_przegladarki"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{czas(z.at)}'
+zamien = '{z.at}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_czas_wpisu_historii_jest_w_formacie_polskim_a_nie_w_domyslnym_formacie_przegladarki"
+
+# --- opisWpisu() ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'dane = JSON.parse(z.text);'
+zamien = 'dane = JSON.parse("{}");'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''  } catch {
+    return KOMUNIKAT_NIECZYTELNY;'''
+zamien = '''  } catch {
+    return "";'''
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-tekst_nie_jest_json]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "if (dane === null) return KOMUNIKAT_NIECZYTELNY;"
+zamien = "if (false) return KOMUNIKAT_NIECZYTELNY;"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-json_null]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'dane === null) return KOMUNIKAT_NIECZYTELNY;'
+zamien = 'dane === null) return "";'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-json_null]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'typeof rekord.email !== "string" || rekord.email === ""'
+zamien = 'rekord.email === ""'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-email_nie_jest_napisem]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'typeof rekord.email !== "string" || rekord.email === ""'
+zamien = 'typeof rekord.email !== "string"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-email_pusty]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'rekord.email === "") return KOMUNIKAT_NIECZYTELNY;'
+zamien = 'rekord.email === "") return "";'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_z_nieczytelnym_tekstem_pokazuje_komunikat_zamiast_pustego_wiersza[chromium-email_pusty]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'z.kind === "committed" && typeof rekord.sha'
+zamien = 'typeof rekord.sha'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-integracja_z_sha_w_tekscie]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'typeof rekord.sha === "string" && rekord.sha'
+zamien = 'rekord.sha'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-commit_z_sha_nie_napisem]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '&& rekord.sha ?'
+zamien = '?'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-commit_z_pustym_sha]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`, ${rekord.sha}`'
+zamien = '`${rekord.sha}`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-commit_z_sha]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`, ${rekord.sha}` : "";'
+zamien = '`, ${rekord.sha}` : "x";'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-commit_bez_sha]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'return `${rekord.email}${sha}`;'
+zamien = 'return `${rekord.email}`;'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_wpis_historii_pokazuje_sha_tylko_dla_commita_i_tylko_gdy_jest_niepustym_napisem[chromium-commit_z_sha]"
+
+# --- detailLubKod() ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'typeof j?.detail === "string"'
+zamien = 'typeof j.detail === "string"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-json_null]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'typeof j?.detail === "string" && '
+zamien = ''
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_nie_jest_napisem]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"string" && j.detail ?'
+zamien = '"string" ?'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_pusty]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '    () => null,'
+zamien = '    () => "x",'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-cialo_nie_json]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'detail ?? `błąd ${r.status}`'
+zamien = 'detail ?? `blad ${r.status}`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-json_bez_detail]"
+
+# --- pokazDiff() ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'setPobieramDiff(true);'
+zamien = 'setPobieramDiff(false);'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_pobierania_diffu_przycisk_jest_wylaczony_a_po_odpowiedzi_znowu_aktywny_i_pokazuje_diff"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''setPobieramDiff(true);
+    setBlad(null);'''
+zamien = 'setPobieramDiff(true);'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_komunikat_o_bledzie_diffu_znika_na_poczatku_kolejnego_pobierania_a_nie_dopiero_z_odpowiedzia"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'fetchZSesja(`${adres}/diff`)'
+zamien = 'fetchZSesja(`${adres}/difff`)'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_pokaz_diff_wyswietla_zmiany_runu_i_nie_dotyka_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "      if (!r.ok) {\n        const powod = await detailLubKod(r);\n        setBlad(`Nie udało się pobrać"
+zamien = "      if (r.ok) {\n        const powod = await detailLubKod(r);\n        setBlad(`Nie udało się pobrać"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_napisem]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`Nie udało się pobrać diffu: ${powod}`'
+zamien = '`Nie udało się pobrać diffu ${powod}`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odmowa_pobrania_diffu_pokazuje_dokladny_komunikat_z_detail_albo_kodem_http[chromium-detail_napisem]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'setDiff(typeof dane.diff === "string" ? dane.diff : "");'
+zamien = 'setDiff(dane.diff);'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_diff_bez_zmian_pokazuje_komunikat_brak_zmian_do_pokazania[chromium-bez_pola_diff]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'dane.diff : "");'
+zamien = 'dane.diff : "x");'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_diff_bez_zmian_pokazuje_komunikat_brak_zmian_do_pokazania[chromium-bez_pola_diff]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`Nie udało się pobrać diffu: ${KOMUNIKAT_SIEC_ODBIORU}`'
+zamien = '`Nie udało się pobrać diffu`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_zerwane_polaczenie_przy_akcji_odbioru_pokazuje_dokladny_komunikat_z_brakiem_polaczenia[chromium-diff]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "      setPobieramDiff(false);"
+zamien = "      setPobieramDiff(true);"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_pobierania_diffu_przycisk_jest_wylaczony_a_po_odpowiedzi_znowu_aktywny_i_pokazuje_diff"
+
+# --- osłona zywy.current ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''    zywy.current = true;
+    return () => {'''
+zamien = '''    zywy.current = false;
+    return () => {'''
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_pokaz_diff_wyswietla_zmiany_runu_i_nie_dotyka_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''    return () => {
+      zywy.current = false;'''
+zamien = '''    return () => {
+      zywy.current = true;'''
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odpowiedz_na_integracje_po_przejsciu_na_inny_run_nie_odswieza_nowego_runu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "nowego runu (setState po odmontowaniu React pomija).\n      if (!zywy.current) return;"
+zamien = "nowego runu (setState po odmontowaniu React pomija)."
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_odpowiedz_na_integracje_po_przejsciu_na_inny_run_nie_odswieza_nowego_runu"
+
+# --- pokazDiff: przycisk i wynik ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'onClick={() => void pokazDiff()}'
+zamien = 'onClick={() => {}}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_pokaz_diff_wyswietla_zmiany_runu_i_nie_dotyka_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'onClick={() => void pokazDiff()} disabled={pobieramDiff}'
+zamien = 'onClick={() => void pokazDiff()} disabled={false}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_pobierania_diffu_przycisk_jest_wylaczony_a_po_odpowiedzi_znowu_aktywny_i_pokazuje_diff"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{pobieramDiff ? "Pobieram diff…" : "Pokaż diff"}'
+zamien = '{!pobieramDiff ? "Pobieram diff…" : "Pokaż diff"}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Pobieram diff…"'
+zamien = '"Pobieram diff..."'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_pobierania_diffu_przycisk_jest_wylaczony_a_po_odpowiedzi_znowu_aktywny_i_pokazuje_diff"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Pokaż diff"'
+zamien = '"Pokaz diff"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{diff !== null &&'
+zamien = '{true &&'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'diff === "" ? ('
+zamien = 'diff !== "" ? ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_diff_bez_zmian_pokazuje_komunikat_brak_zmian_do_pokazania[chromium-pusty_napis]"
+
+# --- wykonaj() ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'setWysylam(true);'
+zamien = 'setWysylam(false);'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_integracji_potwierdz_i_anuluj_sa_wylaczone_a_po_odmowie_znowu_aktywne"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''setWysylam(true);
+    setBlad(null);'''
+zamien = 'setWysylam(true);'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_komunikat_o_bledzie_integracji_znika_na_poczatku_kolejnej_proby_a_nie_dopiero_z_odpowiedzia"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{ method: "POST" }'
+zamien = '{ method: "GET" }'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_potwierdzona_integracja_przenosi_pliki_runu_na_dysk_bez_commita_i_bez_wpisu_w_reflogu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`${adres}/${akcja}`'
+zamien = '`${adres}/`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_potwierdzona_integracja_przenosi_pliki_runu_na_dysk_bez_commita_i_bez_wpisu_w_reflogu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "      if (!r.ok) {\n        const powod = await detailLubKod(r);\n        setBlad(`Nie udało się ${opis}"
+zamien = "      if (r.ok) {\n        const powod = await detailLubKod(r);\n        setBlad(`Nie udało się ${opis}"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_konflikt_z_lokalna_zmiana_pokazuje_komunikat_kokpitu_a_repozytorium_zostaje_nietkniete"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`Nie udało się ${opis}: ${powod}`'
+zamien = '`Nie udało się ${opis} ${powod}`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_konflikt_z_lokalna_zmiana_pokazuje_komunikat_kokpitu_a_repozytorium_zostaje_nietkniete"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''        odswiez();
+        return;'''
+zamien = '        return;'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_po_odmowie_409_widok_pokazuje_prawdziwy_stan_z_ponownego_pobrania_runu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''setPotwierdzam(false);
+      odswiez();'''
+zamien = 'setPotwierdzam(false);'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_po_udanej_integracji_widok_pobiera_run_ponownie_i_pokazuje_commituj"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "      setPotwierdzam(false);\n      odswiez();"
+zamien = "      setPotwierdzam(true);\n      odswiez();"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_udana_odpowiedz_bez_tresci_json_zamyka_potwierdzenie_bez_komunikatu_o_bledzie"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'await r.json().catch(() => null);'
+zamien = 'await r.json();'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_udana_odpowiedz_bez_tresci_json_zamyka_potwierdzenie_bez_komunikatu_o_bledzie"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '`Nie udało się ${opis}: ${KOMUNIKAT_SIEC_ODBIORU}`'
+zamien = '`Nie udało się ${opis}`'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_zerwane_polaczenie_przy_akcji_odbioru_pokazuje_dokladny_komunikat_z_brakiem_polaczenia[chromium-integracja]"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"zintegrować zmian"'
+zamien = '"zintegrowac zmian"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_konflikt_z_lokalna_zmiana_pokazuje_komunikat_kokpitu_a_repozytorium_zostaje_nietkniete"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"zacommitować zmian"'
+zamien = '"zacommitowac zmian"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_commita_przycisk_jest_wylaczony_a_po_odmowie_znowu_aktywny"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'void wykonaj("integrate", "zintegrować zmian")'
+zamien = 'void wykonaj("commit", "zintegrować zmian")'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_potwierdzona_integracja_przenosi_pliki_runu_na_dysk_bez_commita_i_bez_wpisu_w_reflogu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'void wykonaj("commit", "zacommitować zmian")'
+zamien = 'void wykonaj("integrate", "zacommitować zmian")'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_commituj_dodaje_jeden_commit_z_plikami_runu_i_zostawia_czyste_drzewo"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = "      setWysylam(false);\n    }\n  }\n\n  return"
+zamien = "      setWysylam(true);\n    }\n  }\n\n  return"
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_integracji_potwierdz_i_anuluj_sa_wylaczone_a_po_odmowie_znowu_aktywne"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'const adres = `/api/runs/${encodeURIComponent(runId)}`;'
+zamien = 'const adres = `/api/runs/${runId}`;'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_identyfikator_runu_ze_znakami_specjalnymi_jest_kodowany_w_adresie_odbioru"
+
+# --- wyprowadzone stany z historii ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'zdarzenia.filter((z) => z.kind === "integrated" || z.kind === "committed")'
+zamien = 'zdarzenia.filter(() => true)'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_tylko_wpisy_odbioru_a_nie_inne_zdarzenia_runu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'wpisy.some((z) => z.kind === "integrated")'
+zamien = 'wpisy.some((z) => z.kind === "integrate")'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_potwierdzona_integracja_przenosi_pliki_runu_na_dysk_bez_commita_i_bez_wpisu_w_reflogu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'wpisy.some((z) => z.kind === "committed")'
+zamien = 'wpisy.some((z) => z.kind === "commited")'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_commituj_dodaje_jeden_commit_z_plikami_runu_i_zostawia_czyste_drzewo"
+
+# --- render: sekcja, integracja, commit, blad, historia ---
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'aria-label="Odbiór runu"'
+zamien = 'aria-label="Odbior runu"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '>Odbiór</h2>'
+zamien = '>Odbior</h2>'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '<h2 style={{ fontSize: 16 }}>Odbiór</h2>'
+zamien = '<h2 style={{ fontSize: 16 }}>Odbiór</h2><button>Wypchnij (push)</button>'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_na_stronie_odbioru_nie_ma_zadnej_akcji_push_na_zadnym_etapie"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{!zintegrowany && ('
+zamien = '{true && ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_potwierdzona_integracja_przenosi_pliki_runu_na_dysk_bez_commita_i_bez_wpisu_w_reflogu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{!potwierdzam ? ('
+zamien = '{potwierdzam ? ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_integruj_pyta_o_potwierdzenie_i_do_potwierdzenia_nie_zmienia_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'onClick={() => setPotwierdzam(true)}'
+zamien = 'onClick={() => setPotwierdzam(false)}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_integruj_pyta_o_potwierdzenie_i_do_potwierdzenia_nie_zmienia_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''              Integruj
+            </button>'''
+zamien = '''              Integruje
+            </button>'''
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'Kontynuować?'
+zamien = 'Kontynuowac?'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_integruj_pyta_o_potwierdzenie_i_do_potwierdzenia_nie_zmienia_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'zintegrować zmian")} disabled={wysylam}>'
+zamien = 'zintegrować zmian")} disabled={false}>'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_integracji_potwierdz_i_anuluj_sa_wylaczone_a_po_odmowie_znowu_aktywne"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Integruję…"'
+zamien = '"Integruje…"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_integracji_potwierdz_i_anuluj_sa_wylaczone_a_po_odmowie_znowu_aktywne"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Potwierdź"'
+zamien = '"Potwierdz"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_integruj_pyta_o_potwierdzenie_i_do_potwierdzenia_nie_zmienia_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'onClick={() => setPotwierdzam(false)}'
+zamien = 'onClick={() => setPotwierdzam(true)}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_anuluj_w_potwierdzeniu_wraca_do_integruj_bez_zadania_do_kokpitu_i_bez_zmian_w_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'setPotwierdzam(false)} disabled={wysylam}>'
+zamien = 'setPotwierdzam(false)} disabled={false}>'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_integracji_potwierdz_i_anuluj_sa_wylaczone_a_po_odmowie_znowu_aktywne"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '''                Anuluj
+'''
+zamien = '''                Anuluj!
+'''
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_integruj_pyta_o_potwierdzenie_i_do_potwierdzenia_nie_zmienia_repozytorium"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{zintegrowany && !zacommitowany && ('
+zamien = '{!zacommitowany && ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{zintegrowany && !zacommitowany && ('
+zamien = '{zintegrowany && ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_commituj_dodaje_jeden_commit_z_plikami_runu_i_zostawia_czyste_drzewo"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'zacommitować zmian")} disabled={wysylam}>'
+zamien = 'zacommitować zmian")} disabled={false}>'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_commita_przycisk_jest_wylaczony_a_po_odmowie_znowu_aktywny"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '"Commituję…"'
+zamien = '"Commituje…"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_commita_przycisk_jest_wylaczony_a_po_odmowie_znowu_aktywny"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = ': "Commituj"}'
+zamien = ': "Commituj!"}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_w_trakcie_commita_przycisk_jest_wylaczony_a_po_odmowie_znowu_aktywny"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{blad && ('
+zamien = '{true && ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '<p role="alert" data-testid'
+zamien = '<p data-testid'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_konflikt_z_lokalna_zmiana_pokazuje_komunikat_kokpitu_a_repozytorium_zostaje_nietkniete"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = '{wpisy.length > 0 && ('
+zamien = '{true && ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_do_odbioru_pokazuje_sekcje_z_pokaz_diff_i_integruj_ale_bez_commituj_diffu_historii_i_bledu"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'aria-label="Historia odbioru"'
+zamien = 'aria-label="Historia odbiorow"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = 'data-kind={z.kind}'
+zamien = 'data-kind="x"'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha"
+
+[[mutant]]
+plik = "web/src/Odbior.tsx"
+szukaj = ' · {opisWpisu(z)} · '
+zamien = ' - {opisWpisu(z)} - '
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha"
+
+# --- montaz w WidokRunu ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '{runId && status === "to_accept" && ('
+zamien = '{runId && status !== "to_accept" && ('
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_run_w_innym_stanie_niz_do_odbioru_nie_pokazuje_sekcji_odbioru[chromium-running]"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'runId={runId} zdarzenia={zdarzenia}'
+zamien = 'runId="x" zdarzenia={zdarzenia}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_pokaz_diff_wyswietla_zmiany_runu_i_nie_dotyka_repozytorium"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'zdarzenia={zdarzenia} odswiez='
+zamien = 'zdarzenia={[]} odswiez='
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_potwierdzona_integracja_przenosi_pliki_runu_na_dysk_bez_commita_i_bez_wpisu_w_reflogu"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'odswiez={() => void dociagnijRef.current?.()}'
+zamien = 'odswiez={() => {}}'
+test = "tests/e2e/test_odbior_w_przegladarce.py::test_po_udanej_integracji_widok_pobiera_run_ponownie_i_pokazuje_commituj"

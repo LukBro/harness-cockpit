@@ -25,7 +25,8 @@ function opisWpisu(z: Zdarzenie): string {
   } catch {
     return KOMUNIKAT_NIECZYTELNY;
   }
-  if (typeof dane !== "object" || dane === null) return KOMUNIKAT_NIECZYTELNY;
+  // null: odczyt pola rzucilby wyjatek; liczba, napis i tablica nie maja pola email nizej
+  if (dane === null) return KOMUNIKAT_NIECZYTELNY;
   const rekord = dane as Record<string, unknown>;
   if (typeof rekord.email !== "string" || rekord.email === "") return KOMUNIKAT_NIECZYTELNY;
   const sha = z.kind === "committed" && typeof rekord.sha === "string" && rekord.sha ? `, ${rekord.sha}` : "";
@@ -64,19 +65,17 @@ export function Odbior({ runId, zdarzenia, odswiez }: { runId: string; zdarzenia
     setBlad(null);
     try {
       const r = await fetchZSesja(`${adres}/diff`);
-      if (!zywy.current) return;
       if (!r.ok) {
         const powod = await detailLubKod(r);
-        if (zywy.current) setBlad(`Nie udało się pobrać diffu: ${powod}`);
+        setBlad(`Nie udało się pobrać diffu: ${powod}`);
         return;
       }
       const dane: DiffRunu = await r.json();
-      if (!zywy.current) return;
       setDiff(typeof dane.diff === "string" ? dane.diff : "");
     } catch {
-      if (zywy.current) setBlad(`Nie udało się pobrać diffu: ${KOMUNIKAT_SIEC_ODBIORU}`);
+      setBlad(`Nie udało się pobrać diffu: ${KOMUNIKAT_SIEC_ODBIORU}`);
     } finally {
-      if (zywy.current) setPobieramDiff(false);
+      setPobieramDiff(false);
     }
   }
 
@@ -85,22 +84,23 @@ export function Odbior({ runId, zdarzenia, odswiez }: { runId: string; zdarzenia
     setBlad(null);
     try {
       const r = await fetchZSesja(`${adres}/${akcja}`, { method: "POST" });
+      // Odpowiedz po przejsciu na inny run nie odswieza nowego runu (setState po odmontowaniu React pomija).
       if (!zywy.current) return;
       if (!r.ok) {
         const powod = await detailLubKod(r);
-        if (zywy.current) setBlad(`Nie udało się ${opis}: ${powod}`);
+        setBlad(`Nie udało się ${opis}: ${powod}`);
         // Stan na ekranie mogl sie rozjechac z kokpitem (np. 409): pokaz prawde.
         odswiez();
         return;
       }
       // Poprawna odpowiedz bez JSON nie jest sukcesem, o ktorym wiemy: odswiez i tak pokaze zdarzenie.
       await r.json().catch(() => null);
-      if (zywy.current) setPotwierdzam(false);
+      setPotwierdzam(false);
       odswiez();
     } catch {
-      if (zywy.current) setBlad(`Nie udało się ${opis}: ${KOMUNIKAT_SIEC_ODBIORU}`);
+      setBlad(`Nie udało się ${opis}: ${KOMUNIKAT_SIEC_ODBIORU}`);
     } finally {
-      if (zywy.current) setWysylam(false);
+      setWysylam(false);
     }
   }
 
@@ -121,7 +121,7 @@ export function Odbior({ runId, zdarzenia, odswiez }: { runId: string; zdarzenia
       {!zintegrowany && (
         <p>
           {!potwierdzam ? (
-            <button data-testid="odbior-integruj" onClick={() => setPotwierdzam(true)} disabled={wysylam}>
+            <button data-testid="odbior-integruj" onClick={() => setPotwierdzam(true)}>
               Integruj
             </button>
           ) : (
