@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -62,13 +63,32 @@ LIMIT_TESTU_S = 300
 
 
 @pytest.fixture(autouse=True)
-def _limit_czasu_testu():
-    """Zawieszony test nie blokuje CI bez konca: po limicie zrzut stosu wszystkich watkow i koniec procesu."""
-    faulthandler.dump_traceback_later(LIMIT_TESTU_S, exit=True)
+def _limit_czasu_testu(request):
+    """Zawieszony test nie blokuje CI bez konca: po limicie stos wszystkich watkow w logu i koniec procesu.
+
+    Przechwytywanie wyjscia pytesta jest zdejmowane przed zrzutem (jak w pytest-timeout),
+    inaczej stos trafilby do przechwyconego stderr i zniknal razem z procesem."""
+    koniec = threading.Event()
+
+    def straz() -> None:
+        if koniec.wait(LIMIT_TESTU_S):
+            return
+        capman = request.config.pluginmanager.getplugin("capturemanager")
+        if capman is not None:
+            capman.suspend_global_capture(in_=True)
+        sys.stderr.write(f"\n+++ ZAWIESZONY TEST po {LIMIT_TESTU_S} s: {request.node.nodeid}\n")
+        sys.stderr.flush()
+        faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+        sys.stderr.flush()
+        os._exit(1)
+
+    watek = threading.Thread(target=straz, name="limit-czasu-testu", daemon=True)
+    watek.start()
     try:
         yield
     finally:
-        faulthandler.cancel_dump_traceback_later()
+        koniec.set()
+        watek.join(timeout=5)
 
 
 @pytest.fixture(autouse=True)
