@@ -54,9 +54,11 @@ from .schematy import (
     RunNaLiscie,
     RunSzczegoly,
     RunUtworzony,
+    Zacommitowano,
     ZdarzeniePrzyjete,
     ZdarzenieRunu,
     Zdrowie,
+    Zintegrowano,
     odpowiedzi_bledow,
 )
 from .zaleznosci import (
@@ -361,6 +363,42 @@ async def diff_runu(
 ) -> DiffRunu:
     diff = await odbior.diff_runu(s, run_id, k.tenant_id, bus.connected_runner_ids(), bus.zapytaj)
     return DiffRunu(diff=diff)
+
+
+@app.post("/api/runs/{run_id}/integrate", response_model=Zintegrowano,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def integruj_run(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Zintegrowano:
+    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    wynik = await odbior.integruj_run(
+        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)
+    ev = wynik.zdarzenie
+    await bus.publish_event(run_id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
+                                     "step_id": ev.step_id,
+                                     "text_truncated": ev.text_truncated,
+                                     "text_full_len": ev.text_full_len})
+    return Zintegrowano(run_id=run_id, at=ev.at, pliki=wynik.pliki)
+
+
+@app.post("/api/runs/{run_id}/commit", response_model=Zacommitowano,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def commituj_run(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Zacommitowano:
+    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    wynik = await odbior.commituj_run(
+        s, run_id, k.tenant_id, k.user_id, bus.connected_runner_ids(), bus.zapytaj)
+    ev = wynik.zdarzenie
+    await bus.publish_event(run_id, {"seq": ev.seq, "kind": ev.kind, "text": ev.text,
+                                     "step_id": ev.step_id,
+                                     "text_truncated": ev.text_truncated,
+                                     "text_full_len": ev.text_full_len})
+    return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)
 
 
 @app.get("/api/runs/{run_id}/stream", response_model=None,

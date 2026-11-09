@@ -19,13 +19,14 @@ from starlette.routing import Mount, Route
 from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.api.zaleznosci import (
+    NAGLOWEK_CSRF,
     kontekst_sesji,
     kontekst_sesji_strumienia,
     runner_z_tokenu,
     trasa_publiczna,
 )
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, RolaWZespole, Run, RunStatus
+from cockpit.db.models import Base, Event, RolaWZespole, Run, RunStatus
 from sesja_testowa import (
     HASLO_TESTOWE,
     zaloguj_klienta,
@@ -116,6 +117,8 @@ TRASY_RUNU = {
     "uruchomienie_runu": ("POST", "/api/runs"),
     "odczyt_runu": ("GET", "/api/runs/{run}"),
     "strumien_runu": ("GET", "/api/runs/{run}/stream"),
+    "integracja_runu": ("POST", "/api/runs/{run}/integrate"),
+    "commit_runu": ("POST", "/api/runs/{run}/commit"),
 }
 
 
@@ -228,6 +231,85 @@ async def test_obserwator_nie_uruchamia_runu_i_run_nie_powstaje(swiat):
 async def test_obserwator_widzi_run_swojego_zespolu(swiat):
     klient = await _zalogowany(swiat, swiat.obserwator_a)
     assert (await klient.get(f"/api/runs/{swiat.run_a}")).status_code == 200
+
+
+# --- odbior runu (HAR-179): integrate i commit to akcje czlowieka z uprawnieniem --------------
+
+ODBIOR_RUNU = ["integrate", "commit"]
+
+
+async def _liczba_zdarzen(swiat, run_id: str) -> int:
+    async with swiat.maker() as s:
+        return (await s.execute(
+            select(func.count()).select_from(Event).where(Event.run_id == run_id))).scalar_one()
+
+
+@pytest.mark.parametrize("akcja", ODBIOR_RUNU)
+async def test_obserwator_nie_integruje_ani_nie_commituje_runu_swojego_zespolu(swiat, akcja):
+    """Run jest `running`, wiec bez odmowy roli wynikiem byloby 409, nie 403."""
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/{akcja}")
+
+    assert odp.status_code == 403
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+
+
+@pytest.mark.parametrize("akcja", ODBIOR_RUNU)
+async def test_czlonek_zespolu_nie_odbiera_runu_cudzego_zespolu(swiat, akcja):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await klient.post(f"/api/runs/{swiat.run_b}/{akcja}")
+
+    assert odp.status_code == 404
+    assert await _liczba_zdarzen(swiat, swiat.run_b) == 0
+
+
+@pytest.mark.parametrize("akcja", ODBIOR_RUNU)
+async def test_bez_sesji_odbior_runu_dostaje_401_i_nie_zapisuje_zdarzen(swiat, akcja):
+    klient = swiat.nowy_klient()
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/{akcja}")
+
+    assert odp.status_code == 401
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+
+
+@pytest.mark.parametrize("akcja", ODBIOR_RUNU)
+async def test_odbior_runu_bez_tokenu_csrf_dostaje_403_z_komunikatem_o_braku_tokenu(swiat, akcja):
+    """Run jest `running`, wiec bez kontroli CSRF wynikiem byloby 409, nie 403."""
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    del klient.headers[NAGLOWEK_CSRF]
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/{akcja}")
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "brak tokenu CSRF"}
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+
+
+@pytest.mark.parametrize("akcja", ODBIOR_RUNU)
+async def test_odbior_runu_ze_zlym_tokenem_csrf_dostaje_403_z_komunikatem_o_zlym_tokenie(
+    swiat, akcja,
+):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    klient.headers[NAGLOWEK_CSRF] = "zly-token"
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/{akcja}")
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "nieprawidłowy token CSRF"}
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+
+
+@pytest.mark.parametrize("akcja", ODBIOR_RUNU)
+async def test_odbior_runu_ktory_jeszcze_trwa_dostaje_409_a_zdarzenie_nie_powstaje(swiat, akcja):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/{akcja}")
+
+    assert odp.status_code == 409
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
 
 
 # --- trasy publiczne dzialaja bez sesji -------------------------------------------------------
@@ -356,6 +438,8 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("GET", "/api/runs/{run_id}/stream"): {"kontekst_sesji_strumienia"},
         ("GET", "/api/runs/{run_id}/diff"): {"kontekst_sesji"},
         ("POST", "/api/runs/{run_id}/decision"): {"kontekst_sesji"},
+        ("POST", "/api/runs/{run_id}/integrate"): {"kontekst_sesji"},
+        ("POST", "/api/runs/{run_id}/commit"): {"kontekst_sesji"},
         ("GET", "/api/konto/ja"): {"kontekst_sesji"},
         ("GET", "/api/pliki"): {"kontekst_sesji"},
         ("GET", "/api/pliki/lista"): {"kontekst_sesji"},
@@ -386,6 +470,8 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("GET", "/api/runs/{run_id}/stream"),
         ("GET", "/api/runs/{run_id}/diff"),
         ("POST", "/api/runs/{run_id}/decision"),
+        ("POST", "/api/runs/{run_id}/integrate"),
+        ("POST", "/api/runs/{run_id}/commit"),
         ("GET", "/api/pliki"),
         ("GET", "/api/pliki/lista"),
         ("PUT", "/api/pliki"),

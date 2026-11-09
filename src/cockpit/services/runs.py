@@ -29,6 +29,11 @@ from .walidacja import sprawdz_pomiar
 
 POWOD_RUNNER_OFFLINE = "runner offline"  # (HAR-37)
 KIND_PRZERWANIA = "run_aborted"
+# Zdarzenia odbioru zapisuje wylacznie kokpit, na zadanie czlowieka (HAR-179): runner nie moze
+# ich zglosic, bo `committed` odblokowywalby sie na sfalszowanym `integrated`.
+KIND_ZINTEGROWANO = "integrated"
+KIND_ZACOMMITOWANO = "committed"
+KINDY_ODBIORU = frozenset({KIND_ZINTEGROWANO, KIND_ZACOMMITOWANO})
 LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
@@ -389,6 +394,8 @@ async def zapisz_zdarzenie(
     Ponowienie z tym samym `event_id` w tym runie zwraca zapisane zdarzenie
     i `False`: bez zapisu, bez zmiany statusu i powodu runu (HAR-39).
     """
+    if kind in KINDY_ODBIORU:
+        raise NiespojneDane(f"zdarzenie {kind} zapisuje tylko kokpit, nie runner")
     naruszenie = sprawdz_pomiar(cost_usd, cost_source)
     if naruszenie is not None:
         raise NaruszonyNiezmiennik(naruszenie.niezmiennik, naruszenie.szczegol)

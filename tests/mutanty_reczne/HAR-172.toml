@@ -78,8 +78,8 @@ test = "tests/test_decyzja_na_bramce.py::test_zatwierdzenie_przez_api_zwraca_run
 # Obserwator (tylko `podglad`) zatwierdza bramke.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = "dostep.wymagaj(k, Uprawnienie.zatwierdzanie)"
-zamien = "dostep.wymagaj(k, Uprawnienie.podglad)"
+szukaj = "dostep.wymagaj(k, Uprawnienie.zatwierdzanie)\n    wynik = await decyzje.podejmij_decyzje("
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)\n    wynik = await decyzje.podejmij_decyzje("
 test = "tests/test_decyzja_na_bramce.py::test_obserwator_nie_moze_podjac_decyzji_403_baza_i_kolejka_bez_zmian"
 
 # --- serwis decyzji: stala listy decyzji -------------------------------------------------------------
@@ -579,8 +579,8 @@ test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_o
 # Zdarzenie na szyne z rekordu runu zamiast zdarzenia decyzji.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = "ev = wynik.zdarzenie"
-zamien = "ev = wynik.run"
+szukaj = "ev = wynik.zdarzenie\n    if wynik.polecenie is not None:"
+zamien = "ev = wynik.run\n    if wynik.polecenie is not None:"
 test = "tests/test_decyzja_na_bramce.py::test_decyzja_jest_publikowana_na_szynie_dla_przegladarki"
 
 # --- schematy decyzji: baza klasy i nazwy pol --------------------------------------------------------

@@ -1207,6 +1207,30 @@
         "title": "WpisPliku",
         "type": "object"
       },
+      "Zacommitowano": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sha": {
+            "title": "Sha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "at",
+          "sha"
+        ],
+        "title": "Zacommitowano",
+        "type": "object"
+      },
       "ZdarzeniePrzyjete": {
         "properties": {
           "seq": {
@@ -1281,6 +1305,33 @@
           "status"
         ],
         "title": "Zdrowie",
+        "type": "object"
+      },
+      "Zintegrowano": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "pliki": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pliki",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "at",
+          "pliki"
+        ],
+        "title": "Zintegrowano",
         "type": "object"
       },
       "ZmianaHasla": {
@@ -2782,6 +2833,95 @@
         "summary": "Get Run"
       }
     },
+    "/api/runs/{run_id}/commit": {
+      "post": {
+        "operationId": "commituj_run_api_runs__run_id__commit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Zacommitowano"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Commituj Run"
+      }
+    },
     "/api/runs/{run_id}/decision": {
       "post": {
         "operationId": "podejmij_decyzje_api_runs__run_id__decision_post",
@@ -2958,6 +3098,95 @@
           }
         },
         "summary": "Diff Runu"
+      }
+    },
+    "/api/runs/{run_id}/integrate": {
+      "post": {
+        "operationId": "integruj_run_api_runs__run_id__integrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Zintegrowano"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Integruj Run"
       }
     },
     "/api/runs/{run_id}/stream": {

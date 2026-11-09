@@ -11,6 +11,7 @@ wyliczenia stanu runu i rodzaju runnera (dozwolone w `api/` przez tools/check_la
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -112,6 +113,18 @@ class Projekt(BaseModel):
 
 class DiffRunu(BaseModel):
     diff: str
+
+
+class Zintegrowano(BaseModel):
+    run_id: str
+    at: datetime
+    pliki: list[str]
+
+
+class Zacommitowano(BaseModel):
+    run_id: str
+    at: datetime
+    sha: str
 
 
 class PlikOdczytany(BaseModel):
