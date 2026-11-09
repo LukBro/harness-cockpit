@@ -20,7 +20,6 @@ import json
 import os
 import shlex
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -28,16 +27,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from procesy import czekaj, czekaj_na_warunek, uruchom_proces, zakoncz_proces
+from procesy import czekaj, czekaj_na_warunek, uruchom_proces, zabij_proces, zakoncz_proces
 from runner.dowody import (
     LIMIT_CHECKU_S,
     LIMIT_DRENAZU_S,
     LIMIT_OGONA,
     OPCJE_JSON,
     ZRODLO,
+    _czytaj,
+    _Wyjscie,
     wykonaj_check,
 )
-from runner.krok import WynikKroku
+from runner.krok import ROZMIAR_KAWALKA, WynikKroku
 from test_silnik_runu import K, RUN_ID, Szpieg, indeks, jedno, rodzaje, swiat, uruchom
 
 LIMIT_TESTU_S = 60.0
@@ -92,12 +93,12 @@ def sw(tmp_path: Path) -> Swiat:
 
 async def sprawdz(
     sw: Swiat, polecenie: str, *, capability: str = "typecheck", limit_s: float | None = None,
-    katalog: Path | None = None,
+    katalog: Path | None = None, bezpiecznik_s: float = LIMIT_TESTU_S,
 ) -> WynikKroku:
     opcje = {} if limit_s is None else {"limit_s": limit_s}
     return await czekaj(
         wykonaj_check(sw.worktree, capability, polecenie, katalog or sw.katalog, **opcje),
-        LIMIT_TESTU_S, "wykonaj_check")
+        bezpiecznik_s, "wykonaj_check")
 
 
 # --- stale i podpis --------------------------------------------------------------------------
@@ -340,6 +341,129 @@ async def test_tresc_wyjscia_w_dowolnym_kawalku_strumienia_wystarcza_za_dowod(sw
     assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("zakonczony", None, 0)
 
 
+# Stala lista bialych znakow Unicode spoza ASCII - niezalezna od kodu pod testem.
+BIALE_UNICODE = [" ", " ", "　", "\u0085"]
+
+
+def kod_z_bajtami(surowe: bytes) -> str:
+    """Kod komendy zapisujacej dokladnie te bajty na stdout, bez zaleznosci od kodowania."""
+    return f"import sys; sys.stdout.buffer.write(bytes.fromhex({surowe.hex()!r}))"
+
+
+@pytest.mark.parametrize("znak", BIALE_UNICODE)
+async def test_kod_zero_z_samymi_bialymi_znakami_unicode_to_brak_dowodu_evidence_required(sw, znak):
+    surowe = (znak * 3 + "\n").encode("utf-8")
+
+    wynik = await sprawdz(sw, komenda(kod_z_bajtami(surowe)))
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("nieudany", EVIDENCE_PUSTY, 0)
+    assert wczytaj_dowod(sw.katalog)["sha256"] == sha(surowe)
+
+
+async def test_kod_zero_z_jedna_spacja_nielamliwa_i_nowa_linia_to_brak_dowodu(sw):
+    surowe = " \n".encode("utf-8")
+
+    wynik = await sprawdz(sw, komenda(kod_z_bajtami(surowe)))
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("nieudany", EVIDENCE_PUSTY, 0)
+
+
+async def test_kod_zero_ze_zwyklymi_spacjami_i_nowa_linia_nadal_jest_brakiem_dowodu(sw):
+    surowe = b"  \n"
+
+    wynik = await sprawdz(sw, komenda(kod_z_bajtami(surowe)))
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("nieudany", EVIDENCE_PUSTY, 0)
+    assert wczytaj_dowod(sw.katalog)["sha256"] == sha(surowe)
+
+
+@pytest.mark.parametrize("znak", BIALE_UNICODE)
+async def test_jedyna_tresc_otoczona_bialymi_znakami_unicode_nadal_jest_dowodem(sw, znak):
+    surowe = (znak * 5 + "x" + znak * 5).encode("utf-8")
+
+    wynik = await sprawdz(sw, komenda(kod_z_bajtami(surowe)))
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("zakonczony", None, 0)
+    assert wczytaj_dowod(sw.katalog)["sha256"] == sha(surowe)
+
+
+async def test_bajty_niebedace_utf8_przy_kodzie_zero_sa_trescia_a_nie_pustka(sw):
+    wynik = await sprawdz(sw, komenda(kod_z_bajtami(b"\xff")))
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("zakonczony", None, 0)
+    assert wczytaj_dowod(sw.katalog)["stdout_tail"] == ZASTEPCZY
+
+
+async def test_bajty_niebedace_utf8_otoczone_spacjami_nielamliwymi_sa_trescia(sw):
+    surowe = " ".encode("utf-8") + b"\xff" + " \n".encode("utf-8")
+
+    wynik = await sprawdz(sw, komenda(kod_z_bajtami(surowe)))
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == ("zakonczony", None, 0)
+
+
+# --- granice kawalkow: znak wielobajtowy rozciety miedzy kawalkami ---------------------------
+
+
+async def czytaj_kawalkami(*dane: bytes) -> _Wyjscie:
+    """Prawdziwy `_czytaj`; wszystko zasilone jest juz w buforze, wiec `read(ROZMIAR_KAWALKA)`
+    tnie dokladnie co ROZMIAR_KAWALKA bajtow."""
+    strumien = asyncio.StreamReader(limit=4 * ROZMIAR_KAWALKA)
+    for kawalek in dane:
+        strumien.feed_data(kawalek)
+    strumien.feed_eof()
+    wyjscie = _Wyjscie()
+    await czekaj(_czytaj(strumien, wyjscie), LIMIT_TESTU_S, "_czytaj")
+    return wyjscie
+
+
+async def test_spacja_nielamliwa_rozcieta_na_granicy_kawalkow_jest_nadal_pustka():
+    # pierwszy kawalek konczy sie bajtem 0xC2, drugi zaczyna od 0xA0
+    pierwszy = b" " * (ROZMIAR_KAWALKA - 1) + b"\xc2"
+    wyjscie = await czytaj_kawalkami(pierwszy, b"\xa0\n")
+
+    assert wyjscie.ma_tresc is False
+    assert wyjscie.skrot.hexdigest() == sha(pierwszy + b"\xa0\n")
+
+
+async def test_spacje_nielamliwe_rozciete_na_granicy_kawalkow_w_srodku_wyjscia_sa_pustka():
+    pierwszy = b" " + " ".encode("utf-8") * (ROZMIAR_KAWALKA // 2 - 1) + b"\xc2"
+    assert len(pierwszy) == ROZMIAR_KAWALKA
+    wyjscie = await czytaj_kawalkami(pierwszy, b"\xa0" + " \n".encode("utf-8"))
+
+    assert wyjscie.ma_tresc is False
+
+
+async def test_tresc_po_znaku_rozcietym_na_granicy_kawalkow_nadal_jest_dowodem():
+    pierwszy = b" " * (ROZMIAR_KAWALKA - 1) + b"\xc2"
+    wyjscie = await czytaj_kawalkami(pierwszy, b"\xa0x")
+
+    assert wyjscie.ma_tresc is True
+
+
+async def test_niepelny_znak_na_samym_koncu_wyjscia_po_spacji_nielamliwej_jest_trescia():
+    # po EOF dekoder oddaje U+FFFD zamiast cichej utraty ostatniego bajtu
+    wyjscie = await czytaj_kawalkami(" ".encode("utf-8") + b"\xc2")
+
+    assert wyjscie.ma_tresc is True
+
+
+async def test_kolejne_wyjscie_nie_dziedziczy_niedokonczonego_znaku_po_poprzednim():
+    # pierwsze wyjscie ma tresc i konczy sie poczatkiem znaku (0xC2); drugie zaczyna sie od
+    # samotnego 0xA0 - bez poczatku znaku to bajt niepoprawny, czyli tresc
+    pierwsze = await czytaj_kawalkami(b"x\xc2")
+    drugie = await czytaj_kawalkami(b"\xa0\n")
+
+    assert pierwsze.ma_tresc is True
+    assert drugie.ma_tresc is True
+
+
+async def test_niepelny_znak_w_ostatnim_kawalku_po_pelnym_kawalku_spacji_jest_trescia():
+    wyjscie = await czytaj_kawalkami(b" " * ROZMIAR_KAWALKA, b"\xc2")
+
+    assert wyjscie.ma_tresc is True
+
+
 # --- limit czasu i anulowanie ----------------------------------------------------------------
 
 # Komenda uruchamia potomka (ta sama grupa procesow), ktory po `opoznienie` s zapisuje znacznik.
@@ -385,29 +509,99 @@ async def test_przekroczony_limit_czasu_konczy_krok_porazka_zabija_komende_i_pot
     assert not znacznik.exists()
 
 
-# Potomek, ktory uciekl z grupy procesow komendy (nowa sesja) i trzyma jej potok: zabicie grupy
-# go nie dosiega, wiec koniec wyjscia nie nadchodzi. Zyje najwyzej `zycie` sekund sam z siebie.
-KOD_Z_POTOMKIEM_POZA_GRUPA = """\
-import subprocess, sys
+# Potomek, ktory uciekl z grupy procesow komendy (nowa sesja): zabicie grupy go nie dosiega.
+# Zapisuje swoj pid (sprzata go test), potem wykonuje reszte kodu (`%s`).
+POTOMEK_POZA_GRUPA = (
+    "import os, sys, time\n"
+    "from pathlib import Path\n"
+    "os.setsid()\n"
+    "rodzic = os.getppid()\n"
+    "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+    "%s"
+)
 
-potomek = "import os, time\\nos.setsid()\\ntime.sleep(float(%s))\\n" % sys.argv[1]
-subprocess.Popen([sys.executable, "-c", potomek])
+# Potomek zbierania: czeka az komenda zginie (zmiana rodzica), po pauzie wypisuje swoja linie na
+# wspolny potok i zamyka fd 1 i 2 (EOF). Pauza: gdy drenazu nie ma, czytnik jest juz anulowany.
+POTOMEK_PISZE_PO_ZABICIU = POTOMEK_POZA_GRUPA % (
+    "koniec = time.monotonic() + 120\n"
+    "while os.getppid() == rodzic and time.monotonic() < koniec:\n"
+    "    time.sleep(0.02)\n"
+    "time.sleep(0.3)\n"
+    "os.write(1, b'po zabiciu grupy\\n')\n"
+    "os.close(1)\n"
+    "os.close(2)\n"
+)
+
+# Potomek limitu: trzyma potok (nie zamyka go) i zyje dlugo - EOF nie nadchodzi.
+POTOMEK_TRZYMA_POTOK = POTOMEK_POZA_GRUPA % "time.sleep(120)\n"
+
+# Komenda odpala potomka, czeka az ten zapisze pid (jest juz poza grupa) i drukuje `start`.
+# Argument 3: `zyj` = zyje do zabicia grupy (potomek poznaje zabicie po zmianie rodzica - komenda,
+# ktora konczy sie sama, zmienilaby rodzica przed limitem i test niczego by nie dowodzil),
+# `koncz` = konczy sie od razu.
+KOD_KOMENDY_Z_POTOMKIEM_POZA_GRUPA = """\
+import subprocess, sys, time
+from pathlib import Path
+
+pid_plik, potomek, zyj = sys.argv[1], sys.argv[2], sys.argv[3] == "zyj"
+subprocess.Popen([sys.executable, "-c", potomek, pid_plik])
+koniec = time.monotonic() + 30
+while not Path(pid_plik).exists() and time.monotonic() < koniec:
+    time.sleep(0.02)
 print("start", flush=True)
+if zyj:
+    time.sleep(600)
 """
 
 
+def zabij_zapisanego_potomka(pid_plik: Path) -> None:
+    try:
+        tekst = pid_plik.read_text()
+    except FileNotFoundError:
+        return
+    if tekst.strip():
+        zabij_proces(int(tekst))
+
+
+async def test_wyjscie_potomka_spoza_grupy_wypisane_po_zabiciu_grupy_trafia_do_dowodu(
+    tmp_path, sw, monkeypatch
+):
+    # bezpiecznik: drenaz konczy sie na EOF (potomek zamyka potok), nie na uplywie tego limitu
+    monkeypatch.setattr("runner.dowody.LIMIT_DRENAZU_S", 30.0)
+    pid_plik = tmp_path / "pid-potomka"
+    # limit komendy z zapasem: pod obciazeniem interpreter komendy i potomka musza wystartowac
+    # przed zabiciem grupy; komenda czeka na pid potomka, wiec `start` oznacza potomka gotowego
+    polecenie = komenda(
+        KOD_KOMENDY_Z_POTOMKIEM_POZA_GRUPA, str(pid_plik), POTOMEK_PISZE_PO_ZABICIU, "zyj")
+
+    try:
+        wynik = await sprawdz(sw, polecenie, limit_s=5.0, bezpiecznik_s=40.0)
+    finally:
+        zabij_zapisanego_potomka(pid_plik)
+
+    assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == (
+        "nieudany", "check typecheck: przekroczony limit czasu 5 s", None)
+    dowod = wczytaj_dowod(sw.katalog)
+    assert dowod["exit_code"] is None
+    assert dowod["stdout_tail"] == "start\npo zabiciu grupy\n"
+    assert dowod["sha256"] == sha(b"start\npo zabiciu grupy\n")
+
+
 async def test_potomek_ktory_uciekl_z_grupy_i_trzyma_potok_nie_wiesza_kroku_ponad_limit_drenazu(
-    sw, monkeypatch
+    tmp_path, sw, monkeypatch
 ):
     monkeypatch.setattr("runner.dowody.LIMIT_DRENAZU_S", 1.0)
-    polecenie = komenda(KOD_Z_POTOMKIEM_POZA_GRUPA, "8")
+    pid_plik = tmp_path / "pid-potomka"
+    polecenie = komenda(
+        KOD_KOMENDY_Z_POTOMKIEM_POZA_GRUPA, str(pid_plik), POTOMEK_TRZYMA_POTOK, "koncz")
 
-    start = time.monotonic()
-    wynik = await sprawdz(sw, polecenie, limit_s=2.0)
-    czas = time.monotonic() - start
+    # bez limitu drenazu krok czekalby do konca zycia potomka (120 s); bezpiecznik testu (20 s)
+    # rzuca wtedy `LimitCzasuTestu` - test oblewa na mechanizmie, nie na oknie czasu
+    try:
+        wynik = await sprawdz(sw, polecenie, limit_s=2.0, bezpiecznik_s=20.0)
+    finally:
+        zabij_zapisanego_potomka(pid_plik)
 
-    # limit komendy (2 s) + drenaz (1 s); bez drenazu krok czekalby do konca zycia potomka (8 s)
-    assert 2.9 <= czas < 6.0
     assert (wynik.status, wynik.powod, wynik.kod_wyjscia) == (
         "nieudany", "check typecheck: przekroczony limit czasu 2 s", None)
     dowod = wczytaj_dowod(sw.katalog)
@@ -739,6 +933,23 @@ async def test_check_z_kodem_zero_i_pustym_wyjsciem_konczy_krok_bledem_evidence_
 
     assert jedno(zdarzenia, "step_failed", "typecheck")["text"] == EVIDENCE_PUSTY
     assert wczytaj_dowod(s.katalog_runu / "typecheck")["exit_code"] == 0
+    assert jedno(zdarzenia, "step_skipped", "rec")["text"] == (
+        "zaleznosc_nieudana: zależność nieudana: typecheck")
+    assert agent.kroki == ["autor"]
+
+
+async def test_check_z_kodem_zero_i_samymi_spacjami_nielamliwymi_konczy_krok_bledem_evidence_required(
+    tmp_path,
+):
+    surowe = "  \n".encode("utf-8")
+    s = swiat_z_checkiem(tmp_path, typecheck=komenda(kod_z_bajtami(surowe)))
+    agent = SzpiegZmieniajacyDrzewo()
+
+    zdarzenia = await uruchom(s, agent)
+
+    assert jedno(zdarzenia, "step_failed", "typecheck")["text"] == EVIDENCE_PUSTY
+    assert "step_finished" not in [z["kind"] for z in zdarzenia if z["step_id"] == "typecheck"]
+    assert wczytaj_dowod(s.katalog_runu / "typecheck")["sha256"] == sha(surowe)
     assert jedno(zdarzenia, "step_skipped", "rec")["text"] == (
         "zaleznosc_nieudana: zależność nieudana: typecheck")
     assert agent.kroki == ["autor"]

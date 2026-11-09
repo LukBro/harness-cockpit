@@ -6,10 +6,12 @@ name: mutation
 #   narzedzia i brak mutmuta to czerwony krok: brak dowodu to nie zielone.
 #   Pelnego przebiegu ani zapadki tu nie ma, wiec check trwa minuty.
 # - `mutation-main` (push na main, niewymagany): pelny przebieg mutmuta, raport i zapadka
-#   baseline. Spadek score nie oblewa joba; przebieg, ktory niczego nie zmierzyl
+#   zapadka. Spadek score nie oblewa joba; przebieg, ktory niczego nie zmierzyl
 #   (testy nie wystartowaly, zero zabitych), oblewa go.
-# - Baseline cicd/mutation-baseline.json commituje czlowiek recznie z artefaktu
-#   `mutation-report` joba mutation-main; CI niczego nie commituje ani nie pushuje.
+# - Odniesieniem zapadki (HAR-233) jest summary ostatniego zielonego przebiegu mutation-main
+#   (artefakt `mutation-report`), nie plik w repozytorium. Brak tego artefaktu to czerwony
+#   krok, nie cicha zapadka na starym wyniku; CI niczego nie commituje ani nie pushuje.
+#   Plik cicd/mutation-baseline.json zostaje w repo jako historia i niczego nie decyduje.
 #
 # Cache mutmuta: jedyny stan mutmuta lezy w katalogu mutants/ (kopie zrodel, pliki .meta
 # z wynikami i hashami funkcji, mutmut-stats.json). Zapisuje go tylko mutation-main;
@@ -391,8 +393,12 @@ jobs:
     # klucz) przekroczyl 120 min i zostal anulowany, a anulowany nie zapisuje cache - kazdy
     # nastepny zaczynalby od zera i tez by sie nie zmiescil.
     timeout-minutes: 240
+    # Tylko odczyt kodu i przebiegow: `gh run list/download` potrzebuje actions: read.
+    permissions:
+      contents: read
+      actions: read
     # Dwa pelne przebiegi naraz tylko walcza o CPU i cache; nie przerywamy trwajacego,
-    # bo jego wynik trafia do baseline.
+    # bo jego wynik jest odniesieniem dla nastepnego przebiegu.
     concurrency:
       group: mutation-main
       cancel-in-progress: false
@@ -418,31 +424,66 @@ jobs:
           restore-keys: |
             mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-
 
-      - name: pelny przebieg mutacyjny i zapadka
+      # HAR-233: odniesienie zapadki to artefakt ostatniego zielonego przebiegu. Biezacy run
+      # wylaczamy po identyfikatorze (pelna linia, `grep -x`): nie jest jeszcze zielony, ale
+      # lista udanych przebiegow bywa odpytana, gdy inny run konczy sie rownolegle. Kazdy brak
+      # (lista, przebieg, artefakt, plik) to czerwony krok: brak dowodu to nie zielone.
+      - name: poprzedni zielony wynik mutation-main
         env:
-          COMMIT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ! gh run list --repo "$REPO" --workflow mutation.yml --branch main --event push --status success --limit 20 --json databaseId --jq '.[].databaseId' > poprzednie-runy.txt; then
+            echo "::error::nie udalo sie pobrac listy przebiegow mutation-main (gh run list) - zapadka bez dowodu"
+            exit 1
+          fi
+          # Kod 1 z grep znaczy "brak linii po filtrze" (bez poprzedniego przebiegu), nie blad;
+          # kod 2 to blad grepa i musi oblac krok.
+          kod=0
+          kandydaci="$(grep -vx "$RUN_ID" poprzednie-runy.txt)" || kod=$?
+          if [ "$kod" != "0" ] && [ "$kod" != "1" ]; then
+            echo "::error::grep zakonczyl sie kodem $kod przy wyborze poprzedniego przebiegu mutation-main - zapadka bez dowodu"
+            exit 1
+          fi
+          poprzedni="$(printf '%s\n' "$kandydaci" | head -n 1)"
+          if [ -z "$poprzedni" ]; then
+            echo "::error::brak poprzedniego zielonego przebiegu mutation-main na main - zapadka nie ma z czym porownac"
+            exit 1
+          fi
+          if ! gh run download "$poprzedni" --repo "$REPO" --name mutation-report --dir poprzedni; then
+            echo "::error::nie udalo sie pobrac artefaktu mutation-report z przebiegu $poprzedni (wygasl albo go brak) - zapadka bez dowodu"
+            exit 1
+          fi
+          if [ ! -f poprzedni/mutation-summary.json ]; then
+            echo "::error::artefakt mutation-report przebiegu $poprzedni nie zawiera mutation-summary.json - zapadka bez dowodu"
+            exit 1
+          fi
+          echo "poprzedni zielony przebieg: $poprzedni"
+
+      - name: pelny przebieg mutacyjny i zapadka
         run: |
           # Brak mutmuta to brak pomiaru, wiec czerwony krok, nie pominiecie.
-          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono. Baseline NIE zapisany."; exit 1; }
+          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono. Zapadka nie porownala."; exit 1; }
           # mutmut exits non-zero when tests fail to start ("failed to collect stats");
           # a stale results cache must not hide that, so the exit code is the gate.
           if ! mutmut run; then
-            echo "::error::mutmut run zakonczyl sie bledem - testy nie wystartowaly w mutants/ (blad zbierania statystyk), sprawdz log mutmut run. Baseline NIE zapisany."
+            echo "::error::mutmut run zakonczyl sie bledem - testy nie wystartowaly w mutants/ (blad zbierania statystyk), sprawdz log mutmut run."
             exit 1
           fi
           mutmut results --all true > mutants/mutmut-results.txt
           python3 cicd/mutation_report.py --report mutants/mutmut-results.txt --format mutmut > mutation-summary.json
           # Zero killed out of many mutants means the tests never ran (e.g. import error
-          # inside mutants/), not a weak suite - such a run must not become the baseline.
+          # inside mutants/), not a weak suite - such a run must not become the next reference.
           if python3 -c "import json,sys; d=json.load(open('mutation-summary.json')); sys.exit(0 if d['total'] and not d['killed'] else 1)"; then
-            echo "::error::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ (sprawdz log mutmut run). Baseline NIE zapisany."
+            echo "::error::mutmut nie zabil zadnego mutanta - testy najpewniej nie wystartowaly w mutants/ (sprawdz log mutmut run)."
             exit 1
           fi
-          # Zapadka zwraca 0 dla kazdego porownania (takze spadku); kod niezerowy to wylacznie
-          # blad wejscia (zly JSON, blad zapisu, brak --commit). Ukrycie go dalo by zielony job
-          # i cicho martwa zapadke po zepsutym baseline.
-          if ! python3 cicd/mutation_baseline.py --summary mutation-summary.json --baseline cicd/mutation-baseline.json --scope full --commit "$COMMIT_SHA"; then
-            echo "::error::zapadka baseline zakonczyla sie bledem wejscia (zly baseline albo summary, blad zapisu) - zapadka nie dziala, napraw cicd/mutation-baseline.json"
+          # Zapadka zwraca 0 dla kazdego porownania (takze spadku, status=down); kod niezerowy to
+          # wylacznie blad wejscia (zly JSON, zly poprzedni wynik). Ukrycie go dalo by zielony job
+          # i cicho martwa zapadke.
+          if ! python3 cicd/mutation_baseline.py --summary mutation-summary.json --previous-summary poprzedni/mutation-summary.json --scope full; then
+            echo "::error::zapadka zakonczyla sie bledem wejscia (zly poprzedni wynik albo summary) - zapadka nie dziala"
             exit 1
           fi
 
@@ -453,4 +494,4 @@ jobs:
           path: |
             mutants/mutmut-results.txt
             mutation-summary.json
-            cicd/mutation-baseline.json
+          retention-days: 90

@@ -296,12 +296,20 @@ szukaj = "LIMIT_DRENAZU_S = 5.0"
 zamien = "LIMIT_DRENAZU_S = 50.0"
 test = "tests/test_krok_check.py::test_stale_dowodu_silnika_maja_ustalone_wartosci"
 
-# Czekanie na drenaz bez limitu: potomek poza grupa wiesza krok do konca swojego zycia.
+# Czekanie na drenaz bez limitu: potomek poza grupa wiesza krok do konca swojego zycia
+# (test oblewa przez bezpiecznik `LimitCzasuTestu`, nie przez okno czasu).
 [[mutant]]
 plik = "src/runner/dowody.py"
 szukaj = "await asyncio.wait({zadanie}, timeout=LIMIT_DRENAZU_S)"
 zamien = "await asyncio.wait({zadanie})"
 test = "tests/test_krok_check.py::test_potomek_ktory_uciekl_z_grupy_i_trzyma_potok_nie_wiesza_kroku_ponad_limit_drenazu"
+
+# Drenaz usuniety: wyjscie potomka spoza grupy, wypisane po zabiciu grupy, nie trafia do dowodu.
+[[mutant]]
+plik = "src/runner/dowody.py"
+szukaj = "await asyncio.wait({zadanie}, timeout=LIMIT_DRENAZU_S)"
+zamien = "pass"
+test = "tests/test_krok_check.py::test_wyjscie_potomka_spoza_grupy_wypisane_po_zabiciu_grupy_trafia_do_dowodu"
 
 # Opcje zapisu JSON z ensure_ascii=True: polskie znaki jako sekwencje \u.
 [[mutant]]

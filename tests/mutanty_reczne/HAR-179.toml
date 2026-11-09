@@ -111,26 +111,20 @@ szukaj = "KIND_ZACOMMITOWANO = \"committed\""
 zamien = "KIND_ZACOMMITOWANO = \"committed_x\""
 test = "tests/test_integrate.py::test_rodzaje_zdarzen_odbioru_maja_uzgodnione_nazwy"
 
-# Zakazany tylko committed: runner moze sfalszowac integrated.
+# Zakaz zdarzen odbioru od runnera: po merge HAR-234 jedynym strażnikiem jest
+# `RODZAJE_CZLOWIEKA` w runs.py (wpisy `integrated`/`committed`). Usuniecie wpisu z tego zbioru
+# zabija test sfalszowanego integrated z tego ticketu.
 [[mutant]]
 plik = "src/cockpit/services/runs.py"
-szukaj = "KINDY_ODBIORU = frozenset({KIND_ZINTEGROWANO, KIND_ZACOMMITOWANO})"
-zamien = "KINDY_ODBIORU = frozenset({KIND_ZACOMMITOWANO})"
-test = "tests/test_integrate.py::test_serwis_zdarzen_odrzuca_zdarzenie_odbioru_zgloszone_przez_runnera"
+szukaj = "    \"integrated\",\n    \"committed\",\n"
+zamien = "    \"committed\",\n"
+test = "tests/test_integrate.py::test_sfalszowane_integrated_od_runnera_nie_odblokowuje_commita"
 
-# Zakazany tylko integrated: runner moze sfalszowac committed.
 [[mutant]]
 plik = "src/cockpit/services/runs.py"
-szukaj = "KINDY_ODBIORU = frozenset({KIND_ZINTEGROWANO, KIND_ZACOMMITOWANO})"
-zamien = "KINDY_ODBIORU = frozenset({KIND_ZINTEGROWANO})"
+szukaj = "    \"integrated\",\n    \"committed\",\n"
+zamien = "    \"integrated\",\n"
 test = "tests/test_integrate.py::test_serwis_zdarzen_odrzuca_zdarzenie_odbioru_zgloszone_przez_runnera"
-
-# Zbior zakazanych rodzajow pusty.
-[[mutant]]
-plik = "src/cockpit/services/runs.py"
-szukaj = "KINDY_ODBIORU = frozenset({KIND_ZINTEGROWANO, KIND_ZACOMMITOWANO})"
-zamien = "KINDY_ODBIORU = frozenset()"
-test = "tests/test_integrate.py::test_runner_zglaszajacy_zdarzenie_odbioru_dostaje_422_a_zdarzenia_nie_ma_w_bazie"
 
 # SHA o 39 znakach.
 [[mutant]]

@@ -43,7 +43,9 @@ from cockpit.api.zaleznosci import NAGLOWEK_CSRF
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Event, RolaWZespole, Run, Runner, RunStatus
 from cockpit.services import odbior, runs
-from cockpit.services.errors import NieZnaleziono, NiespojneDane, RunnerOffline, StanNiemozliwy
+from cockpit.services.errors import (
+    NaruszonyNiezmiennik, NieZnaleziono, RunnerOffline, StanNiemozliwy,
+)
 from cockpit.services.runs import hash_token
 from cockpit.services.walidacja import migawka
 from cockpit.settings import settings
@@ -1209,16 +1211,22 @@ async def test_integracja_blokuje_wiersz_runu_przez_for_update_przed_pytaniem_ru
 # Zdarzenia odbioru zapisuje wylacznie kokpit: runner nie moze ich zglosic
 # =================================================================================
 
+def _odmowa_runnera(kind: str) -> str:
+    # Pelna tresc odmowy strażnika `RODZAJE_CZLOWIEKA` (HAR-234), ktory obejmuje zdarzenia odbioru.
+    return (f"niezmiennik approval_required: rodzaj zdarzenia {kind!r} jest zarezerwowany "
+            "dla decyzji czlowieka; runner nie moze go zapisac")
+
+
 @pytest.mark.parametrize("kind", ["integrated", "committed"])
 async def test_serwis_zdarzen_odrzuca_zdarzenie_odbioru_zgloszone_przez_runnera(swiat, kind):
     run_id = await zasiej_run(swiat.maker, swiat.tenant_b, B1, RunStatus.running)
     async with swiat.maker() as s:
         run = await runs.run_dla_najemcy(s, run_id, swiat.tenant_b)
-        with pytest.raises(NiespojneDane) as blad:
+        with pytest.raises(NaruszonyNiezmiennik) as blad:
             await runs.zapisz_zdarzenie(s, run, event_id=str(uuid.uuid4()), kind=kind)
 
-    assert type(blad.value) is NiespojneDane
-    assert str(blad.value) == f"zdarzenie {kind} zapisuje tylko kokpit, nie runner"
+    assert type(blad.value) is NaruszonyNiezmiennik
+    assert str(blad.value) == _odmowa_runnera(kind)
     assert await zdarzenia(swiat.maker, run_id) == []
 
 
@@ -1235,7 +1243,7 @@ async def test_runner_zglaszajacy_zdarzenie_odbioru_dostaje_422_a_zdarzenia_nie_
         headers={"Authorization": f"Bearer {TOKEN_B1}"}), 60)
 
     assert r.status_code == 422
-    assert r.json()["detail"] == f"zdarzenie {kind} zapisuje tylko kokpit, nie runner"
+    assert r.json()["detail"] == _odmowa_runnera(kind)
     assert await zdarzenia(swiat.maker, run_id, kind) == []
 
 
@@ -1275,7 +1283,7 @@ async def test_sfalszowane_integrated_od_runnera_nie_odblokowuje_commita(
     r = await asyncio.wait_for(swiat.klient.post(f"/api/runs/{run_id}/commit"), 60)
 
     assert forged.status_code == 422
-    assert forged.json()["detail"] == "zdarzenie integrated zapisuje tylko kokpit, nie runner"
+    assert forged.json()["detail"] == _odmowa_runnera("integrated")
     assert r.status_code == 409
     assert r.json()["detail"] == "zmiany runu nie zostaly jeszcze zintegrowane"
     assert wysylka.wywolania == []

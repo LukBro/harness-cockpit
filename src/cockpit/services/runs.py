@@ -20,6 +20,7 @@ from .errors import (
     BrakDostepu, NaruszonyNiezmiennik, NiespojneDane, NieZnaleziono, StanNiemozliwy,
     WymagaPotwierdzenia,
 )
+from .invariants import Niezmiennik
 from .kroki import kroki_runu, nieudane_kroki, zastosuj_zdarzenie_kroku
 from .pokrycie import (
     PokrycieBramek, WynikBramki, WynikKrokuWeryfikujacego, pokrycie_bramek,
@@ -30,10 +31,10 @@ from .walidacja import sprawdz_pomiar
 POWOD_RUNNER_OFFLINE = "runner offline"  # (HAR-37)
 KIND_PRZERWANIA = "run_aborted"
 # Zdarzenia odbioru zapisuje wylacznie kokpit, na zadanie czlowieka (HAR-179): runner nie moze
-# ich zglosic, bo `committed` odblokowywalby sie na sfalszowanym `integrated`.
+# ich zglosic (oba sa w `RODZAJE_CZLOWIEKA`, HAR-234), bo `committed` odblokowywalby sie na
+# sfalszowanym `integrated`.
 KIND_ZINTEGROWANO = "integrated"
 KIND_ZACOMMITOWANO = "committed"
-KINDY_ODBIORU = frozenset({KIND_ZINTEGROWANO, KIND_ZACOMMITOWANO})
 LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
@@ -268,6 +269,14 @@ async def run_runnera(s: AsyncSession, run_id: str, runner: Runner) -> Run:
 # deklaracja runnera nie jest zrodlem prawdy. Zdarzenia kroku same nie koncza runu.
 _POLECENIA_RUNU = frozenset({"run_step", "run_workflow"})  # (HAR-80)
 _KONIEC_RUNU = "run_finished"
+# Rodzaje zdarzen zarezerwowane dla decyzji czlowieka; runner ich nie zapisuje
+# (HAR-234, approval_required; HAR-179 rozszerza te sama liste).
+RODZAJE_CZLOWIEKA: frozenset[str] = frozenset({
+    "decision",
+    "integrated",
+    "committed",
+    "acceptance",
+})
 # `step_aborted` nie rusza runu `waiting` (HAR-47)
 _STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})
 _STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.running, RunStatus.waiting})
@@ -393,9 +402,14 @@ async def zapisz_zdarzenie(
 
     Ponowienie z tym samym `event_id` w tym runie zwraca zapisane zdarzenie
     i `False`: bez zapisu, bez zmiany statusu i powodu runu (HAR-39).
+    Rodzaj z `RODZAJE_CZLOWIEKA` jest odrzucany (decyzje zapisuje tylko czlowiek).
     """
-    if kind in KINDY_ODBIORU:
-        raise NiespojneDane(f"zdarzenie {kind} zapisuje tylko kokpit, nie runner")
+    if kind in RODZAJE_CZLOWIEKA:
+        raise NaruszonyNiezmiennik(
+            Niezmiennik.approval_required,
+            f"rodzaj zdarzenia {kind!r} jest zarezerwowany dla decyzji czlowieka; "
+            "runner nie moze go zapisac",
+        )
     naruszenie = sprawdz_pomiar(cost_usd, cost_source)
     if naruszenie is not None:
         raise NaruszonyNiezmiennik(naruszenie.niezmiennik, naruszenie.szczegol)

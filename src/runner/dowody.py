@@ -14,6 +14,7 @@ moze miec sekret).
 from __future__ import annotations
 
 import asyncio
+import codecs
 import hashlib
 import json
 import os
@@ -40,18 +41,30 @@ OPCJE_JSON = {"ensure_ascii": False, "indent": 2}
 
 @dataclass
 class _Wyjscie:
-    """Stan czytnika: skrot calego wyjscia, ogon i flaga znaku innego niz bialy."""
+    """Stan czytnika: skrot calego wyjscia, ogon i flaga znaku innego niz bialy.
+
+    Pustosc to same biale znaki Unicode (`str.isspace`, np. U+00A0), liczona na tekscie
+    dekodowanym przyrostowo (znak rozciety na granicy kawalkow nie daje falszywej tresci);
+    bajty nie-UTF-8 to U+FFFD, czyli tresc. Dekoder pracuje tylko dopoki `ma_tresc` jest False:
+    po znalezieniu tresci wynik jest przesadzony, a skrot i ogon nadal liczone z pelnych bajtow.
+    """
 
     skrot: Any = field(default_factory=hashlib.sha256)
     ogon: bytes = b""
     ma_tresc: bool = False
+    dekoder: Any = field(
+        default_factory=lambda: codecs.getincrementaldecoder("utf-8")(errors="replace"))
 
 
 async def _czytaj(strumien: asyncio.StreamReader, wyjscie: _Wyjscie) -> None:
     while kawalek := await strumien.read(ROZMIAR_KAWALKA):
         wyjscie.skrot.update(kawalek)
         wyjscie.ogon = (wyjscie.ogon + kawalek)[-LIMIT_OGONA:]
-        wyjscie.ma_tresc = wyjscie.ma_tresc or bool(kawalek.strip())
+        if not wyjscie.ma_tresc:
+            wyjscie.ma_tresc = bool(wyjscie.dekoder.decode(kawalek).strip())
+    if not wyjscie.ma_tresc:
+        # niepelny znak na koncu wyjscia to U+FFFD, nie cicha utrata bajtu
+        wyjscie.ma_tresc = bool(wyjscie.dekoder.decode(b"", final=True).strip())
 
 
 async def _do_konca(proc: asyncio.subprocess.Process, wyjscie: _Wyjscie) -> int:
