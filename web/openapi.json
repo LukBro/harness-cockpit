@@ -1250,6 +1250,11 @@
             "title": "Agent Type",
             "type": "string"
           },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -1289,7 +1294,8 @@
           "step_id",
           "agent_type",
           "text_truncated",
-          "text_full_len"
+          "text_full_len",
+          "at"
         ],
         "title": "ZdarzenieRunu",
         "type": "object"

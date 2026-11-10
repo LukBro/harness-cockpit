@@ -857,7 +857,9 @@ async def test_decyzja_jest_publikowana_na_szynie_dla_przegladarki(swiat):
     assert opublikowane["seq"] == 2
     assert opublikowane["text_truncated"] is False
     assert opublikowane["text_full_len"] == len("reject: nie teraz")
-    assert set(opublikowane) == {"seq", "kind", "text", "step_id", "text_truncated", "text_full_len"}
+    assert opublikowane["at"].endswith("+00:00")     # czas zdarzenia w UTC (HAR-121)
+    assert set(opublikowane) == {"seq", "kind", "text", "step_id", "text_truncated", "text_full_len",
+                                 "at"}
     assert kolejka.empty()
 
 

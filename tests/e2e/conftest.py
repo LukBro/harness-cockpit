@@ -7,11 +7,14 @@ Fixture'y sa synchroniczne (plugin playwrighta uzywa sync API).
 from __future__ import annotations
 
 import asyncio
+import faulthandler
+import gc
 import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -19,8 +22,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -116,6 +117,77 @@ def liczba_runow():
     return _liczba_runow
 
 
+LIMIT_TESTU_S = 300    # zawieszony test e2e konczy przebieg ze stosem zamiast wisiec do limitu joba
+
+
+def _zrzuc_zadania_asyncio() -> None:
+    """Niezakonczone zadania kazdej zywej petli asyncio w procesie (diagnostyka zawieszenia)."""
+    try:
+        for petla in [o for o in gc.get_objects() if isinstance(o, asyncio.AbstractEventLoop)]:
+            if petla.is_closed():
+                continue
+            zadania = asyncio.all_tasks(petla)
+            sys.stderr.write(f"\n+++ petla {petla!r}: {len(zadania)} zadan\n")
+            for zadanie in zadania:
+                zadanie.print_stack(file=sys.stderr)
+    except Exception as blad:  # diagnostyka nie moze przykryc zrzutu stosu
+        sys.stderr.write(f"\n+++ zrzut zadan asyncio nieudany: {blad!r}\n")
+
+
+def _zrzuc_aktywnosc_bazy() -> None:
+    """Sesje bazy i na co czekaja (pg_stat_activity), z limitem czasu."""
+    async def _pytaj():
+        engine = create_async_engine(URL_BAZY)
+        try:
+            async with engine.connect() as conn:
+                return (await conn.execute(text(
+                    "SELECT pid, state, wait_event_type, wait_event, now() - query_start, "
+                    "left(query, 200) FROM pg_stat_activity WHERE datname = current_database() "
+                    "AND pid <> pg_backend_pid()"))).all()
+        finally:
+            await engine.dispose()
+
+    try:
+        wiersze = asyncio.run(asyncio.wait_for(_pytaj(), timeout=20))
+        sys.stderr.write(f"\n+++ pg_stat_activity ({len(wiersze)} sesji):\n")
+        for wiersz in wiersze:
+            sys.stderr.write(f"  {tuple(wiersz)!r}\n")
+    except Exception as blad:  # diagnostyka nie moze przykryc zrzutu stosu
+        sys.stderr.write(f"\n+++ pg_stat_activity nieudane: {blad!r}\n")
+
+
+@pytest.fixture(autouse=True)
+def _limit_czasu_testu(request):
+    """Zawieszony test nie blokuje CI bez konca: po limicie stos wszystkich watkow w logu i koniec procesu.
+
+    Przechwytywanie wyjscia pytesta jest zdejmowane przed zrzutem (jak w pytest-timeout),
+    inaczej stos trafilby do przechwyconego stderr i zniknal razem z procesem."""
+    koniec = threading.Event()
+
+    def straz() -> None:
+        if koniec.wait(LIMIT_TESTU_S):
+            return
+        capman = request.config.pluginmanager.getplugin("capturemanager")
+        if capman is not None:
+            capman.suspend_global_capture(in_=True)
+        sys.stderr.write(f"\n+++ ZAWIESZONY TEST po {LIMIT_TESTU_S} s: {request.node.nodeid}\n")
+        sys.stderr.flush()
+        faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+        sys.stderr.flush()
+        _zrzuc_zadania_asyncio()
+        _zrzuc_aktywnosc_bazy()
+        sys.stderr.flush()
+        os._exit(1)
+
+    watek = threading.Thread(target=straz, name="limit-czasu-testu", daemon=True)
+    watek.start()
+    try:
+        yield
+    finally:
+        koniec.set()
+        watek.join(timeout=5)
+
+
 @pytest.fixture
 def czysta_baza():
     if not URL_BAZY.startswith("postgresql"):
@@ -126,19 +198,22 @@ def czysta_baza():
         )
     if not INDEX_FRONTU.is_file():
         pytest.fail("brak zbudowanego frontu: zbuduj front: npm ci && npm run build w web/")
-    cfg = Config(str(KORZEN / "alembic.ini"))
-    cfg.set_main_option("script_location", str(KORZEN / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", URL_BAZY.replace("%", "%%"))
-    # env.py Alembica robi asyncio.run, a plugin playwrighta moze juz trzymac petle
-    # w watku testu: migracje ida w osobnym watku.
-    def _migruj(akcja, rewizja: str) -> None:
-        with ThreadPoolExecutor(max_workers=1) as pula:
-            pula.submit(akcja, cfg, rewizja).result()
+    # Migracje w osobnym procesie, nie w watku procesu testu. Watek dzielil proces z
+    # Playwrightem: do petli asyncio.run z env.py Alembica trafialo zadanie Playwrighta
+    # (`Connection.wrap_api_call`), ktore czekalo na glowny watek, a ten na migracje -
+    # zakleszczenie w CI (HAR-121, zrzut stosu i zadan asyncio z przebiegu e2e PR #167).
+    def _migruj(akcja: str, rewizja: str) -> None:
+        wynik = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", str(KORZEN / "alembic.ini"), akcja, rewizja],
+            env={**os.environ, "COCKPIT_DATABASE_URL": URL_BAZY},
+            cwd=KORZEN, capture_output=True, text=True, timeout=120,
+        )
+        assert wynik.returncode == 0, f"alembic {akcja} {rewizja} nie powiodl sie: {wynik.stderr[-1500:]}"
 
-    _migruj(command.downgrade, "base")   # czysta baza: zasiew zaklada jeden zespol i jednego wlasciciela
-    _migruj(command.upgrade, "head")
+    _migruj("downgrade", "base")   # czysta baza: zasiew zaklada jeden zespol i jednego wlasciciela
+    _migruj("upgrade", "head")
     yield URL_BAZY
-    _migruj(command.downgrade, "base")
+    _migruj("downgrade", "base")
 
 
 @pytest.fixture

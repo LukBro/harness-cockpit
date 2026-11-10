@@ -58,6 +58,7 @@ class ZdarzenieRunu(BaseModel):
     agent_type: str
     text_truncated: bool
     text_full_len: int | None   # brak pomiaru pełnej długości to null, nigdy 0
+    at: datetime                # czas zapisu zdarzenia w UTC (HAR-121: „kto i kiedy” w odbiorze)
 
 
 class KrokRunu(BaseModel):

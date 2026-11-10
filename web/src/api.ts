@@ -15,3 +15,4 @@ export type RunStatus = Schemat["RunStatus"];
 export type Profil = Schemat["Profil"];
 export type DecyzjaIn = Schemat["DecyzjaIn"];
 export type DecyzjaPrzyjeta = Schemat["DecyzjaPrzyjeta"];
+export type DiffRunu = Schemat["DiffRunu"];
