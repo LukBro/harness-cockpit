@@ -29,7 +29,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
-from cockpit.services import decyzje, dostep, katalog, kroki, odbior, pliki_runnera, projekty, sesje
+from cockpit.services import (
+    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
+)
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import BrakDostepu, NieZnaleziono
@@ -39,8 +41,11 @@ from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
     DecyzjaIn,
+    DecyzjaOdbioru,
+    DecyzjaOdbioruIn,
     DecyzjaPrzyjeta,
     DiffRunu,
+    DowodyRunu,
     Katalog,
     KatalogOdswiezony,
     KrokRunu,
@@ -133,6 +138,27 @@ class RunCreate(BaseModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=36)  # kolumna String(36)
 
 
+_ListaKotwic = Annotated[
+    list[Annotated[str, Field(min_length=1, max_length=1000)]], Field(max_length=1000)]
+_ListaArtefaktow = Annotated[
+    list[Annotated[str, Field(min_length=1, max_length=255)]], Field(max_length=100)]
+
+
+class DowodIn(BaseModel):
+    """Dowod kroku w ksztalcie, jaki wysyla silnik (`runner.dowody`); `argv` i `stdout_tail`
+    zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    capability: str = Field(max_length=200, min_length=1)
+    # None przy przekroczeniu limitu czasu; strict odrzuca bool, napis i liczbe zmiennoprzecinkowa
+    exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    started_at: str = Field(min_length=1, max_length=64)
+    finished_at: str = Field(min_length=1, max_length=64)
+    source: Literal["engine", "agent"]
+    plik: str = Field(min_length=1, max_length=255)
+
+
 class EventIn(BaseModel):
     run_id: str
     event_id: str = Field(min_length=1)    # nadaje runner; idempotencja (HAR-39)
@@ -158,6 +184,24 @@ class EventIn(BaseModel):
     # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
     kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
         default=None, max_length=1000)
+    # dane konca kroku (HAR-170), tylko w step_finished/step_failed; brak to None
+    dowod: DowodIn | None = None
+    verdict: str | None = Field(default=None, min_length=1, max_length=200)
+    kotwice: _ListaKotwic | None = None
+    artefakty: _ListaArtefaktow | None = None
+
+    def dane(self) -> dict | None:
+        """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""
+        dane: dict = {}
+        if self.dowod is not None:
+            dane["dowod"] = self.dowod.model_dump()
+        if self.verdict is not None:
+            dane["verdict"] = self.verdict
+        if self.kotwice is not None:
+            dane["kotwice"] = self.kotwice
+        if self.artefakty is not None:
+            dane["artefakty"] = self.artefakty
+        return dane or None
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -312,7 +356,7 @@ async def ingest_event(
         wyslane_output=body.wyslane_output, text_full_len=body.text_full_len,
         attempt=body.attempt, tokens_in=body.tokens_in, tokens_out=body.tokens_out,
         num_turns=body.num_turns, session_id=body.session_id,
-        kroki_weryfikujace=body.kroki_weryfikujace,
+        kroki_weryfikujace=body.kroki_weryfikujace, dane=body.dane(),
     )
     if nowe:
         await bus.publish_event(run.id, uslugi.zdarzenie_na_szyne(ev))
@@ -388,6 +432,31 @@ async def commituj_run(
     ev = wynik.zdarzenie
     await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))
     return Zacommitowano(run_id=run_id, at=ev.at, sha=wynik.sha)
+
+
+@app.get("/api/runs/{run_id}/dowody", response_model=DowodyRunu,
+         responses=odpowiedzi_bledow(401, 404, 422))
+async def dowody_runu(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> DowodyRunu:
+    return DowodyRunu(**await odbior_dowody.dowody_runu(s, run_id, k.tenant_id))
+
+
+@app.post("/api/runs/{run_id}/decyzja-odbioru", response_model=DecyzjaOdbioru,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def decyzja_odbioru(
+    run_id: str,
+    body: DecyzjaOdbioruIn,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> DecyzjaOdbioru:
+    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    zapisane = await odbior_dowody.podejmij_decyzje_odbioru(
+        s, run_id, k.tenant_id, k.user_id, body.decyzja, body.uzasadnienie)
+    await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(zapisane))
+    return DecyzjaOdbioru(**odbior_dowody.decyzja_z_zdarzenia(zapisane))
 
 
 @app.get("/api/runs/{run_id}/stream", response_model=None,

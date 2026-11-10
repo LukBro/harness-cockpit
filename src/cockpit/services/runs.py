@@ -35,6 +35,7 @@ KIND_PRZERWANIA = "run_aborted"
 # sfalszowanym `integrated`.
 KIND_ZINTEGROWANO = "integrated"
 KIND_ZACOMMITOWANO = "committed"
+KIND_ODBIORU = "acceptance"   # decyzja odbioru dowodow (HAR-170); tez w `RODZAJE_CZLOWIEKA`
 LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
@@ -385,6 +386,7 @@ async def zapisz_zdarzenie(
     agent_id: str = "",
     agent_type: str = "",
     text: str = "",
+    dane: dict | None = None,
     cost_usd: float | None = None,
     cost_source: str = "unavailable",
     tokens: int | None = None,
@@ -420,6 +422,9 @@ async def zapisz_zdarzenie(
         )
     if kroki_weryfikujace and kind != _KONIEC_RUNU:
         raise NiespojneDane("kroki_weryfikujace wolno przeslac tylko w zdarzeniu run_finished")
+    if dane and kind not in _KONCZACE_KROK:
+        raise NiespojneDane(
+            "dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")
     # tekst ponad limit nigdy nie udaje calosci: znacznik i pelna dlugosc (HAR-56)
     pelna = max(len(text), text_full_len or 0)
     limit = settings.limit_tekstu_zdarzenia
@@ -461,7 +466,8 @@ async def zapisz_zdarzenie(
         ev = Event(tenant_id=tenant_id, run_id=run_id, seq=seq, step_id=step_id,
                    event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=zapisany, cost_usd=cost_usd,
                    cost_source=cost_source, tokens=tokens, duration_ms=duration_ms,
-                   text_truncated=obciety, text_full_len=pelna, attempt=attempt)
+                   text_truncated=obciety, text_full_len=pelna, attempt=attempt,
+                   dane=dane or None)
         # bez autoflush: zdarzenie i zmiany krokow ida do bazy w `commit`; zapytania widza
         # wiersze krokow z wczesniejszych zdarzen, a w tej transakcji jest jedno zdarzenie.
         with s.no_autoflush:

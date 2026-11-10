@@ -150,6 +150,9 @@ class Event(Base):
     cost_source: Mapped[str] = mapped_column(String(20), default="unavailable")
     tokens: Mapped[int | None] = mapped_column(Integer, default=None)
     duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    # dowod, werdykt, kotwice i artefakty konca kroku (HAR-170); brak danych to SQL NULL,
+    # nigdy `{}` ani JSON `null` (measured_or_null)
+    dane: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=None)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="events")

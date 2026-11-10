@@ -16,3 +16,7 @@ export type Profil = Schemat["Profil"];
 export type DecyzjaIn = Schemat["DecyzjaIn"];
 export type DecyzjaPrzyjeta = Schemat["DecyzjaPrzyjeta"];
 export type DiffRunu = Schemat["DiffRunu"];
+export type DowodyRunu = Schemat["DowodyRunu"];
+export type DecyzjaOdbioru = Schemat["DecyzjaOdbioru"];
+export type DecyzjaOdbioruIn = Schemat["DecyzjaOdbioruIn"];
+export type BrakOdbioru = Schemat["BrakOdbioru"];

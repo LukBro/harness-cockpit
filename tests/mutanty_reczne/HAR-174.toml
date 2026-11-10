@@ -1035,12 +1035,26 @@ test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodn
 
 [[mutant]]
 plik = 'web/openapi.json'
-szukaj = '''"tokens_in": {
+szukaj = '''"title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          },
+          "tokens_in": {
             "anyOf": [
               {
                 "type": "integer"
 '''
-zamien = '''"tokens_in": {
+zamien = '''"title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          },
+          "tokens_in": {
             "anyOf": [
               {
                 "type": "number"
@@ -1053,11 +1067,33 @@ szukaj = '''"tokens_out": {
             "anyOf": [
               {
                 "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
+          }
+        },
+        "required": [
+          "step_id",
+          "agent_id",
 '''
 zamien = '''"tokens_out": {
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
+          }
+        },
+        "required": [
+          "step_id",
+          "agent_id",
 '''
 test = 'tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja'
 
