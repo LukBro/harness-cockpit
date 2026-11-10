@@ -490,6 +490,22 @@ async def commit(dane: dict) -> dict:
     return await asyncio.to_thread(_zapisz_run, run_id, base_commit, opis)
 
 
+# Import w funkcji: `runner.tickety.operacje` importuje ten modul (BladOperacji, _tekst, _rozwiaz).
+async def ticket_lista(dane: dict) -> Any:
+    from runner.tickety import operacje as tickety
+    return await tickety.ticket_lista(dane)
+
+
+async def ticket_pobierz(dane: dict) -> Any:
+    from runner.tickety import operacje as tickety
+    return await tickety.ticket_pobierz(dane)
+
+
+async def ticket_zapisz_wynik(dane: dict) -> Any:
+    from runner.tickety import operacje as tickety
+    return await tickety.ticket_zapisz_wynik(dane)
+
+
 OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "ping": ping,
     "read_file": read_file,
@@ -500,6 +516,9 @@ OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "collect": collect,
     "integrate": integrate,
     "commit": commit,
+    "ticket_lista": ticket_lista,
+    "ticket_pobierz": ticket_pobierz,
+    "ticket_zapisz_wynik": ticket_zapisz_wynik,
 }
 
 

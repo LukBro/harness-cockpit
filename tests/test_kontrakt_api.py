@@ -115,8 +115,9 @@ def schemat() -> dict:
 
 
 def _operacja(schemat: dict, klucz: tuple[str, str]) -> dict:
-    metoda, sciezka = klucz
-    return schemat["paths"][sciezka][metoda.lower()]
+    metoda, _ = klucz
+    # OpenAPI zapisuje ścieżkę bez konwertera (`{id:path}` → `{id}`), jak `path_format` trasy.
+    return schemat["paths"][TRASY[klucz].path_format][metoda.lower()]
 
 
 def _rozwin(schemat: dict, wezel: dict) -> dict:
