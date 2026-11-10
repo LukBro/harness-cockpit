@@ -130,8 +130,12 @@ test = "tests/test_protokol_bez_argv.py::test_powod_odmowy_to_operacja_spoza_lis
 
 [[mutant]]
 plik = "web/openapi.json"
-szukaj = '"additionalProperties": false,'
-zamien = '"additionalProperties": true,'
+szukaj = '''"additionalProperties": false,
+        "properties": {
+          "operacja": {'''
+zamien = '''"additionalProperties": true,
+        "properties": {
+          "operacja": {'''
 test = "tests/test_protokol_bez_argv.py::test_zatwierdzony_schemat_kontraktu_ma_run_create_zgodny_z_kodem_kokpitu"
 
 [[mutant]]

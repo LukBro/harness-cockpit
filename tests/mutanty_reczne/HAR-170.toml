@@ -1,0 +1,1637 @@
+# Tabela recznych mutantow HAR-170: ekran dowodow odbioru (trasy i modele wejscia/wyjscia w app.py i
+# schematy.py, kolumna Event.dane i migracja 0014, stale modulow, front OdbiorDowody.tsx i wstawka w
+# WidokRunu.tsx) - elementy, ktorych mutmut nie mutuje (kod 3 z tools/mutanty_zmian.py, web/).
+# Warunki `=== null` i `!== null` w OdbiorDowody.tsx (decyzja, ryzyka.kotwice, ryzyka.mutanty, dowody)
+# chroni typ: odwrocenie nie kompiluje sie (TS18047/TS2339), wiec nie ma wierszy; ich teksty i galezie
+# maja wiersze przez tresc widoczna w przegladarce.
+#
+# Pominiete jako niezaimportowalne albo nieosiagalne: import OdbiorDowody w WidokRunu.tsx i typy
+# w web/src/api.ts (usuniecie psuje build), parametr `get_session` tras (FastAPI odrzuca typ sesji
+# bez Depends przy imporcie aplikacji).
+
+
+# --- src/cockpit/api/app.py: listy kotwic i artefaktow (limity elementow i listy) ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(min_length=1, max_length=1000)]], Field(max_length=1000)]'
+zamien = 'Field(min_length=0, max_length=1000)]], Field(max_length=1000)]'
+test = "tests/test_odbior_dowody.py::test_kotwica_pusta_albo_dluzsza_niz_1000_znakow_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(min_length=1, max_length=1000)]], Field(max_length=1000)]'
+zamien = 'Field(min_length=1, max_length=1001)]], Field(max_length=1000)]'
+test = "tests/test_odbior_dowody.py::test_kotwica_pusta_albo_dluzsza_niz_1000_znakow_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(min_length=1, max_length=1000)]], Field(max_length=1000)]'
+zamien = 'Field(min_length=1, max_length=1000)]], Field(max_length=1001)]'
+test = "tests/test_odbior_dowody.py::test_tysiac_i_jedna_kotwica_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(min_length=1, max_length=255)]], Field(max_length=100)]'
+zamien = 'Field(min_length=0, max_length=255)]], Field(max_length=100)]'
+test = "tests/test_odbior_dowody.py::test_nazwa_artefaktu_pusta_albo_dluzsza_niz_255_znakow_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(min_length=1, max_length=255)]], Field(max_length=100)]'
+zamien = 'Field(min_length=1, max_length=256)]], Field(max_length=100)]'
+test = "tests/test_odbior_dowody.py::test_nazwa_artefaktu_pusta_albo_dluzsza_niz_255_znakow_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'Field(min_length=1, max_length=255)]], Field(max_length=100)]'
+zamien = 'Field(min_length=1, max_length=255)]], Field(max_length=101)]'
+test = "tests/test_odbior_dowody.py::test_sto_jeden_artefaktow_jest_odrzucone"
+
+
+# --- src/cockpit/api/app.py: DowodIn (extra, strict, limity, zakres kodu wyjscia, wzorzec sumy, zrodlo) ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'model_config = ConfigDict(extra="forbid", strict=True)'
+zamien = 'model_config = ConfigDict(extra="ignore", strict=True)'
+test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'model_config = ConfigDict(extra="forbid", strict=True)'
+zamien = 'model_config = ConfigDict(extra="forbid", strict=False)'
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_ktory_nie_jest_calkowita_liczba_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'capability: str = Field(max_length=200, min_length=1)'
+zamien = 'capability: str = Field(max_length=201, min_length=1)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'capability: str = Field(max_length=200, min_length=1)'
+zamien = 'capability: str = Field(max_length=200, min_length=0)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
+zamien = 'exit_code: int | None = Field(ge=-2_147_483_649, le=2_147_483_647)'
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_poza_zakresem_int4_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
+zamien = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_648)'
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_poza_zakresem_int4_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
+zamien = 'exit_code: int | None = Field(ge=-2_147_483_647, le=2_147_483_647)'
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_w_zakresie_int4_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
+zamien = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_646)'
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_w_zakresie_int4_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"[0-9a-f]{64}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[0-9a-f]{63}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[0-9a-f]{65}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[0-9a-z]{64}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[a-f]{64}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str = Field(pattern=r"^[0-9]{64}$")'
+test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'started_at: str = Field(min_length=1, max_length=64)'
+zamien = 'started_at: str = Field(min_length=1, max_length=65)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'started_at: str = Field(min_length=1, max_length=64)'
+zamien = 'started_at: str = Field(min_length=0, max_length=64)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'finished_at: str = Field(min_length=1, max_length=64)'
+zamien = 'finished_at: str = Field(min_length=1, max_length=65)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'finished_at: str = Field(min_length=1, max_length=64)'
+zamien = 'finished_at: str = Field(min_length=0, max_length=64)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'source: Literal["engine", "agent"]'
+zamien = 'source: Literal["engine"]'
+test = "tests/test_odbior_dowody.py::test_zrodlo_dowodu_engine_i_agent_jest_przyjete"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'source: Literal["engine", "agent"]'
+zamien = 'source: Literal["engine", "agent", "człowiek"]'
+test = "tests/test_odbior_dowody.py::test_zrodlo_dowodu_spoza_engine_i_agent_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'plik: str = Field(min_length=1, max_length=255)'
+zamien = 'plik: str = Field(min_length=1, max_length=256)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'plik: str = Field(min_length=1, max_length=255)'
+zamien = 'plik: str = Field(min_length=0, max_length=255)'
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+
+# --- src/cockpit/api/app.py: nowe pola EventIn (typ, wartosc domyslna, limity) ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'dowod: DowodIn | None = None'
+zamien = 'dowod: dict | None = None'
+test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'dowod: DowodIn | None = None'
+zamien = 'dowod: DowodIn | None'
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'verdict: str | None = Field(default=None, min_length=1, max_length=200)'
+zamien = 'verdict: str | None = Field(default=None, min_length=0, max_length=200)'
+test = "tests/test_odbior_dowody.py::test_werdykt_pusty_za_dlugi_albo_nie_napis_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'verdict: str | None = Field(default=None, min_length=1, max_length=200)'
+zamien = 'verdict: str | None = Field(default=None, min_length=1, max_length=201)'
+test = "tests/test_odbior_dowody.py::test_werdykt_pusty_za_dlugi_albo_nie_napis_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'verdict: str | None = Field(default=None, min_length=1, max_length=200)'
+zamien = 'verdict: str | None = Field(min_length=1, max_length=200)'
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'kotwice: _ListaKotwic | None = None'
+zamien = 'kotwice: _ListaKotwic | None'
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'artefakty: _ListaArtefaktow | None = None'
+zamien = 'artefakty: _ListaArtefaktow | None'
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'kotwice: _ListaKotwic | None = None'
+zamien = 'kotwice: list[str] | None = None'
+test = "tests/test_kontrakt_api.py::test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'artefakty: _ListaArtefaktow | None = None'
+zamien = 'artefakty: list[str] | None = None'
+test = "tests/test_kontrakt_api.py::test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'kroki_weryfikujace=body.kroki_weryfikujace, dane=body.dane(),'
+zamien = 'kroki_weryfikujace=body.kroki_weryfikujace, dane=None,'
+test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
+
+
+# --- src/cockpit/api/app.py: trasa GET /api/runs/{run_id}/dowody ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/runs/{run_id}/dowody", response_model=DowodyRunu,'
+zamien = '@app.get("/api/runs/{run_id}/dowody", response_model=None,'
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/runs/{run_id}/dowody", response_model=DowodyRunu,'
+zamien = '@app.get("/api/runs/{run_id}/dowody", response_model=DecyzjaOdbioru,'
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''odpowiedzi_bledow(401, 404, 422))
+async def dowody_runu('''
+zamien = '''odpowiedzi_bledow(401, 422))
+async def dowody_runu('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''async def dowody_runu(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),'''
+zamien = '''async def dowody_runu(
+    run_id: str,
+    k: Kontekst = Depends(runner_z_tokenu),'''
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'odbior_dowody.dowody_runu(s, run_id, k.tenant_id)'
+zamien = 'odbior_dowody.dowody_runu(s, run_id, k.user_id)'
+test = "tests/test_odbior_dowody.py::test_run_bez_zdarzen_i_pomiarow_zwraca_wszystkie_klucze_z_pustymi_wartosciami"
+
+
+# --- src/cockpit/api/app.py: trasa POST /api/runs/{run_id}/decyzja-odbioru ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.post("/api/runs/{run_id}/decyzja-odbioru", response_model=DecyzjaOdbioru,'
+zamien = '@app.post("/api/runs/{run_id}/decyzja-odbioru", response_model=DowodyRunu,'
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def decyzja_odbioru('''
+zamien = '''odpowiedzi_bledow(401, 403, 404, 422))
+async def decyzja_odbioru('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def decyzja_odbioru('''
+zamien = '''odpowiedzi_bledow(401, 404, 409, 422))
+async def decyzja_odbioru('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    body: DecyzjaOdbioruIn,
+    k: Kontekst = Depends(kontekst_sesji),'''
+zamien = '''    body: DecyzjaOdbioruIn,
+    k: Kontekst = Depends(runner_z_tokenu),'''
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    zapisane ='''
+zamien = '    zapisane ='
+test = "tests/test_odbior_dowody.py::test_obserwator_zespolu_nie_podejmuje_decyzji_odbioru_403_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    zapisane ='''
+zamien = '''dostep.wymagaj(k, Uprawnienie.podglad)
+    zapisane ='''
+test = "tests/test_odbior_dowody.py::test_obserwator_zespolu_nie_podejmuje_decyzji_odbioru_403_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 's, run_id, k.tenant_id, k.user_id, body.decyzja, body.uzasadnienie)'
+zamien = 's, run_id, k.tenant_id, k.tenant_id, body.decyzja, body.uzasadnienie)'
+test = "tests/test_odbior_dowody.py::test_czlonek_zespolu_podejmuje_decyzje_odbioru_pod_swoim_adresem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 's, run_id, k.tenant_id, k.user_id, body.decyzja, body.uzasadnienie)'
+zamien = 's, run_id, k.user_id, k.user_id, body.decyzja, body.uzasadnienie)'
+test = "tests/test_odbior_dowody.py::test_czlonek_zespolu_podejmuje_decyzje_odbioru_pod_swoim_adresem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 's, run_id, k.tenant_id, k.user_id, body.decyzja, body.uzasadnienie)'
+zamien = 's, run_id, k.tenant_id, k.user_id, body.decyzja, None)'
+test = "tests/test_odbior_dowody.py::test_przyjecie_z_brakami_i_uzasadnieniem_zapisuje_w_audycie_osobe_czas_i_tresc"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 's, run_id, k.tenant_id, k.user_id, body.decyzja, body.uzasadnienie)'
+zamien = 's, run_id, k.tenant_id, k.user_id, "accept", body.uzasadnienie)'
+test = "tests/test_odbior_dowody.py::test_odeslanie_runu_z_brakami_nie_wymaga_uzasadnienia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''body.uzasadnienie)
+    await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(zapisane))'''
+zamien = '''body.uzasadnienie)
+    pass'''
+test = "tests/test_odbior_dowody.py::test_decyzja_odbioru_trafia_na_szyne_zdarzen_runu_jako_acceptance"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''body.uzasadnienie)
+    await bus.publish_event(run_id,'''
+zamien = '''body.uzasadnienie)
+    await bus.publish_event("inny-run",'''
+test = "tests/test_odbior_dowody.py::test_decyzja_odbioru_trafia_na_szyne_zdarzen_runu_jako_acceptance"
+
+
+# --- src/cockpit/api/schematy.py: DecyzjaOdbioruIn ---
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'LIMIT_UZASADNIENIA = 2000'
+zamien = 'LIMIT_UZASADNIENIA = 2001'
+test = "tests/test_odbior_dowody.py::test_uzasadnienie_o_2001_znakach_jest_odrzucone_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'LIMIT_UZASADNIENIA = 2000'
+zamien = 'LIMIT_UZASADNIENIA = 1999'
+test = "tests/test_odbior_dowody.py::test_uzasadnienie_o_2000_znakach_jest_przyjete"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''model_config = ConfigDict(extra="forbid")
+    decyzja: Literal["accept", "send_back"]'''
+zamien = '''model_config = ConfigDict(extra="ignore")
+    decyzja: Literal["accept", "send_back"]'''
+test = "tests/test_odbior_dowody.py::test_cialo_decyzji_z_nieznanym_polem_albo_zla_decyzja_jest_odrzucone_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''model_config = ConfigDict(extra="forbid")
+    decyzja: Literal["accept", "send_back"]'''
+zamien = '''model_config = ConfigDict(extra="forbid")
+    decyzja: Literal["accept"]'''
+test = "tests/test_odbior_dowody.py::test_odeslanie_runu_z_brakami_nie_wymaga_uzasadnienia"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''model_config = ConfigDict(extra="forbid")
+    decyzja: Literal["accept", "send_back"]'''
+zamien = '''model_config = ConfigDict(extra="forbid")
+    decyzja: Literal["accept", "send_back", "reject"]'''
+test = "tests/test_odbior_dowody.py::test_cialo_decyzji_z_nieznanym_polem_albo_zla_decyzja_jest_odrzucone_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'uzasadnienie: str | None = Field(default=None, max_length=LIMIT_UZASADNIENIA)'
+zamien = 'uzasadnienie: str | None = Field(default=None)'
+test = "tests/test_odbior_dowody.py::test_uzasadnienie_o_2001_znakach_jest_odrzucone_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'uzasadnienie: str | None = Field(default=None, max_length=LIMIT_UZASADNIENIA)'
+zamien = 'uzasadnienie: str | None = Field(max_length=LIMIT_UZASADNIENIA)'
+test = "tests/test_odbior_dowody.py::test_odeslanie_runu_z_brakami_nie_wymaga_uzasadnienia"
+
+
+# --- src/cockpit/api/schematy.py: pola modeli odpowiedzi ekranu dowodow (typ, wymagalnosc, null) ---
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class TwierdzenieRunu(BaseModel):
+    step_id: str'''
+zamien = '''class TwierdzenieRunu(BaseModel):
+    step_id: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    artefakt: str'
+zamien = '    artefakt: int'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class DowodKroku(BaseModel):
+    step_id: str'''
+zamien = '''class DowodKroku(BaseModel):
+    step_id: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    capability: str'
+zamien = '    capability: int'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    source: Literal["engine", "agent"]'
+zamien = '    source: Literal["engine"]'
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    exit_code: int | None       # brak kodu (limit czasu) to null, nigdy 0'
+zamien = '    exit_code: int       # brak kodu (limit czasu) to null, nigdy 0'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    sha256: str'
+zamien = '    sha256: int'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    plik: str'
+zamien = '    plik: int'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class WerdyktKroku(BaseModel):
+    step_id: str'''
+zamien = '''class WerdyktKroku(BaseModel):
+    step_id: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    verdict: str'
+zamien = '    verdict: int'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    zaliczony: bool            # koncowe zdarzenie kroku to step_finished'
+zamien = '    zaliczony: str            # koncowe zdarzenie kroku to step_finished'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    rodzaj: Literal["pominieta_bramka", "niesprawdzony", "werdykt_fail", "brak_dowodu", "niezmierzone"]'
+zamien = '    rodzaj: Literal["pominieta_bramka", "niesprawdzony", "werdykt_fail", "brak_dowodu"]'
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    step_id: str | None'
+zamien = '    step_id: str'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    step_id: str | None
+    powod: str'''
+zamien = '''    step_id: str | None
+    powod: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    kotwice: list[str] | None   # null = brak danych, [] = brak kotwic'
+zamien = '    kotwice: list[str]   # null = brak danych, [] = brak kotwic'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    mutanty: list[str] | None   # zawsze null do czasu HAR-168'
+zamien = '    mutanty: list[str]   # zawsze null do czasu HAR-168'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class PomiarKrokuOdbioru(BaseModel):
+    step_id: str'''
+zamien = '''class PomiarKrokuOdbioru(BaseModel):
+    step_id: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    cost_usd: float | None      # null = niezmierzone, nigdy 0'
+zamien = '    cost_usd: float      # null = niezmierzone, nigdy 0'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    tokens_in: int | None       # brak pomiaru to null, nigdy 0'
+zamien = '    tokens_in: int       # brak pomiaru to null, nigdy 0'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    tokens_in: int | None       # brak pomiaru to null, nigdy 0
+    tokens_out: int | None'''
+zamien = '''    tokens_in: int | None       # brak pomiaru to null, nigdy 0
+    tokens_out: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class DecyzjaOdbioru(BaseModel):
+    decyzja: Literal["accept", "send_back"]'''
+zamien = '''class DecyzjaOdbioru(BaseModel):
+    decyzja: Literal["accept"]'''
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    user_id: str'
+zamien = '    user_id: int'
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    user_id: str
+    email: str'''
+zamien = '''    user_id: str
+    email: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    email: str
+    uzasadnienie: str | None'''
+zamien = '''    email: str
+    uzasadnienie: str'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    uzasadnienie: str | None
+    at: datetime'''
+zamien = '''    uzasadnienie: str | None
+    at: str'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class DowodyRunu(BaseModel):
+    run_id: str'''
+zamien = '''class DowodyRunu(BaseModel):
+    run_id: int'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    twierdzenia: list[TwierdzenieRunu]'
+zamien = '    twierdzenia: list[str]'
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    dowody: list[DowodKroku]'
+zamien = '    dowody: list[str]'
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    werdykty: list[WerdyktKroku]'
+zamien = '    werdykty: list[str]'
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    braki: list[BrakOdbioru]'
+zamien = '    braki: list[str]'
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    ryzyka: RyzykaRunu'
+zamien = '    ryzyka: dict'
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    pomiary: list[PomiarKrokuOdbioru]'
+zamien = '    pomiary: list[str]'
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '    decyzja: DecyzjaOdbioru | None'
+zamien = '    decyzja: dict | None'
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+
+# --- src/cockpit/db/models.py: kolumna Event.dane (brak danych to SQL NULL, nigdy JSON null) ---
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = 'dane: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=None)'
+zamien = 'dane: Mapped[dict | None] = mapped_column(JSON(none_as_null=False), nullable=True, default=None)'
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = 'dane: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=None)'
+zamien = 'dane: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=False, default=None)'
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+[[rownowazny]]
+plik = "src/cockpit/db/models.py"
+linia_tekst = '    dane: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True, default=None)'
+uzasadnienie = "Usuniecie `default=None`: kolumna jest nullable, a brak wartosci w INSERT daje NULL tak samo jak jawne None (`none_as_null=True`), wiec zadne wejscie nie odroznia wersji."
+
+
+# --- alembic/versions/0014_dane_zdarzenia.py: identyfikatory, kolumna, typ, NULL, nazwy w downgrade ---
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'revision: str = "0014"'
+zamien = 'revision: str = "0015"'
+test = "tests/test_odbior_dowody.py::test_migracja_danych_zdarzenia_dodaje_kolumne_dane_bez_not_null_i_przesuwa_wersje_na_0014"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'down_revision: Union[str, None] = "0013"'
+zamien = 'down_revision: Union[str, None] = "0012"'
+test = "tests/test_odbior_dowody.py::test_migracja_danych_zdarzenia_dodaje_kolumne_dane_bez_not_null_i_przesuwa_wersje_na_0014"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'op.add_column("event", sa.Column("dane", sa.JSON(), nullable=True))'
+zamien = 'op.add_column("event", sa.Column("dane", sa.JSON(), nullable=False))'
+test = "tests/test_odbior_dowody.py::test_migracja_danych_zdarzenia_dodaje_kolumne_dane_bez_not_null_i_przesuwa_wersje_na_0014"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'op.add_column("event", sa.Column("dane", sa.JSON(), nullable=True))'
+zamien = 'op.add_column("event", sa.Column("dane_x", sa.JSON(), nullable=True))'
+test = "tests/test_odbior_dowody.py::test_migracja_danych_zdarzenia_dodaje_kolumne_dane_bez_not_null_i_przesuwa_wersje_na_0014"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'op.add_column("event", sa.Column("dane", sa.JSON(), nullable=True))'
+zamien = 'op.add_column("event", sa.Column("dane", sa.Text(), nullable=True))'
+test = "tests/test_odbior_dowody.py::test_migracja_danych_zdarzenia_dodaje_kolumne_dane_bez_not_null_i_przesuwa_wersje_na_0014"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'op.add_column("event", sa.Column("dane", sa.JSON(), nullable=True))'
+zamien = 'op.add_column("event_x", sa.Column("dane", sa.JSON(), nullable=True))'
+test = "tests/test_odbior_dowody.py::test_migracja_danych_zdarzenia_dodaje_kolumne_dane_bez_not_null_i_przesuwa_wersje_na_0014"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'op.drop_column("event", "dane")'
+zamien = 'op.drop_column("event", "dane_x")'
+test = "tests/test_odbior_dowody.py::test_cofniecie_migracji_danych_zdarzenia_usuwa_kolumne_dane_i_wraca_do_wersji_0013"
+
+[[mutant]]
+plik = "alembic/versions/0014_dane_zdarzenia.py"
+szukaj = 'op.drop_column("event", "dane")'
+zamien = 'op.drop_column("event_x", "dane")'
+test = "tests/test_odbior_dowody.py::test_cofniecie_migracji_danych_zdarzenia_usuwa_kolumne_dane_i_wraca_do_wersji_0013"
+
+
+# --- src/cockpit/services/runs.py i odbior_dowody.py: stale poziomu modulu ---
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'KIND_ODBIORU = "acceptance"'
+zamien = 'KIND_ODBIORU = "acceptance_x"'
+test = "tests/test_odbior_dowody.py::test_decyzja_odbioru_trafia_na_szyne_zdarzen_runu_jako_acceptance"
+
+[[mutant]]
+plik = "src/cockpit/services/odbior_dowody.py"
+szukaj = '_KONCZACE_KROK = ("step_finished", "step_failed")'
+zamien = '_KONCZACE_KROK = ("step_failed",)'
+test = "tests/test_odbior_dowody.py::test_twierdzenia_to_nazwy_artefaktow_w_kolejnosci_numerow_zdarzen"
+
+[[mutant]]
+plik = "src/cockpit/services/odbior_dowody.py"
+szukaj = '_KONCZACE_KROK = ("step_finished", "step_failed")'
+zamien = '_KONCZACE_KROK = ("step_finished",)'
+test = "tests/test_odbior_dowody.py::test_werdykt_fail_to_czerwony_wiersz_z_werdyktem_i_tekstem_zdarzenia"
+
+[[mutant]]
+plik = "src/cockpit/services/odbior_dowody.py"
+szukaj = 'await s.refresh(run, with_for_update=True)'
+zamien = 'await s.refresh(run, with_for_update=False)'
+test = "tests/test_odbior_dowody.py::test_decyzja_blokuje_wiersz_runu_przez_for_update_przed_sprawdzeniem_i_zapisem_decyzji"
+
+[[mutant]]
+plik = "src/cockpit/services/odbior_dowody.py"
+szukaj = 'json.dumps(tresc, ensure_ascii=False)'
+zamien = 'json.dumps(tresc, ensure_ascii=True)'
+test = "tests/test_odbior_dowody.py::test_przyjecie_z_brakami_i_uzasadnieniem_zapisuje_w_audycie_osobe_czas_i_tresc"
+
+
+# --- web/src/OdbiorDowody.tsx: stale (kolory, komunikaty, opisy decyzji) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const KOLOR_SZARY = "#58616D";'
+zamien = 'const KOLOR_SZARY = "#58616E";'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const KOLOR_CZERWONY = "#A5201A";'
+zamien = 'const KOLOR_CZERWONY = "#A5201B";'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_z_pominieta_bramka_i_werdyktem_fail_pokazuje_czerwone_wiersze_z_pelnym_powodem"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const KOMUNIKAT_SIEC_DOWODOW = "Brak połączenia z kokpitem.";'
+zamien = 'const KOMUNIKAT_SIEC_DOWODOW = "Brak polaczenia z kokpitem.";'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_utrata_polaczenia_przy_odczycie_dowodow_pokazuje_komunikat_o_braku_polaczenia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const KOMUNIKAT_ODCZYT_DOWODOW = "Nie udało się odczytać dowodów odbioru.";'
+zamien = 'const KOMUNIKAT_ODCZYT_DOWODOW = "Nie udalo sie odczytac dowodow odbioru.";'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '  accept: "przyjęto",'
+zamien = '  accept: "przyjeto",'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '  send_back: "odesłano do poprawy",'
+zamien = '  send_back: "odeslano do poprawy",'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+
+# --- web/src/OdbiorDowody.tsx: czasDecyzji (nieparsowalny czas zostaje surowy, format polski) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'return Number.isNaN(d.getTime()) ? at : d.toLocaleString("pl-PL");'
+zamien = 'return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("pl-PL");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_o_nieznanej_wartosci_pokazuje_ja_doslownie"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'return Number.isNaN(d.getTime()) ? at : d.toLocaleString("pl-PL");'
+zamien = 'return !Number.isNaN(d.getTime()) ? at : d.toLocaleString("pl-PL");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'return Number.isNaN(d.getTime()) ? at : d.toLocaleString("pl-PL");'
+zamien = 'return Number.isNaN(d.getTime()) ? at : d.toLocaleString("en-US");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+
+# --- web/src/OdbiorDowody.tsx: detailLubKod (detail z JSON albo kod HTTP) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'typeof j?.detail === "string" && j.detail ? (j.detail as string) : null'
+zamien = 'typeof j?.detail === "string" ? (j.detail as string) : null'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'typeof j?.detail === "string" && j.detail ? (j.detail as string) : null'
+zamien = 'j.detail ? (j.detail as string) : null'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'typeof j?.detail === "string" && j.detail ? (j.detail as string) : null'
+zamien = 'typeof j.detail === "string" && j.detail ? (j.detail as string) : null'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''    () => null,
+  );
+  return detail'''
+zamien = '''    () => {
+      throw new Error("x");
+    },
+  );
+  return detail'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'return detail ?? `błąd ${r.status}`;'
+zamien = 'return detail ?? `kod ${r.status}`;'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odczyt_dowodow_odrzucony_bez_czytelnego_detail_pokazuje_kod_http"
+
+
+# --- web/src/OdbiorDowody.tsx: napisKosztu (niezmierzone to nie zero) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'cost === null ? "niezmierzone"'
+zamien = '!cost ? "niezmierzone"'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zmierzony_koszt_zero_to_zero_z_czterema_miejscami_a_nie_niezmierzone"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'cost === null ? "niezmierzone"'
+zamien = 'cost === null ? "brak"'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_koszt_bez_pomiaru_wyswietla_sie_jako_niezmierzone_a_na_stronie_nie_ma_dolara_zero"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'cost.toFixed(4)'
+zamien = 'cost.toFixed(2)'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_koszt_zmierzony_jest_pokazany_z_dolarem_i_czterema_miejscami_po_przecinku"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '`$${cost.toFixed(4)}`'
+zamien = '`${cost.toFixed(4)}`'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zmierzony_koszt_zero_to_zero_z_czterema_miejscami_a_nie_niezmierzone"
+
+
+# --- web/src/OdbiorDowody.tsx: pobierz (odczyt dowodow) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'setBladOdczytu(`${KOMUNIKAT_ODCZYT_DOWODOW} ${powod}`);'
+zamien = 'setBladOdczytu(`${powod}`);'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''const r = await fetchZSesja(`${adres}/dowody`);
+      if (!zywy.current) return;
+      if (!r.ok) {'''
+zamien = '''const r = await fetchZSesja(`${adres}/dowody`);
+      if (!zywy.current) return;
+      if (r.ok) {'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'if (zywy.current) setBladOdczytu(KOMUNIKAT_SIEC_DOWODOW);'
+zamien = 'if (zywy.current) setBladOdczytu(KOMUNIKAT_ODCZYT_DOWODOW);'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_utrata_polaczenia_przy_odczycie_dowodow_pokazuje_komunikat_o_braku_polaczenia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'if (zywy.current) setLadowanie(false);'
+zamien = 'void 0;'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '      setDowody(dane);'
+zamien = '      setDowody(null);'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+
+# --- web/src/OdbiorDowody.tsx: zdecyduj (zapis decyzji) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''setWysylam(true);
+    setBladDecyzji(null);'''
+zamien = 'setBladDecyzji(null);'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_gdy_zapis_decyzji_trwa_oba_przyciski_sa_zablokowane_a_po_odpowiedzi_widac_wpis"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''setWysylam(true);
+    setBladDecyzji(null);'''
+zamien = 'setWysylam(true);'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_kolejna_proba_zapisu_decyzji_od_razu_gasi_komunikat_o_poprzednim_odrzuceniu"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'uzasadnienie: uzasadnienie.trim() || null'
+zamien = 'uzasadnienie: uzasadnienie || null'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zapis_decyzji_wysyla_do_kokpitu_post_z_json_bez_spacji_na_brzegach_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'uzasadnienie: uzasadnienie.trim() || null'
+zamien = 'uzasadnienie: uzasadnienie.trim()'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zapis_decyzji_wysyla_do_kokpitu_post_z_json_bez_spacji_na_brzegach_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'method: "POST",'
+zamien = 'method: "PUT",'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zapis_decyzji_wysyla_do_kokpitu_post_z_json_bez_spacji_na_brzegach_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '"Content-Type": "application/json"'
+zamien = '"Content-Type": "text/plain"'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zapis_decyzji_wysyla_do_kokpitu_post_z_json_bez_spacji_na_brzegach_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'body: JSON.stringify(tresc),'
+zamien = 'body: JSON.stringify({ decyzja: tresc.decyzja }),'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zapis_decyzji_wysyla_do_kokpitu_post_z_json_bez_spacji_na_brzegach_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'setBladDecyzji(powod);'
+zamien = 'setBladDecyzji(powod + "!");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'await r.json().catch(() => null);'
+zamien = 'await r.json();'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_udana_odpowiedz_na_decyzje_z_nieczytelnym_cialem_nie_jest_bledem_i_odswieza_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''      await pobierz();
+      if (!zywy.current) return;
+      odswiez();'''
+zamien = '''      if (!zywy.current) return;
+      odswiez();'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_po_zapisie_decyzji_ekran_pobiera_dowody_od_nowa_a_widok_runu_pobiera_run_ponownie"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''      await pobierz();
+      if (!zywy.current) return;
+      odswiez();'''
+zamien = '''      await pobierz();
+      if (!zywy.current) return;
+      void odswiez;'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_po_zapisie_decyzji_ekran_pobiera_dowody_od_nowa_a_widok_runu_pobiera_run_ponownie"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''      await pobierz();
+      if (!zywy.current) return;
+      odswiez();'''
+zamien = '''      await pobierz();
+      odswiez();'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_odmontowany_w_trakcie_zapisu_decyzji_nie_odswieza_runu_po_spoznionej_odpowiedzi"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'zywy.current = false;'
+zamien = 'zywy.current = true;'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_odmontowany_w_trakcie_zapisu_decyzji_nie_odswieza_runu_po_spoznionej_odpowiedzi"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'if (zywy.current) setBladDecyzji(KOMUNIKAT_SIEC_DOWODOW);'
+zamien = 'if (zywy.current) setBladDecyzji(KOMUNIKAT_ODCZYT_DOWODOW);'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_utrata_polaczenia_przy_zapisie_decyzji_pokazuje_komunikat_i_odblokowuje_przyciski"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'if (zywy.current) setWysylam(false);'
+zamien = 'void 0;'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_utrata_polaczenia_przy_zapisie_decyzji_pokazuje_komunikat_i_odblokowuje_przyciski"
+
+
+# --- web/src/OdbiorDowody.tsx: stany ekranu (wczytywanie, blad odczytu, ponowienie) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'Wczytuję dowody odbioru…</p>'
+zamien = 'Wczytuję…</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dopoki_serwer_nie_odpowiedzial_ekran_dowodow_pokazuje_wczytywanie_a_nie_puste_sekcje"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'if (ladowanie && dowody === null) return'
+zamien = 'if (dowody === null) return'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p role="alert" data-testid="dowody-blad"'
+zamien = '<p data-testid="dowody-blad"'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'data-testid="dowody-blad" style={{ color: KOLOR_CZERWONY }}'
+zamien = 'data-testid="dowody-blad" style={{ color: KOLOR_SZARY }}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''setLadowanie(true);
+            void pobierz();
+          }}'''
+zamien = '''void pobierz();
+          }}'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''setLadowanie(true);
+            void pobierz();
+          }}'''
+zamien = '''setLadowanie(true);
+          }}'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
+
+
+# --- web/src/OdbiorDowody.tsx: przycisk Przyjmij (blokada) i przyciski decyzji ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const przyjmijZablokowane = wysylam || (braki.length > 0 && uzasadnienie.trim() === "");'
+zamien = 'const przyjmijZablokowane = (braki.length > 0 && uzasadnienie.trim() === "");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_gdy_zapis_decyzji_trwa_oba_przyciski_sa_zablokowane_a_po_odpowiedzi_widac_wpis"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const przyjmijZablokowane = wysylam || (braki.length > 0 && uzasadnienie.trim() === "");'
+zamien = 'const przyjmijZablokowane = wysylam || (uzasadnienie.trim() === "");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_bez_brakow_mozna_przyjac_bez_uzasadnienia_a_audyt_ma_brak_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const przyjmijZablokowane = wysylam || (braki.length > 0 && uzasadnienie.trim() === "");'
+zamien = 'const przyjmijZablokowane = wysylam || (braki.length >= 0 && uzasadnienie.trim() === "");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_bez_brakow_mozna_przyjac_bez_uzasadnienia_a_audyt_ma_brak_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const przyjmijZablokowane = wysylam || (braki.length > 0 && uzasadnienie.trim() === "");'
+zamien = 'const przyjmijZablokowane = wysylam || (braki.length > 0 && uzasadnienie === "");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_przyjmij_przy_czerwonym_wierszu_jest_nieaktywne_dopoki_nie_ma_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'const przyjmijZablokowane = wysylam || (braki.length > 0 && uzasadnienie.trim() === "");'
+zamien = 'const przyjmijZablokowane = wysylam || (braki.length > 0 || uzasadnienie.trim() === "");'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_bez_brakow_mozna_przyjac_bez_uzasadnienia_a_audyt_ma_brak_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'onChange={(e) => setUzasadnienie(e.target.value)}'
+zamien = 'onChange={() => setUzasadnienie("")}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_przyjmij_przy_czerwonym_wierszu_jest_nieaktywne_dopoki_nie_ma_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'aria-label="Uzasadnienie" value='
+zamien = 'aria-label="Powód" value='
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_przyjmij_przy_czerwonym_wierszu_jest_nieaktywne_dopoki_nie_ma_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<button onClick={() => void zdecyduj("accept")}'
+zamien = '<button onClick={() => void zdecyduj("send_back")}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_przyjecie_z_uzasadnieniem_zapisuje_w_audycie_osobe_czas_i_tresc_i_pokazuje_wpis"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<button onClick={() => void zdecyduj("send_back")} disabled={wysylam}>'
+zamien = '<button onClick={() => void zdecyduj("accept")} disabled={wysylam}>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odeslanie_do_poprawy_nie_wymaga_uzasadnienia_i_zapisuje_decyzje_send_back"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<button onClick={() => void zdecyduj("send_back")} disabled={wysylam}>'
+zamien = '<button onClick={() => void zdecyduj("send_back")}>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_gdy_zapis_decyzji_trwa_oba_przyciski_sa_zablokowane_a_po_odpowiedzi_widac_wpis"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''            Przyjmij
+'''
+zamien = '''            Zatwierdź
+'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_przyjmij_przy_czerwonym_wierszu_jest_nieaktywne_dopoki_nie_ma_uzasadnienia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''            Odeślij do poprawy
+'''
+zamien = '''            Odeślij
+'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odeslanie_do_poprawy_nie_wymaga_uzasadnienia_i_zapisuje_decyzje_send_back"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'role="alert" data-testid="dowody-decyzja-blad"'
+zamien = 'data-testid="dowody-decyzja-blad"'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'data-testid="dowody-decyzja-blad" style={{ color: KOLOR_CZERWONY }}'
+zamien = 'data-testid="dowody-decyzja-blad" style={{ color: KOLOR_SZARY }}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_odrzucenie_decyzji_bez_czytelnego_detail_pokazuje_kod_http_na_czerwono"
+
+
+# --- web/src/OdbiorDowody.tsx: sekcje Twierdzenia, Dowody, Braki ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'dowody.twierdzenia.length === 0 ?'
+zamien = 'dowody.twierdzenia.length !== 0 ?'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>brak twierdzeń</p>'
+zamien = '<p>brak</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{t.step_id}: {t.artefakt}'
+zamien = '{t.step_id} {t.artefakt}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'dowody.dowody.length === 0 ?'
+zamien = 'dowody.dowody.length !== 0 ?'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>brak dowodów</p>'
+zamien = '<p>brak</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{d.capability} · kod wyjścia: '
+zamien = '{d.capability} kod wyjścia: '
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{d.exit_code === null ? "brak" : d.exit_code}'
+zamien = '{!d.exit_code ? "brak" : d.exit_code}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{d.exit_code === null ? "brak" : d.exit_code}'
+zamien = '{d.exit_code === null ? "-" : d.exit_code}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '· {d.plik} ·{" "}'
+zamien = '· {d.plik}{" "}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'style={d.source === "agent" ? { color: KOLOR_SZARY } : undefined}'
+zamien = 'style={d.source === "agent" ? { color: KOLOR_SZARY } : { color: KOLOR_SZARY }}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'style={d.source === "agent" ? { color: KOLOR_SZARY } : undefined}'
+zamien = 'style={undefined}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'style={d.source === "agent" ? { color: KOLOR_SZARY } : undefined}'
+zamien = 'style={d.source === "engine" ? { color: KOLOR_SZARY } : undefined}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<i>{d.source === "agent" ? "deklaracja agenta" : "dowód silnika"}</i>'
+zamien = '<i>{d.source === "engine" ? "deklaracja agenta" : "dowód silnika"}</i>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<i>{d.source === "agent" ? "deklaracja agenta" : "dowód silnika"}</i>'
+zamien = '<i>{d.source === "agent" ? "dowód silnika" : "deklaracja agenta"}</i>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'dowody.werdykty.length > 0 &&'
+zamien = 'dowody.werdykty.length >= 0 &&'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{w.step_id}: werdykt {w.verdict}'
+zamien = '{w.step_id}: {w.verdict}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'w.zaliczony ? "zaliczony" : "niezaliczony"'
+zamien = 'w.zaliczony ? "niezaliczony" : "zaliczony"'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'dowody.pomiary.length > 0 &&'
+zamien = 'dowody.pomiary.length >= 0 &&'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{p.step_id}: koszt {napisKosztu(p.cost_usd)}'
+zamien = '{p.step_id} koszt {napisKosztu(p.cost_usd)}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_dowodow_pokazuje_dokladna_tresc_twierdzen_dowodow_werdyktow_i_pomiarow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'braki.length === 0 ? ('
+zamien = 'braki.length !== 0 ? ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_bez_brakow_pokazuje_brak_brakow_i_nie_ma_czerwonych_wierszy"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>brak braków</p>'
+zamien = '<p>brak</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'data-testid="brak" role="alert" style={{ color: KOLOR_CZERWONY }}'
+zamien = 'data-testid="brak" style={{ color: KOLOR_CZERWONY }}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_z_pominieta_bramka_i_werdyktem_fail_pokazuje_czerwone_wiersze_z_pelnym_powodem"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'data-testid="brak" role="alert" style={{ color: KOLOR_CZERWONY }}'
+zamien = 'data-testid="brak" role="alert" style={{ color: KOLOR_SZARY }}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_z_pominieta_bramka_i_werdyktem_fail_pokazuje_czerwone_wiersze_z_pelnym_powodem"
+
+
+# --- web/src/OdbiorDowody.tsx: sekcja Ryzyko (null, pusta lista, lista - osobno dla kotwic i mutantow) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>kotwice: brak danych</p>'
+zamien = '<p>kotwice: brak</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'ryzyka.kotwice.length === 0 ? ('
+zamien = 'ryzyka.kotwice.length !== 0 ? ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>kotwice: brak</p>'
+zamien = '<p>kotwice: pusto</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>kotwice:</p>'
+zamien = '<p>kotwice</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<li key={`${k}:${i}`}>{k}</li>'
+zamien = '<li key={`${k}:${i}`}>{i}</li>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>mutanty: brak danych</p>'
+zamien = '<p>mutanty: brak</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'ryzyka.mutanty.length === 0 ? ('
+zamien = 'ryzyka.mutanty.length !== 0 ? ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>mutanty: brak</p>'
+zamien = '<p>mutanty: pusto</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p>mutanty:</p>'
+zamien = '<p>mutanty</p>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<li key={`${m}:${i}`}>{m}</li>'
+zamien = '<li key={`${m}:${i}`}>{i}</li>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ryzyko_odroznia_brak_danych_od_pustej_listy_i_od_listy_osobno_dla_kotwic_i_mutantow"
+
+
+# --- web/src/OdbiorDowody.tsx: wpis decyzji ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+zamien = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? ""} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_o_nieznanej_wartosci_pokazuje_ja_doslownie"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+zamien = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+zamien = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email} ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+zamien = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? ""}`}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+zamien = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, powód: ${decyzja.uzasadnienie ?? "brak"}`}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{`Decyzja: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+zamien = '{`Wynik: ${OPIS_DECYZJI[decyzja.decyzja] ?? decyzja.decyzja} — ${decyzja.email}, ${czasDecyzji(decyzja.at)}, uzasadnienie: ${decyzja.uzasadnienie ?? "brak"}`}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = 'data-testid="dowody-decyzja">'
+zamien = 'data-testid="dowody-decyzja-x">'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_wpis_decyzji_pokazuje_osobe_czas_i_uzasadnienie_a_brak_uzasadnienia_jako_brak"
+
+
+# --- web/src/WidokRunu.tsx: wstawka ekranu dowodow pod sekcja odbioru ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '{status === "to_accept" && runId ? ('
+zamien = '{status !== "to_accept" && runId ? ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_do_odbioru_ma_cztery_sekcje_dowodow_kazda_z_naglowkiem_trzeciego_poziomu"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '{status === "to_accept" && runId ? ('
+zamien = '{status !== "failed" && runId ? ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_run_w_trakcie_nie_pokazuje_ekranu_dowodow_odbioru"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = 'odswiez={odswiezRun}'
+zamien = 'odswiez={() => void odswiezRun}'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_po_zapisie_decyzji_ekran_pobiera_dowody_od_nowa_a_widok_runu_pobiera_run_ponownie"
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = '''  const odswiezRun = () => {
+    void dociagnijRef.current?.();
+  };'''
+zamien = '''  const odswiezRun = () => {
+    void 0;
+  };'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_po_zapisie_decyzji_ekran_pobiera_dowody_od_nowa_a_widok_runu_pobiera_run_ponownie"
+
+
+# --- Mutanty rownowazne (zadne wejscie nie odroznia wersji) ---
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''    setBladOdczytu(null);
+    try {
+      const r = await fetchZSesja(`${adres}/dowody`);'''
+zamien = '''    try {
+      const r = await fetchZSesja(`${adres}/dowody`);'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_udany_kolejny_odczyt_dowodow_gasi_blad_ponownego_odczytu"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{bladOdczytu !== null && ('
+zamien = '{false && ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_nieudany_ponowny_odczyt_dowodow_po_decyzji_pokazuje_blad_nad_dotychczasowa_trescia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{bladOdczytu !== null && ('
+zamien = '{true && ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_nieudany_ponowny_odczyt_dowodow_po_decyzji_pokazuje_blad_nad_dotychczasowa_trescia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '{bladOdczytu !== null && ('
+zamien = '{bladOdczytu === null && ('
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_nieudany_ponowny_odczyt_dowodow_po_decyzji_pokazuje_blad_nad_dotychczasowa_trescia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p role="alert" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_CZERWONY }}>'
+zamien = '<p role="status" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_CZERWONY }}>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_nieudany_ponowny_odczyt_dowodow_po_decyzji_pokazuje_blad_nad_dotychczasowa_trescia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p role="alert" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_CZERWONY }}>'
+zamien = '<p role="alert" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_SZARY }}>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_nieudany_ponowny_odczyt_dowodow_po_decyzji_pokazuje_blad_nad_dotychczasowa_trescia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '<p role="alert" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_CZERWONY }}>'
+zamien = '<p role="alert" data-testid="blad-odczytu-dowodow-x" style={{ color: KOLOR_CZERWONY }}>'
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_utrata_sieci_przy_ponownym_odczycie_dowodow_pokazuje_komunikat_o_braku_polaczenia_nad_trescia"
+
+[[mutant]]
+plik = "web/src/OdbiorDowody.tsx"
+szukaj = '''        <p role="alert" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_CZERWONY }}>
+          {bladOdczytu}
+        </p>'''
+zamien = '''        <p role="alert" data-testid="blad-odczytu-dowodow" style={{ color: KOLOR_CZERWONY }}>
+          {KOMUNIKAT_ODCZYT_DOWODOW}
+        </p>'''
+test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_nieudany_ponowny_odczyt_dowodow_po_decyzji_pokazuje_blad_nad_dotychczasowa_trescia"
+
+[[mutant]]
+plik = "src/cockpit/services/odbior_dowody.py"
+szukaj = "    return sorted(ostatnie.values(), key=lambda ev: ev.seq)"
+zamien = "    return list(ostatnie.values())"
+test = "tests/test_odbior_dowody.py::test_krok_powtorzony_i_przeplatany_innym_ma_pozycje_wedlug_ostatniego_zdarzenia"
+
+[[mutant]]
+plik = "src/cockpit/services/odbior_dowody.py"
+szukaj = 'for ev in zdarzenia if ev.kind == "step_finished"'
+zamien = "for ev in zdarzenia"
+test = "tests/test_odbior_dowody.py::test_artefakty_nieudanego_kroku_nie_sa_twierdzeniami"
+
+[[rownowazny]]
+plik = "web/src/OdbiorDowody.tsx"
+linia_tekst = '      if (!zywy.current) return;'
+uzasadnienie = "Strazniki zywy.current w pobierz i w gałęziach bledu zdecyduj (po fetch, po detailLubKod, w catch i finally) chronia wylacznie wywolania setState, a setState na odmontowanym komponencie React 18 ignoruje bez skutku; strazniki po fetch i po r.json() w zdecyduj sa nawzajem zbedne dla wejsc, ktore test potrafi wywolac (odmontowanie w trakcie zadania POST zatrzymuje pierwszy z nich). Jedyny straznik z widocznym skutkiem (przed odswiez) ma wiersz [[mutant]] i test odmontowania."
+
+[[rownowazny]]
+plik = "web/src/OdbiorDowody.tsx"
+linia_tekst = '    setLadowanie(true);'
+uzasadnienie = "Wywolanie w efekcie przy montowaniu: stan poczatkowy ladowanie to true, a efekt uruchamia sie ponownie tylko przy zmianie adresu, czyli runId; komponent ma key=runId, wiec zmiana runId tworzy nowa instancje ze stanem poczatkowym. Wersja bez wywolania nie jest odroznialna. Wywolanie w przycisku ponowienia ma osobny wiersz [[mutant]]."
+
+[[rownowazny]]
+plik = "web/src/OdbiorDowody.tsx"
+linia_tekst = '  if (ladowanie && dowody === null) return <p data-testid="dowody-ladowanie">Wczytuję dowody odbioru…</p>;'
+uzasadnienie = "Czlon `&& dowody === null`: ladowanie jest true tylko przy dowody === null (stan poczatkowy i ponowienie po bledzie); dowody sa ustawiane dopiero po zakonczeniu pobrania, ktore zeruje ladowanie, wiec zadne wejscie nie daje ladowanie=true z dowody!==null. Sam czlon `ladowanie` ma wiersz [[mutant]]."
+
+[[rownowazny]]
+plik = "web/src/OdbiorDowody.tsx"
+linia_tekst = '  return detail ?? `błąd ${r.status}`;'
+uzasadnienie = "Zamiana ?? na || : detail jest albo null, albo niepustym napisem (pusty napis i nie-napis daja null w wyrazeniu wyzej), wiec obie formy wybieraja ten sam skladnik dla kazdego wejscia."
+
+[[rownowazny]]
+plik = "web/src/OdbiorDowody.tsx"
+linia_tekst = '    zywy.current = true;'
+uzasadnienie = "Przypisanie w efekcie: useRef(true) daje ten sam stan poczatkowy, a jedyny przypadek, w ktorym przypisanie ma skutek (cleanup, po nim ponowny efekt), zachodzi tylko w StrictMode dewelopera; wersja produkcyjna (static, testowana w e2e) montuje efekt raz."
+
+[[rownowazny]]
+plik = "web/src/WidokRunu.tsx"
+linia_tekst = '        <OdbiorDowody key={`dowody-${runId}`} runId={runId} odswiez={odswiezRun} />'
+uzasadnienie = "Usuniecie key: zmiana runId ustawia w efekcie WidokRunu status=null, co odmontowuje OdbiorDowody (warunek status === to_accept), a nastepny to_accept montuje swieza instancje. Stan komponentu nie przezywa zmiany runId, wiec key nie zmienia zadnego stanu koncowego. Usuniecie `&& runId` z warunku nie kompiluje sie (runId: string | null przekazane jako string, TS2322)."
+
+
+# --- runda 3: linie kodu 3 w app.py i schematy.py bez wiersza (deklaracje typow, parametry tras) ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''_ListaKotwic = Annotated[
+    list['''
+zamien = '''_ListaKotwic = Annotated[
+    set['''
+test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''_ListaArtefaktow = Annotated[
+    list['''
+zamien = '''_ListaArtefaktow = Annotated[
+    set['''
+test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'class DowodIn(BaseModel):'
+zamien = 'class DowodIn(BaseModel, extra="ignore"):'
+test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    s: AsyncSession = Depends(get_session),
+) -> DowodyRunu:'''
+zamien = '''    s: AsyncSession = Depends(kontekst_sesji),
+) -> DowodyRunu:'''
+test = "tests/test_odbior_dowody.py::test_run_bez_zdarzen_i_pomiarow_zwraca_wszystkie_klucze_z_pustymi_wartosciami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''async def decyzja_odbioru(
+    run_id: str,'''
+zamien = '''async def decyzja_odbioru(
+    run_id: int,'''
+test = "tests/test_odbior_dowody.py::test_czlonek_zespolu_podejmuje_decyzje_odbioru_pod_swoim_adresem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    s: AsyncSession = Depends(get_session),
+) -> DecyzjaOdbioru:'''
+zamien = '''    s: AsyncSession = Depends(kontekst_sesji),
+) -> DecyzjaOdbioru:'''
+test = "tests/test_odbior_dowody.py::test_czlonek_zespolu_podejmuje_decyzje_odbioru_pod_swoim_adresem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'DecyzjaOdbioru(**odbior_dowody.decyzja_z_zdarzenia(zapisane))'
+zamien = 'DecyzjaOdbioru(**{**odbior_dowody.decyzja_z_zdarzenia(zapisane), "email": ""})'
+test = "tests/test_odbior_dowody.py::test_przyjecie_z_brakami_i_uzasadnieniem_zapisuje_w_audycie_osobe_czas_i_tresc"
+
+[[rownowazny]]
+plik = "src/cockpit/api/app.py"
+linia_tekst = ') -> DowodyRunu:'
+uzasadnienie = "Adnotacja zwracanego typu trasy z jawnym `response_model=DowodyRunu` w dekoratorze: FastAPI bierze model odpowiedzi z dekoratora i ignoruje adnotacje, wiec zadne wejscie HTTP nie odroznia wersji z inna adnotacja (wplywa tylko na kontrole typow). Model odpowiedzi trasy chroni wiersz mutanta `response_model=None`/`DecyzjaOdbioru` w tej tabeli."
+
+[[rownowazny]]
+plik = "src/cockpit/api/app.py"
+linia_tekst = ') -> DecyzjaOdbioru:'
+uzasadnienie = "Adnotacja zwracanego typu trasy z jawnym `response_model=DecyzjaOdbioru` w dekoratorze: FastAPI bierze model odpowiedzi z dekoratora i ignoruje adnotacje, wiec zadne wejscie HTTP nie odroznia wersji z inna adnotacja (wplywa tylko na kontrole typow). Model odpowiedzi trasy chroni wiersz mutanta `response_model=DowodyRunu` w tej tabeli."
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class BrakOdbioru(BaseModel):
+    rodzaj: Literal["pominieta_bramka", "niesprawdzony", "werdykt_fail", "brak_dowodu", "niezmierzone"]'''
+zamien = '''class BrakOdbioru(BaseModel):
+    rodzaj: str'''
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class RyzykaRunu(BaseModel):
+    kotwice: list[str] | None'''
+zamien = '''class RyzykaRunu(BaseModel):
+    kotwice: str | None'''
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class DecyzjaOdbioruIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")'''
+zamien = '''class DecyzjaOdbioruIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")'''
+test = "tests/test_odbior_dowody.py::test_cialo_decyzji_z_nieznanym_polem_albo_zla_decyzja_jest_odrzucone_bez_zapisu"

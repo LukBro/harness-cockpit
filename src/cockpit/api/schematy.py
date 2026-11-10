@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from cockpit.db.models import RunnerKind, RunStatus
 
@@ -226,3 +226,69 @@ def odpowiedzi_bledow(*kody: int) -> dict[int | str, dict[str, Any]]:
     if nieznane:
         raise ValueError(f"kod bez opisu błędu: {nieznane}")
     return {k: {"model": Blad, "description": _OPISY_BLEDOW[k]} for k in wszystkie}
+
+
+LIMIT_UZASADNIENIA = 2000   # znaki uzasadnienia decyzji odbioru
+
+
+class TwierdzenieRunu(BaseModel):
+    step_id: str
+    artefakt: str
+
+
+class DowodKroku(BaseModel):
+    step_id: str
+    capability: str
+    source: Literal["engine", "agent"]
+    exit_code: int | None       # brak kodu (limit czasu) to null, nigdy 0
+    sha256: str
+    plik: str
+
+
+class WerdyktKroku(BaseModel):
+    step_id: str
+    verdict: str
+    zaliczony: bool            # koncowe zdarzenie kroku to step_finished
+
+
+class BrakOdbioru(BaseModel):
+    rodzaj: Literal["pominieta_bramka", "niesprawdzony", "werdykt_fail", "brak_dowodu", "niezmierzone"]
+    step_id: str | None
+    powod: str
+
+
+class RyzykaRunu(BaseModel):
+    kotwice: list[str] | None   # null = brak danych, [] = brak kotwic
+    mutanty: list[str] | None   # zawsze null do czasu HAR-168
+
+
+class PomiarKrokuOdbioru(BaseModel):
+    step_id: str
+    cost_usd: float | None      # null = niezmierzone, nigdy 0
+    tokens_in: int | None       # brak pomiaru to null, nigdy 0
+    tokens_out: int | None
+
+
+class DecyzjaOdbioru(BaseModel):
+    decyzja: Literal["accept", "send_back"]
+    user_id: str
+    email: str
+    uzasadnienie: str | None
+    at: datetime
+
+
+class DowodyRunu(BaseModel):
+    run_id: str
+    twierdzenia: list[TwierdzenieRunu]
+    dowody: list[DowodKroku]
+    werdykty: list[WerdyktKroku]
+    braki: list[BrakOdbioru]
+    ryzyka: RyzykaRunu
+    pomiary: list[PomiarKrokuOdbioru]
+    decyzja: DecyzjaOdbioru | None
+
+
+class DecyzjaOdbioruIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decyzja: Literal["accept", "send_back"]
+    uzasadnienie: str | None = Field(default=None, max_length=LIMIT_UZASADNIENIA)

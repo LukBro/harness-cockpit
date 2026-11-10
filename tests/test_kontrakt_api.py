@@ -171,6 +171,7 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/runners"), ("GET", "/api/katalog"), ("POST", "/api/katalog/odswiez"),
         ("GET", "/api/projects"), ("POST", "/api/projects"),
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
+        ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
     })
     assert znane <= set(TRASY), f"brakuje tras: {sorted(znane - set(TRASY))}"
 
@@ -227,6 +228,8 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("GET", "/api/runs/{run_id}/diff"): ("DiffRunu", False),
         ("POST", "/api/runs/{run_id}/integrate"): ("Zintegrowano", False),
         ("POST", "/api/runs/{run_id}/commit"): ("Zacommitowano", False),
+        ("GET", "/api/runs/{run_id}/dowody"): ("DowodyRunu", False),
+        ("POST", "/api/runs/{run_id}/decyzja-odbioru"): ("DecyzjaOdbioru", False),
         ("GET", "/api/pliki"): ("PlikOdczytany", False),
         ("GET", "/api/pliki/lista"): ("ListaPlikow", False),
         ("PUT", "/api/pliki"): ("PlikZapisany", False),
@@ -301,6 +304,8 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
     (("POST", "/api/runs/{run_id}/integrate"), {"401", "403", "404", "409", "422", "500"}),
     (("POST", "/api/runs/{run_id}/commit"), {"401", "403", "404", "409", "422", "500"}),
+    (("GET", "/api/runs/{run_id}/dowody"), {"401", "404", "422", "500"}),
+    (("POST", "/api/runs/{run_id}/decyzja-odbioru"), {"401", "403", "404", "409", "422", "500"}),
     (("POST", "/api/events"), {"401", "404", "422", "500"}),
     (("POST", "/api/runners/odpowiedzi"), {"401", "404", "422"}),
     (("POST", "/api/konto/logowanie"), {"401", "422", "429", "500"}),
@@ -390,6 +395,20 @@ POLA_MODELI = {
     "KatalogOdswiezony": {"odswiezono_at": {S, N}, "definicje": {"array"}, "pominiete": {INT}},
     "TokenCsrf": {"csrf": {S}},
     "Profil": {"email": {S}, "zespol": {S}, "rola": {S}, "csrf": {S}},
+    # HAR-170: ekran dowodow odbioru; brak danych to null, nigdy zero ani pusty napis
+    "TwierdzenieRunu": {"step_id": {S}, "artefakt": {S}},
+    "DowodKroku": {"step_id": {S}, "capability": {S}, "source": {S}, "exit_code": {INT, N},
+                   "sha256": {S}, "plik": {S}},
+    "WerdyktKroku": {"step_id": {S}, "verdict": {S}, "zaliczony": {B}},
+    "BrakOdbioru": {"rodzaj": {S}, "step_id": {S, N}, "powod": {S}},
+    "RyzykaRunu": {"kotwice": {"array", N}, "mutanty": {"array", N}},
+    "PomiarKrokuOdbioru": {"step_id": {S}, "cost_usd": {"number", N}, "tokens_in": {INT, N},
+                           "tokens_out": {INT, N}},
+    "DecyzjaOdbioru": {"decyzja": {S}, "user_id": {S}, "email": {S}, "uzasadnienie": {S, N},
+                       "at": {S}},
+    "DowodyRunu": {"run_id": {S}, "twierdzenia": {"array"}, "dowody": {"array"},
+                   "werdykty": {"array"}, "braki": {"array"}, "ryzyka": {"object"},
+                   "pomiary": {"array"}, "decyzja": {"object", N}},
 }
 
 
@@ -420,11 +439,69 @@ def test_rodzaj_runnera_w_schemacie_to_zamknieta_lista_rodzajow(schemat):
     ("RunnerZespolu", "backends", "BackendRunnera"),
     ("Katalog", "definicje", "DefinicjaKatalogu"),
     ("KatalogOdswiezony", "definicje", "DefinicjaKatalogu"),
+    ("DowodyRunu", "twierdzenia", "TwierdzenieRunu"),
+    ("DowodyRunu", "dowody", "DowodKroku"),
+    ("DowodyRunu", "werdykty", "WerdyktKroku"),
+    ("DowodyRunu", "braki", "BrakOdbioru"),
+    ("DowodyRunu", "pomiary", "PomiarKrokuOdbioru"),
 ])
 def test_pole_listowe_modelu_wskazuje_model_elementu(schemat, model, pole, element):
     wlasciwosc = schemat["components"]["schemas"][model]["properties"][pole]
     assert wlasciwosc["type"] == "array"
     assert _nazwa_ref(wlasciwosc["items"]) == element
+
+
+@pytest.mark.parametrize(("model", "pole", "wartosci"), [
+    ("DowodKroku", "source", {"engine", "agent"}),
+    ("BrakOdbioru", "rodzaj",
+     {"pominieta_bramka", "niesprawdzony", "werdykt_fail", "brak_dowodu", "niezmierzone"}),
+    ("DecyzjaOdbioru", "decyzja", {"accept", "send_back"}),
+    ("DecyzjaOdbioruIn", "decyzja", {"accept", "send_back"}),
+    ("DowodIn", "source", {"engine", "agent"}),
+])
+def test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci(schemat, model, pole, wartosci):
+    wlasciwosc = schemat["components"]["schemas"][model]["properties"][pole]
+    assert set(_rozwin(schemat, wlasciwosc)["enum"]) == wartosci
+
+
+def test_cialo_decyzji_odbioru_wymaga_tylko_decyzji_zabrania_obcych_pol_i_ogranicza_uzasadnienie(schemat):
+    wejscie = schemat["components"]["schemas"]["DecyzjaOdbioruIn"]
+    assert set(wejscie["properties"]) == {"decyzja", "uzasadnienie"}
+    assert set(wejscie["required"]) == {"decyzja"}
+    assert wejscie["additionalProperties"] is False
+    uzasadnienie = wejscie["properties"]["uzasadnienie"]
+    assert {w.get("maxLength") for w in uzasadnienie["anyOf"]} == {2000, None}
+    assert _typy(schemat, uzasadnienie) == {S, N}
+
+
+def test_dowod_na_wejsciu_runnera_ma_zamkniety_ksztalt_siedmiu_wymaganych_pol(schemat):
+    dowod = schemat["components"]["schemas"]["DowodIn"]
+    oczekiwane = {"capability", "exit_code", "sha256", "started_at", "finished_at", "source", "plik"}
+    assert set(dowod["properties"]) == oczekiwane
+    assert set(dowod["required"]) == oczekiwane
+    assert dowod["additionalProperties"] is False
+    assert _typy(schemat, dowod["properties"]["exit_code"]) == {INT, N}
+    assert dowod["properties"]["sha256"]["pattern"] == "^[0-9a-f]{64}$"
+    graniczne = {pole: (dowod["properties"][pole]["minLength"], dowod["properties"][pole]["maxLength"])
+                 for pole in ("capability", "started_at", "finished_at", "plik")}
+    assert graniczne == {"capability": (1, 200), "started_at": (1, 64), "finished_at": (1, 64),
+                         "plik": (1, 255)}
+
+
+def test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami(schemat):
+    zdarzenie = schemat["components"]["schemas"]["EventIn"]
+    for pole in ("dowod", "verdict", "kotwice", "artefakty"):
+        assert pole in zdarzenie["properties"], pole
+        assert pole not in zdarzenie.get("required", []), pole
+    assert _typy(schemat, zdarzenie["properties"]["dowod"]) == {"object", N}
+    wersja_napisu = next(w for w in zdarzenie["properties"]["verdict"]["anyOf"] if w.get("type") == S)
+    assert (wersja_napisu["minLength"], wersja_napisu["maxLength"]) == (1, 200)
+    kotwice = next(w for w in zdarzenie["properties"]["kotwice"]["anyOf"] if w.get("type") == "array")
+    assert (kotwice["maxItems"], kotwice["items"]["minLength"], kotwice["items"]["maxLength"]) == (
+        1000, 1, 1000)
+    artefakty = next(w for w in zdarzenie["properties"]["artefakty"]["anyOf"] if w.get("type") == "array")
+    assert (artefakty["maxItems"], artefakty["items"]["minLength"], artefakty["items"]["maxLength"]) == (
+        100, 1, 255)
 
 
 def test_stos_projektu_w_schemacie_to_lista_napisow(schemat):

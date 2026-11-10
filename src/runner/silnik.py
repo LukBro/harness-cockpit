@@ -274,6 +274,14 @@ async def _krok(
         prompt=prompt, **dodatkowe)
 
 
+def _artefakty_kroku(p: Przygotowany, id_kroku: str) -> list[str]:
+    """Artefakty (`produces`) kroku: z opisu kroku systemowego albo ze skilla (HAR-170)."""
+    krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
+    if krok.skill is None:
+        return list(opis_kroku(krok).produces)
+    return list(p.rejestr.skille[krok.skill].produces)
+
+
 def _produkuje_notatke(p: Przygotowany, id_kroku: str) -> bool:
     """Czy skill kroku produkuje `notatka-zmiany.md` (krok systemowy nie ma skilla)."""
     krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
@@ -436,6 +444,9 @@ async def _wykonaj_plan(
                         dodatkowe["dowod"] = dict(wynik.dowod)
                     if wynik.werdykt is not None:
                         dodatkowe["verdict"] = wynik.werdykt
+                    artefakty = _artefakty_kroku(p, id_kroku)
+                    if udany and artefakty:
+                        dodatkowe["artefakty"] = artefakty
                 czas_ms = int((time.monotonic() - start) * 1000)
                 stany[id_kroku] = StanKroku.ZAKONCZONY if udany else StanKroku.NIEUDANY
                 ostatni = id_kroku

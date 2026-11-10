@@ -3,6 +3,7 @@ import { fetchZSesja } from "./Konto";
 import type { DecyzjaIn, DecyzjaPrzyjeta, KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
 import type { PokrycieRunu } from "./api";
 import { Odbior } from "./Odbior";
+import { OdbiorDowody } from "./OdbiorDowody";
 
 // "nieznany": brak odpowiedzi albo blad pobrania. Nie blokujemy akcji, bo backend i tak broni sie 409.
 export type StanRunnera = "nieznany" | "online" | "offline";
@@ -273,6 +274,9 @@ export function WidokRunu({
     }
   }
 
+  const odswiezRun = () => {
+    void dociagnijRef.current?.();
+  };
   const krokBramki = kroki.find((k) => k.status === "waiting")?.step_id;
 
   return (
@@ -345,6 +349,9 @@ export function WidokRunu({
       {runId && status === "to_accept" && (
         <Odbior key={runId} runId={runId} zdarzenia={zdarzenia} odswiez={() => void dociagnijRef.current?.()} />
       )}
+      {status === "to_accept" && runId ? (
+        <OdbiorDowody key={`dowody-${runId}`} runId={runId} odswiez={odswiezRun} />
+      ) : null}
       {runId && pokrycie !== null && (
         <div>
           {pokrycie.stan === "niesprawdzony" ? (
