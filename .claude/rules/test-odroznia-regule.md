@@ -314,3 +314,30 @@ backend-python -25, HAR-178 test-writer -25, HAR-228 test-writer -15). Za każdy
   nie trafia do tabeli — pytest kończy się błędem zbierania, a narzędzie zgłasza błąd, nie zabicie (HAR-174).
 
 Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
+
+## Regresja (retro M1.10)
+
+Źródło: HAR-170 (test-writer -25 w rundzie 1, potem cztery rundy), uwagi krytyka bez odjęcia w HAR-232 i HAR-233,
+wiersze dla listy kodu 3 dopisywane osobnym commitem po pierwszym commicie ticketu (HAR-179 `62894f3`, HAR-230
+`5699ba9`, HAR-234 `65d4126`), cudze tabele zepsute w HAR-179 i HAR-170. Nowe kształty:
+
+- **Kolejność i filtr rodzaju zbudowane w Pythonie** — sortowanie stanów po słowniku i filtr `kind == "step_finished"`
+  (HAR-170, `src/cockpit/services/odbior_dowody.py`) mają test, w którym tylko one decydują: dla sortowania wejście,
+  w którym kolejność wstawiania różni się od kolejności wyniku (powtórzony klucz przepleciony innym), dla filtra
+  zdarzenie odrzuconego rodzaju (`step_failed`) z tymi samymi danymi. Uogólnienie punktu M1.7 o `ORDER BY` na kod
+  poza zapytaniem.
+- **„Mutant tylko wyścigowo” to nie równoważność** — warunek liczący odpowiedzi (`odpowiedzi_get >= 2` → `>= 1`,
+  HAR-232) ma wiersz z testem, który wymusza kolejność zdarzeń, albo jest usunięty; uzasadnienie w nagłówku TOML
+  bez wskazania, że żadne wejście nie odróżnia wersji, nie zwalnia z wiersza.
+- **Każda gałąź `exit 1` w skrypcie CI** (HAR-233, krok poprzedniego zielonego wyniku: pięć gałęzi błędu) ma wiersz
+  ręcznego mutanta usuwający `exit 1` — komunikat `::error::` bez wyjścia z kodem 1 to zielony krok.
+- **Lista kodu 3 przed pierwszym commitem** — test-writer uruchamia `python tools/mutanty_reczne.py --pokrycie-kod3
+  <lista> tests/mutanty_reczne/<ticket>.toml` przed oddaniem pracy, nie po czerwonym kroku CI; trzy tickety M1.10
+  dopisywały te wiersze osobnym commitem.
+- **Cudze tabele przed PR** — `python tools/mutanty_reczne.py --sprawdz-wszystkie` po każdej zmianie kodu, nie tylko w
+  CI. Dwa nowe kształty: `szukaj` z treścią `web/openapi.json` przestaje być jednoznaczny po regeneracji kontraktu
+  (HAR-170 poprawiał HAR-159 #18, HAR-174 #143–144), a kod skopiowany do nowej funkcji podwaja krótkie `szukaj`
+  w tym samym pliku (HAR-179: HAR-172 #10, #82, HAR-89 #22 „występuje 3 razy”). Wiersz celuje w źródło
+  (`src/cockpit/api/schematy.py`), nie w plik generowany, gdy test oblewa także po mutacji źródła.
+
+Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
