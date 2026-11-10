@@ -123,3 +123,15 @@ decyzją — run zostawał `running` bez `step_failed` i `run_finished`; korekta
   nie wychodzi z funkcji, która obiecuje błąd dziedziny.
 
 Co sprawdzić w review: każdy z powyższych kształtów = **-25**.
+
+## Regresja (retro M1.10)
+
+Źródło: HAR-170 (backend-python -10 utrzymane): limity nowych pól `EventIn` (`verdict` ≤ 200, `artefakty` ≤ 100×255,
+`kotwice` ≤ 1000) nie są sprawdzane w runnerze przed wysłaniem, więc 4xx z kokpitu oznacza utracone zdarzenie kroku.
+To ten sam kształt co HAR-66 (M1.5, „Długość względem kolumny także od runnera”) — reguła istnieje i nadal jest łamana.
+
+- **Nowe pole w `EventIn` z limitem** dostaje w tym samym PR walidację po stronie runnera (przed buforem i wysłaniem)
+  oraz test, który wysyła wartość o jeden ponad limit i sprawdza, że runner zgłasza błąd dziedziny zamiast ponawiać.
+- Egzekucja twardsza niż tekst: test porównujący limity `EventIn` z walidacją runnera — ticket z retro M1.10.
+
+Co sprawdzić w review: nowe pole `EventIn` z limitem bez walidacji runnera = **-25**.
