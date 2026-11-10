@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import os
+import shlex
 import sys
 from asyncio.subprocess import PIPE
 from dataclasses import dataclass
@@ -31,7 +32,7 @@ from procesy import (
 )
 
 from cockpit.services.invariants import Rola, profil_roli
-from runner import straz_roli
+from runner import hooks, straz_roli
 from runner.agent import ProfilBackendu, SpecKroku, polecenie_agenta
 from runner.hooks import (
     ZMIENNA_PLIKU,
@@ -301,7 +302,6 @@ POZA_BIALA_LISTA = [
     "find . -delete",
     "git add .",
     "git branch x",
-    "git stash",
     "git fetch",
     "git",
     "lsof -i",
@@ -1670,3 +1670,1256 @@ def test_odmowa_z_komenda_albo_rola_niebedaca_napisem_jest_odrzucona_z_nazwa_pol
         do_wysylki(ev, RUN, KROK)
 
     assert wyjatek.value.pole == pole
+
+
+# --- HAR-219: awaria startu straży to odmowa (fail-closed) ----------------------------------
+
+POWOD_BLEDU_STARTU = "straż roli: błąd startu straży ({klasa})"
+KOMUNIKAT_AWARII = "straż roli: awaria straży (kod {kod})"
+
+
+def test_straz_bez_bledu_importu_ma_pusty_blad_startu():
+    assert straz_roli._BLAD_STARTU is None
+
+
+@pytest.mark.parametrize("blad", [ModuleNotFoundError("x"), ImportError("x"), RuntimeError("x")])
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+def test_blad_startu_strazy_daje_odmowe_z_nazwa_klasy_wyjatku_nawet_dla_dozwolonego_polecenia(
+    monkeypatch, capfd, worktree, rola, blad
+):
+    monkeypatch.setattr(straz_roli, "_BLAD_STARTU", blad)
+
+    powod = _powod_main(
+        monkeypatch, capfd, json.dumps(_bash("ls", cwd=worktree)),
+        ["--rola", rola.value, "--worktree", str(worktree)],
+    )
+
+    assert powod == POWOD_BLEDU_STARTU.format(klasa=type(blad).__name__)
+
+
+def test_blad_startu_strazy_nie_dopisuje_zdarzenia_odmowy_do_pliku_hookow(
+    monkeypatch, capfd, tmp_path, worktree
+):
+    plik = plik_hookow(tmp_path / "stan", RUN, KROK)
+    monkeypatch.setenv(ZMIENNA_PLIKU, str(plik))
+    monkeypatch.setattr(straz_roli, "_BLAD_STARTU", ModuleNotFoundError("x"))
+
+    _wywolaj_main(monkeypatch, capfd, json.dumps(_bash("ls", cwd=worktree)), "executor", worktree)
+
+    assert plik.read_bytes() == b""
+
+
+def test_blad_startu_strazy_to_json_deny_hooka_pretooluse_z_kodem_zero(
+    monkeypatch, capfd, worktree
+):
+    monkeypatch.setattr(straz_roli, "_BLAD_STARTU", ModuleNotFoundError("x"))
+
+    kod, wyjscie = _wywolaj_main(
+        monkeypatch, capfd, json.dumps(_bash("ls", cwd=worktree)), "executor", worktree
+    )
+
+    assert kod == 0
+    assert json.loads(wyjscie) == {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": "straż roli: błąd startu straży (ModuleNotFoundError)",
+    }}
+
+
+def _kopia_strazy_bez_pakietu_cockpit(tmp_path: Path) -> Path:
+    """Kopia skryptu straży obok pakietu `cockpit` bez `invariants` (import się nie uda).
+
+    `-I` ignoruje PYTHONPATH, a skrypt dokłada do `sys.path` katalog nad `runner/`, więc
+    zepsuty import robimy kopią, nie zmienną środowiskową.
+    """
+    katalog = tmp_path / "kopia"
+    (katalog / "runner").mkdir(parents=True)
+    (katalog / "cockpit" / "services").mkdir(parents=True)
+    (katalog / "cockpit" / "__init__.py").write_text("")
+    (katalog / "cockpit" / "services" / "__init__.py").write_text("")
+    skrypt = katalog / "runner" / "straz_roli.py"
+    skrypt.write_bytes(STRAZ.read_bytes())
+    return skrypt
+
+
+def _polecenie_z_innym_skryptem(polecenie: str, skrypt: Path) -> str:
+    stary = shlex.quote(str(hooks._STRAZ_ROLI))
+    assert polecenie.count(stary) == 1
+    return polecenie.replace(stary, shlex.quote(str(skrypt)))
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+def test_zepsuty_import_strazy_uruchomionej_bezposrednio_daje_json_deny_z_nazwa_wyjatku(
+    tmp_path, worktree, rola
+):
+    skrypt = _kopia_strazy_bez_pakietu_cockpit(tmp_path)
+    plik = plik_hookow(tmp_path / "stan", RUN, KROK)
+
+    wynik = _uruchom(
+        [sys.executable, "-I", str(skrypt), "--rola", rola.value, "--worktree", str(worktree)],
+        json.dumps(_bash("ls", cwd=worktree)),
+        plik,
+    )
+
+    powod = _odmowa(wynik)["permissionDecisionReason"]
+    assert powod == "straż roli: błąd startu straży (ModuleNotFoundError)"
+    assert plik.read_bytes() == b""
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+def test_zepsuty_import_strazy_daje_odmowe_narzedzia_takze_przez_polecenie_hooka_z_ustawien(
+    tmp_path, worktree, rola
+):
+    skrypt = _kopia_strazy_bez_pakietu_cockpit(tmp_path)
+    polecenie = _polecenie_z_innym_skryptem(_polecenie_strazy(tmp_path, rola, worktree), skrypt)
+
+    wynik = _uruchom_polecenie(polecenie, json.dumps(_bash("ls", cwd=worktree)))
+
+    powod = _odmowa(wynik)["permissionDecisionReason"]
+    assert powod == "straż roli: błąd startu straży (ModuleNotFoundError)"
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+def test_brak_interpretera_strazy_daje_kod_2_i_komunikat_awarii_kod_127_bez_json_deny(
+    tmp_path, worktree, rola
+):
+    polecenie = hooks._polecenie_strazy(rola, worktree, wykonywalny="/nieistniejacy/python")
+
+    wynik = _uruchom_polecenie(polecenie, json.dumps(_bash("ls", cwd=worktree)))
+
+    assert wynik.returncode == 2
+    assert wynik.stdout == ""
+    assert wynik.stderr.splitlines()[-1] == KOMUNIKAT_AWARII.format(kod=127)
+
+
+def test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr(
+    tmp_path, worktree
+):
+    # `false` ignoruje argumenty i wychodzi kodem 1: tylko galaz powloki moze zablokowac narzedzie
+    polecenie = hooks._polecenie_strazy(Rola.executor, worktree, wykonywalny="false")
+
+    wynik = _uruchom_polecenie(polecenie, json.dumps(_bash("ls", cwd=worktree)))
+
+    assert wynik.returncode == 2
+    assert wynik.stdout == ""
+    assert wynik.stderr == KOMUNIKAT_AWARII.format(kod=1) + "\n"
+
+
+def test_straz_z_bledem_skladni_w_skrypcie_daje_kod_2_i_komunikat_awarii_kod_1(
+    tmp_path, worktree
+):
+    # blad skladni nie ma jak zostac obsluzony w module: zostaje galaz powloki
+    skrypt = tmp_path / "zepsuty" / "straz_roli.py"
+    skrypt.parent.mkdir()
+    skrypt.write_text("def (:\n")
+    polecenie = _polecenie_z_innym_skryptem(
+        _polecenie_strazy(tmp_path, Rola.executor, worktree), skrypt
+    )
+
+    wynik = _uruchom_polecenie(polecenie, json.dumps(_bash("ls", cwd=worktree)))
+
+    assert wynik.returncode == 2
+    assert wynik.stdout == ""
+    assert wynik.stderr.splitlines()[-1] == KOMUNIKAT_AWARII.format(kod=1)
+
+
+def test_sprawna_straz_przepuszczajaca_polecenie_nie_uruchamia_galezi_awarii(tmp_path, worktree):
+    polecenie = _polecenie_strazy(tmp_path, Rola.executor, worktree)
+
+    wynik = _uruchom_polecenie(polecenie, json.dumps(_bash("ls", cwd=worktree)))
+
+    assert (wynik.returncode, wynik.stdout, wynik.stderr) == (0, "", "")
+
+
+# --- HAR-219: git tworzący commity i aliasy gita -----------------------------------------------
+
+POWOD_COMMIT = "straż roli: no_git_write — git {podpolecenie} tworzy commit"
+POWOD_ALIASU = "straż roli: no_git_write — alias gita przez -c"
+
+# Lista niezalezna od `_GIT_TWORZY_COMMIT`: kazdy element zbioru ma wlasny przypadek.
+GIT_TWORZY_COMMIT = [
+    pytest.param("git merge feature", "merge", id="merge"),
+    pytest.param("git cherry-pick abc123", "cherry-pick", id="cherry-pick"),
+    pytest.param("git revert abc123", "revert", id="revert"),
+    pytest.param("git rebase main", "rebase", id="rebase"),
+    pytest.param("git am poprawka.patch", "am", id="am"),
+    pytest.param("git stash", "stash", id="stash"),
+    pytest.param("git stash pop", "stash", id="stash-pop"),
+    pytest.param("git -C katalog merge feature", "merge", id="merge-po-opcji-C"),
+    pytest.param("git --no-pager rebase main", "rebase", id="rebase-po-opcji-bez-argumentu"),
+    pytest.param("git -c user.name=a am p.patch", "am", id="am-po-opcji-c-bez-aliasu"),
+    pytest.param("/usr/bin/git cherry-pick abc", "cherry-pick", id="cherry-pick-pelna-sciezka"),
+    pytest.param("ls && git merge x", "merge", id="merge-za-separatorem"),
+    pytest.param("ls;git revert abc", "revert", id="revert-za-srednikiem"),
+    pytest.param('bash -c "git rebase main"', "rebase", id="rebase-w-bash-c"),
+    pytest.param('"g"it merge x', "merge", id="merge-cudzyslow-w-nazwie-gita"),
+    pytest.param("g'it' rebase main", "rebase", id="rebase-apostrof-w-nazwie-gita"),
+    pytest.param("'git' cherry-pick abc", "cherry-pick", id="cherry-pick-nazwa-w-apostrofach"),
+    pytest.param('"git" revert abc', "revert", id="revert-nazwa-w-cudzyslowach"),
+    pytest.param('git "merge" x', "merge", id="merge-podpolecenie-w-cudzyslowach"),
+    pytest.param("git 'am' p.patch", "am", id="am-podpolecenie-w-apostrofach"),
+    pytest.param('git "stash"', "stash", id="stash-podpolecenie-w-cudzyslowach"),
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("komenda,podpolecenie", GIT_TWORZY_COMMIT)
+def test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem(
+    rola, komenda, podpolecenie, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_COMMIT.format(podpolecenie=podpolecenie)
+
+
+# commit i push lapie tez `waliduj_definicje` (inny komunikat), wiec tu tylko niezmiennik
+GIT_COMMIT_I_PUSH_W_CUDZYSLOWACH = [
+    pytest.param('"g"it commit -m x', id="commit-cudzyslow-w-nazwie-gita"),
+    pytest.param("g'it' push", id="push-apostrof-w-nazwie-gita"),
+    pytest.param("'git' push origin main", id="push-nazwa-w-apostrofach"),
+    pytest.param('"git" commit -m x', id="commit-nazwa-w-cudzyslowach"),
+    pytest.param('git "commit" -m x', id="commit-podpolecenie-w-cudzyslowach"),
+    pytest.param("git 'push'", id="push-podpolecenie-w-apostrofach"),
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("komenda", GIT_COMMIT_I_PUSH_W_CUDZYSLOWACH)
+def test_commit_i_push_z_cudzyslowami_w_nazwie_gita_sa_odmowione_w_kazdej_roli(
+    rola, komenda, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod is not None
+    assert "no_git_write" in powod
+
+
+GIT_ALIAS_PRZEZ_C = [
+    pytest.param("git -c alias.c=commit c -m x", id="alias-na-commit"),
+    pytest.param("git -calias.c=commit c", id="alias-sklejony-z-opcja"),
+    pytest.param("git -c alias.st=status st", id="alias-na-bezpieczne-polecenie"),
+    pytest.param('git -c "alias.c=commit" c', id="alias-w-cudzyslowach"),
+    pytest.param("git -c user.name=a -c alias.c=commit c", id="alias-po-innej-opcji-c"),
+    pytest.param("git -C d -c alias.c=commit c", id="alias-po-opcji-C"),
+    pytest.param("ls && git -c alias.x=log x", id="alias-za-separatorem"),
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("komenda", GIT_ALIAS_PRZEZ_C)
+def test_alias_gita_ustawiony_przez_opcje_c_jest_odmowiony_w_kazdej_roli(
+    rola, komenda, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_ALIASU
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        "git status",
+        "git diff",
+        "git log",
+        "git add plik.py",
+        "echo git is great",
+        "git -c user.name=a status",
+        "git -c core.alias.x=1 status",
+        "git -c notalias.c=x status",
+        "git log --grep=merge",
+        "git log merge",
+        "git branch merge-fix",
+        "grep -rn merge src",
+    ],
+)
+def test_polecenia_niebedace_commitem_ani_aliasem_nie_sa_odmawiane_przez_nowe_reguly_gita(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize("komenda", ["git status", "git diff", "git log", "git show HEAD"])
+def test_odczyt_gita_w_roli_bez_zapisu_nie_jest_odmawiany_przez_nowe_reguly_gita(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+# --- HAR-219: przekierowania Basha poza worktree w roli z zapisem (decyzja: odmowa) ----------
+
+POWOD_POZA_WORKTREE = "straż roli: przekierowanie poza worktree: "
+POWOD_CEL_NIEOCENIANY = "straż roli: przekierowanie do celu, którego nie da się ocenić: "
+
+FORMY_PRZEKIEROWANIA = [
+    pytest.param("echo x > {c}", id="wyjscie"),
+    pytest.param("echo x >> {c}", id="dopisanie"),
+    pytest.param("echo x 2> {c}", id="stderr"),
+    pytest.param("echo x 2>> {c}", id="stderr-dopisanie"),
+    pytest.param("echo x 1> {c}", id="stdout-jawnie"),
+    pytest.param("echo x &> {c}", id="oba-strumienie"),
+    pytest.param("echo x &>> {c}", id="oba-strumienie-dopisanie"),
+    pytest.param("echo x >| {c}", id="wymuszenie-nadpisania"),
+    pytest.param("echo x >{c}", id="wyjscie-sklejone"),
+    pytest.param("echo x >>{c}", id="dopisanie-sklejone"),
+    pytest.param("echo x 2>{c}", id="stderr-sklejone"),
+    pytest.param("echo x 2>>{c}", id="stderr-dopisanie-sklejone"),
+    pytest.param("echo x &>{c}", id="oba-strumienie-sklejone"),
+    pytest.param("echo x &>>{c}", id="oba-strumienie-dopisanie-sklejone"),
+    pytest.param("echo x >|{c}", id="wymuszenie-nadpisania-sklejone"),
+    pytest.param("echo x 2>&1 > {c}", id="po-przekierowaniu-deskryptora"),
+    pytest.param("ls | tee a > {c}", id="za-rura"),
+    pytest.param("ls && echo x > {c}", id="za-separatorem"),
+    pytest.param("echo x > plik >> {c}", id="drugie-przekierowanie-poza"),
+    pytest.param("echo x > plik 2> {c}", id="stderr-poza-gdy-stdout-w-worktree"),
+]
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize("forma", FORMY_PRZEKIEROWANIA)
+def test_przekierowanie_basha_poza_worktree_jest_odmowione_z_dokladnym_powodem(
+    rola, forma, worktree, obcy
+):
+    cel = str(obcy / "plik")
+
+    powod = decyzja(_bash(forma.format(c=cel), cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + cel
+
+
+CELE_NIEOCENIANE = [
+    pytest.param("$HOME/plik", id="zmienna"),
+    pytest.param("`pwd`/plik", id="podstawienie-polecenia"),
+    pytest.param("~/plik", id="tylda"),
+    pytest.param("*.txt", id="gwiazdka"),
+    pytest.param("a?.txt", id="znak-zapytania"),
+]
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize("cel", CELE_NIEOCENIANE)
+def test_przekierowanie_do_celu_ktorego_nie_da_sie_ocenic_jest_odmowione(rola, cel, worktree):
+    powod = decyzja(_bash(f"echo x > {cel}", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_CEL_NIEOCENIANY + cel
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        "echo x > plik",
+        "echo x >plik",
+        "echo x > sub/plik",
+        "echo x > ./plik",
+        "echo x > sub/../plik",
+        "echo x >> plik",
+        "echo x 2> blad.log",
+        "echo x &> wynik.log",
+        "echo x >| plik",
+        "ls > /dev/null",
+        "ls 2> /dev/null",
+        "ls &> /dev/null",
+        "ls > /dev/null 2>&1",
+        "ls 2>&1",
+        "ls >&2",
+        "mkdir -p out && echo x > out/plik",
+        "cat a | tee b",
+    ],
+)
+def test_przekierowania_w_worktree_do_dev_null_i_deskryptorow_sa_dozwolone(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_przekierowanie_do_bezwzglednej_sciezki_w_worktree_jest_dozwolone(rola, worktree):
+    komenda = f"echo x > {worktree}/plik"
+
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_wzgledny_cel_z_kropkami_wychodzacy_z_worktree_jest_liczony_od_cwd_i_odmowiony(
+    rola, worktree
+):
+    powod = decyzja(_bash("echo x > ../poza", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + "../poza"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_cwd_ze_zdarzenia_decyduje_o_celu_wzglednym_ten_sam_tekst_w_podkatalogu_jest_dozwolony(
+    rola, worktree
+):
+    podkatalog = worktree / "sub"
+    podkatalog.mkdir()
+    komenda = "echo x > ../plik"
+
+    assert decyzja(_bash(komenda, cwd=podkatalog), rola, worktree) is None
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) == (
+        POWOD_POZA_WORKTREE + "../plik"
+    )
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_cwd_poza_worktree_robi_z_celu_wzglednego_przekierowanie_poza_worktree(
+    rola, worktree, obcy
+):
+    powod = decyzja(_bash("echo x > plik", cwd=obcy), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + "plik"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_bez_cwd_w_zdarzeniu_cel_wzgledny_jest_liczony_od_worktree(rola, worktree):
+    assert decyzja(_bash("echo x > plik"), rola, worktree) is None
+    assert decyzja(_bash("echo x > ../poza"), rola, worktree) == POWOD_POZA_WORKTREE + "../poza"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_przekierowanie_przez_dowiazanie_katalogu_wychodzace_z_worktree_jest_odmowione(
+    rola, worktree, obcy
+):
+    (worktree / "link").symlink_to(obcy, target_is_directory=True)
+
+    powod = decyzja(_bash("echo x > link/plik", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + "link/plik"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_przekierowanie_przez_dowiazanie_pliku_wychodzace_z_worktree_jest_odmowione(
+    rola, worktree, obcy
+):
+    (worktree / "ln").symlink_to(obcy / "plik")
+
+    powod = decyzja(_bash("echo x > ln", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + "ln"
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    ["echo x > {obcy}/plik", "ls > /dev/null", "ls 2>&1", "ls >&2"],
+)
+def test_rola_bez_zapisu_nadal_dostaje_powod_reviewer_readonly_dla_kazdego_przekierowania(
+    rola, komenda, worktree, obcy
+):
+    polecenie = komenda.format(obcy=obcy)
+
+    powod = decyzja(_bash(polecenie, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_RECENZENTA.format(rola=rola.value)
+
+
+# --- HAR-219: opcje zapisujące albo uruchamiające polecenia z białej listy --------------------
+
+POWOD_OPCJI = "straż roli: opcja zapisująca albo uruchamiająca polecenie: "
+
+# Opcje podane dokladnie (bez `=`): powod niesie dokladnie ten token.
+OPCJE_ZAPISU_DOKLADNE = [
+    pytest.param("git diff --output plik", "--output", id="diff-output-osobny-argument"),
+    pytest.param("git diff --ou", "--ou", id="diff-sam-prefiks-ou"),
+    pytest.param("git log --output plik", "--output", id="log-output"),
+    pytest.param("git show --output plik HEAD", "--output", id="show-output"),
+    pytest.param("git diff --ext-diff", "--ext-diff", id="diff-ext-diff"),
+    pytest.param("git log --ext-diff", "--ext-diff", id="log-ext-diff"),
+    pytest.param("git show --ext-diff", "--ext-diff", id="show-ext-diff"),
+    pytest.param("git diff --textconv", "--textconv", id="diff-textconv"),
+    pytest.param("git log --textconv", "--textconv", id="log-textconv"),
+    pytest.param("git show --textconv HEAD", "--textconv", id="show-textconv"),
+    pytest.param("git diff HEAD~1 --ext-diff", "--ext-diff", id="opcja-po-argumencie"),
+    pytest.param("git log --oneline --textconv", "--textconv", id="opcja-po-innej-opcji"),
+    pytest.param("rg --pre cmd foo", "--pre", id="rg-pre-osobny-argument"),
+    pytest.param("rg --pre-glob '*.x' foo", "--pre-glob", id="rg-pre-glob-osobny-argument"),
+    pytest.param("rg -z foo", "-z", id="rg-z"),
+    pytest.param("rg --search-zip foo", "--search-zip", id="rg-search-zip"),
+    pytest.param("rg foo -z src", "-z", id="rg-z-po-wzorcu"),
+    pytest.param("rg foo src --search-zip", "--search-zip", id="rg-search-zip-na-koncu"),
+]
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize("komenda,opcja", OPCJE_ZAPISU_DOKLADNE)
+def test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu(
+    rola, komenda, opcja, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_OPCJI + opcja
+
+
+# Formy z `=` albo skrotem: powod ma ten sam poczatek; reszta zalezy od zapisu tokenu.
+OPCJE_ZAPISU_Z_ROWNA_SIE = [
+    pytest.param("git diff --output=plik", id="diff-output-rowna-sie"),
+    pytest.param("git log --outp=x", id="log-skrot-outp"),
+    pytest.param("git show --out=x HEAD", id="show-skrot-out"),
+    pytest.param("git diff --output-indicator-new=x", id="diff-dluzsza-opcja-na-ou"),
+    pytest.param("rg --pre=cmd foo", id="rg-pre-rowna-sie"),
+    pytest.param("rg --pre-glob=*.x foo", id="rg-pre-glob-rowna-sie"),
+]
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize("komenda", OPCJE_ZAPISU_Z_ROWNA_SIE)
+def test_opcja_zapisujaca_z_wartoscia_po_rowna_sie_albo_skrocona_jest_odmowiona(
+    rola, komenda, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod is not None
+    assert powod.startswith(POWOD_OPCJI)
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        "git diff HEAD~1",
+        "git diff --stat",
+        "git diff --name-only HEAD~1",
+        "git log --oneline -5",
+        "git log --pretty=oneline",
+        "git log --format=%h",
+        "git show HEAD",
+        "git show --stat HEAD",
+        "rg foo src",
+        "rg -n foo src",
+        "rg -i --hidden foo",
+        "grep -rn foo src",
+        "grep -z foo plik",
+    ],
+)
+def test_odczyt_z_bialej_listy_bez_opcji_zapisujacych_pozostaje_dozwolony(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    ["git diff --output=plik", "git diff --ext-diff", "rg --pre cmd foo", "rg -z foo"],
+)
+def test_opcje_z_bialej_listy_odmawiane_sa_tylko_w_roli_bez_zapisu(rola, komenda, worktree):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+# --- HAR-219: sekret w komendzie zdarzenia ToolDenied zapisywanym przez straż ---------------
+
+
+def test_zdarzenie_odmowy_w_pliku_hookow_ma_zamaskowany_sekret_w_komendzie(
+    monkeypatch, capfd, tmp_path, worktree
+):
+    plik = plik_hookow(tmp_path / "stan", RUN, KROK)
+    monkeypatch.setenv(ZMIENNA_PLIKU, str(plik))
+    komenda = "GH_TOKEN=sekret12345 git push"
+
+    _wywolaj_main(monkeypatch, capfd, json.dumps(_bash(komenda, cwd=worktree)),
+                  "executor", worktree)
+
+    [linia] = _linie(plik)
+    assert linia["command"] == "GH_TOKEN=*** git push"
+    assert "sekret12345" not in json.dumps(linia)
+
+
+def test_maskowanie_komendy_w_zdarzeniu_odmowy_nie_zmienia_komendy_bez_sekretu(
+    monkeypatch, capfd, tmp_path, worktree
+):
+    plik = plik_hookow(tmp_path / "stan", RUN, KROK)
+    monkeypatch.setenv(ZMIENNA_PLIKU, str(plik))
+
+    _wywolaj_main(monkeypatch, capfd, json.dumps(_bash("git push origin main", cwd=worktree)),
+                  "executor", worktree)
+
+    [linia] = _linie(plik)
+    assert linia["command"] == "git push origin main"
+
+
+def test_sekret_przecinany_ucieciem_do_dwustu_znakow_jest_maskowany_przed_ucieciem(
+    monkeypatch, capfd, tmp_path, worktree
+):
+    sekret = "ZXQ-sekret-bardzo-dlugi-12345"
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", sekret)
+    plik = plik_hookow(tmp_path / "stan", RUN, KROK)
+    monkeypatch.setenv(ZMIENNA_PLIKU, str(plik))
+    komenda = "git push " + "x" * 176 + " " + sekret
+    assert komenda.index(sekret) == 186
+
+    _wywolaj_main(monkeypatch, capfd, json.dumps(_bash(komenda, cwd=worktree)),
+                  "executor", worktree)
+
+    [linia] = _linie(plik)
+    zamaskowana = komenda.replace(sekret, sekret[:8] + "*" * 8)
+    assert linia["command"] == zamaskowana[:200]
+    assert sekret[:10] not in linia["command"]
+
+
+# --- HAR-219: sekret w komendzie idzie w górę zamaskowany, a powtórzenia liczą po masce -------
+
+
+async def test_odmowa_z_sekretem_w_komendzie_idzie_w_gore_z_zamaskowana_komenda(tmp_path):
+    [zdarzenie] = await _przeslij(
+        tmp_path, [_odmowa_payload(komenda="GH_TOKEN=sekret12345 git push")]
+    )
+
+    assert zdarzenie["text"] == "Bash: GH_TOKEN=*** git push [role=executor]"
+    assert "sekret12345" not in json.dumps(zdarzenie)
+
+
+async def test_ostrzezenie_o_powtorzeniu_odmowy_niesie_zamaskowana_komende(tmp_path):
+    wyslane = await _przeslij(tmp_path, [
+        _odmowa_payload(komenda="GH_TOKEN=sekret12345 git push"),
+        _odmowa_payload(komenda="GH_TOKEN=sekret12345 git push"),
+    ])
+
+    [powtorzenie] = [w for w in wyslane if w["kind"] == "hook:ToolDeniedRepeat"]
+    assert powtorzenie["text"] == PREFIKS_POWTORZENIA + "Bash: GH_TOKEN=*** git push"
+    assert "sekret12345" not in json.dumps(wyslane)
+
+
+async def test_dwie_odmowy_tej_samej_komendy_z_roznymi_sekretami_licza_sie_jako_powtorzenie(
+    tmp_path,
+):
+    wyslane = await _przeslij(tmp_path, [
+        _odmowa_payload(komenda="GH_TOKEN=sekretA9981 git push"),
+        _odmowa_payload(komenda="GH_TOKEN=sekretB7742 git push"),
+    ])
+
+    assert _rodzaje(wyslane) == ["hook:ToolDenied", "hook:ToolDenied", "hook:ToolDeniedRepeat"]
+    assert "sekretA9981" not in json.dumps(wyslane)
+    assert "sekretB7742" not in json.dumps(wyslane)
+
+
+async def test_odmowy_roznych_komend_z_tym_samym_sekretem_nie_licza_sie_jako_powtorzenie(
+    tmp_path,
+):
+    wyslane = await _przeslij(tmp_path, [
+        _odmowa_payload(komenda="GH_TOKEN=sekret12345 git push"),
+        _odmowa_payload(komenda="GH_TOKEN=sekret12345 git commit"),
+    ])
+
+    assert _rodzaje(wyslane) == ["hook:ToolDenied", "hook:ToolDenied"]
+
+
+# --- HAR-219 (faza 3): awaria startu - kolejnosc i wyjatki spoza ImportError -------------------
+
+
+@pytest.mark.parametrize(
+    "tresc,klasa",
+    [
+        pytest.param('raise RuntimeError("x")\n', "RuntimeError", id="wyjatek-w-czasie-importu"),
+        pytest.param("def (:\n", "SyntaxError", id="blad-skladni-w-zaleznosci"),
+    ],
+)
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+def test_zaleznosc_strazy_zepsuta_innym_wyjatkiem_niz_blad_importu_daje_json_deny_z_nazwa_klasy(
+    tmp_path, worktree, rola, tresc, klasa
+):
+    skrypt = _kopia_strazy_bez_pakietu_cockpit(tmp_path)
+    (skrypt.parent.parent / "cockpit" / "services" / "invariants.py").write_text(tresc)
+    plik = plik_hookow(tmp_path / "stan", RUN, KROK)
+
+    wynik = _uruchom(
+        [sys.executable, "-I", str(skrypt), "--rola", rola.value, "--worktree", str(worktree)],
+        json.dumps(_bash("ls", cwd=worktree)),
+        plik,
+    )
+
+    assert _odmowa(wynik)["permissionDecisionReason"] == POWOD_BLEDU_STARTU.format(klasa=klasa)
+    assert plik.read_bytes() == b""
+
+
+@pytest.mark.parametrize(
+    "argv,dane",
+    [
+        pytest.param([], "to nie jest json", id="bez-argumentow-i-smieciowe-wejscie"),
+        pytest.param(["--rola", "czarodziej", "--worktree", "/x"], "[]", id="nieznana-rola"),
+    ],
+)
+def test_blad_startu_strazy_ma_pierwszenstwo_przed_bledami_argumentow_i_wejscia(
+    monkeypatch, capfd, argv, dane
+):
+    monkeypatch.setattr(straz_roli, "_BLAD_STARTU", ModuleNotFoundError("x"))
+
+    powod = _powod_main(monkeypatch, capfd, dane, argv)
+
+    assert powod == POWOD_BLEDU_STARTU.format(klasa="ModuleNotFoundError")
+
+
+# --- HAR-219 (faza 3): git - powody, wielkosc liter, -c i -C ------------------------------------
+
+POWOD_WALIDACJI_GITA = (
+    "straż roli: niezmiennik no_git_write: silnik nie commituje ani nie pushuje: "
+    "git w komendzie '{komenda}'"
+)
+
+GIT_POWODY_DOKLADNE = [
+    pytest.param(
+        '"g"it commit -m x',
+        POWOD_WALIDACJI_GITA.format(komenda="git commit -m x"),
+        id="commit-w-cudzyslowie-powod-cytuje-komende-bez-cudzyslowow",
+    ),
+    pytest.param(
+        "g'it' push",
+        POWOD_WALIDACJI_GITA.format(komenda="git push"),
+        id="push-w-apostrofach-powod-cytuje-komende-bez-apostrofow",
+    ),
+    pytest.param(
+        "git -C katalog commit -m x",
+        POWOD_WALIDACJI_GITA.format(komenda="git -C katalog commit -m x"),
+        id="commit-po-opcji-C-to-commit-a-nie-alias",
+    ),
+    pytest.param(
+        "git -C alias.d merge x",
+        POWOD_COMMIT.format(podpolecenie="merge"),
+        id="opcja-C-z-katalogiem-alias-kropka-to-nie-alias",
+    ),
+    pytest.param("GIT merge x", POWOD_COMMIT.format(podpolecenie="merge"), id="GIT-wielkimi"),
+    pytest.param("git MERGE x", POWOD_COMMIT.format(podpolecenie="merge"), id="MERGE-wielkimi"),
+    pytest.param("Git Rebase main", POWOD_COMMIT.format(podpolecenie="rebase"), id="Git-Rebase"),
+    pytest.param(
+        "git CHECKOUT main", POWOD_GITA.format(git="git checkout"), id="CHECKOUT-wielkimi"
+    ),
+    pytest.param(
+        "git Reset --Hard", POWOD_GITA.format(git="git reset --hard"), id="Reset-Hard-wielkimi"
+    ),
+    pytest.param("git -c ALIAS.c=commit c", POWOD_ALIASU, id="alias-wielkimi-literami"),
+    pytest.param("git -cALIAS.c=commit c", POWOD_ALIASU, id="alias-sklejony-wielkimi-literami"),
+    pytest.param("git -c Alias.c=x c", POWOD_ALIASU, id="alias-mieszane-litery"),
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("komenda,oczekiwany", GIT_POWODY_DOKLADNE)
+def test_git_zakazany_w_nietypowym_zapisie_ma_w_kazdej_roli_dokladny_powod(
+    rola, komenda, oczekiwany, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) == oczekiwany
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git -c", id="opcja-c-na-koncu-komendy"),
+        pytest.param("git -C", id="opcja-C-na-koncu-komendy"),
+        pytest.param("git --git-dir", id="opcja-z-argumentem-na-koncu-komendy"),
+        pytest.param("git -cuser.name=x status", id="sklejone-c-z-kluczem-niebedacym-aliasem"),
+        pytest.param("git -Calias.d status", id="sklejone-duze-C-to-nie-opcja-c"),
+        pytest.param("git -C alias.d status", id="duze-C-z-katalogiem-alias-kropka"),
+        pytest.param("git -c user.name=alias.x status", id="alias-dopiero-w-wartosci-klucza"),
+    ],
+)
+def test_opcja_gita_ktora_nie_ustawia_aliasu_albo_nie_ma_wartosci_nie_jest_odmawiana(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize("komenda", ["git -c", "git -C", "git --git-dir"])
+def test_opcja_gita_bez_podpolecenia_w_roli_bez_zapisu_to_reviewer_readonly(
+    rola, komenda, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_RECENZENTA.format(rola=rola.value)
+
+
+# --- HAR-219 (faza 3): przekierowania - brak celu, skladnia, cudzyslowy, deskryptory -----------
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    ["echo x >", "echo x >>", "echo x 2>", "echo x &>", "echo x >&"],
+)
+def test_przekierowanie_bez_celu_na_koncu_komendy_jest_odmowione_z_pustym_celem(
+    rola, komenda, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == "straż roli: przekierowanie do celu, którego nie da się ocenić: "
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize("znak", list("();<>|&"))
+def test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie(
+    rola, znak, worktree
+):
+    powod = decyzja(_bash(f"echo x > {znak} y", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_CEL_NIEOCENIANY + znak
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_podstawienie_procesu_jako_cel_przekierowania_jest_odmowione_z_celem_w_powodzie(
+    rola, worktree
+):
+    powod = decyzja(_bash("echo x > >(cat)", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_CEL_NIEOCENIANY + ">("
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param('echo "x > /poza/plik', id="niezamkniety-cudzyslow-z-przekierowaniem"),
+        pytest.param("echo 'x > /poza/plik", id="niezamkniety-apostrof-z-przekierowaniem"),
+        pytest.param("echo x > \\", id="ucieczka-na-koncu-po-przekierowaniu"),
+    ],
+)
+def test_komenda_z_przekierowaniem_ktorej_nie_da_sie_rozebrac_jest_odmowiona_jako_nie_do_rozbioru(
+    rola, komenda, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_CEL_NIEOCENIANY + "(komenda nie do rozbioru)"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param('echo "x', id="niezamkniety-cudzyslow"),
+        pytest.param("ls 'abc", id="niezamkniety-apostrof"),
+        pytest.param("echo x\\", id="ucieczka-na-koncu"),
+    ],
+)
+def test_komenda_bez_przekierowania_ktorej_nie_da_sie_rozebrac_nie_jest_odmawiana_przez_straz(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+FORMY_PRZEKIEROWANIA_DODATKOWE = [
+    pytest.param("echo x >& {c}", id="stdout-i-stderr-po-ampersandzie"),
+    pytest.param("echo x <> {c}", id="otwarcie-do-odczytu-i-zapisu"),
+    pytest.param("echo x 3<> {c}", id="otwarcie-do-odczytu-i-zapisu-z-deskryptorem"),
+    pytest.param("(echo x)> {c}", id="za-nawiasem-zamykajacym"),
+    pytest.param("(echo x)>{c}", id="za-nawiasem-zamykajacym-sklejone"),
+    pytest.param('echo x > "{c}"', id="cel-w-cudzyslowie"),
+    pytest.param("echo x > '{c}'", id="cel-w-apostrofach"),
+    pytest.param('echo x >"{c}"', id="cel-w-cudzyslowie-sklejony"),
+    pytest.param("echo X#a > {c}", id="znak-hash-w-slowie-nie-zaczyna-komentarza"),
+    pytest.param("echo x > /dev/null 2> {c}", id="po-dev-null-w-tej-samej-komendzie"),
+    pytest.param("echo x 2> /dev/null > {c}", id="dev-null-na-stderr-potem-cel-poza"),
+]
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize("forma", FORMY_PRZEKIEROWANIA_DODATKOWE)
+def test_dalsze_formy_przekierowania_poza_worktree_sa_odmowione_z_celem_bez_cudzyslowow(
+    rola, forma, worktree, obcy
+):
+    cel = str(obcy / "plik")
+
+    powod = decyzja(_bash(forma.format(c=cel), cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + cel
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param('echo "a>b" {obcy}/plik', id="znak-wiekszosci-w-cudzyslowie-nie-jest-przekierowaniem"),
+        pytest.param('echo x > "a;b"', id="cel-z-srednikiem-w-cudzyslowie"),
+        pytest.param('echo x > "my file"', id="cel-ze-spacja-w-cudzyslowie"),
+        pytest.param("ls | {obcy}/prog", id="rura-przed-sciezka-poza-worktree"),
+        pytest.param("ls ; {obcy}/prog", id="srednik-przed-sciezka-poza-worktree"),
+        pytest.param("ls && {obcy}/prog", id="i-przed-sciezka-poza-worktree"),
+    ],
+)
+def test_znaki_skladni_bez_przekierowania_wyjscia_i_cele_w_cudzyslowach_w_worktree_sa_dozwolone(
+    rola, komenda, worktree, obcy
+):
+    assert decyzja(_bash(komenda.format(obcy=obcy), cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        "echo x >&2",
+        "echo x >&12",
+        "echo x >&2-",
+        "echo x >&-",
+        "echo x 2>&1",
+        "echo x 1>&2",
+        "echo x 2>&1 >&2",
+    ],
+)
+def test_kopia_deskryptora_nie_jest_zapisem_do_pliku_nawet_gdy_cwd_jest_poza_worktree(
+    rola, komenda, worktree, obcy
+):
+    assert decyzja(_bash(komenda, cwd=obcy), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda,cel",
+    [
+        pytest.param("echo x > 2", "2", id="liczba-po-zwyklym-przekierowaniu-to-plik"),
+        pytest.param("echo x &> 2", "2", id="liczba-po-ampersandzie-przed-wiekszoscia-to-plik"),
+        pytest.param("echo x >& 2x", "2x", id="cyfra-z-dopiskiem-to-plik"),
+        pytest.param("echo x >&2x", "2x", id="cyfra-z-dopiskiem-sklejona-to-plik"),
+        pytest.param("echo x >& plik", "plik", id="nazwa-pliku-po-ampersandzie-to-plik"),
+        pytest.param("echo x >& 2 > 3", "3", id="kopia-deskryptora-nie-zaslania-kolejnego-celu"),
+    ],
+)
+def test_cel_niebedacy_deskryptorem_jest_plikiem_liczonym_od_cwd_poza_worktree(
+    rola, komenda, cel, worktree, obcy
+):
+    powod = decyzja(_bash(komenda, cwd=obcy), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + cel
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_cel_przekierowania_z_bajtem_zerowym_jest_odmowiony_jako_nie_do_oceny(rola, worktree):
+    powod = decyzja(_bash("echo x > a\x00b", cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_CEL_NIEOCENIANY + "a\x00b"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_cel_wzgledny_gdy_nie_da_sie_rozwiazac_biezacego_katalogu_jest_odmowiony_jako_nie_do_oceny(
+    rola, worktree, tmp_path, monkeypatch
+):
+    # wzgledny `cwd` ze zdarzenia + usuniety katalog procesu: prawdziwy realpath rzuca OSError
+    usuniety = tmp_path / "usuniety"
+    usuniety.mkdir()
+    monkeypatch.chdir(usuniety)
+    usuniety.rmdir()
+    zdarzenie = _bash("echo x > plik")
+    zdarzenie["cwd"] = "wzgledny"
+
+    powod = decyzja(zdarzenie, rola, worktree)
+
+    assert powod == POWOD_CEL_NIEOCENIANY + "plik"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "cwd", [5, None, ["x"], {"a": 1}], ids=["liczba", "brak-wartosci", "lista", "slownik"]
+)
+def test_cwd_niebedace_napisem_jest_ignorowane_a_cel_wzgledny_liczy_sie_od_worktree(
+    rola, cwd, worktree
+):
+    w_worktree = _bash("echo x > plik")
+    w_worktree["cwd"] = cwd
+    poza = _bash("echo x > ../poza")
+    poza["cwd"] = cwd
+
+    assert decyzja(w_worktree, rola, worktree) is None
+    assert decyzja(poza, rola, worktree) == POWOD_POZA_WORKTREE + "../poza"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_worktree_podany_jako_dowiazanie_nie_odmawia_przekierowania_do_pliku_w_nim(
+    rola, worktree, tmp_path
+):
+    dowiazanie = tmp_path / "wt-dowiazanie"
+    dowiazanie.symlink_to(worktree, target_is_directory=True)
+
+    assert decyzja(_bash("echo x > plik", cwd=dowiazanie), rola, dowiazanie) is None
+    assert decyzja(_bash(f"echo x > {dowiazanie}/plik", cwd=dowiazanie), rola, dowiazanie) is None
+
+
+# --- HAR-219 (faza 3): opcje z bialej listy - pelny token w powodzie i granice zakresu ---------
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda,token",
+    [
+        pytest.param("git diff --output=plik", "--output=plik", id="diff-output-rowna-sie"),
+        pytest.param("git log --outp=x", "--outp=x", id="log-skrot-outp"),
+        pytest.param("git show --out=x HEAD", "--out=x", id="show-skrot-out"),
+        pytest.param(
+            "git diff --output-indicator-new=x",
+            "--output-indicator-new=x",
+            id="diff-dluzsza-opcja-na-ou",
+        ),
+        pytest.param("rg --pre=cmd foo", "--pre=cmd", id="rg-pre-rowna-sie"),
+        pytest.param("rg --pre-glob=*.x foo", "--pre-glob=*.x", id="rg-pre-glob-rowna-sie"),
+    ],
+)
+def test_opcja_z_wartoscia_albo_skrocona_ma_w_powodzie_caly_token(rola, komenda, token, worktree):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_OPCJI + token
+
+
+@pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        "grep foo --textconv",
+        "cat plik --ext-diff",
+        "ls --ou",
+        "git log -z",
+        "git status",
+    ],
+)
+def test_opcje_zapisujace_gita_i_rg_nie_obejmuja_innych_polecen_z_bialej_listy(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+# --- HAR-219 (faza 3): powod odmowy cytujacy komende jest maskowany na stdout i w pliku -----------
+
+POWOD_PUSH_Z_ZMIENNA = (
+    "straż roli: niezmiennik no_git_write: silnik nie commituje ani nie pushuje: "
+    "git w komendzie 'GH_TOKEN=*** git push'"
+)
+POWOD_PUSH_Z_OPCJA = (
+    "straż roli: niezmiennik no_git_write: silnik nie commituje ani nie pushuje: "
+    "git w komendzie 'git --token=*** push'"
+)
+
+POWODY_CYTUJACE_KOMENDE = [
+    pytest.param(
+        Rola.executor, "GH_TOKEN=sekret12345 git push", POWOD_PUSH_Z_ZMIENNA,
+        id="walidacja-no-git-write-z-przypisaniem",
+    ),
+    pytest.param(
+        Rola.executor, "git --token=sekret12345 push", POWOD_PUSH_Z_OPCJA,
+        id="walidacja-no-git-write-z-opcja",
+    ),
+    pytest.param(
+        Rola.reviewer, "rg --pre=GH_TOKEN=sekret12345 foo",
+        POWOD_OPCJI + "--pre=GH_TOKEN=***",
+        id="opcja-zapisujaca-recenzenta",
+    ),
+    pytest.param(
+        Rola.executor, "echo x > {obcy}/GH_TOKEN=sekret12345",
+        POWOD_POZA_WORKTREE + "{obcy}/GH_TOKEN=***",
+        id="przekierowanie-poza-worktree",
+    ),
+]
+
+
+@pytest.mark.parametrize("rola,komenda,oczekiwany", POWODY_CYTUJACE_KOMENDE)
+def test_powod_odmowy_na_stdout_ma_zamaskowany_sekret_z_komendy(
+    monkeypatch, capfd, worktree, obcy, rola, komenda, oczekiwany
+):
+    monkeypatch.delenv(ZMIENNA_PLIKU, raising=False)
+    dane = json.dumps(_bash(komenda.format(obcy=obcy), cwd=worktree))
+
+    powod = _powod_main(
+        monkeypatch, capfd, dane, ["--rola", rola.value, "--worktree", str(worktree)]
+    )
+
+    assert powod == oczekiwany.format(obcy=obcy)
+
+
+@pytest.mark.parametrize("rola,komenda,oczekiwany", POWODY_CYTUJACE_KOMENDE)
+def test_powod_odmowy_w_pliku_hookow_ma_zamaskowany_sekret_z_komendy(
+    monkeypatch, capfd, tmp_path, worktree, obcy, rola, komenda, oczekiwany
+):
+    zdarzenie = _bash(komenda.format(obcy=obcy), cwd=worktree)
+
+    linia = _linia_odmowy(monkeypatch, capfd, tmp_path, worktree, zdarzenie, rola.value)
+
+    assert linia["reason"] == oczekiwany.format(obcy=obcy)
+    assert "sekret12345" not in json.dumps(linia)
+
+
+def test_sciezka_zapisu_w_zdarzeniu_odmowy_nie_jest_maskowana_bo_maskowanie_dotyczy_komend_basha(
+    monkeypatch, capfd, tmp_path, worktree, obcy
+):
+    sciezka = str(obcy / "MOJ_KEY=1.txt")
+    zdarzenie = _zapis("Write", "file_path", sciezka, cwd=worktree)
+
+    linia = _linia_odmowy(monkeypatch, capfd, tmp_path, worktree, zdarzenie)
+
+    assert linia["command"] == sciezka
+
+
+# --- HAR-219 (poprawka 1): przekierowanie na poczatku komendy, alias jako ostatnia para --------
+
+POWOD_ALIASU_CONFIG_ENV = "straż roli: no_git_write — alias gita przez --config-env"
+POWOD_ALIASU_GIT_CONFIG = "straż roli: no_git_write — alias gita przez git config"
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "forma",
+    [
+        pytest.param(">{c} echo hi", id="przekierowanie-sklejone-przed-poleceniem"),
+        pytest.param("> {c} echo hi", id="przekierowanie-ze-spacja-przed-poleceniem"),
+    ],
+)
+def test_przekierowanie_na_poczatku_komendy_poza_worktree_jest_odmowione_z_dokladnym_powodem(
+    rola, forma, worktree, obcy
+):
+    cel = str(obcy / "x")
+
+    powod = decyzja(_bash(forma.format(c=cel), cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_POZA_WORKTREE + cel
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_przekierowanie_na_poczatku_komendy_do_pliku_w_worktree_jest_dozwolone(rola, worktree):
+    assert decyzja(_bash("> plik echo hi", cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda,oczekiwany",
+    [
+        pytest.param("git -c alias.c=commit", POWOD_ALIASU, id="opcja-c-jako-ostatnia-para"),
+        pytest.param(
+            "git --config-env alias.c=V", POWOD_ALIASU_CONFIG_ENV,
+            id="opcja-config-env-jako-ostatnia-para",
+        ),
+        pytest.param(
+            "git --config-env=alias.c=V", POWOD_ALIASU_CONFIG_ENV,
+            id="opcja-config-env-z-rownasie-bez-podpolecenia",
+        ),
+    ],
+)
+def test_alias_gita_podany_jako_ostatnia_para_tokenow_bez_podpolecenia_jest_odmowiony(
+    rola, komenda, oczekiwany, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) == oczekiwany
+
+
+# --- HAR-219 (poprawka 1): cudzyslow ANSI-C, ucieczka, --config-env i git config alias ---------
+
+POWOD_COMMIT_Z_WALIDACJI = POWOD_WALIDACJI_GITA.format(komenda="git commit -m x")
+
+GIT_ZLOZONY_W_POWLOCE = [
+    pytest.param(r"\git commit -m x", POWOD_COMMIT_Z_WALIDACJI, id="ucieczka-przed-nazwa-gita"),
+    pytest.param(r"gi\t commit -m x", POWOD_COMMIT_Z_WALIDACJI, id="ucieczka-w-nazwie-gita"),
+    pytest.param("$'g'it commit -m x", POWOD_COMMIT_Z_WALIDACJI, id="ansi-c-w-nazwie-gita"),
+    pytest.param('$"g"it commit -m x', POWOD_COMMIT_Z_WALIDACJI, id="tlumaczenie-w-nazwie-gita"),
+    pytest.param(
+        r"g\it merge x", POWOD_COMMIT.format(podpolecenie="merge"),
+        id="ucieczka-w-nazwie-gita-merge",
+    ),
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("komenda,oczekiwany", GIT_ZLOZONY_W_POWLOCE)
+def test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli(
+    rola, komenda, oczekiwany, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) == oczekiwany
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+def test_dolar_bez_cudzyslowu_nie_skleja_nazwy_gita_i_polecenie_nie_jest_odmawiane(
+    rola, worktree
+):
+    assert decyzja(_bash("echo $git commit", cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git --config-env=alias.c=V c -m x", id="rowna-sie-w-jednym-tokenie"),
+        pytest.param("git --config-env alias.c=V c", id="wartosc-w-osobnym-tokenie"),
+        pytest.param("git --config-env ALIAS.c=V c", id="wielkie-litery-aliasu"),
+        pytest.param("git -C d --config-env alias.c=V c", id="po-innej-opcji-globalnej"),
+    ],
+)
+def test_alias_gita_przez_config_env_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) == POWOD_ALIASU_CONFIG_ENV
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git --config-env k=v status", id="config-env-z-osobna-wartoscia"),
+        pytest.param("git --config-env=k=v status", id="config-env-z-wartoscia-po-rownasie"),
+        pytest.param("git --config-env=alias status", id="config-env-z-kluczem-bez-kropki"),
+    ],
+)
+def test_config_env_ktory_nie_ustawia_aliasu_nie_jest_odmawiany(rola, komenda, worktree):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+# Stala lista, niezalezna od `_GIT_TWORZY_COMMIT`. `waliduj_definicje` nie zna `--config-env`, wiec
+# po tej opcji o odmowie decyduje wylacznie element zbioru.
+PODPOLECENIA_TWORZACE_COMMIT = [
+    "commit",
+    "push",
+    "merge",
+    "cherry-pick",
+    "revert",
+    "rebase",
+    "am",
+    "stash",
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("podpolecenie", PODPOLECENIA_TWORZACE_COMMIT)
+def test_podpolecenie_tworzace_commit_po_opcji_config_env_jest_odmowione_w_kazdej_roli(
+    rola, podpolecenie, worktree
+):
+    komenda = f"git --config-env k=v {podpolecenie} origin main"
+
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_COMMIT.format(podpolecenie=podpolecenie)
+
+
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git --config-env k=v commit", id="config-env-z-osobna-wartoscia"),
+        pytest.param("git --config-env=k=v commit", id="config-env-z-rownasie"),
+        pytest.param("git --git-dir d commit", id="opcja-z-argumentem-spoza-konfiguracji"),
+        pytest.param("git --no-pager commit", id="opcja-bez-argumentu"),
+        pytest.param("git -c user.name=a commit", id="opcja-c-z-kluczem-niebedacym-aliasem"),
+    ],
+)
+def test_zakazany_git_pomija_wartosc_opcji_globalnej_i_znajduje_commit_za_nia(komenda):
+    # bezposrednio: `waliduj_definicje` w `decyzja` wyprzedza te formy innym powodem albo ich nie zna
+    assert straz_roli._zakazany_git(komenda) == POWOD_COMMIT.format(podpolecenie="commit")
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git config alias.c commit", id="alias-bez-zakresu"),
+        pytest.param("git config --global alias.c commit", id="alias-z-opcja-zakresu"),
+        pytest.param("git config ALIAS.c commit", id="alias-wielkimi-literami"),
+    ],
+)
+def test_alias_gita_przez_git_config_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) == POWOD_ALIASU_GIT_CONFIG
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git config user.name x", id="zwykly-klucz"),
+        pytest.param("git -C alias.d config user.name x", id="alias-tylko-przed-podpoleceniem"),
+        pytest.param("git config aliasy x", id="klucz-zaczynajacy-sie-od-alias-bez-kropki"),
+        pytest.param("git -c aliasy=1 status", id="opcja-c-z-kluczem-bez-kropki-po-alias"),
+    ],
+)
+def test_git_config_bez_aliasu_nie_jest_odmawiany(rola, komenda, worktree):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
