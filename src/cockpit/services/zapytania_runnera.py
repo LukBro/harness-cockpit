@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cockpit.db.models import Runner
 from cockpit.settings import settings
 
-from .errors import PlikPozaZakresem, RunnerOffline, StanNiemozliwy
+from .errors import NieZnaleziono, PlikPozaZakresem,RunnerOffline, StanNiemozliwy
 from .runs import runner_online
 
 Wyslij = Callable[[str, str, dict[str, Any], float], Awaitable[dict[str, Any]]]
@@ -72,5 +72,7 @@ async def _wyslij_i_sprawdz(
     if cialo.get("ok") is not True:
         if cialo.get("kod") == "poza_zakresem":
             raise PlikPozaZakresem(cialo.get("blad") or "sciezka poza zakresem runnera")
+        if cialo.get("kod") == "nie_znaleziono":   # brak ticketu u dostawcy to 404, nie 409
+            raise NieZnaleziono(cialo.get("blad") or "runner zglosil blad")
         raise StanNiemozliwy(cialo.get("blad") or "runner zglosil blad")
     return cialo.get("wynik")
