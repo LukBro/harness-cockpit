@@ -1,0 +1,65 @@
+# Tabela recznych mutantow PR straznik-decyzji: hook .claude/hooks/pytania_w_tle.py
+# (poza zasiegiem mutmuta). Wiersz: element | mutacja | test, ktory po mutacji oblewa.
+
+# Rodzaj sesji: tylko `bg` jest sesja w tle.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if os.environ.get("CLAUDE_CODE_SESSION_KIND") != "bg":'
+zamien = 'if os.environ.get("CLAUDE_CODE_SESSION_KIND") == "bg":'
+test = "tests/test_pytania_w_tle.py::test_sesja_w_tle_nie_pyta_czlowieka_tylko_dostaje_protokol_decyzji"
+
+# Sesja interaktywna nie dostaje odmowy (usuniecie warunku rodzaju sesji).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if os.environ.get("CLAUDE_CODE_SESSION_KIND") != "bg":'
+zamien = 'if False:'
+test = "tests/test_pytania_w_tle.py::test_sesja_interaktywna_pyta_czlowieka_bez_zmian"
+
+# Inne narzedzie przechodzi.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if narzedzie(tekst) not in (None, "AskUserQuestion"):'
+zamien = 'if False:'
+test = "tests/test_pytania_w_tle.py::test_inne_narzedzie_w_sesji_w_tle_przechodzi_bez_decyzji_hooka"
+
+# Nieczytelne wejscie (None) to odmowa, nie zgoda.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if narzedzie(tekst) not in (None, "AskUserQuestion"):'
+zamien = 'if narzedzie(tekst) != "AskUserQuestion":'
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Krotka except: ValueError (nie JSON).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError):"
+zamien = "except (KeyError, TypeError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Krotka except: KeyError (brak tool_name).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError):"
+zamien = "except (ValueError, TypeError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Krotka except: TypeError (lista zamiast obiektu).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError):"
+zamien = "except (ValueError, KeyError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# tool_name nie-napis to nieczytelne wejscie.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "return nazwa if isinstance(nazwa, str) else None"
+zamien = "return nazwa"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Decyzja to deny, nie ask/allow.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = '"permissionDecision": "deny",'
+zamien = '"permissionDecision": "ask",'
+test = "tests/test_pytania_w_tle.py::test_sesja_w_tle_nie_pyta_czlowieka_tylko_dostaje_protokol_decyzji"
