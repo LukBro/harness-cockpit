@@ -1,343 +1,55 @@
 # Test odróżnia regułę od jej braku
 
-Źródło: retro sprintu M1.0 — wzorzec w 7 z 9 ticketów (HAR-2, 3, 5, 6, 7, 8, 9),
-krytyk dwa razy oznaczył go jako „korekta WRACA” (HAR-6, HAR-9).
+Każdy element kodu, który zmienia wynik reguły, ma test na wejściu, na którym **tylko ten
+element** decyduje o wyniku: usunięcie elementu oblewa co najmniej jeden test.
+WHY: test, który przechodzi z regułą i bez niej, wygląda na pokrycie, a nie chroni niczego.
+To najczęstsze odjęcie w projekcie (11 z 20 ostatnich ticketów).
 
-## Reguła
+## Bramki — uruchom przed oddaniem pracy, CI powtarza je w jobie `mutation`
 
-Każdy element kodu, który zmienia wynik reguły, ma test na wejściu, na którym
-**tylko ten element** decyduje o wyniku. Usunięcie elementu musi oblać co najmniej
-jeden test. Dotyczy to w szczególności:
+| Komenda (z korzenia repo) | Kody wyjścia | Co robisz |
+| -- | -- | -- |
+| `python tools/mutanty_zmian.py [--baza <ref>]` | 0 czysto · 1 przeżywające mutanty · 2 błąd narzędzia · 3 zmiany poza zasięgiem mutmuta (stdout: `bez mutantów — sprawdź ręcznie`, potem `plik:linia`) | 1: test zabijający mutanta. 3: każda linia dostaje wiersz w tabeli ręcznych mutantów. 2 to nie „czysto”. |
+| `python tools/mutanty_reczne.py tests/mutanty_reczne/<ticket>.toml` | 0 zabite · 1 przeżywające · 2 błąd tabeli/narzędzia | Wymagane przy kodzie 3 i przy każdej zmianie w `web/`, `tools/`, `cicd/` (CI: „brak dowodu”). |
+| `python tools/mutanty_reczne.py --pokrycie-kod3 <lista> <tabele>` | 0 · 1 linia bez wiersza | Każda linia kodu 3 ma `[[mutant]]` albo `[[rownowazny]]`. |
+| `python tools/mutanty_reczne.py --sprawdz-wszystkie` | 0 · inny = zepsuty wiersz | Przeniosłeś kod albo zmieniłeś test z cudzej tabeli — popraw tę tabelę w tym samym PR. |
 
-- **gałęzi** kodu chroniącego niezmiennik albo tłumaczącej wyjątek,
-- **elementu zbioru lub tabeli** rozszerzającego wykrywanie (znak separatora,
-  opcja, klucz) — przypadek, w którym bez tego elementu nic innego by nie wykryło,
-- **trybu albo źródła** (globalny/lokalny, plik/rejestr) — wejście dające inny
-  wynik w każdym trybie,
-- **zakresu** (przodkowie w `needs`, kroki cyklu) — poza zakresem istnieje krok,
-  który dałby inny wynik, gdyby reguła była globalna,
-- **złego typu** — wartość odrzucana tylko przez implementowaną regułę
-  (napis zamiast liczby, `yes` zamiast bool), nie przez każdą implementację,
-- **podmiany wartości z pliku** zależnie od stanu rejestru — wartość w pliku
-  istnieje i zmieniłaby wynik,
-- **filtra `tenant_id`** — w bazie są co najmniej dwa zespoły, rekord innego
-  zespołu nie zostaje wybrany.
-
-## Pułapka
-
-Test, który przechodzi zarówno z regułą, jak i bez niej, wygląda na pokrycie,
-ale nie chroni niczego: mutant usuwający gałąź lub element zbioru przeżywa.
-Pojedyncze reguły z review lądowały w `.claude/agent-memory/test-writer/MEMORY.md`
-i i tak wracały w następnym tickecie — to jest jedna zasada, nie jedenaście.
-
-## Co sprawdzić w review
-
-- Dla każdej nowej gałęzi, elementu zbioru, trybu i zakresu w diffie: wskaż test,
-  który oblewa po jej usunięciu. Brak takiego testu = **-25**.
-- Przeżywający mutant w zmienionym pliku (mutation-check) = **-25**.
-
-## Egzekucja
-
-Źródło: HAR-133. Przed oddaniem pracy do review test-writer albo Team Manager
-uruchamia z korzenia repozytorium:
-
-```
-python tools/mutanty_zmian.py            # baza: origin/main
-python tools/mutanty_zmian.py --baza <ref>
-```
-
-Skrypt mutuje wyłącznie funkcje i metody zmienione względem bazy (także
-niescommitowane i nowe pliki w `source_paths` z `pyproject.toml`) i wypisuje
-przeżywające mutanty, po jednym w linii.
-
-- Kod wyjścia **0** — wszystkie mutanty zmienionych funkcji zabite (albo brak zmienionych
-  funkcji) i brak zmian poza zasięgiem mutmuta.
-- Kod wyjścia **1** — są przeżywające mutanty; dopisz test na wejściu, które je zabija.
-- Kod wyjścia **2** — błąd narzędzia (nieznana baza, zły `pyproject.toml`, błąd składni,
-  błąd mutmuta); to nie jest wynik „czysto”.
-- Kod wyjścia **3** (HAR-144) — zmiany poza zasięgiem mutmuta: stdout zaczyna się od
-  `bez mutantów — sprawdź ręcznie`, dalej wpisy `plik:linia`, po jednym w linii. To nie
-  jest „czysto”: dopisz ręczny mutant i test. Zakres: pliki `.py` pod `src/` spoza
-  `source_paths` oraz w `source_paths` linie kodu poza funkcjami i metodami (bez pustych
-  linii, komentarzy, docstringów i importów) oraz funkcje i metody z dekoratorem innym niż
-  pojedynczy `staticmethod`/`classmethod` (mutmut 3.8.0 ich nie mutuje); `tests/`, `web/`, `tools/` i `*.md` są
-  poza zakresem. Priorytet kodów: 2 > 1 > 3 > 0; przy kodzie 1 lista bez mutantów idzie
-  na stderr. W CI krok jest zielony, a lista trafia do sekcji podsumowania „bez mutantów —
-  sprawdź ręcznie”.
-- Przeżywający mutant w zmienionej funkcji bez uzasadnienia równoważności = **-25**
-  w review.
-- Skrypt nie czyści cache `mutants/`. Po zmianie samych testów (bez zmiany kodu
-  źródłowego) wynik może pochodzić ze starego przebiegu (strona wiki `constitution`,
-  HAR-6) — wtedy uruchom skrypt w świeżym klonie repozytorium w nowym katalogu
-  tymczasowym (`git clone <repo> <katalog-tymczasowy>/mutanty-<n>`, z dokopiowanymi
-  niescommitowanymi zmianami). Nie usuwaj `mutants/` w sesji agenta; usunięcie jest
-  dozwolone tylko jako ręczna akcja człowieka.
-- Pełny przebieg mutmuta wymaga, by `[tool.mutmut] also_copy` obejmowało wszystko,
-  czego potrzebują testy (np. `alembic/`, `alembic.ini`); inaczej skrypt kończy się
-  kodem 2 na fazie statystyk mutmuta.
-
-## Regresja
-
-Źródło: retro sprintu M1.1. Reguła istnieje i nadal jest łamana — HAR-10
-(krytyk: „korekta WRACA — wzorzec HAR-6”), wcześniej HAR-2, 3, 5, 6, 7, 8, 9.
-
-Nowy kształt tego samego wzorca — **zawężenie wzorca albo klasy znaków**
-(`[A-Za-z0-9_]` zamiast `\w`, kotwica, węższa alternatywa): test ma wejście,
-które **tylko zawężenie** odrzuca. Wejście parsowane tak samo przez wersję
-szerszą nie chroni zawężenia przed cofnięciem (HAR-10: `xǁAǁBǁc__mutmut_1`
-zabija mutanta `\w`, bo `\w` dopasowuje `ǁ`).
-
-Tekst reguły nie wystarcza — egzekwuje ją `tools/mutanty_zmian.py`
-(zob. [Egzekucja](#egzekucja)): mutanty zmienionych funkcji przed werdyktem krytyka.
-
-## Regresja (retro M1.2.1)
-
-Źródło: HAR-133 (dwa razy -25 w kolejnych rundach), HAR-138 (uwaga krytyka bez
-odjęcia). Reguła i jej egzekucja istnieją, a wzorzec wraca w nowych kształtach:
-
-- **Zaślepka zawsze zwraca sukces** — testy podmieniają funkcję uruchamiającą
-  podproces albo czytającą wejście, więc gałęzie błędu (kod wyjścia, `OSError`,
-  kanał stderr) nie mają testu na **prawdziwym** kodzie tej funkcji. Każda gałąź
-  tłumacząca błąd ma test, który wywołuje prawdziwą funkcję na wejściu wyzwalającym
-  tę gałąź.
-- **Asercja przechodzi także na starym kodzie** — np. „komunikatu X nie ma w stderr”,
-  gdy stary kod też go nie wypisywał z innego powodu. Przed oddaniem sprawdź, że
-  asercja oblewa po cofnięciu zmiany.
-
-Egzekucja dodatkowa: krok CI z `tools/mutanty_zmian.py` na każdym PR (ticket z retro
-M1.2.1) — przeżywające mutanty zmienionych funkcji widać w raporcie PR.
-
-## Regresja (retro M1.3)
-
-Źródło: HAR-26 („korekta WRACA” za HAR-29), HAR-35 („korekta WRACA” za HAR-6 i HAR-133),
-HAR-141, uwagi bez odjęcia w HAR-34, HAR-36, HAR-38. Nowe kształty:
-
-- **Test błędu sprawdza dokładny typ wyjątku** — `pytest.raises(Exception)` przyjmuje też
-  wyjątek z innej gałęzi i nie chroni tej, którą test opisuje (HAR-26).
-- **Gałąź przepuszczająca wyjątek dalej** (`raise`, re-raise po anulowaniu) ma test, w
-  którym tylko ona decyduje, czy wołający dostanie wyjątek (HAR-35).
-- **Test na produkcyjnej ścieżce wywołania** — gałąź chroniąca niezmiennik ma test, w
-  którym żaden inny mechanizm (np. pętla sprzątająca w `stop()`) nie daje tego samego
-  skutku (HAR-141).
-- **Wartość, nie obecność** — test tabeli sprawdza wartość wpisu (np. `Zabronione → 403`),
-  nie tylko to, że wpis istnieje (HAR-38).
-
-## Regresja (retro M1.4)
-
-Źródło: 13 z 14 ticketów M1.4/M1.5 dostało -25 z tej reguły, w 10 „korekta WRACA”
-(HAR-22, 44, 46, 47, 48, 49, 50, 51, 52, 53, 141, 142, 65). Nowe kształty:
-
-- **Ograniczenia pól i wartości domyślne** — `Field(max_length=…, ge=…)`, `default=` w
-  modelu i elementy stałych zbiorów (`METODY_BEZPIECZNE`) mają test, w którym tylko ta
-  wartość decyduje (HAR-44, 48, 51). `tools/mutanty_zmian.py` takich mutantów nie generuje, ale zgłasza je kodem 3 (HAR-144) —
-  „brak zmienionych funkcji” to brak dowodu, nie „czysto”: dopisz ręczny mutant i test.
-- **Każdy warunek zapytania** wybierającego istniejący rekord (adres, użytkownik, zespół)
-  ma w danych rekord odrzucany tylko przez ten warunek (HAR-50) — uogólnienie punktu o
-  filtrze `tenant_id`.
-- **Warunek typu i „użyj wartości dosłownie”** (`isinstance`, parametry tylko dla pierwszej
-  strony) ma wejście, które wersja bez warunku przetwarza inaczej (HAR-53, HAR-65).
-- **Gałąź sprzątania w `finally`** ma test poza ścieżką `stop()`, który ją wyzwala (HAR-49).
-- **Równoważność mutanta** uzasadniasz wskazaniem, że żadne wejście nie odróżnia wersji;
-  „test przechodzi” albo „to tylko kosmetyka” nie jest uzasadnieniem (HAR-52).
-
-## Egzekucja ręczna tam, gdzie mutmut nie sięga (retro M1.5)
-
-Źródło: „korekta WRACA” w 7 ticketach M1.5 (HAR-49, 59, 61, 62, 65, 142, 143) mimo
-sekcji Regresja z M1.1–M1.4. Kolejny akapit nie pomoże — potrzebny dowód w raporcie.
-
-Gdy zmiana obejmuje miejsce, którego mutmut nie mutuje — front (`web/`), testy e2e,
-krotki w `except`, elementy stałych zbiorów i wyrażeń regularnych, hooki pytesta
-(`tryfirst`, `skipif`), pliki spoza `source_paths` (kod 3 z `tools/mutanty_zmian.py`,
-HAR-144) — raport test-writera zawiera tabelę **ręcznych mutantów**:
-`element | mutacja | test, który oblewa`. Po jednym wierszu na każdy zmieniony element.
-
-Źródło: HAR-150. Tabela jest wykonywalna: żyje jako `tests/mutanty_reczne/<ticket>.toml`,
-a wiersz to wpis `[[mutant]]` z polami `plik` (ścieżka względna od korzenia repo), `szukaj`
-(musi wystąpić w pliku dokładnie raz), `zamien` (różne od `szukaj`) i `test` (node id pytesta):
+Wiersz tabeli:
 
 ```toml
 [[mutant]]
-plik = "src/cockpit/services/runs.py"
-szukaj = "if kod == 1:"
+plik = "src/cockpit/services/runs.py"   # względem korzenia
+szukaj = "if kod == 1:"                  # występuje w pliku dokładnie raz
 zamien = "if kod != 1:"
 test = "tests/test_runs.py::test_run_zakonczony_sukcesem_ma_stan_do_odbioru_nie_gotowe"
+
+[[rownowazny]]
+plik = "src/runner/checkpoint.py"
+linia_tekst = "..."
+uzasadnienie = "żadne wejście nie odróżnia wersji, bo ..."
 ```
 
-`python tools/mutanty_reczne.py tests/mutanty_reczne/<ticket>.toml` nakłada każdą mutację w
-nowej kopii repozytorium w katalogu tymczasowym i sprawdza, że wskazany test oblewa (test
-musi najpierw przejść na kopii bez mutacji). Kod wyjścia **0** — wszystkie mutanty zabite,
-**1** — są przeżywające (stdout: `plik: szukaj → zamien`), **2** — błąd narzędzia: zła
-tabela, `szukaj` nie raz, test czerwony bez mutacji, kod pytesta inny niż 0/1, przekroczony
-limit czasu. W CI krok `mutanty ręczne` w jobie `mutation` wykonuje tabele zmienione w PR;
-zmiana w `web/`, `tools/` lub `cicd/` albo kod 3 z `tools/mutanty_zmian.py` bez zmienionej
-tabeli to czerwony krok z komunikatem „brak dowodu”.
+- Równoważność uzasadniasz wejściem, którego nie ma, nie tym, że „inny element już to łapie”.
+  W kodzie: `# pragma: no mutate` z komentarzem powodu w linii wyżej.
+- Po zmianie samych testów cache `mutants/` może dać stary wynik — uruchom w świeżym klonie
+  w nowym katalogu tymczasowym. Nie usuwaj `mutants/` w sesji agenta.
+- Mutanta, którego nie da się zaimportować (błąd zbierania pytesta), nie wpisuj do tabeli.
 
-- Brak tabeli przy zmianie poza zasięgiem mutmuta = **-25**.
-- Wiersz z testem, który po mutacji nadal przechodzi (krytyk sprawdza co najmniej jeden
-  wiersz, wprowadzając mutację lokalnie) = **-25**.
+## Czego bramki nie widzą
 
-## Regresja (retro M1.6)
+mutmut nie usuwa instrukcji, elementów krotek i zbiorów ani nie przestawia zapisów, więc te
+elementy przechodzą przez kod 0 bez testu. Katalog takich kształtów, po jednym przykładzie:
+`.ai/qa/ksztalty-mutantow.md` — test-writer i krytyk czytają go przy każdym tickecie z kodem.
 
-Źródło: 9 z 15 ticketów M1.6 z kodem dostało -25 albo -20 z tej reguły (HAR-15, 20, 28, 67,
-68, 70, 71, 74, 144); „korekta WRACA” wprost w HAR-28, HAR-71, HAR-74. Tabela ręcznych
-mutantów z M1.5 istnieje, a brakujące wiersze znajduje dopiero krytyk. Nowe kształty:
+## Co sprawdzić w review
 
-- **Strażnik przed istniejącą gałęzią i wartość zastępcza** — krótkie wartościowanie
-  (`rejected and …`), `isinstance(…, str)`, `and wezel.body`, `mapa.get(k, set())`,
-  przepakowanie wyjątku z kontekstem: test na wejściu, na którym bez strażnika leci wyjątek
-  biblioteki albo inny komunikat, także na pustym wejściu, gdzie dotąd działała starsza
-  gałąź (HAR-20, HAR-28, HAR-144).
-- **Element krotki `except` i blokada wiersza** — każdy typ w krotce ma wejście, które
-  wyzwala tylko ten typ; `with_for_update()` ma test, który oblewa po jej usunięciu (na
-  SQLite: kompilacja przechwyconego zapytania dialektem PostgreSQL) (HAR-67).
-- **Front: każdy element diffu `web/` ma test e2e** — przekształcenie wejścia (`trim`: osobno
-  każde wystąpienie, w warunku i w wartości), gałąź tłumacząca nieczytelną odpowiedź
-  serwera, czyszczenie stanu przy zmianie pola, na początku akcji i po ponownym
-  zalogowaniu. Test sprawdza skutek w następnym przejściu stanu. „Projekt nie ma testów
-  frontu” nie zwalnia — `tests/e2e/` istnieje (HAR-70, HAR-71).
-- **Test z limitem czasu w nazwie** zaczyna mierzyć przed zdarzeniem i zależy od mechanizmu,
-  który limit realizuje (odświeżanie, push), nie od pobrania przy wejściu na stronę (HAR-68).
-- **Dopasowanie jednoznaczne** — asercja na treści (brief, komunikat) sprawdza zdanie, które
-  istnieje tylko w regule; pomocnik testu zawężający do zakresu ma test z elementem spoza
-  zakresu, który dałby inny wynik bez zawężenia (HAR-15, HAR-74).
-- **Strefa czasowa** — gałąź naive→UTC ma test ze strefą procesu inną niż UTC
-  (`TZ` + `time.tzset`), bo CI biegnie w UTC i tam mutant przeżywa (HAR-68).
-
-Tekst reguły znów nie wystarczył — egzekucja tabeli ręcznych mutantów jako krok CI to
-osobny ticket z retro M1.6.
-
-Co sprawdzić w review: element z listy bez testu, który oblewa po jego usunięciu = **-25**;
-test z limitem czasu niezależny od mechanizmu limitu = **-20**.
-
-## Regresja (retro M1.7)
-
-Źródło: 12 z 33 ticketów M1.7 dostało -25 z tej reguły u test-writera (HAR-77, 79, 81, 85, 86,
-150, 151, 160, 163, 183, 206, 221); „korekta WRACA” wprost w HAR-81, 85, 86, 150, 163, 183.
-Większość mutantów znalazł `tools/mutanty_zmian.py` albo krytyk w tabeli — test-writer
-oddaje pracę przed przejściem własnej listy. Nowe kształty:
-
-- **Komunikat na pełną treść** — każda linia ostrzeżenia i treść wyjątku w zmienionej
-  funkcji ma asercję na cały napis, nie „zawiera słowo”; mutant `XX…XX` zachowuje każde
-  słowo i przeżywa (HAR-183, wcześniej HAR-12).
-- **Każdy element zapytania z celem** — `ORDER BY` ustalające kolejność blokad, `FOR UPDATE`,
-  filtr: test, który oblewa po usunięciu właśnie tego elementu; test sąsiedniego elementu
-  tego samego zapytania go nie chroni (HAR-206).
-- **Lista przypadków niezależna od kodu** — parametry testu strażnika pochodzą z osobnej,
-  stałej listy, nigdy z listy wzorców, której używa kod pod testem; inaczej usunięcie
-  wzorca usuwa też jego test (HAR-163, wcześniej HAR-6, HAR-29).
-- **Stan rodzica różny od oczekiwanego u potomka** — test dziedziczenia (stdin, zmienna
-  środowiskowa) ustawia u rodzica wartość inną niż oczekiwana u potomka; pod xdist fd 0
-  to już `/dev/null` i asercja przechodzi bez reguły. „Nieustawiona” i „pusta” zmienna
-  to dwa osobne przypadki (HAR-85, HAR-157).
-- **Sprzątanie współbieżne i liczniki limitu** — anulowanie w `finally`, drugi czytnik
-  strumienia, gałąź `trap` skryptu: test na ścieżce, na której działa więcej niż jedno
-  zadanie i tylko ta gałąź zwalnia zasób; licznik limitu sprawdzony wartością, przy której
-  krok `+1` i `+2` dają różny wynik (HAR-151, HAR-160).
-- **Wartość, którą błąd mógłby zostawić** — test gałęzi błędu sprawdza wartość, którą
-  błędna zmiana by zapisała (np. `tabele=1` po błędzie skryptu), nie wartość, której żadna
-  implementacja nie zapisuje (HAR-221).
-- **Każdy człon warunku i strażnik z poprawki** — `isfinite` obok `<= 0`, `is not None`
-  dodane po review: parametryzacja złych wartości ma wartość odrzucaną tylko przez ten
-  człon; poprawka po review podlega tej samej regule co kod pierwotny (HAR-86, HAR-150).
-- **Front: stan przejściowy** — stan „przed pierwszą odpowiedzią” ma test z wstrzymaną
-  odpowiedzią i asercją przed jej nadejściem; gałąź `!r.ok` dostaje poprawny JSON (nie-JSON
-  trafia do `catch`); test gałęzi ustawiającej stan startuje z innego stanu niż docelowy,
-  bez przeładowania strony (HAR-77, pięć rund po 75).
-
-### Cudze tabele ręcznych mutantów
-
-Źródło: HAR-81 (przeniesienie kodu do `WidokRunu.tsx` zepsuło wpisy HAR-77 i HAR-156),
-HAR-221 (zepsuł dwa wiersze HAR-156), HAR-223 (po nim `HAR-0.toml` #7 nie trafia w kod).
-Na `origin/main` po M1.7 cztery wiersze nie trafiają w kod (HAR-0 #2, #7, #10, HAR-79 #35),
-bo CI wykonuje tylko tabele zmienione w PR.
-
-- Zmiana, która przenosi kod, zmienia tekst trafiany przez `szukaj` albo nazwę testu
-  wskazanego w tabeli **innego** ticketu, poprawia tę tabelę w tym samym PR (nowe `plik`,
-  pełniejsze `szukaj` albo wiersz przeniesiony do tabeli bieżącego ticketu).
-- Każdy wpis stałej mapy napisów ma osobny wiersz z testem, w którym tylko ta wartość decyduje.
-- Egzekucja: sprawdzenie statyczne wszystkich tabel na każdym PR — HAR-225.
-
-Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu
-elementu = **-25**; PR, po którym wiersz cudzej tabeli przestaje trafiać w kod = **-25**.
-
-## Regresja (retro M1.8)
-
-Źródło: 3 z 4 ticketów M1.8 dostały -25 z tej reguły u test-writera (HAR-172 dwie rundy z rzędu,
-„korekta WRACA”; HAR-173; HAR-225 „korekta WRACA” za HAR-141/HAR-133). Za każdym razem brakujące
-wiersze znalazł krytyk, nie autor tabeli. Nowe kształty:
-
-- **Lista kodu 3 to lista wierszy tabeli** — każda linia, którą `tools/mutanty_zmian.py` wypisuje
-  jako „bez mutantów — sprawdź ręcznie”, ma w tabeli ręcznych mutantów wiersz albo uzasadnienie
-  równoważności. Dotyczy także wywołania serwisu w trasie (argument `k.tenant_id`, dekorator,
-  `Depends(...)`), pól dataclass i modeli wejścia/wyjścia (HAR-172).
-- **Strażnik typu** (`isinstance(x, bool)` obok `int`) ma wejście, które odrzuca tylko on
-  (`proby: true` w checkpoincie) (HAR-172).
-- **Kolejność zapisów nakazana w ustaleniach** (artefakt → checkpoint → zdarzenie) ma test na
-  danych, który oblewa po zamianie dwóch zapisów; element krotki `except` (`OSError` obok błędu
-  dziedziny) — wejście wyzwalające tylko ten typ (HAR-173).
-- **Strażnik za strażnikiem z tym samym kodem wyjścia** (`if not tabele:` przed sprawdzeniem
-  zera wierszy, oba dają kod 2) — asercja na fragmencie komunikatu, który powstaje tylko w nim;
-  `except` wokół `is_file()` — test, który w niego trafia (HAR-225).
-- **Przeżywający ręczny mutant frontu bywa kodem martwym** — zanim dopiszesz test, sprawdź, czy
-  element jest osiągalny (React nie woła `onClick` przycisku z `disabled`; podwójna kontrola
-  `nieaktualny()`); kod nieosiągalny usuwasz (HAR-173).
-- **Mutant równoważny** oznaczasz `# pragma: no mutate` z komentarzem uzasadnienia w linii nad nim
-  i wierszem ręcznego mutanta dla wariantu, który da się zabić (precedens `src/runner/checkpoint.py`,
-  HAR-173 `_zapisz_decyzje`). Pusty `zamien` w pliku TypeScript, który zostawia nieużytą zmienną,
-  psuje build (TS6133) — wtedy `void x;` (HAR-173).
-
-Tekst reguły znów nie wystarczył — egzekucja „każda linia kodu 3 ma wiersz albo uzasadnienie”
-jako sprawdzenie w CI to ticket z retro M1.8.
-
-Co sprawdzić w review: linia z listy kodu 3 bez wiersza i bez uzasadnienia = **-25**; każdy
-z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
-
-
-## Regresja (retro M1.9)
-
-Źródło: 4 z 5 ticketów M1.9 dostały odjęcie z tej reguły w rundzie 1 (HAR-174 test-writer -25, HAR-176 test-writer -25 i
-backend-python -25, HAR-178 test-writer -25, HAR-228 test-writer -15). Za każdym razem brak wskazał krytyk, nie autor. Nowe kształty:
-
-- **Każdy element wyrażenia regularnego w stałej modułu** — klasa znaków, wykluczony znak (`[^\[\]:]`), kotwica i końcowy
-  literał (`\]`) mają wejście, na którym tylko ten element decyduje o dopasowaniu (HAR-176, `KOTWICA` w `src/runner/kotwice.py`).
-- **Element krotki `except`, którego nie da się wyzwolić w pojedynkę** (podklasa innego elementu: `UnicodeDecodeError` obok
-  `ValueError`) — usuwasz go albo opisujesz jako mutant równoważny (`[[rownowazny]]` z uzasadnieniem), zamiast zostawiać bez
-  testu (HAR-176).
-- **Agregacja po kilku wierszach** (agenci, próby, kroki) ma test z co najmniej dwoma wierszami tego samego klucza w różnych
-  stanach; na wejściu z jednym wierszem każdy element zbioru stanów i klucz grupowania są równoważne z ich brakiem (HAR-178,
-  `src/cockpit/services/runs.py:325-329`).
-- **Zwolnienie zasobu w `finally`** (deskryptor, uchwyt pliku) ma test obserwujący zwolnienie — stan deskryptora po wyjściu —
-  i wiersz tabeli; korekta WRACA za HAR-49 z M1.4 (HAR-174, `--stdin-plik` w `src/runner/straznik.py`).
-- **Wywołanie istniejącego strażnika wewnątrz nowej funkcji** (`_wymagaj_dokladnie_raz(...)`) jest elementem nowej logiki i ma
-  własny wiersz z testem, w którym tylko to wywołanie decyduje o kodzie błędu (HAR-228).
-- **Mutant, którego nie da się zaimportować** (mutowalna wartość domyślna dataclass, dataclass bez `frozen` jako pole `frozen`)
-  nie trafia do tabeli — pytest kończy się błędem zbierania, a narzędzie zgłasza błąd, nie zabicie (HAR-174).
-
-Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
-
-## Regresja (retro M1.10)
-
-Źródło: HAR-170 (test-writer -25 w rundzie 1, potem cztery rundy), uwagi krytyka bez odjęcia w HAR-232 i HAR-233,
-wiersze dla listy kodu 3 dopisywane osobnym commitem po pierwszym commicie ticketu (HAR-179 `62894f3`, HAR-230
-`5699ba9`, HAR-234 `65d4126`), cudze tabele zepsute w HAR-179 i HAR-170. Nowe kształty:
-
-- **Kolejność i filtr rodzaju zbudowane w Pythonie** — sortowanie stanów po słowniku i filtr `kind == "step_finished"`
-  (HAR-170, `src/cockpit/services/odbior_dowody.py`) mają test, w którym tylko one decydują: dla sortowania wejście,
-  w którym kolejność wstawiania różni się od kolejności wyniku (powtórzony klucz przepleciony innym), dla filtra
-  zdarzenie odrzuconego rodzaju (`step_failed`) z tymi samymi danymi. Uogólnienie punktu M1.7 o `ORDER BY` na kod
-  poza zapytaniem.
-- **„Mutant tylko wyścigowo” to nie równoważność** — warunek liczący odpowiedzi (`odpowiedzi_get >= 2` → `>= 1`,
-  HAR-232) ma wiersz z testem, który wymusza kolejność zdarzeń, albo jest usunięty; uzasadnienie w nagłówku TOML
-  bez wskazania, że żadne wejście nie odróżnia wersji, nie zwalnia z wiersza.
-- **Każda gałąź `exit 1` w skrypcie CI** (HAR-233, krok poprzedniego zielonego wyniku: pięć gałęzi błędu) ma wiersz
-  ręcznego mutanta usuwający `exit 1` — komunikat `::error::` bez wyjścia z kodem 1 to zielony krok.
-- **Lista kodu 3 przed pierwszym commitem** — test-writer uruchamia `python tools/mutanty_reczne.py --pokrycie-kod3
-  <lista> tests/mutanty_reczne/<ticket>.toml` przed oddaniem pracy, nie po czerwonym kroku CI; trzy tickety M1.10
-  dopisywały te wiersze osobnym commitem.
-- **Cudze tabele przed PR** — `python tools/mutanty_reczne.py --sprawdz-wszystkie` po każdej zmianie kodu, nie tylko w
-  CI. Dwa nowe kształty: `szukaj` z treścią `web/openapi.json` przestaje być jednoznaczny po regeneracji kontraktu
-  (HAR-170 poprawiał HAR-159 #18, HAR-174 #143–144), a kod skopiowany do nowej funkcji podwaja krótkie `szukaj`
-  w tym samym pliku (HAR-179: HAR-172 #10, #82, HAR-89 #22 „występuje 3 razy”). Wiersz celuje w źródło
-  (`src/cockpit/api/schematy.py`), nie w plik generowany, gdy test oblewa także po mutacji źródła.
-
-Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
+- Element z diffu (gałąź, element zbioru/krotki `except`/wyrażenia regularnego, tryb, zakres,
+  kształt z katalogu) bez testu, który oblewa po jego usunięciu = **-25**.
+- Przeżywający mutant w zmienionej funkcji bez uzasadnienia równoważności, także fałszywe
+  `[[rownowazny]]` = **-25** (CI: kod 1 → czerwony `mutation`).
+- Zmiana poza zasięgiem mutmuta bez tabeli ręcznych mutantów = **-25** (CI: „brak dowodu”).
+- Linia z listy kodu 3 bez wiersza i bez uzasadnienia = **-25** (CI: `--pokrycie-kod3`).
+- Wiersz, którego test nadal przechodzi po mutacji (krytyk sprawdza lokalnie co najmniej
+  jeden wiersz) = **-25**.
+- PR, po którym wiersz cudzej tabeli przestaje trafiać w kod = **-25** (CI: `--sprawdz-wszystkie`).
+- Test z limitem czasu w nazwie, niezależny od mechanizmu, który ten limit realizuje = **-20**.
