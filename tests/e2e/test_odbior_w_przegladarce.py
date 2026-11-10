@@ -14,14 +14,11 @@ istnieje. Dwie grupy testow:
 from __future__ import annotations
 
 import asyncio
-import faulthandler
-import gc
 import json
 import os
 import re
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -60,75 +57,26 @@ def browser_context_args(browser_context_args):
     return {**browser_context_args, "locale": "en-US"}
 
 
-LIMIT_TESTU_S = 300
-
-
-def _zrzuc_zadania_asyncio() -> None:
-    """Niezakonczone zadania kazdej zywej petli asyncio w procesie (diagnostyka zawieszenia)."""
-    try:
-        for petla in [o for o in gc.get_objects() if isinstance(o, asyncio.AbstractEventLoop)]:
-            if petla.is_closed():
-                continue
-            zadania = asyncio.all_tasks(petla)
-            sys.stderr.write(f"\n+++ petla {petla!r}: {len(zadania)} zadan\n")
-            for zadanie in zadania:
-                zadanie.print_stack(file=sys.stderr)
-    except Exception as blad:  # diagnostyka nie moze przykryc zrzutu stosu
-        sys.stderr.write(f"\n+++ zrzut zadan asyncio nieudany: {blad!r}\n")
-
-
-def _zrzuc_aktywnosc_bazy() -> None:
-    """Sesje bazy i na co czekaja (pg_stat_activity), z limitem czasu."""
-    async def _pytaj():
-        engine = create_async_engine(os.environ["COCKPIT_TEST_DATABASE_URL"])
-        try:
-            async with engine.connect() as conn:
-                return (await conn.execute(text(
-                    "SELECT pid, state, wait_event_type, wait_event, now() - query_start, "
-                    "left(query, 200) FROM pg_stat_activity WHERE datname = current_database() "
-                    "AND pid <> pg_backend_pid()"))).all()
-        finally:
-            await engine.dispose()
-
-    try:
-        wiersze = asyncio.run(asyncio.wait_for(_pytaj(), timeout=20))
-        sys.stderr.write(f"\n+++ pg_stat_activity ({len(wiersze)} sesji):\n")
-        for wiersz in wiersze:
-            sys.stderr.write(f"  {tuple(wiersz)!r}\n")
-    except Exception as blad:  # diagnostyka nie moze przykryc zrzutu stosu
-        sys.stderr.write(f"\n+++ pg_stat_activity nieudane: {blad!r}\n")
+_WSTRZYMANE_TRASY: list = []
 
 
 @pytest.fixture(autouse=True)
-def _limit_czasu_testu(request):
-    """Zawieszony test nie blokuje CI bez konca: po limicie stos wszystkich watkow w logu i koniec procesu.
+def _zwolnij_wstrzymane_trasy(page):
+    """Po tescie, przy zywej stronie, przerywa trasy wstrzymane przez `_wstrzymaj` i nigdy nie obsluzone.
 
-    Przechwytywanie wyjscia pytesta jest zdejmowane przed zrzutem (jak w pytest-timeout),
-    inaczej stos trafilby do przechwyconego stderr i zniknal razem z procesem."""
-    koniec = threading.Event()
+    Trasa bez odpowiedzi zostawiala zadanie Playwrighta, ktore trafialo do petli `asyncio.run`
+    w innym watku (migracje, zapytania do bazy w conftest) i zakleszczalo nastepny test w CI
+    (HAR-121, zrzut zadan asyncio z przebiegu e2e PR #167). Trasa juz obsluzona przez test
+    rzuca przy `abort` blad Playwrighta - to oczekiwane i pomijane."""
+    from playwright.sync_api import Error as BladPlaywrighta
 
-    def straz() -> None:
-        if koniec.wait(LIMIT_TESTU_S):
-            return
-        capman = request.config.pluginmanager.getplugin("capturemanager")
-        if capman is not None:
-            capman.suspend_global_capture(in_=True)
-        sys.stderr.write(f"\n+++ ZAWIESZONY TEST po {LIMIT_TESTU_S} s: {request.node.nodeid}\n")
-        sys.stderr.flush()
-        faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
-        sys.stderr.flush()
-        _zrzuc_zadania_asyncio()
-        _zrzuc_aktywnosc_bazy()
-        sys.stderr.flush()
-        os._exit(1)
-
-    watek = threading.Thread(target=straz, name="limit-czasu-testu", daemon=True)
-    watek.start()
-    try:
-        yield
-    finally:
-        koniec.set()
-        watek.join(timeout=5)
+    yield
+    while _WSTRZYMANE_TRASY:
+        trasa = _WSTRZYMANE_TRASY.pop()
+        try:
+            trasa.abort()
+        except BladPlaywrighta:
+            pass
 
 
 @pytest.fixture(autouse=True)
@@ -306,7 +254,12 @@ def _czekaj_na(page, warunek, nazwa: str, limit_ms: int = 6000) -> None:
 def _wstrzymaj(page, wzorzec: str) -> list:
     """Zadania pasujace do wzorca zostaja bez odpowiedzi, az test wywola `route.fulfill`."""
     wstrzymane: list = []
-    page.route(wzorzec, lambda r: wstrzymane.append(r))
+
+    def wstrzymaj(trasa) -> None:
+        wstrzymane.append(trasa)
+        _WSTRZYMANE_TRASY.append(trasa)
+
+    page.route(wzorzec, wstrzymaj)
     return wstrzymane
 
 
