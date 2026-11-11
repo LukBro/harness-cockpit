@@ -143,6 +143,7 @@ a kod pisze agent, który naśladuje wzorzec z sąsiednich tras.
 
 Pilnuje tego `tools/check_layers.py` — uruchamiany w CI i przez
 `test_warstwa_api_nie_dotyka_bazy`. **Reguła bez sprawdzenia to życzenie.**
+Limity pól modeli wejścia względem kolumn `String(n)` pilnuje `tools/check_granica.py` (krok CI).
 
 NEVER: nie dokładaj repozytoriów ani wzorca jednostki pracy nad SQLAlchemy.
 WHY: on już jest abstrakcją nad bazą; druga warstwa nad nim niczego nie wymusza.

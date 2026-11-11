@@ -13,37 +13,37 @@
 # --- src/cockpit/api/app.py: listy kotwic i artefaktow (limity elementow i listy) ---
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'Field(min_length=1, max_length=1000)]], Field(max_length=1000)]'
 zamien = 'Field(min_length=0, max_length=1000)]], Field(max_length=1000)]'
 test = "tests/test_odbior_dowody.py::test_kotwica_pusta_albo_dluzsza_niz_1000_znakow_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'Field(min_length=1, max_length=1000)]], Field(max_length=1000)]'
 zamien = 'Field(min_length=1, max_length=1001)]], Field(max_length=1000)]'
 test = "tests/test_odbior_dowody.py::test_kotwica_pusta_albo_dluzsza_niz_1000_znakow_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'Field(min_length=1, max_length=1000)]], Field(max_length=1000)]'
 zamien = 'Field(min_length=1, max_length=1000)]], Field(max_length=1001)]'
 test = "tests/test_odbior_dowody.py::test_tysiac_i_jedna_kotwica_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'Field(min_length=1, max_length=255)]], Field(max_length=100)]'
 zamien = 'Field(min_length=0, max_length=255)]], Field(max_length=100)]'
 test = "tests/test_odbior_dowody.py::test_nazwa_artefaktu_pusta_albo_dluzsza_niz_255_znakow_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'Field(min_length=1, max_length=255)]], Field(max_length=100)]'
 zamien = 'Field(min_length=1, max_length=256)]], Field(max_length=100)]'
 test = "tests/test_odbior_dowody.py::test_nazwa_artefaktu_pusta_albo_dluzsza_niz_255_znakow_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'Field(min_length=1, max_length=255)]], Field(max_length=100)]'
 zamien = 'Field(min_length=1, max_length=255)]], Field(max_length=101)]'
 test = "tests/test_odbior_dowody.py::test_sto_jeden_artefaktow_jest_odrzucone"
@@ -52,145 +52,145 @@ test = "tests/test_odbior_dowody.py::test_sto_jeden_artefaktow_jest_odrzucone"
 # --- src/cockpit/api/app.py: DowodIn (extra, strict, limity, zakres kodu wyjscia, wzorzec sumy, zrodlo) ---
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'model_config = ConfigDict(extra="forbid", strict=True)'
 zamien = 'model_config = ConfigDict(extra="ignore", strict=True)'
 test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'model_config = ConfigDict(extra="forbid", strict=True)'
 zamien = 'model_config = ConfigDict(extra="forbid", strict=False)'
 test = "tests/test_odbior_dowody.py::test_kod_wyjscia_ktory_nie_jest_calkowita_liczba_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'capability: str = Field(max_length=200, min_length=1)'
 zamien = 'capability: str = Field(max_length=201, min_length=1)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'capability: str = Field(max_length=200, min_length=1)'
 zamien = 'capability: str = Field(max_length=200, min_length=0)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
 zamien = 'exit_code: int | None = Field(ge=-2_147_483_649, le=2_147_483_647)'
 test = "tests/test_odbior_dowody.py::test_kod_wyjscia_poza_zakresem_int4_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
 zamien = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_648)'
 test = "tests/test_odbior_dowody.py::test_kod_wyjscia_poza_zakresem_int4_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
 zamien = 'exit_code: int | None = Field(ge=-2_147_483_647, le=2_147_483_647)'
 test = "tests/test_odbior_dowody.py::test_kod_wyjscia_w_zakresie_int4_jest_przyjety"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)'
 zamien = 'exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_646)'
 test = "tests/test_odbior_dowody.py::test_kod_wyjscia_w_zakresie_int4_jest_przyjety"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"[0-9a-f]{64}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[0-9a-f]{63}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[0-9a-f]{65}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[0-9a-z]{64}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[a-f]{64}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'sha256: str = Field(pattern=r"^[0-9a-f]{64}$")'
 zamien = 'sha256: str = Field(pattern=r"^[0-9]{64}$")'
 test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'started_at: str = Field(min_length=1, max_length=64)'
 zamien = 'started_at: str = Field(min_length=1, max_length=65)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'started_at: str = Field(min_length=1, max_length=64)'
 zamien = 'started_at: str = Field(min_length=0, max_length=64)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'finished_at: str = Field(min_length=1, max_length=64)'
 zamien = 'finished_at: str = Field(min_length=1, max_length=65)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'finished_at: str = Field(min_length=1, max_length=64)'
 zamien = 'finished_at: str = Field(min_length=0, max_length=64)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = 'source: Literal["engine", "agent"]'
-zamien = 'source: Literal["engine"]'
+plik = "src/cockpit/api/schematy.py"
+szukaj = "source: Literal[\"engine\", \"agent\"]\n    plik: str = Field("
+zamien = "source: Literal[\"engine\"]\n    plik: str = Field("
 test = "tests/test_odbior_dowody.py::test_zrodlo_dowodu_engine_i_agent_jest_przyjete"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = 'source: Literal["engine", "agent"]'
-zamien = 'source: Literal["engine", "agent", "człowiek"]'
+plik = "src/cockpit/api/schematy.py"
+szukaj = "source: Literal[\"engine\", \"agent\"]\n    plik: str = Field("
+zamien = "source: Literal[\"engine\", \"agent\", \"człowiek\"]\n    plik: str = Field("
 test = "tests/test_odbior_dowody.py::test_zrodlo_dowodu_spoza_engine_i_agent_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'plik: str = Field(min_length=1, max_length=255)'
 zamien = 'plik: str = Field(min_length=1, max_length=256)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'plik: str = Field(min_length=1, max_length=255)'
 zamien = 'plik: str = Field(min_length=0, max_length=255)'
 test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
@@ -199,55 +199,55 @@ test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrz
 # --- src/cockpit/api/app.py: nowe pola EventIn (typ, wartosc domyslna, limity) ---
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'dowod: DowodIn | None = None'
 zamien = 'dowod: dict | None = None'
 test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'dowod: DowodIn | None = None'
 zamien = 'dowod: DowodIn | None'
 test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'verdict: str | None = Field(default=None, min_length=1, max_length=200)'
 zamien = 'verdict: str | None = Field(default=None, min_length=0, max_length=200)'
 test = "tests/test_odbior_dowody.py::test_werdykt_pusty_za_dlugi_albo_nie_napis_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'verdict: str | None = Field(default=None, min_length=1, max_length=200)'
 zamien = 'verdict: str | None = Field(default=None, min_length=1, max_length=201)'
 test = "tests/test_odbior_dowody.py::test_werdykt_pusty_za_dlugi_albo_nie_napis_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'verdict: str | None = Field(default=None, min_length=1, max_length=200)'
 zamien = 'verdict: str | None = Field(min_length=1, max_length=200)'
 test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'kotwice: _ListaKotwic | None = None'
 zamien = 'kotwice: _ListaKotwic | None'
 test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'artefakty: _ListaArtefaktow | None = None'
 zamien = 'artefakty: _ListaArtefaktow | None'
 test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'kotwice: _ListaKotwic | None = None'
 zamien = 'kotwice: list[str] | None = None'
 test = "tests/test_kontrakt_api.py::test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'artefakty: _ListaArtefaktow | None = None'
 zamien = 'artefakty: list[str] | None = None'
 test = "tests/test_kontrakt_api.py::test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami"
@@ -463,14 +463,14 @@ test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_ko
 
 [[mutant]]
 plik = "src/cockpit/api/schematy.py"
-szukaj = '    capability: str'
-zamien = '    capability: int'
+szukaj = "    capability: str\n"
+zamien = "    capability: int\n"
 test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
 
 [[mutant]]
 plik = "src/cockpit/api/schematy.py"
-szukaj = '    source: Literal["engine", "agent"]'
-zamien = '    source: Literal["engine"]'
+szukaj = "    source: Literal[\"engine\", \"agent\"]\n    exit_code"
+zamien = "    source: Literal[\"engine\"]\n    exit_code"
 test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
 
 [[mutant]]
@@ -481,14 +481,14 @@ test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_ko
 
 [[mutant]]
 plik = "src/cockpit/api/schematy.py"
-szukaj = '    sha256: str'
-zamien = '    sha256: int'
+szukaj = "    sha256: str\n"
+zamien = "    sha256: int\n"
 test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
 
 [[mutant]]
 plik = "src/cockpit/api/schematy.py"
-szukaj = '    plik: str'
-zamien = '    plik: int'
+szukaj = "    plik: str\n"
+zamien = "    plik: int\n"
 test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
 
 [[mutant]]
@@ -501,8 +501,8 @@ test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_ko
 
 [[mutant]]
 plik = "src/cockpit/api/schematy.py"
-szukaj = '    verdict: str'
-zamien = '    verdict: int'
+szukaj = "    verdict: str\n"
+zamien = "    verdict: int\n"
 test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
 
 [[mutant]]
@@ -1551,7 +1551,7 @@ uzasadnienie = "Usuniecie key: zmiana runId ustawia w efekcie WidokRunu status=n
 # --- runda 3: linie kodu 3 w app.py i schematy.py bez wiersza (deklaracje typow, parametry tras) ---
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = '''_ListaKotwic = Annotated[
     list['''
 zamien = '''_ListaKotwic = Annotated[
@@ -1559,7 +1559,7 @@ zamien = '''_ListaKotwic = Annotated[
 test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = '''_ListaArtefaktow = Annotated[
     list['''
 zamien = '''_ListaArtefaktow = Annotated[
@@ -1567,7 +1567,7 @@ zamien = '''_ListaArtefaktow = Annotated[
 test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'class DowodIn(BaseModel):'
 zamien = 'class DowodIn(BaseModel, extra="ignore"):'
 test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"

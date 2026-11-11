@@ -48,7 +48,7 @@ def main() -> None:
     async def agent(spec, polecenie, katalog, emit_, *, katalog_runu=None, prompt=None) -> WynikKroku:
         _dopisz(plik_agenta, spec.step_id)
         await asyncio.sleep(opis.get("spanie", 0))
-        return WynikKroku("zakonczony", None, 0)
+        return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
     profil = ProfilBackendu(modele={
         Tier.judgment: "m-judgment", Tier.execution: "m-execution", Tier.retrieval: "m-retrieval"})

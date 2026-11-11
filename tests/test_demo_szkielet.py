@@ -11,7 +11,6 @@ import hashlib
 import importlib.util
 import os
 import socket
-import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+from procesy import uruchom_i_zbierz
 
 KORZEN = Path(__file__).resolve().parent.parent
 SKRYPT = KORZEN / "tools" / "demo_szkielet.py"
@@ -38,7 +38,7 @@ wymaga_postgresa = pytest.mark.skipif(
 def _uruchom(cwd: Path, **env_dodatkowe: str):
     env = {k: v for k, v in os.environ.items() if k != ZMIENNA}
     env.update(env_dodatkowe)
-    return subprocess.run(
+    return uruchom_i_zbierz(
         [sys.executable, str(SKRYPT)],
         cwd=cwd, env=env, capture_output=True, text=True, timeout=120,
     )

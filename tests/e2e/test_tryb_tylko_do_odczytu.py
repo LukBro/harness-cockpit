@@ -63,7 +63,7 @@ def browser_context_args(browser_context_args):
 def _w_osobnym_watku(koro):
     # sync API playwrighta trzyma petle zdarzen w watku testu: osobny watek i petla
     with ThreadPoolExecutor(max_workers=1) as pula:
-        return pula.submit(lambda: asyncio.run(koro())).result()
+        return pula.submit(lambda: asyncio.run(koro())).result(timeout=60)
 
 
 def _zapytaj_baze(zapytanie: str, parametry: dict | None = None) -> list[tuple]:

@@ -481,7 +481,7 @@ async def test_artefakt_z_werdyktem_rozjazd_konczy_krok_porazka_z_wartoscia_werd
 
     wynik = await krok(spec(), wypisz(tresc), katalog, katalog_runu, werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("nieudany", "werdykt: rozjazd", 0, werdykt="rozjazd")
+    assert wynik == WynikKroku(status="nieudany", powod="werdykt: rozjazd", kod_wyjscia=0, werdykt="rozjazd")
     assert (katalog_runu / KROK / NAZWA).read_text(encoding="utf-8") == tresc
 
 
@@ -489,7 +489,7 @@ async def test_werdykt_z_listy_fail_o_wielu_slowach_jest_podany_w_calosci(katalo
     wynik = await krok(
         spec(), wypisz("WERDYKT: brak dowodu\n"), katalog, katalog_runu, werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("nieudany", "werdykt: brak dowodu", 0, werdykt="brak dowodu")
+    assert wynik == WynikKroku(status="nieudany", powod="werdykt: brak dowodu", kod_wyjscia=0, werdykt="brak dowodu")
 
 
 async def test_artefakt_z_werdyktem_z_listy_pass_konczy_krok_sukcesem_i_niesie_werdykt(
@@ -499,7 +499,7 @@ async def test_artefakt_z_werdyktem_z_listy_pass_konczy_krok_sukcesem_i_niesie_w
         spec(), wypisz("WERDYKT: zgodny\nprzejrzano modele\n"), katalog, katalog_runu,
         werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, werdykt="zgodny")
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, werdykt="zgodny")
 
 
 async def test_werdykt_w_wyniku_kroku_ma_wartosc_z_kontraktu_a_nie_z_pliku(katalog, katalog_runu):
@@ -507,7 +507,7 @@ async def test_werdykt_w_wyniku_kroku_ma_wartosc_z_kontraktu_a_nie_z_pliku(katal
 
     wynik = await krok(spec(), wypisz("werdykt: tak\n"), katalog, katalog_runu, werdykt=kontrakt)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, werdykt="TAK")
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, werdykt="TAK")
 
 
 async def test_artefakt_bez_linii_werdyktu_konczy_krok_bledem_evidence_required_bez_werdyktu(
@@ -517,8 +517,8 @@ async def test_artefakt_bez_linii_werdyktu_konczy_krok_bledem_evidence_required_
         spec(), wypisz("Wszystko zgodne.\n"), katalog, katalog_runu, werdykt=KONTRAKT)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        "niezmiennik evidence_required: linia 1 w rozjazdy.md nie zaczyna się od WERDYKT:", 0)
+        status="nieudany",
+        powod="niezmiennik evidence_required: linia 1 w rozjazdy.md nie zaczyna się od WERDYKT:", kod_wyjscia=0)
     assert wynik.werdykt is None
 
 
@@ -531,7 +531,7 @@ async def test_artefakt_krotszy_niz_wskazana_linia_werdyktu_konczy_krok_bledem_e
         spec(), wypisz("WERDYKT: zgodny\n"), katalog, katalog_runu, werdykt=kontrakt)
 
     assert wynik == WynikKroku(
-        "nieudany", "niezmiennik evidence_required: brak linii werdyktu 2 w rozjazdy.md", 0)
+        status="nieudany", powod="niezmiennik evidence_required: brak linii werdyktu 2 w rozjazdy.md", kod_wyjscia=0)
 
 
 async def test_werdykt_spoza_list_konczy_krok_bledem_evidence_required_bez_echa_wartosci(
@@ -541,7 +541,7 @@ async def test_werdykt_spoza_list_konczy_krok_bledem_evidence_required_bez_echa_
         spec(), wypisz("WERDYKT: wymyslony\n"), katalog, katalog_runu, werdykt=KONTRAKT)
 
     assert wynik == WynikKroku(
-        "nieudany", "niezmiennik evidence_required: werdykt spoza kontraktu w rozjazdy.md", 0)
+        status="nieudany", powod="niezmiennik evidence_required: werdykt spoza kontraktu w rozjazdy.md", kod_wyjscia=0)
 
 
 async def test_bez_kontraktu_werdyktu_artefakt_bez_linii_werdyktu_nadal_konczy_krok_sukcesem(
@@ -549,7 +549,7 @@ async def test_bez_kontraktu_werdyktu_artefakt_bez_linii_werdyktu_nadal_konczy_k
 ):
     wynik = await krok(spec(), wypisz("Wszystko zgodne.\n"), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert wynik.werdykt is None
 
 
@@ -557,14 +557,14 @@ async def test_bez_kontraktu_werdyktu_jawne_none_nie_zmienia_zachowania(katalog,
     wynik = await krok(
         spec(), wypisz("WERDYKT: rozjazd\n"), katalog, katalog_runu, werdykt=None)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
 
 async def test_kod_wyjscia_agenta_rozny_od_zera_wygrywa_z_werdyktem(katalog, katalog_runu):
     wynik = await krok(
         spec(), wypisz("WERDYKT: zgodny\n", kod=3), katalog, katalog_runu, werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3)
 
 
 async def test_recenzent_ktory_zmienil_repozytorium_ma_porazke_reviewer_readonly_a_nie_werdykt(
@@ -589,7 +589,7 @@ async def test_autor_zapisujacy_artefakt_w_kopii_roboczej_tez_podlega_werdyktowi
     wynik = await krok(
         spec(Rola.author, ["wynik.md"]), polecenie, katalog, katalog_runu, werdykt=kontrakt)
 
-    assert wynik == WynikKroku("nieudany", "werdykt: NIE", 0, werdykt="NIE")
+    assert wynik == WynikKroku(status="nieudany", powod="werdykt: NIE", kod_wyjscia=0, werdykt="NIE")
 
 
 ZMIENIONE = [{"plik": "src/a.py", "linie": [[10, 12]]}]
@@ -618,7 +618,7 @@ async def test_notatka_zmiany_z_werdyktem_pass_niesie_obok_kotwic_werdykt(
         spec(wyjscia=["notatka-zmiany.md"]), wypisz(notatka("zgodny", "a.py:11")),
         katalog, katalog_runu, zmienione_linie=plik_linii, werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, kotwice=("src/a.py:11",), werdykt="zgodny")
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, kotwice=("src/a.py:11",), werdykt="zgodny")
 
 
 async def test_werdykt_fail_notatki_wygrywa_z_oceniana_pozniej_kotwica_spoza_diffu(
@@ -628,7 +628,7 @@ async def test_werdykt_fail_notatki_wygrywa_z_oceniana_pozniej_kotwica_spoza_dif
         spec(wyjscia=["notatka-zmiany.md"]), wypisz(notatka("rozjazd", "a.py:90")),
         katalog, katalog_runu, zmienione_linie=plik_linii, werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("nieudany", "werdykt: rozjazd", 0, werdykt="rozjazd")
+    assert wynik == WynikKroku(status="nieudany", powod="werdykt: rozjazd", kod_wyjscia=0, werdykt="rozjazd")
 
 
 async def test_werdykt_fail_notatki_z_poprawna_kotwica_nadal_konczy_krok_porazka(
@@ -638,7 +638,7 @@ async def test_werdykt_fail_notatki_z_poprawna_kotwica_nadal_konczy_krok_porazka
         spec(wyjscia=["notatka-zmiany.md"]), wypisz(notatka("rozjazd", "a.py:11")),
         katalog, katalog_runu, zmienione_linie=plik_linii, werdykt=KONTRAKT)
 
-    assert wynik == WynikKroku("nieudany", "werdykt: rozjazd", 0, werdykt="rozjazd")
+    assert wynik == WynikKroku(status="nieudany", powod="werdykt: rozjazd", kod_wyjscia=0, werdykt="rozjazd")
 
 
 async def test_werdykt_pass_notatki_nie_chroni_kotwicy_spoza_diffu(
@@ -787,8 +787,8 @@ async def test_silnik_przekazuje_agentowi_kontrakt_werdyktu_tylko_gdy_skill_go_d
 @pytest.mark.parametrize(
     ("wynik", "rodzaj"),
     [
-        (WynikKroku("zakonczony", None, 0, werdykt="zgodny"), "step_finished"),
-        (WynikKroku("nieudany", "werdykt: rozjazd", 0, werdykt="rozjazd"), "step_failed"),
+        (WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, werdykt="zgodny"), "step_finished"),
+        (WynikKroku(status="nieudany", powod="werdykt: rozjazd", kod_wyjscia=0, werdykt="rozjazd"), "step_failed"),
     ],
 )
 async def test_werdykt_z_wyniku_kroku_trafia_do_zdarzenia_konca_kroku(tmp_path, wynik, rodzaj):

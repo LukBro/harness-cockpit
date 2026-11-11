@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import subprocess
 import sys
 from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
@@ -26,7 +25,7 @@ from cockpit.services.invariants import Rola, Tier
 from cockpit.services.skills import rozstrzygnij_rejestr
 from cockpit.services.workflow import ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
-from procesy import czekaj_na_warunek, czy_zyje, zabij_proces
+from procesy import czekaj_na_warunek, czy_zyje, zabij_proces, uruchom_i_zbierz
 from runner.agent import ProfilBackendu
 from runner.bufor import BrakMiejsca
 from runner.krok import WynikKroku, wykonaj_krok
@@ -81,7 +80,7 @@ sys.exit(p.get("kod", 0))
 
 
 def _git(repo: Path, *argumenty: str) -> str:
-    return subprocess.run(
+    return uruchom_i_zbierz(
         ["git", *TOZSAMOSC, "-C", str(repo), *argumenty],
         check=True, capture_output=True, text=True,
     ).stdout
@@ -191,7 +190,7 @@ class Szpieg:
         czekanie = self.opoznienia.get(spec.step_id, self.opoznienie)
         if czekanie:
             await asyncio.sleep(czekanie)
-        return self.wyniki.get(spec.step_id, WynikKroku("zakonczony", None, 0))
+        return self.wyniki.get(spec.step_id, WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0))
 
     @property
     def kroki(self) -> list[str]:
@@ -498,7 +497,7 @@ async def test_zdarzenia_kroku_niosa_run_id_step_id_i_agent_id_rowny_step_id(tmp
 async def test_zakonczony_i_nieudany_krok_niosa_zmierzony_czas_trwania(tmp_path):
     s = swiat(tmp_path, [K("a"), K("b")])
     agent = Szpieg(
-        opoznienie=0.3, wyniki={"b": WynikKroku("nieudany", "kod wyjścia 1", 1)})
+        opoznienie=0.3, wyniki={"b": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1)})
 
     zdarzenia = await uruchom(s, agent)
 
@@ -995,7 +994,7 @@ async def test_czas_trwania_kroku_to_roznica_odczytow_zegara_w_milisekundach(tmp
 
 async def test_zdarzenia_kroku_niosa_pusty_tekst_a_koszt_jako_brak_pomiaru(tmp_path):
     s = swiat(tmp_path, [K("a"), K("b")])
-    agent = Szpieg(wyniki={"b": WynikKroku("nieudany", "kod wyjścia 1", 1)})
+    agent = Szpieg(wyniki={"b": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1)})
 
     zdarzenia = await uruchom(s, agent)
 

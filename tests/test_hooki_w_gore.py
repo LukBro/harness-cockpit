@@ -139,7 +139,7 @@ async def _przekazywanie(czytnik: CzytnikHookow, runner: RunnerKlienta):
             yield zadanie
         finally:
             zadanie.cancel()
-            await asyncio.wait({zadanie})
+            await asyncio.wait({zadanie}, timeout=5)
 
 
 async def _przeslij(czytnik: CzytnikHookow, runner: RunnerKlienta) -> None:
@@ -394,7 +394,7 @@ async def test_blad_bufora_przy_jednym_zdarzeniu_nie_zatrzymuje_przekazywania_na
         assert not zadanie.done()                        # pętla żyje
     finally:
         zadanie.cancel()
-        await asyncio.wait({zadanie})
+        await asyncio.wait({zadanie}, timeout=5)
 
     assert proby == ["NarzedzieA", "NarzedzieB"]
     assert [w["text"] for w in wyslane] == ["NarzedzieB"]
@@ -417,7 +417,7 @@ async def test_inny_wyjatek_wysylki_konczy_przekazywanie_tym_samym_wyjatkiem():
             await asyncio.wait_for(zadanie, LIMIT_S)
     finally:
         zadanie.cancel()
-        await asyncio.wait({zadanie})
+        await asyncio.wait({zadanie}, timeout=5)
 
 
 async def test_przekazuj_wywoluje_wysylke_z_polami_zwroconymi_przez_do_wysylki():
@@ -433,7 +433,7 @@ async def test_przekazuj_wywoluje_wysylke_z_polami_zwroconymi_przez_do_wysylki()
         await asyncio.wait_for(czytnik.kolejka.join(), LIMIT_S)
     finally:
         zadanie.cancel()
-        await asyncio.wait({zadanie})
+        await asyncio.wait({zadanie}, timeout=5)
 
     assert wyslane == [do_wysylki(ev, "run-1", "krok-1")]
     assert wyslane[0]["run_id"] == "run-1"
@@ -559,7 +559,7 @@ async def test_zdarzenie_z_polem_liczbowym_nie_trafia_do_wysylki_a_nastepne_popr
         assert not zadanie.done()                                 # pętla żyje
     finally:
         zadanie.cancel()
-        await asyncio.wait({zadanie})
+        await asyncio.wait({zadanie}, timeout=5)
 
     assert [w["text"] for w in wyslane] == ["NarzedzieB"]
     stderr = capsys.readouterr().err

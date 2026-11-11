@@ -48,32 +48,32 @@ test = "tests/test_stan_krokow.py::test_zdarzenie_kroku_ustawia_jego_stan"
 # --- EventIn.attempt: granice pola ---
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
 zamien = "attempt: int | None = Field(default=None, ge=0, le=2_147_483_647)"
 test = "tests/test_stan_krokow.py::test_numer_proby_poza_zakresem_jest_odrzucony_i_nic_nie_zapisuje"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
 zamien = "attempt: int | None = Field(default=None, ge=2, le=2_147_483_647)"
 test = "tests/test_stan_krokow.py::test_numer_proby_pierwszy_jest_przyjety"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
 zamien = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_648)"
 test = "tests/test_stan_krokow.py::test_numer_proby_poza_zakresem_jest_odrzucony_i_nic_nie_zapisuje"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
 zamien = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_646)"
 test = "tests/test_stan_krokow.py::test_numer_proby_rowny_najwiekszej_liczbie_calkowitej_bazy_jest_przyjety"
 
 # Brak numeru proby w zdarzeniu to None (brak pomiaru), nie 1.
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
 zamien = "attempt: int | None = Field(default=1, ge=1, le=2_147_483_647)"
 test = "tests/test_stan_krokow.py::test_zdarzenie_bez_numeru_proby_zapisuje_brak_proby_a_nie_pierwsza"

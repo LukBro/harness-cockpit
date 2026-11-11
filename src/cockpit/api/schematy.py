@@ -12,11 +12,77 @@ wyliczenia stanu runu i rodzaju runnera (dozwolone w `api/` przez tools/check_la
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from cockpit.db.models import RunnerKind, RunStatus
+
+
+_ListaKotwic = Annotated[
+    list[Annotated[str, Field(min_length=1, max_length=1000)]], Field(max_length=1000)]
+_ListaArtefaktow = Annotated[
+    list[Annotated[str, Field(min_length=1, max_length=255)]], Field(max_length=100)]
+
+
+class DowodIn(BaseModel):
+    """Dowod kroku w ksztalcie, jaki wysyla silnik (`runner.dowody`); `argv` i `stdout_tail`
+    zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    capability: str = Field(max_length=200, min_length=1)
+    # None przy przekroczeniu limitu czasu; strict odrzuca bool, napis i liczbe zmiennoprzecinkowa
+    exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    started_at: str = Field(min_length=1, max_length=64)
+    finished_at: str = Field(min_length=1, max_length=64)
+    source: Literal["engine", "agent"]
+    plik: str = Field(min_length=1, max_length=255)
+
+
+class EventIn(BaseModel):
+    run_id: str = Field(max_length=36)     # kolumny String(n): max_length = n (HAR-242)
+    event_id: str = Field(min_length=1, max_length=36)    # nadaje runner; idempotencja (HAR-39)
+    step_id: str = Field(min_length=1, max_length=100)
+    agent_id: str = Field(default="", max_length=100)
+    agent_type: str = Field(default="", max_length=100)
+    kind: str = Field(max_length=50)
+    text: str = ""
+    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)  # None = brak pomiaru, nigdy 0 (BRO-87)
+    cost_source: str = Field(default="unavailable", max_length=20)
+    tokens: int | None = None
+    duration_ms: int | None = None
+    wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
+    # pelna dlugosc tekstu przed obcieciem przez runnera; le = int4 PostgreSQL (HAR-56)
+    text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
+    attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    # pomiar kroku z wyniku agenta (HAR-174); brak to None, nigdy 0; le = int4 PostgreSQL
+    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
+    kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
+        default=None, max_length=1000)
+    # dane konca kroku (HAR-170), tylko w step_finished/step_failed; brak to None
+    dowod: DowodIn | None = None
+    verdict: str | None = Field(default=None, min_length=1, max_length=200)
+    kotwice: _ListaKotwic | None = None
+    artefakty: _ListaArtefaktow | None = None
+
+    def dane(self) -> dict | None:
+        """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""
+        dane: dict = {}
+        if self.dowod is not None:
+            dane["dowod"] = self.dowod.model_dump()
+        if self.verdict is not None:
+            dane["verdict"] = self.verdict
+        if self.kotwice is not None:
+            dane["kotwice"] = self.kotwice
+        if self.artefakty is not None:
+            dane["artefakty"] = self.artefakty
+        return dane or None
 
 
 class Zdrowie(BaseModel):

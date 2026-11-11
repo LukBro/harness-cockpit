@@ -74,6 +74,7 @@ from test_integrate import (
     zmien_linie,
 )
 from transport_asgi import TransportASGIStrumieniujacy
+from procesy import uruchom_i_zbierz
 
 OPIS = f"cockpit: run {RUN_ID}"
 
@@ -1217,7 +1218,7 @@ def test_commit_zawiera_zmieniony_i_nowy_plik_binarny_bajt_w_bajt(repo, runy_w_s
 
     assert zmienione_w_head(repo) == "A\tnowy.bin\nM\tobraz.bin\n"
     for nazwa, oczekiwane in (("obraz.bin", NOWY_OBRAZ), ("nowy.bin", NOWY_PLIK_BINARNY)):
-        zapisane = subprocess.run(
+        zapisane = uruchom_i_zbierz(
             ["git", "-C", str(repo), "show", f"HEAD:{nazwa}"],
             check=True, capture_output=True, timeout=60).stdout
         assert zapisane == oczekiwane
