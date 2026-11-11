@@ -56,3 +56,31 @@ def test_inne_narzedzie_w_sesji_w_tle_przechodzi_bez_decyzji_hooka():
                          ids=["nie-json", "lista", "brak-tool_name", "tool_name-nie-napis", "puste"])
 def test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa(wejscie):
     assert odmowa(hook(wejscie, "bg"))
+
+
+def hook_bajty(stdin, rodzaj: str = "bg") -> str:
+    """Wejście jako bajty albo deskryptor pliku (np. tylko do zapisu: odczyt rzuca OSError)."""
+    env = {**os.environ, "CLAUDE_CODE_SESSION_KIND": rodzaj}
+    jako_fd = isinstance(stdin, int)
+    proc = uruchom_proces_sync([sys.executable, str(HOOK)], cwd=KORZEN, env=env,
+                               stdin=stdin if jako_fd else subprocess.PIPE,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        out, err = proc.communicate(None if jako_fd else stdin, timeout=20)
+    finally:
+        zakoncz_proces_sync(proc, nazwa="hook pytania_w_tle")
+    assert proc.returncode == 0, err
+    return out.decode()
+
+
+def test_wejscie_spoza_utf8_w_sesji_w_tle_to_odmowa_nie_traceback():
+    assert odmowa(hook_bajty(b"\xff\xfe"))
+
+
+def test_blad_odczytu_wejscia_w_sesji_w_tle_to_odmowa(tmp_path):
+    # stdin otwarty tylko do zapisu: Python startuje, a read() rzuca OSError (EBADF)
+    fd = os.open(tmp_path / "tylko-zapis", os.O_WRONLY | os.O_CREAT)
+    try:
+        assert odmowa(hook_bajty(fd))
+    finally:
+        os.close(fd)

@@ -4,7 +4,8 @@ W sesji w tle (CLAUDE_CODE_SESSION_KIND=bg) AskUserQuestion blokuje sesję na pr
 widzi (HAR-219, HAR-180: 49 min). Hook odmawia i podaje protokół: sesja kończy turę wiadomością
 z linią `DECYZJA-POTRZEBNA`, a strażnik decyzji (.git/monolynx/straznik) odpowiada przez SendMessage.
 W sesji interaktywnej hook przepuszcza narzędzie bez zmian.
-Nieczytelne wejście w sesji w tle (nie JSON, nie obiekt, brak `tool_name` albo nie napis) = odmowa
+Nieczytelne wejście w sesji w tle (nie JSON, bajty spoza UTF-8, błąd odczytu stdin, nie obiekt, brak `tool_name`
+albo nie napis) = odmowa
 (fail-closed, reguła granica-bledow).
 """
 import json
@@ -34,9 +35,9 @@ def main():
     if os.environ.get("CLAUDE_CODE_SESSION_KIND") != "bg":
         return 0
     try:
-        tekst = sys.stdin.read()
+        tekst = sys.stdin.buffer.read()  # bajty: spoza UTF-8 -> ValueError w narzedzie(), nie traceback
     except OSError:
-        tekst = ""
+        tekst = b""
     if narzedzie(tekst) not in (None, "AskUserQuestion"):
         return 0
     json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
