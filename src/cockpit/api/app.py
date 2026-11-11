@@ -30,7 +30,7 @@ from sse_starlette.sse import EventSourceResponse
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import (
-    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
+    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje, tickety,
 )
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
@@ -59,6 +59,8 @@ from .schematy import (
     RunNaLiscie,
     RunSzczegoly,
     RunUtworzony,
+    SkrotTicketu,
+    TicketPobrany,
     Zacommitowano,
     ZdarzeniePrzyjete,
     ZdarzenieRunu,
@@ -628,6 +630,33 @@ async def podlacz_projekt(
     dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)   # przed zapytaniem runnera
     return await projekty.podlacz_projekt(
         s, k.tenant_id, body.runner_id, body.path, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.get("/api/tickety", response_model=list[SkrotTicketu],
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def lista_ticketow(
+    projekt: str = Query(max_length=36),
+    filtr: str | None = Query(default=None, max_length=500),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.lista(
+        s, k.tenant_id, projekt, filtr, bus.connected_runner_ids(), bus.zapytaj)
+
+
+# `:path`: identyfikator GitHub ma ukosnik (`owner/repo#12`), klient koduje `#` jako `%23`.
+@app.get("/api/tickety/{id_ticketu:path}", response_model=TicketPobrany,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def pobierz_ticket(
+    id_ticketu: str,
+    projekt: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.pobierz(
+        s, k.tenant_id, projekt, id_ticketu, bus.connected_runner_ids(), bus.zapytaj)
 
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
