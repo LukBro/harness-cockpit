@@ -17,6 +17,18 @@ _SEKRETY: set[str] = set()
 # zmienną COCKPIT__TOKEN; szerszy wzorzec maskuje więcej sekretów, więc jest bezpieczniejszy.
 _ZMIENNA_TOKENU = re.compile(r"COCKPIT_.*_TOKEN")
 _BEARER = re.compile(r"(Bearer\s+)(\S+)")
+# HAR-219: komenda Basha w zdarzeniu ToolDenied. Wartosc przypisania `NAZWA=wartosc`, gdy nazwa
+# (bez rozroznienia wielkosci liter) zawiera czlon sekretu; wartosc w cudzyslowach moze miec spacje.
+_PRZYPISANIE_SEKRETU = re.compile(
+    r"(\b\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\w*=)(\"[^\"]*\"|'[^']*'|\S+)",
+    re.IGNORECASE,
+)
+# ... oraz wartosc opcji `--token x` i `--token=x` (takze `--password`, `--secret`).
+_OPCJA_SEKRETU = re.compile(
+    r"(--(?:token|password|secret)(?:=|\s+))(\"[^\"]*\"|'[^']*'|\S+)",
+    re.IGNORECASE,
+)
+_GWIAZDKI = "***"
 
 
 def zarejestruj_sekret(wartosc: object) -> None:
@@ -52,6 +64,13 @@ class FiltrSekretow(logging.Filter):
         elif isinstance(record.args, Mapping):
             record.args = {k: self._maskuj_wartosc(v) for k, v in record.args.items()}
         return True
+
+
+def maskuj_komende(tekst: str) -> str:
+    """Maskuje sekrety w komendzie Basha: znane sekrety, przypisania i opcje z sekretem (HAR-219)."""
+    tekst = FiltrSekretow().maskuj(tekst)
+    tekst = _PRZYPISANIE_SEKRETU.sub(lambda m: m.group(1) + _GWIAZDKI, tekst)
+    return _OPCJA_SEKRETU.sub(lambda m: m.group(1) + _GWIAZDKI, tekst)
 
 
 _LOGGERY_MASKOWANE = ("uvicorn", "uvicorn.error", "uvicorn.access", "httpx")
