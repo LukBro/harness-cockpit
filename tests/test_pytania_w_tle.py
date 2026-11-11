@@ -58,11 +58,20 @@ def test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa(wejscie):
     assert odmowa(hook(wejscie, "bg"))
 
 
+# Sesja użytkownika działa w locale UTF-8, gdzie sys.stdin dekoduje ściśle. W locale C (runner CI)
+# Python dekoduje stdin z surrogateescape i bajty spoza UTF-8 nie rzucają błędu, więc test ustawia
+# ścisły stdin jawnie, a potem wykonuje prawdziwy skrypt hooka jako __main__.
+SCISLY_STDIN = ("import io, runpy, sys; "
+                "sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8', errors='strict'); "
+                "runpy.run_path(sys.argv[1], run_name='__main__')")
+
+
 def hook_bajty(stdin, rodzaj: str = "bg") -> str:
-    """Wejście jako bajty albo deskryptor pliku (np. tylko do zapisu: odczyt rzuca OSError)."""
+    """Wejście jako bajty (ścisły stdin UTF-8) albo deskryptor pliku (np. tylko do zapisu: odczyt rzuca OSError)."""
     env = {**os.environ, "CLAUDE_CODE_SESSION_KIND": rodzaj}
     jako_fd = isinstance(stdin, int)
-    proc = uruchom_proces_sync([sys.executable, str(HOOK)], cwd=KORZEN, env=env,
+    komenda = [sys.executable, str(HOOK)] if jako_fd else [sys.executable, "-c", SCISLY_STDIN, str(HOOK)]
+    proc = uruchom_proces_sync(komenda, cwd=KORZEN, env=env,
                                stdin=stdin if jako_fd else subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
