@@ -1,0 +1,330 @@
+# Tabela recznych mutantow HAR-187: regula roli czlonkostwa w tools/check_layers.py
+# (tools/ jest poza zasiegiem mutmuta). Wiersze napisal test-writer przed implementacja;
+# Team Manager dopasowal `szukaj` do faktycznego kodu po implementacji.
+# Uruchomienie: python tools/mutanty_reczne.py tests/mutanty_reczne/HAR-187.toml
+
+# --- Dozwolone miejsca ---
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = 'DOZWOLONE_ROLI = frozenset({"services/dostep.py", "db/models.py"})'
+zamien = 'DOZWOLONE_ROLI = frozenset({"db/models.py"})'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_dozwolonym_miejscu_nie_jest_zgloszony[uslugi_dostepu]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = 'DOZWOLONE_ROLI = frozenset({"services/dostep.py", "db/models.py"})'
+zamien = 'DOZWOLONE_ROLI = frozenset({"services/dostep.py"})'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_dozwolonym_miejscu_nie_jest_zgloszony[model_bazy]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        if rel in DOZWOLONE_ROLI:"
+zamien = "        if rel.endswith(tuple(DOZWOLONE_ROLI)):"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_pliku_o_podobnej_sciezce_do_dozwolonej_jest_zgloszony[dostep_w_innym_katalogu_o_tym_samym_sufiksie]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        if rel in DOZWOLONE_ROLI:"
+zamien = '        if plik.name in {"dostep.py", "models.py"}:'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_pliku_o_podobnej_sciezce_do_dozwolonej_jest_zgloszony[dostep_w_podkatalogu_uslug]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        if rel in DOZWOLONE_ROLI:"
+zamien = '        if rel.startswith(("services/dostep", "db/models")):'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_pliku_o_podobnej_sciezce_do_dozwolonej_jest_zgloszony[plik_o_nazwie_zaczynajacej_sie_jak_dostep]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        if rel in DOZWOLONE_ROLI:"
+zamien = "        if rel not in DOZWOLONE_ROLI:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_dozwolonym_miejscu_nie_jest_zgloszony[uslugi_dostepu]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        rel = plik.relative_to(katalog).as_posix()"
+zamien = "        rel = plik.relative_to(katalog.parent).as_posix()"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_w_dozwolonym_miejscu_nie_jest_zgloszony[uslugi_dostepu]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    for plik in sorted(katalog.rglob(\"*.py\")):\n        rel = plik.relative_to(katalog).as_posix()"
+zamien = "    for plik in katalog.rglob(\"*.py\"):\n        rel = plik.relative_to(katalog).as_posix()"
+test = "tests/test_granica_warstw.py::test_naruszenia_w_plytkim_pliku_ida_po_naruszeniach_w_podkatalogu_gdy_sciezki_sa_posortowane"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "def sprawdz_role_czlonkostwa(katalog: Path = SRC)"
+zamien = "def sprawdz_role_czlonkostwa(katalog: Path = API)"
+test = "tests/test_granica_warstw.py::test_skrypt_z_odczytem_roli_czlonkostwa_konczy_sie_kodem_jeden_z_naglowkiem_i_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = 'SRC = Path(__file__).resolve().parent.parent / "src" / "cockpit"'
+zamien = 'SRC = Path(__file__).resolve().parent.parent / "src"'
+test = "tests/test_granica_warstw.py::test_skrypt_z_odczytem_roli_czlonkostwa_konczy_sie_kodem_jeden_z_naglowkiem_i_naruszeniem"
+
+# --- Typy wiazace nazwe z rola czlonkostwa ---
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = 'TYPY_CZLONKOSTWA = frozenset({"Kontekst", "Membership"})'
+zamien = 'TYPY_CZLONKOSTWA = frozenset({"Membership"})'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_kontekstu_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = 'TYPY_CZLONKOSTWA = frozenset({"Kontekst", "Membership"})'
+zamien = 'TYPY_CZLONKOSTWA = frozenset({"Kontekst"})'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_czlonkostwa_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        return adnotacja.id in TYPY_CZLONKOSTWA"
+zamien = "        return False"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_kontekstu_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        return adnotacja.id in TYPY_CZLONKOSTWA"
+zamien = "        return True"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_ktory_nie_dotyczy_czlonkostwa_nie_jest_zgloszony[parametr_z_adnotacja_innego_typu]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    return isinstance(adnotacja, ast.Attribute) and adnotacja.attr in TYPY_CZLONKOSTWA"
+zamien = "    return False"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[kontekst_z_adnotacja_przez_modul]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    return isinstance(adnotacja, ast.Attribute) and adnotacja.attr in TYPY_CZLONKOSTWA"
+zamien = "    return isinstance(adnotacja, ast.Attribute)"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_ktory_nie_dotyczy_czlonkostwa_nie_jest_zgloszony[adnotacja_przez_modul_o_innej_nazwie_typu]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "[*a.posonlyargs, *a.args, *a.kwonlyargs] if pasuje(p.annotation)"
+zamien = "[*a.args, *a.kwonlyargs] if pasuje(p.annotation)"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[kontekst_jako_parametr_tylko_pozycyjny]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "[*a.posonlyargs, *a.args, *a.kwonlyargs] if pasuje(p.annotation)"
+zamien = "[*a.posonlyargs, *a.kwonlyargs] if pasuje(p.annotation)"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_kontekstu_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "[*a.posonlyargs, *a.args, *a.kwonlyargs] if pasuje(p.annotation)"
+zamien = "[*a.posonlyargs, *a.args] if pasuje(p.annotation)"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[kontekst_jako_parametr_tylko_nazwany]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "            and pasuje(w.annotation)"
+zamien = "            and False"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[kontekst_jako_zmienna_z_adnotacja_w_ciele_funkcji]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        czlonkostwa = _nazwy_wezlow(drzewo, _typ_czlonkostwa, ast.Attribute)"
+zamien = "        czlonkostwa = _nazwy_wezlow(drzewo, _typ_czlonkostwa, ast.Call)"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_kontekstu_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        czlonkostwa = _nazwy_wezlow(drzewo, _typ_czlonkostwa, ast.Attribute)"
+zamien = "        czlonkostwa = _nazwy_wezlow(drzewo, _async_session, ast.Attribute)"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_kontekstu_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    return _nazwy_wezlow(drzewo, _async_session, ast.Call)"
+zamien = "    return _nazwy_wezlow(drzewo, _async_session, ast.Attribute)"
+test = "tests/test_granica_warstw.py::test_metoda_sesji_wolana_na_parametrze_async_session_lamie_granice_warstw"
+
+# --- Wzorce odczytu roli ---
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.Attribute) and w.attr == "rola":'
+zamien = "    if isinstance(w, ast.Attribute):"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_ktory_nie_dotyczy_czlonkostwa_nie_jest_zgloszony[inna_kolumna_czlonkostwa_user_id]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '        if isinstance(o, ast.Name) and o.id == "Membership":'
+zamien = "        if False:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[zapytanie_o_kolumne_rola_modelu_membership]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '        if isinstance(o, ast.Name) and o.id == "Membership":'
+zamien = "        if isinstance(o, ast.Name):"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_ktory_nie_dotyczy_czlonkostwa_nie_jest_zgloszony[rola_skilla_z_petli_jak_w_katalogu]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '        if isinstance(o, ast.Attribute) and o.attr == "Membership":'
+zamien = "        if False:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[kolumna_rola_przez_modul_models]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '        if isinstance(o, ast.Attribute) and o.attr == "Membership":'
+zamien = "        if isinstance(o, ast.Attribute):"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_ktory_nie_dotyczy_czlonkostwa_nie_jest_zgloszony[odbiorca_zlozony_nie_jest_nazwa_parametru]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        if isinstance(o, ast.Name) and o.id in czlonkostwa.get(id(w), set()):"
+zamien = "        if False:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[rola_odczytana_z_kontekstu_przekazanego_parametrem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.Name) and w.id == "RolaWZespole":'
+zamien = "    if False:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[uzycie_enuma_roli_w_zespole]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.Name) and w.id == "RolaWZespole":'
+zamien = '    if isinstance(w, ast.Name) and w.id.startswith("RolaWZespole"):'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_ktory_nie_dotyczy_czlonkostwa_nie_jest_zgloszony[nazwa_tylko_zaczynajaca_sie_jak_enum_roli]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.Attribute) and w.attr == "RolaWZespole":'
+zamien = "    if False:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[uzycie_enuma_roli_w_zespole_przez_modul]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.ImportFrom) and any(a.name == "RolaWZespole" for a in w.names):'
+zamien = "    if False:"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[import_enuma_roli_w_zespole]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.ImportFrom) and any(a.name == "RolaWZespole" for a in w.names):'
+zamien = '    if isinstance(w, ast.ImportFrom) and w.names[0].name == "RolaWZespole":'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[import_enuma_roli_wsrod_innych_nazw]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    if isinstance(w, ast.ImportFrom) and any(a.name == "RolaWZespole" for a in w.names):'
+zamien = '    if isinstance(w, ast.ImportFrom) and any((a.asname or a.name) == "RolaWZespole" for a in w.names):'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[import_enuma_roli_pod_aliasem]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '        return "import RolaWZespole"'
+zamien = '        return "import"'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[import_enuma_roli_w_zespole]"
+
+# --- Komunikat, numer linii, kolejnosc ---
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "                znalezione.append((w.lineno, w.col_offset, opis))"
+zamien = "                znalezione.append((1, w.col_offset, opis))"
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[numer_linii_to_linia_odczytu_a_nie_deklaracji_ani_poczatek_pliku]"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        for linia, _, opis in sorted(znalezione):"
+zamien = "        for linia, _, opis in znalezione:"
+test = "tests/test_granica_warstw.py::test_naruszenia_w_jednym_pliku_ida_w_kolejnosci_linii_nie_glebokosci_drzewa"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = 'problemy.append(f"{rel}:{linia} rola czlonkostwa poza services/dostep.py: {opis}")'
+zamien = 'problemy.append(f"{rel}:{linia} XXrola czlonkostwa poza services/dostep.py: {opis}XX")'
+test = "tests/test_granica_warstw.py::test_odczyt_roli_czlonkostwa_poza_dostepem_jest_zgloszony_calym_komunikatem[zapytanie_o_kolumne_rola_modelu_membership]"
+
+# --- __main__ ---
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '        print("Rola czlonkostwa czytana poza services/dostep.py i db/models.py:")'
+zamien = '        print("XXRola czlonkostwa czytana poza services/dostep.py i db/models.py:XX")'
+test = "tests/test_granica_warstw.py::test_skrypt_z_odczytem_roli_czlonkostwa_konczy_sie_kodem_jeden_z_naglowkiem_i_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        for x in r:"
+zamien = "        for x in r[:0]:"
+test = "tests/test_granica_warstw.py::test_skrypt_z_odczytem_roli_czlonkostwa_konczy_sie_kodem_jeden_z_naglowkiem_i_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    if p or r:"
+zamien = "    if p:"
+test = "tests/test_granica_warstw.py::test_skrypt_z_odczytem_roli_czlonkostwa_konczy_sie_kodem_jeden_z_naglowkiem_i_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    if p or r:"
+zamien = "    if r:"
+test = "tests/test_granica_warstw.py::test_skrypt_z_naruszeniem_tylko_w_api_konczy_sie_kodem_jeden_i_nie_chwali_warstwy_api"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    if p:\n        print(\"Warstwa api/"
+zamien = "    if p and not r:\n        print(\"Warstwa api/"
+test = "tests/test_granica_warstw.py::test_skrypt_z_obiema_grupami_naruszen_wypisuje_obie_i_konczy_sie_kodem_jeden"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "    if r:\n        print(\"Rola"
+zamien = "    if r and not p:\n        print(\"Rola"
+test = "tests/test_granica_warstw.py::test_skrypt_z_obiema_grupami_naruszen_wypisuje_obie_i_konczy_sie_kodem_jeden"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    print("api/ nie dotyka bazy - w porzadku")'
+zamien = '    print("XXapi/ nie dotyka bazy - w porzadkuXX")'
+test = "tests/test_granica_warstw.py::test_skrypt_na_czystym_kodzie_konczy_sie_kodem_zero_i_dwiema_liniami_w_porzadku"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = '    print("rola czlonkostwa tylko w services/dostep.py - w porzadku")'
+zamien = '    print("XXrola czlonkostwa tylko w services/dostep.py - w porzadkuXX")'
+test = "tests/test_granica_warstw.py::test_skrypt_na_czystym_kodzie_konczy_sie_kodem_zero_i_dwiema_liniami_w_porzadku"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        sys.exit(1)"
+zamien = "        pass"
+test = "tests/test_granica_warstw.py::test_skrypt_z_odczytem_roli_czlonkostwa_konczy_sie_kodem_jeden_z_naglowkiem_i_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "        sys.exit(1)"
+zamien = "        sys.exit(0)"
+test = "tests/test_granica_warstw.py::test_skrypt_z_naruszeniem_tylko_w_api_konczy_sie_kodem_jeden_i_nie_chwali_warstwy_api"
+
+[[mutant]]
+plik = "tools/check_layers.py"
+szukaj = "                znalezione.append((w.lineno, w.col_offset, opis))"
+zamien = "                znalezione.append((w.lineno, 0, opis))"
+test = "tests/test_granica_warstw.py::test_dwa_naruszenia_w_jednej_linii_ida_w_kolejnosci_kolumn_nie_opisow"
+
+# --- Linie z listy kodu 3 tools/mutanty_zmian.py (poza zasiegiem mutmuta) ---
+
+# src/cockpit/api/konta.py:102 - rola w odpowiedzi /api/konto/ja pochodzi z wyniku serwisu.
+[[mutant]]
+plik = "src/cockpit/api/konta.py"
+szukaj = "rola=profil.rola, csrf=csrf"
+zamien = "rola=profil.zespol, csrf=csrf"
+test = "tests/test_konto_http.py::test_profil_zwraca_adres_zespol_role_i_nowy_token_csrf"
+
+# src/cockpit/services/konta.py:210 - pole roli w wyniku serwisu profilu.
+[[mutant]]
+plik = "src/cockpit/services/konta.py"
+szukaj = "    zespol: str\n    rola: str\n"
+zamien = "    zespol: str\n"
+test = "tests/test_konto_http.py::test_profil_zwraca_adres_zespol_role_i_nowy_token_csrf"

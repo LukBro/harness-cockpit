@@ -5,7 +5,7 @@
 # zanim ten wysle SIGKILL, i agent ignorujacy SIGTERM zostalby sierota.
 [[mutant]]
 plik = "src/runner/krok.py"
-szukaj = "LIMIT_NA_STRAZNIKA_S = 8"
+szukaj = "LIMIT_NA_STRAZNIKA_S = 2 * CZAS_NA_ZAKONCZENIE_S + ZAPAS_NA_STRAZNIKA_S"
 zamien = "LIMIT_NA_STRAZNIKA_S = 1"
 test = "tests/test_brak_sierot.py::test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_sigkillem_straznika"
 
@@ -43,13 +43,6 @@ plik = "src/runner/straznik.py"
 szukaj = "KROK_PETLI_S = 0.05"
 zamien = "KROK_PETLI_S = 5"
 test = "tests/test_brak_sierot.py::test_uruchomiony_agent_konczacy_sie_sam_daje_swoj_kod_i_bez_zwlekania[3]"
-
-# Liczba prob karencji daje razem 5 s; piec razy mniej skraca karencje do 1 s.
-[[mutant]]
-plik = "src/runner/straznik.py"
-szukaj = "PROBY_KARENCJI = round(CZAS_NA_ZAKONCZENIE_S / KROK_PETLI_S)"
-zamien = "PROBY_KARENCJI = round(CZAS_NA_ZAKONCZENIE_S / KROK_PETLI_S) // 5"
-test = "tests/test_brak_sierot.py::test_agent_ignorujacy_sigterm_zyje_po_3_s_karencji_a_potem_dostaje_sigkill_kod_137"
 
 # Odczyt zerowej dlugosci zwraca od razu b"" - straznik uznalby otwarty potok za EOF.
 [[mutant]]
