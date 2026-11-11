@@ -27,6 +27,8 @@ ZMIENNA = "COCKPIT_DATABASE_URL"
 STARA_BAZA = Path("/tmp/demo.db")
 TEST_URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
 TABELE_MODELU = {"tenant", "runner", "run", "event"}
+PORT_ZMIENNA = "COCKPIT_DEMO_PORT"
+PORT_DOMYSLNY = 8799
 
 wymaga_postgresa = pytest.mark.skipif(
     not TEST_URL.startswith("postgresql"),
@@ -35,8 +37,17 @@ wymaga_postgresa = pytest.mark.skipif(
 )
 
 
+def _zajmij_port(port: int) -> socket.socket:
+    """Gniazdo nasluchujace na 127.0.0.1:port - port zajety dla procesu przelotu."""
+    zajety = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    zajety.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    zajety.bind(("127.0.0.1", port))
+    zajety.listen(1)
+    return zajety
+
+
 def _uruchom(cwd: Path, **env_dodatkowe: str):
-    env = {k: v for k, v in os.environ.items() if k != ZMIENNA}
+    env = {k: v for k, v in os.environ.items() if k not in (ZMIENNA, PORT_ZMIENNA)}
     env.update(env_dodatkowe)
     return subprocess.run(
         [sys.executable, str(SKRYPT)],
@@ -267,13 +278,12 @@ def test_przelot_startuje_od_czystej_bazy_mimo_pozostalosci_po_poprzednim_przebi
 @pytest.mark.baza
 @wymaga_postgresa
 def test_nieudany_przelot_konczy_sie_bledem_i_mimo_to_sprzata_baze(czysta_baza):
-    # port przelotu zajety: serwer nie wstanie, przelot sie nie udaje
-    zajety = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    zajety.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    zajety.bind(("127.0.0.1", 8799))
-    zajety.listen(1)
+    # port przelotu zajety: serwer nie wstanie, przelot sie nie udaje. Port to COCKPIT_DEMO_PORT
+    # (testy_pelne.sh wybiera wolny port dla kazdego przebiegu), a bez zmiennej 8799 (HAR-236).
+    port = os.environ.get(PORT_ZMIENNA) or str(PORT_DOMYSLNY)
+    zajety = _zajmij_port(int(port))
     try:
-        wynik = _uruchom(KORZEN, **{ZMIENNA: TEST_URL})
+        wynik = _uruchom(KORZEN, **{ZMIENNA: TEST_URL, PORT_ZMIENNA: port})
     finally:
         zajety.close()
 
@@ -282,6 +292,24 @@ def test_nieudany_przelot_konczy_sie_bledem_i_mimo_to_sprzata_baze(czysta_baza):
     # baza dziala, wiec porazka przelotu nie jest "blad polaczenia z baza" (HAR-138)
     assert "Blad polaczenia z baza" not in wynik.stderr
     # porazka nie zostawia schematu ani wersji migracji w bazie
+    _sprawdz_baze_po_przelocie_jest_wyczyszczona()
+
+
+@pytest.mark.baza
+@wymaga_postgresa
+def test_przelot_zajmuje_port_z_cockpit_demo_port_a_nie_stale_8799(czysta_baza):
+    # Port wybrany tu, niezaleznie od srodowiska: przelot ignorujacy zmienna wzialby wolny
+    # port 8799 i skonczylby sie sukcesem.
+    zajety = _zajmij_port(0)
+    port = zajety.getsockname()[1]
+    assert port != PORT_DOMYSLNY
+    try:
+        wynik = _uruchom(KORZEN, **{ZMIENNA: TEST_URL, PORT_ZMIENNA: str(port)})
+    finally:
+        zajety.close()
+
+    assert wynik.returncode != 0
+    assert "szkielet dziala na wylot" not in wynik.stdout
     _sprawdz_baze_po_przelocie_jest_wyczyszczona()
 
 
@@ -398,3 +426,110 @@ def test_przelot_z_niepoprawnym_portem_adresu_bazy_konczy_sie_czytelnym_bledem(t
     # osobna przyczyna niz nieparsowalny adres: port, ktory nie jest liczba
     assert "niepoprawny port lub host" in wynik.stderr
     assert "nie da sie go sparsowac" not in wynik.stderr
+
+
+# --- port przelotu z COCKPIT_DEMO_PORT (bez bazy, HAR-236) ------------------------------
+
+
+@pytest.mark.parametrize("wartosc", ["0", "65536", "abc", "-1", "1.5", "99999999999999999999"])
+def test_zly_port_przelotu_konczy_sie_kodem_1_z_komunikatem_o_porcie(tmp_path, wartosc):
+    # Bez adresu bazy: walidacja portu idzie przed czymkolwiek innym, wiec komunikat
+    # dotyczy portu, a nie braku COCKPIT_DATABASE_URL.
+    wynik = _uruchom(tmp_path, **{PORT_ZMIENNA: wartosc})
+
+    assert wynik.returncode == 1
+    assert wynik.stderr == (
+        f"COCKPIT_DEMO_PORT musi byc liczba calkowita 1..65535 (jest: '{wartosc}')\n"
+    )
+    assert wynik.stdout == ""
+
+
+@pytest.mark.parametrize("wartosc", ["1", "8799", "65535", ""], ids=["1", "8799", "65535", "pusta"])
+def test_poprawny_albo_pusty_port_przelotu_przechodzi_walidacje_i_dochodzi_do_adresu_bazy(
+    tmp_path, wartosc
+):
+    # Granice 1 i 65535 sa dozwolone, pusta wartosc = domyslna: skrypt idzie dalej i dopiero
+    # brak adresu bazy konczy go bledem (nie komunikat o porcie).
+    wynik = _uruchom(tmp_path, **{PORT_ZMIENNA: wartosc})
+
+    _sprawdz_blad_o_zmiennej(wynik)
+    assert "COCKPIT_DEMO_PORT" not in wynik.stderr
+
+
+# --- wybor portu bez uruchamiania przelotu (HAR-236, runda 4) ----------------------------------
+# Skrypt przy imporcie robi przelot, wiec funkcje `port_demo` i wyrazenia z portu bierzemy z jego
+# drzewa skladni: to kod produkcyjny z pliku, wykonany bez bazy.
+
+
+def _drzewo_skryptu() -> ast.Module:
+    return ast.parse(SKRYPT.read_text(encoding="utf-8"))
+
+
+def _wyrazenie(wezel: ast.expr, **zmienne):
+    kod = compile(ast.fix_missing_locations(ast.Expression(wezel)), str(SKRYPT), "eval")
+    return eval(kod, dict(zmienne))  # noqa: S307 - wyrazenie z naszego pliku, nie z wejscia
+
+
+def _port_demo_ze_skryptu(monkeypatch, wartosc: str | None) -> int:
+    funkcja = next(
+        n for n in _drzewo_skryptu().body if isinstance(n, ast.FunctionDef) and n.name == "port_demo"
+    )
+    modul = ast.fix_missing_locations(ast.Module(body=[funkcja], type_ignores=[]))
+    przestrzen: dict = {"os": os, "sys": sys}
+    exec(compile(modul, str(SKRYPT), "exec"), przestrzen)  # noqa: S102
+    if wartosc is None:
+        monkeypatch.delenv(PORT_ZMIENNA, raising=False)
+    else:
+        monkeypatch.setenv(PORT_ZMIENNA, wartosc)
+    return przestrzen["port_demo"]()
+
+
+@pytest.mark.parametrize("wartosc", [None, ""], ids=["nieustawiona", "pusta"])
+def test_port_przelotu_bez_zmiennej_albo_z_pusta_zmienna_to_8799(monkeypatch, wartosc):
+    assert _port_demo_ze_skryptu(monkeypatch, wartosc) == 8799
+
+
+@pytest.mark.parametrize("wartosc", ["1", "80", "8800", "65535"])
+def test_port_przelotu_z_zakresu_jest_zwracany_jako_liczba(monkeypatch, wartosc):
+    port = _port_demo_ze_skryptu(monkeypatch, wartosc)
+    assert port == int(wartosc)
+    assert isinstance(port, int)
+
+
+@pytest.mark.parametrize(
+    "wartosc",
+    ["0", "65536", "abc", "-1", "1.5", " 80", "٣٤", "²"],
+    ids=["zero", "65536", "litery", "minus", "ulamek", "spacja", "cyfry_arabskie", "indeks_gorny"],
+)
+def test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji(monkeypatch, wartosc):
+    # Cyfry arabskie i indeks gorny przechodza `isdigit()`, wiec odrzuca je tylko `isascii()`
+    # (dla "²" `int()` rzucilby ValueError zamiast SystemExit z komunikatem).
+    with pytest.raises(SystemExit) as wyjscie:
+        _port_demo_ze_skryptu(monkeypatch, wartosc)
+    assert wyjscie.value.code == (
+        f"COCKPIT_DEMO_PORT musi byc liczba calkowita 1..65535 (jest: '{wartosc}')"
+    )
+
+
+def test_adres_serwera_i_port_uvicorna_przelotu_pochodza_z_portu_demo():
+    drzewo = _drzewo_skryptu()
+    przypisania = {
+        cel.id: n
+        for n in drzewo.body
+        if isinstance(n, ast.Assign)
+        for cel in n.targets
+        if isinstance(cel, ast.Name)
+    }
+    assert _wyrazenie(przypisania["BASE"].value, PORT=12345) == "http://127.0.0.1:12345"
+    wywolanie_portu = przypisania["PORT"].value
+    assert isinstance(wywolanie_portu, ast.Call) and wywolanie_portu.func.id == "port_demo"
+    konfiguracje = [
+        n
+        for n in ast.walk(drzewo)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "Config"
+    ]
+    assert len(konfiguracje) == 1
+    port_uvicorna = next(k.value for k in konfiguracje[0].keywords if k.arg == "port")
+    assert _wyrazenie(port_uvicorna, PORT=12345) == 12345
+    # Walidacja portu idzie przed odczytem adresu bazy (zly port to blad przed czymkolwiek innym).
+    assert przypisania["PORT"].lineno < przypisania["URL"].lineno

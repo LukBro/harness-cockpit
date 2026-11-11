@@ -380,7 +380,7 @@ def _oczekiwane_testy_bazy() -> dict[str, set[str]]:
     # Zabezpieczenie przed pustymi zbiorami (zepsuty wzorzec = test, ktory nic nie sprawdza).
     assert len(migracje) == 43
     assert len(numeracja) == 3
-    assert len(demo) == 4
+    assert len(demo) == 5  # HAR-236: przelot na porcie z COCKPIT_DEMO_PORT
     assert len(e2e) == 7
     return {"migracje": migracje, "numeracja": numeracja, "demo": demo, "e2e": e2e}
 

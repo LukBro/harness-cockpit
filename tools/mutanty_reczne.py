@@ -36,6 +36,11 @@ tabel jest `[[mutant]]` tego pliku, ktorego jedyne wystapienie `szukaj` obejmuje
 0 - wszystkie pokryte (stdout: `pokryto N linii bez mutantów`), 1 - sa niepokryte (stdout: po
 jednej `plik:linia`), 2 - blad narzedzia (zla lista, tabela, plik albo numer linii); 2 > 1 > 0.
 Wpisy `[[rownowazny]]` sa walidowane we wszystkich trybach, ale nigdzie nie sa wykonywane.
+HAR-236: `-j K` / `--procesy K` (liczba calkowita >= 1, domyslnie 1 = jak dotad) wykonuje wiersze
+w puli K watkow; kazdy wiersz ma wlasna kopie repozytorium. Wiersze szeregowe (front i test e2e,
+czyli `wymaga_frontu`, oraz plik testu z tekstem `mark.baza`) wykonuja sie po kolei, po puli.
+Wynik (lista przezywajacych, stdout, kody) jest taki sam jak szeregowo, w kolejnosci wierszy
+tabeli; `BladNarzedzia` w kilku wierszach daje komunikat pierwszego z nich wedlug tabeli.
 """
 from __future__ import annotations
 
@@ -49,6 +54,7 @@ import sys
 import tempfile
 import tomllib
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -417,6 +423,52 @@ def _zabity(korzen: Path, mutant: Mutant, limit: float, limit_budowy: float) -> 
             raise BladNarzedzia(f"nie da sie usunac katalogu tymczasowego {kopia}: {blad}") from blad
 
 
+MARKER_TESTU_BAZY = b"mark.baza"
+
+
+def _wiersz_szeregowy(korzen: Path, mutant: Mutant) -> bool:
+    """Front i e2e (`wymaga_frontu`) albo plik testu z `mark.baza`: nigdy w puli (wspolny zasob).
+
+    Nieczytelny plik testu liczy sie jako szeregowy: bez dowodu wiersz nie wchodzi do puli.
+    """
+    try:
+        z_markerem = MARKER_TESTU_BAZY in (korzen / _plik_testu(mutant.test)).read_bytes()
+    except OSError:
+        z_markerem = True
+    return wymaga_frontu(mutant) or z_markerem
+
+
+def _przezywajace(
+    korzen: Path, mutanty: list[Mutant], limit: float, limit_budowy: float, procesy: int
+) -> list[Mutant]:
+    """Przezywajace mutanty w kolejnosci tabeli; `procesy` > 1 wlacza pule dla wierszy zwyklych."""
+    if procesy == 1:
+        return [m for m in mutanty if not _zabity(korzen, m, limit, limit_budowy)]
+    wyniki: dict[int, bool | BladNarzedzia] = {}
+
+    def wykonaj(numer: int) -> None:
+        try:
+            wyniki[numer] = _zabity(korzen, mutanty[numer], limit, limit_budowy)
+        except BladNarzedzia as blad:
+            wyniki[numer] = blad
+
+    szeregowe = [n for n, m in enumerate(mutanty) if _wiersz_szeregowy(korzen, m)]
+    zwykle = [n for n in range(len(mutanty)) if n not in szeregowe]
+    with ThreadPoolExecutor(max_workers=procesy) as pula:
+        # czekamy na cala pule: po powrocie zadne wywolanie nie zostaje w tle
+        for przyszlosc in [pula.submit(wykonaj, n) for n in zwykle]:
+            przyszlosc.result()
+    for numer in szeregowe:
+        # wiersz za pierwszym bledem tabeli nie zmieni komunikatu, wiec go nie uruchamiamy
+        if any(isinstance(w, BladNarzedzia) and n < numer for n, w in wyniki.items()):
+            break
+        wykonaj(numer)
+    for numer in sorted(wyniki):
+        if isinstance(wyniki[numer], BladNarzedzia):
+            raise wyniki[numer]
+    return [m for n, m in enumerate(mutanty) if not wyniki[n]]
+
+
 KATALOG_TABEL = ("tests", "mutanty_reczne")
 
 
@@ -643,6 +695,12 @@ def _limit(tekst: str) -> float:
     return wartosc
 
 
+def _procesy(tekst: str) -> int:
+    if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:
+        raise argparse.ArgumentTypeError(f"oczekiwano liczby calkowitej >= 1, jest {tekst!r}")
+    return int(tekst)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("tabele", nargs="*", type=Path, help="tests/mutanty_reczne/<ticket>.toml")
@@ -650,6 +708,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=_limit, default=LIMIT_DOMYSLNY, help="limit czasu testu w sekundach")
     parser.add_argument(
         "--limit-budowy", type=_limit, default=LIMIT_BUDOWY, help="limit czasu jednego polecenia npm w sekundach"
+    )
+    parser.add_argument(
+        "-j",
+        "--procesy",
+        type=_procesy,
+        default=1,
+        metavar="K",
+        help="HAR-236: liczba rownoleglych wierszy (front, e2e i testy bazy zawsze po kolei)",
     )
     parser.add_argument(
         "--czy-front",
@@ -698,7 +764,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.czy_front:
             print(f"front={int(any(wymaga_frontu(m) for m in mutanty))}")
             return 0
-        przezywajace = [m for m in mutanty if not _zabity(korzen, m, args.limit, args.limit_budowy)]
+        przezywajace = _przezywajace(korzen, mutanty, args.limit, args.limit_budowy, args.procesy)
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2

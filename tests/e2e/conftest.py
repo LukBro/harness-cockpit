@@ -23,6 +23,7 @@ from pathlib import Path
 import httpx
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from procesy import (
@@ -34,7 +35,7 @@ from procesy import (
 )
 
 KORZEN = Path(__file__).resolve().parents[2]
-URL_BAZY = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
+ZMIENNA_URL_BAZY = "COCKPIT_TEST_DATABASE_URL"
 INDEX_FRONTU = KORZEN / "src" / "cockpit" / "static" / "index.html"
 LIMIT_STARTU_S = 20
 # Runner e2e = produkcyjny `python -m runner`, ale lista operacji w jego procesie dostaje
@@ -92,10 +93,18 @@ def _wolny_port() -> int:
         return s.getsockname()[1]
 
 
+def _url_bazy() -> str:
+    """URL bazy tego procesu testowego: w workerze xdist `baza_workera` podmienia zmienna
+    srodowiskowa na URL wlasnej bazy workera (HAR-236), wiec helpery czytaja ja w chwili wywolania."""
+    return os.environ.get(ZMIENNA_URL_BAZY, "")
+
+
 def _skalar_z_bazy(zapytanie: str):
     """Jedna wartosc z prawdziwej bazy; zapytanie z osobnego watku, w osobnej petli."""
+    url = _url_bazy()
+
     async def _pytaj():
-        engine = create_async_engine(URL_BAZY)
+        engine = create_async_engine(url)
         try:
             async with engine.connect() as conn:
                 return (await conn.execute(text(zapytanie))).scalar_one()
@@ -136,8 +145,10 @@ def _zrzuc_zadania_asyncio() -> None:
 
 def _zrzuc_aktywnosc_bazy() -> None:
     """Sesje bazy i na co czekaja (pg_stat_activity), z limitem czasu."""
+    url = _url_bazy()
+
     async def _pytaj():
-        engine = create_async_engine(URL_BAZY)
+        engine = create_async_engine(url)
         try:
             async with engine.connect() as conn:
                 return (await conn.execute(text(
@@ -188,9 +199,72 @@ def _limit_czasu_testu(request):
         watek.join(timeout=5)
 
 
+def _cytuj_identyfikator(nazwa: str) -> str:
+    return '"' + nazwa.replace('"', '""') + '"'
+
+
+def _polecenie_na_serwerze(url: str, polecenie: str) -> None:
+    """Jedno polecenie (CREATE/DROP DATABASE) poza transakcja, przez baze z `url`; osobny watek i petla."""
+    async def _wykonaj():
+        engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text(polecenie))
+        finally:
+            await engine.dispose()
+
+    with ThreadPoolExecutor(max_workers=1) as pula:
+        pula.submit(lambda: asyncio.run(_wykonaj())).result()
+
+
+def url_bazy_workera(url: str, id_workera: str | None) -> str:
+    """URL wlasnej bazy workera xdist: `<baza>_<workerid>`, reszta URL bez zmian (HAR-236).
+
+    Bez workera (`id_workera` None) albo bez PostgreSQL zwraca URL oryginalny, wiec nigdy
+    nie wskaze bazy bez sufiksu workera do usuniecia."""
+    if id_workera is None or not url.startswith("postgresql"):
+        return url
+    oryginal = make_url(url)
+    assert oryginal.database, f"URL bazy testowej bez nazwy bazy: {url!r}"
+    return oryginal.set(
+        database=f"{oryginal.database}_{id_workera}"
+    ).render_as_string(hide_password=False)
+
+
+@pytest.fixture(scope="session")
+def baza_workera(request):
+    """URL bazy e2e tego procesu (HAR-236).
+
+    Bez xdist (albo bez PostgreSQL) zwraca oryginalny URL i niczego nie tworzy. W workerze xdist
+    (`config.workerinput`, nie zmienna srodowiskowa: ta przechodzi do zagniezdzonych przebiegow)
+    tworzy swieza baze `<baza>_<workerid>`, na czas sesji workera ustawia na nia
+    COCKPIT_TEST_DATABASE_URL (osiem plikow e2e czyta ja w tresci testow) i po sesji ja usuwa.
+    Baza bez sufiksu workera nigdy nie jest usuwana."""
+    url = _url_bazy()
+    wejscie = getattr(request.config, "workerinput", None)
+    if wejscie is None or not url.startswith("postgresql"):
+        yield url
+        return
+    url_workera = url_bazy_workera(url, wejscie["workerid"])
+    nazwa = make_url(url_workera).database
+    assert url_workera != url
+    usun = f"DROP DATABASE IF EXISTS {_cytuj_identyfikator(nazwa)} WITH (FORCE)"
+    _polecenie_na_serwerze(url, usun)
+    _polecenie_na_serwerze(url, f"CREATE DATABASE {_cytuj_identyfikator(nazwa)}")
+    # `url` pochodzi ze zmiennej srodowiskowej (`_url_bazy`), wiec zmienna istnieje i po sesji
+    # wraca do tej wartosci; przywrocenie stoi przed DROP, zeby blad serwera go nie pominal.
+    os.environ[ZMIENNA_URL_BAZY] = url_workera
+    try:
+        yield url_workera
+    finally:
+        os.environ[ZMIENNA_URL_BAZY] = url
+        _polecenie_na_serwerze(url, usun)
+
+
 @pytest.fixture
-def czysta_baza():
-    if not URL_BAZY.startswith("postgresql"):
+def czysta_baza(baza_workera):
+    url_bazy = baza_workera
+    if not url_bazy.startswith("postgresql"):
         pytest.skip(
             "test e2e wymaga PostgreSQL: uruchom tools/testy_pelne.sh (baza "
             "cockpit_test_<skrot> na worktree) albo ustaw jawnie "
@@ -205,14 +279,14 @@ def czysta_baza():
     def _migruj(akcja: str, rewizja: str) -> None:
         wynik = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", str(KORZEN / "alembic.ini"), akcja, rewizja],
-            env={**os.environ, "COCKPIT_DATABASE_URL": URL_BAZY},
+            env={**os.environ, "COCKPIT_DATABASE_URL": url_bazy},
             cwd=KORZEN, capture_output=True, text=True, timeout=120,
         )
         assert wynik.returncode == 0, f"alembic {akcja} {rewizja} nie powiodl sie: {wynik.stderr[-1500:]}"
 
     _migruj("downgrade", "base")   # czysta baza: zasiew zaklada jeden zespol i jednego wlasciciela
     _migruj("upgrade", "head")
-    yield URL_BAZY
+    yield url_bazy
     _migruj("downgrade", "base")
 
 

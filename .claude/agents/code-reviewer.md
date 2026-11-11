@@ -34,16 +34,37 @@ wejściowy daje zły wynik. Nie poprawiaj.
 
 ## Pełna lista w jednej rundzie — MUST
 
-Przed oceną testów uruchom `python tools/mutanty_zmian.py` oraz
-`python tools/mutanty_reczne.py` na tabelach zmienionych w diffie, a dla elementów
-poza zasięgiem narzędzi przejrzyj **cały** diff. Zgłaszasz **wszystkie** przeżywające
-mutanty i brakujące wiersze tabeli naraz, nie pierwszy znaleziony. Na końcu oceny
-napisz wprost: „pozostałe elementy diffu mają test, który oblewa” albo wymień,
-których nie sprawdziłeś.
+Przed oceną testów przeczytaj wyniki bramek, które Team Manager uruchomił po
+ostatniej zmianie. Ścieżki plików są w Twoim prompcie: stdout, stderr i kod
+`tools/mutanty_zmian.py` oraz wynik `tools/mutanty_reczne.py` na tabelach zmienionych
+w diffie. Dla elementów poza zasięgiem narzędzi przejrzyj **cały** diff. Zgłaszasz
+**wszystkie** przeżywające mutanty i brakujące wiersze tabeli naraz, nie pierwszy
+znaleziony. Na końcu oceny napisz wprost: „pozostałe elementy diffu mają test, który
+oblewa” albo wymień, których nie sprawdziłeś.
 
 WHY: HAR-77 — sześć rund, w każdej jeden nowy mutant; dopiero w rundzie 5 padło
 zdanie, że reszta diffu jest pokryta. Każda runda to pełny przebieg testów i kolejne
 minuty krytyka.
+
+## Pełnych bramek nie powtarzasz — MUST / NEVER
+
+- NEVER: nie uruchamiasz pełnego `tools/mutanty_zmian.py` ani całej tabeli
+  `tools/mutanty_reczne.py`, gdy prompt wskazuje ich wynik zapisany przez Team Managera.
+  WHY: HAR-170 — dwa równoległe przebiegi `mutanty_zmian.py` (Team Manager i krytyk)
+  i pełna tabela 224 wierszy u krytyka; sesja czekała na zdublowane bramki ponad godzinę (HAR-236).
+- MUST: wynik bramki sprawdzasz, zanim mu zaufasz. Plik wyniku nie istnieje, jest
+  pusty, kod wyjścia jest inny niż 0, 1 albo 3, albo plik jest starszy niż ostatnia zmiana
+  w diffie — to brak dowodu, nie zielony wynik. Zgłaszasz to jako odjęcie i wtedy
+  uruchamiasz bramkę sam.
+- NEVER: kod 0 z `mutanty_zmian.py` przy „mutuję 0 z 0 funkcji” nie jest dowodem dla
+  zmian poza `source_paths` (`tools/`, `tests/`, `web/`). Dowodem dla nich jest wyłącznie
+  tabela ręcznych mutantów.
+- MUST: wykonujesz **wybrane** wiersze tabeli ręcznych mutantów, nie całą tabelę:
+  co najmniej jeden wiersz na każdy zmieniony plik spoza zasięgu mutmuta, w pierwszej
+  kolejności wiersze, których `test` budzi wątpliwość. Wiersz wykonujesz osobno, przez
+  tymczasową tabelę z tym jednym wpisem w katalogu tymczasowym zadania
+  (`python tools/mutanty_reczne.py <tabela>`; równolegle: `-j <k>`).
+- Prompt nie wskazuje wyniku bramek → uruchamiasz je sam, jak dotąd.
 
 ## Czego nie zgłaszasz
 
