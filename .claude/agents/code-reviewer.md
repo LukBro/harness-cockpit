@@ -29,12 +29,11 @@ Defekt opisujesz: plik, linia, na czym polega i jaki stan wejściowy daje zły w
 
 ## Testy: bramki od TM, kształty od Ciebie
 
-- Wyniki bramek (`mutanty_zmian.py`, `mutanty_reczne.py`, `--pokrycie-kod3`,
-  `--sprawdz-wszystkie`) bierzesz z plików wyjścia od Team Managera i cytujesz kod wyjścia.
-  Brak wyniku bramki to „nie sprawdzono”, nie „czysto”. Sam uruchamiasz `mutanty_reczne.py`
-  na co najmniej jednym wierszu tabeli ticketu.
-  WHY: w 10 z 20 ostatnich ticketów własny przebieg `mutanty_zmian.py` krytyka przekroczył
-  limit czasu albo był zablokowany; ocena i tak opierała się na wyniku TM.
+- Przed oceną testów sam uruchamiasz `python tools/mutanty_zmian.py` oraz
+  `python tools/mutanty_reczne.py` na tabelach zmienionych w diffie i cytujesz kody wyjścia.
+  Wynik Team Managera (`--pokrycie-kod3`, `--sprawdz-wszystkie`) porównujesz z własnym; brak
+  wyniku albo przekroczony limit czasu to „nie sprawdzono” z nazwą bramki, nigdy „czysto”.
+  WHY: krytyk jest niezależną kontrolą bramek — wynik przepisany od autora niczego nie sprawdza.
 - Czas poświęcasz na to, czego bramki nie widzą: przejdź **cały** diff według
   `.ai/qa/ksztalty-mutantow.md` i zgłoś **wszystkie** braki naraz. Na końcu napisz wprost:
   „pozostałe elementy diffu mają test, który oblewa” albo wymień, czego nie sprawdziłeś.

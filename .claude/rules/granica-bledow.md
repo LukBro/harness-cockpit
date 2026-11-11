@@ -17,7 +17,9 @@ to drugie co do częstości odjęcie (5 z 20 ostatnich ticketów, w tym „korek
 - Wartość z zewnątrz, od której zależy wynik (`wynik`, `kind`, `issues`), sprawdzasz co do typu
   i zamkniętej listy; nieznana wartość to błąd, nie domyślne „sukces/pusto” (`{}` ≠ „brak ticketów”).
 - Pole zapisywane do `String(n)` ma `max_length` w modelu wejścia API **i** jest walidowane
-  w runnerze przed wysłaniem — inaczej 500 i bezkońcowe ponawianie z bufora.
+  w runnerze przed wysłaniem — inaczej 500 i bezkońcowe ponawianie z bufora. Nowe pole `EventIn`
+  z limitem dostaje w tym samym PR walidację runnera przed buforem i test, który wysyła wartość
+  o jeden ponad limit i sprawdza błąd dziedziny zamiast ponawiania (HAR-66, HAR-170).
 - `int(os.environ[...])` tłumaczysz z nazwą zmiennej, zanim proces wystartuje; segment URL z danych
   przechodzi przez `quote(…, safe="")`; błąd strumienia runnera kończy proces komunikatem, nie tracebackiem.
 

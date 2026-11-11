@@ -25,6 +25,17 @@ Po jednym przykładzie na kształt; ticket w nawiasie to źródło.
 | Wartość, nie obecność | sprawdza wartość wpisu i wartość, którą błąd mógłby zostawić | `Zabronione → 403`; `tabele=1` po błędzie (HAR-38, HAR-221) |
 | Tryb, źródło, zakres, strefa czasowa | wejście dające inny wynik w każdym trybie; naive→UTC z `TZ` + `time.tzset`; dziedziczenie: u rodzica inna wartość niż oczekiwana u potomka, „nieustawiona” ≠ „pusta” | (HAR-68, HAR-85) |
 | Licznik limitu | wartość, przy której `+1` i `+2` dają różny wynik | (HAR-151) |
+| Kolejność i filtr rodzaju zbudowane w Pythonie | sortowanie: kolejność wstawiania różna od kolejności wyniku (powtórzony klucz przepleciony innym); filtr rodzaju: zdarzenie odrzuconego rodzaju z tymi samymi danymi | `kind == "step_finished"` — test ze `step_failed` (HAR-170) |
+| Dopasowanie jednoznaczne | asercja na zdaniu, które istnieje tylko w regule; pomocnik zawężający do zakresu ma test z elementem spoza zakresu, który bez zawężenia dałby inny wynik | asercja na treści briefu (HAR-15, HAR-74) |
+| „Mutant tylko wyścigowo” to nie równoważność | wiersz z testem, który wymusza kolejność zdarzeń, albo usunięcie warunku; nagłówek TOML bez wskazania, że żadne wejście nie odróżnia wersji, nie zwalnia z wiersza | `odpowiedzi_get >= 2` → `>= 1` (HAR-232) |
+
+## Skrypty CI i tabele
+
+- Każda gałąź `exit 1` w skrypcie CI ma wiersz ręcznego mutanta usuwający `exit 1`: komunikat
+  `::error::` bez wyjścia z kodem 1 to zielony krok (HAR-233).
+- `szukaj` celuje w źródło (`src/cockpit/api/schematy.py`), nie w plik generowany (`web/openapi.json`):
+  po regeneracji kontraktu treść generowana przestaje być jednoznaczna, a kod skopiowany do nowej
+  funkcji podwaja krótkie `szukaj` w tym samym pliku (HAR-170, HAR-179).
 
 ## Front (`web/`) i e2e
 
