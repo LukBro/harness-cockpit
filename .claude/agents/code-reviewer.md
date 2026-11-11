@@ -35,7 +35,8 @@ Defekt opisujesz: plik, linia, na czym polega i jaki stan wejściowy daje zły w
   wyniku albo przekroczony limit czasu to „nie sprawdzono” z nazwą bramki, nigdy „czysto”.
   WHY: krytyk jest niezależną kontrolą bramek — wynik przepisany od autora niczego nie sprawdza.
 - Czas poświęcasz na to, czego bramki nie widzą: przejdź **cały** diff według
-  `.ai/qa/ksztalty-mutantow.md` i zgłoś **wszystkie** braki naraz. Na końcu napisz wprost:
+  `.ai/qa/ksztalty-mutantow.md` i zgłoś **wszystkie** braki naraz. Gdy skrót reguły nie rozstrzyga,
+  sięgasz do pełnej treści sprzed skrócenia: `.ai/qa/reguly-archiwum.md`. Na końcu napisz wprost:
   „pozostałe elementy diffu mają test, który oblewa” albo wymień, czego nie sprawdziłeś.
   WHY: HAR-77 — sześć rund, w każdej jeden nowy mutant.
 - `[[rownowazny]]` sprawdzasz, szukając wejścia, które odróżnia wersje; uzasadnienie „inny

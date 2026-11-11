@@ -9,15 +9,16 @@ cały sprint, mierząc 0 z 2366 mutantów (HAR-132).
 ## Kształty
 
 - **CI i skrypty**: `continue-on-error`, `|| true`, `exit 0` tylko dla nazwanej przyczyny
-  i konkretnego kodu, nie całego wywołania. Cache przywracany po prefiksie klucza (`restore-keys`)
+  i konkretnego kodu, nie całego wywołania. Narzędzie zepsute (zero zabitych mutantów, zero zebranych
+  testów, zero zbadanych elementów) oblewa krok (HAR-132). Cache przywracany po prefiksie klucza (`restore-keys`)
   daje wynik ze starego stanu — klucz obejmuje wszystko, od czego zależy werdykt.
 - **Wyjście innego programu**: wymuś format flagami (`diff.noprefix` zmienia `git diff`).
   Kod wyjścia czytaj razem z danymi — u gita kod 1 to „różni się” albo „błąd”, kod 127 z `ps`
   to „brak narzędzia”, nie „proces nie żyje”. Strażnik, który nie umie ocenić stanu, traktuje go
   jak zajęty, nigdy jak zgodę na akcję destrukcyjną.
 - **Parsery i filtry**: element wyglądający na objęty regułą, ale niezgodny z formatem
-  (`## L-12` zamiast `## L-012`), to błąd walidatora; gałąź `except …: return False` nie
-  przepuszcza elementu jako poprawnego.
+  (`## L-12` zamiast `## L-012`), to błąd walidatora; gałąź „nie umiem ocenić” (`except …: return False`,
+  ścieżka spoza `rootdir`) nie przepuszcza elementu jako poprawnego.
 - **Zasięg zewnętrznego narzędzia**: liczony mechanizmem narzędzia (`PragmaVisitor` mutmuta),
   nie własnym parserem; czego narzędzie nie sprawdza, idzie do „sprawdź ręcznie”, nie do kodu 0.
 - **Zdarzenie zamykające**: `run_finished` dopiero po potwierdzeniu, że zdarzenie kroku, z którego

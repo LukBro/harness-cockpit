@@ -11,8 +11,8 @@ To najczęstsze odjęcie w projekcie (11 z 20 ostatnich ticketów).
 | -- | -- | -- |
 | `python tools/mutanty_zmian.py [--baza <ref>]` | 0 czysto · 1 przeżywające mutanty · 2 błąd narzędzia · 3 zmiany poza zasięgiem mutmuta (stdout: `bez mutantów — sprawdź ręcznie`, potem `plik:linia`) | 1: test zabijający mutanta. 3: każda linia dostaje wiersz w tabeli ręcznych mutantów. 2 to nie „czysto”. |
 | `python tools/mutanty_reczne.py tests/mutanty_reczne/<ticket>.toml` | 0 zabite · 1 przeżywające · 2 błąd tabeli/narzędzia | Wymagane przy kodzie 3 i przy każdej zmianie w `web/`, `tools/`, `cicd/` (CI: „brak dowodu”). |
-| `python tools/mutanty_reczne.py --pokrycie-kod3 <lista> <tabele>` | 0 · 1 linia bez wiersza | Każda linia kodu 3 ma `[[mutant]]` albo `[[rownowazny]]`. |
-| `python tools/mutanty_reczne.py --sprawdz-wszystkie` | 0 · inny = zepsuty wiersz | Przeniosłeś kod albo zmieniłeś test z cudzej tabeli — popraw tę tabelę w tym samym PR. |
+| `python tools/mutanty_reczne.py --pokrycie-kod3 <lista> <tabele>` | 0 pokryte · 1 linia bez wiersza · 2 błąd narzędzia | Każda linia kodu 3 ma `[[mutant]]` albo `[[rownowazny]]`. |
+| `python tools/mutanty_reczne.py --sprawdz-wszystkie` | 0 sprawdzono > 0 wierszy · 2 zepsuty wiersz, brak tabel albo błąd kolekcji (nigdy 1) | Przeniosłeś kod albo zmieniłeś test z cudzej tabeli — popraw tę tabelę w tym samym PR. |
 
 Wiersz tabeli:
 
@@ -30,7 +30,8 @@ uzasadnienie = "żadne wejście nie odróżnia wersji, bo ..."
 ```
 
 - Równoważność uzasadniasz wejściem, którego nie ma, nie tym, że „inny element już to łapie”.
-  W kodzie: `# pragma: no mutate` z komentarzem powodu w linii wyżej.
+  W kodzie: `# pragma: no mutate` z komentarzem powodu w linii wyżej i wiersz ręcznego mutanta dla
+  wariantu, który da się zabić (precedens `src/runner/checkpoint.py`, HAR-173).
 - Po zmianie samych testów cache `mutants/` może dać stary wynik — uruchom w świeżym klonie
   w nowym katalogu tymczasowym, z dokopiowanymi niescommitowanymi zmianami. Nie usuwaj `mutants/`
   w sesji agenta.

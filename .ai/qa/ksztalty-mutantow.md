@@ -3,7 +3,8 @@
 Uzupełnienie `.claude/rules/test-odroznia-regule.md`. Czyta test-writer przed oddaniem tabeli
 i krytyk przed oceną testów. Każdy kształt potrzebuje testu, w którym **tylko ten element**
 decyduje o wyniku, i — gdy mutmut go nie generuje — wiersza `[[mutant]]` w tabeli ticketu.
-Po jednym przykładzie na kształt; ticket w nawiasie to źródło.
+Po jednym przykładzie na kształt; ticket w nawiasie to źródło. Pełna historia kształtów i wszystkie
+przykłady sprzed skrócenia reguł: `.ai/qa/reguly-archiwum.md` (obowiązuje, gdy skrót nie rozstrzyga).
 
 ## Kod Pythona
 
