@@ -27,7 +27,7 @@ Defekt opisujesz: plik, linia, na czym polega i jaki stan wejściowy daje zły w
 4. **Czy test odróżnia regułę od jej braku** — patrz niżej.
 5. **Nazwy testów w języku dziedziny.** Dopiero potem czytelność i powtórzenia.
 
-## Testy: bramki od TM, kształty od Ciebie
+## Testy: bramki uruchamiasz sam, kształty z katalogu
 
 - Przed oceną testów sam uruchamiasz `python tools/mutanty_zmian.py` oraz
   `python tools/mutanty_reczne.py` na tabelach zmienionych w diffie i cytujesz kody wyjścia.

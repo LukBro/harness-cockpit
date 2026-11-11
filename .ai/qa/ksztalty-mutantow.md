@@ -16,7 +16,8 @@ Po jednym przykładzie na kształt; ticket w nawiasie to źródło.
 | Wyrażenie regularne w stałej modułu | po jednym wejściu na klasę znaków, wykluczony znak, kotwicę, końcowy literał; zawężenie ma wejście, które tylko ono odrzuca | `[^\[\]:]` i `\]` w `KOTWICA` (HAR-176) |
 | Agregacja po wierszach | co najmniej dwa wiersze tego samego klucza w różnych stanach | dwóch agentów jednego kroku (HAR-178) |
 | Wywołanie usuwalne bez zmiany typu | wejście, na którym wynik bez wywołania jest inny | `sorted(...)` przy przeplecionych krokach (HAR-170), `.strip()` (HAR-104) |
-| Strażnik, wartość zastępcza, człon warunku | wartość odrzucana tylko przez ten człon, także puste wejście | `isinstance(proby, bool)` obok `int` → `"proby": true` (HAR-172) |
+| Strażnik, wartość zastępcza, człon warunku | wartość odrzucana tylko przez ten człon, także puste wejście; także strażnik dodany w poprawce po review (`isfinite`, `is not None`) — poprawka podlega tej samej regule co kod pierwotny | `isinstance(proby, bool)` obok `int` → `"proby": true` (HAR-172, HAR-86, HAR-150) |
+| Strażnik za strażnikiem z tym samym kodem wyjścia | asercja na fragmencie komunikatu, który powstaje tylko w tym strażniku | `if not tabele:` przed sprawdzeniem zera wierszy, oba kod 2 (HAR-225) |
 | Warunek zapytania | rekord odrzucany tylko przez ten warunek: drugi zespół dla `tenant_id`, `ORDER BY` kolejności blokad; `with_for_update()` — kompilacja dialektem PostgreSQL | (HAR-50, HAR-206) |
 | Pole i ograniczenie modelu (kod 3) | `Field(max_length=…)`, `default=`, pole dataclass, argument serwisu w trasie z dekoratorem | ciało trasy FastAPI (HAR-172) |
 | Wywołanie istniejącego strażnika w nowej funkcji | test, w którym tylko to wywołanie daje kod błędu | `_wymagaj_dokladnie_raz(...)` (HAR-228) |

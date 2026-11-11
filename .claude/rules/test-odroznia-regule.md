@@ -32,7 +32,10 @@ uzasadnienie = "żadne wejście nie odróżnia wersji, bo ..."
 - Równoważność uzasadniasz wejściem, którego nie ma, nie tym, że „inny element już to łapie”.
   W kodzie: `# pragma: no mutate` z komentarzem powodu w linii wyżej.
 - Po zmianie samych testów cache `mutants/` może dać stary wynik — uruchom w świeżym klonie
-  w nowym katalogu tymczasowym. Nie usuwaj `mutants/` w sesji agenta.
+  w nowym katalogu tymczasowym, z dokopiowanymi niescommitowanymi zmianami. Nie usuwaj `mutants/`
+  w sesji agenta.
+- `[tool.mutmut] also_copy` obejmuje wszystko, czego potrzebują testy (np. `alembic/`, `alembic.ini`);
+  inaczej skrypt kończy się kodem 2 na fazie statystyk mutmuta.
 - Mutanta, którego nie da się zaimportować (błąd zbierania pytesta), nie wpisuj do tabeli.
 
 ## Czego bramki nie widzą
