@@ -23,7 +23,8 @@ Kody wyjścia:
   0  każdy agent >= progu (APPROVED)
   1  ktoś poniżej progu i ma odjęcie bez znacznika BLOKADA-ZEWNĘTRZNA -> iteracja tylko tego agenta
   4  poniżej progu wyłącznie przez odjęcia z BLOKADA-ZEWNĘTRZNA -> bez iteracji; komentarz BLOKADA + decyzja człowieka
-  2  brak werdyktu: brak bloku **Code Review**, brak oceny któregoś agenta, plik/transkrypt nieczytelny
+  2  brak werdyktu: brak bloku **Code Review**, brak ocenianych agentów (pusty `przydzial`),
+     brak oceny któregoś agenta, plik/transkrypt nieczytelny
      (review NIGDY nie jest liczone jako zaliczone bez werdyktu)
   64 błąd użycia
 """
@@ -120,6 +121,9 @@ def parsuj(tekst, agenci, prog):
         r = re.match(r"^\s*REGULA:\s*(.+)$", line)
         if r and akt:
             reguly.append((akt, r.group(1).strip()))
+    if not agenci:
+        # Pusty `przydzial` (cała praca w pliki_tm) to zero ocenionych agentów: brak dowodu, nigdy APPROVED.
+        return 2, oceny, reguly, "brak ocenianych agentów (pusty przydzial w stan.json)"
     brak = [a for a in agenci if a not in oceny]
     if brak:
         return 2, oceny, reguly, "brak oceny agentów: " + ",".join(brak)
