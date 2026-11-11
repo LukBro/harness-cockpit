@@ -1,0 +1,40 @@
+# Tabela recznych mutantow HAR-227: limit czekania runnera na straznika liczony z karencji
+# (src/runner/krok.py) - stale modulu poza zasiegiem mutmuta (kod 3 z tools/mutanty_zmian.py).
+# Mutanty w ciele `_zakoncz_grupe` (src/runner/straznik.py) pokrywa mutmut i testy na sztucznym
+# zegarze. Import CZAS_NA_ZAKONCZENIE_S w krok.py: usuniecie daje NameError przy imporcie modulu,
+# czyli blad zbierania testow, nie przezywajacy mutant - wiersz nie jest mozliwy.
+#
+# Test behawioralny: straznik pod obciazeniem (sen karencji 9 s, > 8 s, < 20 s). Zalezy tylko od
+# wartosci limitu ponizej 9 s (mutant LIMIT = 8); mutanty formuly (10-15 s) lapie test wartosci.
+
+# WHY: dawny staly limit 8 s < 9 s snu karencji: runner zabija straznika przed jego SIGKILL-em,
+# agent ignorujacy SIGTERM zostaje sierota, grupa_umarla oblewa.
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "LIMIT_NA_STRAZNIKA_S = 2 * CZAS_NA_ZAKONCZENIE_S + ZAPAS_NA_STRAZNIKA_S"
+zamien = "LIMIT_NA_STRAZNIKA_S = 8"
+test = "tests/test_brak_sierot.py::test_wolny_straznik_pod_obciazeniem_nie_zostawia_agenta_ignorujacego_sigterm_jako_sieroty"
+
+# WHY: bez mnoznika 2 limit to 15 s - przy snie 9 s zachowanie sie nie zmienia, wiec mnoznik
+# chroni asercja wartosci LIMIT == 2 * CZAS + ZAPAS (15 != 20).
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "LIMIT_NA_STRAZNIKA_S = 2 * CZAS_NA_ZAKONCZENIE_S + ZAPAS_NA_STRAZNIKA_S"
+zamien = "LIMIT_NA_STRAZNIKA_S = CZAS_NA_ZAKONCZENIE_S + ZAPAS_NA_STRAZNIKA_S"
+test = "tests/test_brak_sierot.py::test_limit_czekania_runnera_na_straznika_pochodzi_z_karencji_straznika_z_zapasem"
+
+# WHY: bez zapasu limit to 2 * 5 + 0 = 10 s - przy snie 9 s zachowanie sie nie zmienia, wiec zapas
+# chroni asercja ZAPAS == 10 (0 != 10).
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "ZAPAS_NA_STRAZNIKA_S = 10"
+zamien = "ZAPAS_NA_STRAZNIKA_S = 0"
+test = "tests/test_brak_sierot.py::test_limit_czekania_runnera_na_straznika_pochodzi_z_karencji_straznika_z_zapasem"
+
+# WHY: wartosc zapasu sprawdzona wprost - zapas 11 s (limit 21 s) nie zmienia zachowania pod snem 9 s,
+# wiec tylko asercja na wartosc go chroni.
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "ZAPAS_NA_STRAZNIKA_S = 10"
+zamien = "ZAPAS_NA_STRAZNIKA_S = 11"
+test = "tests/test_brak_sierot.py::test_limit_czekania_runnera_na_straznika_pochodzi_z_karencji_straznika_z_zapasem"

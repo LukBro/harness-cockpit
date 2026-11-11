@@ -23,6 +23,7 @@ from cockpit.services.errors import BladDziedziny
 from cockpit.services.invariants import Rola
 from runner import bufor
 from runner.bufor import BladBufora
+from runner.maskowanie import maskuj_komende
 
 ZMIENNA_PLIKU = "COCKPIT_HOOK_FILE"
 _RUN_ID = bufor._RUN_ID  # ten sam obiekt wzorca co w buforze, nie kopia
@@ -122,6 +123,24 @@ def plik_ustawien(
     return plik
 
 
+# HAR-219: straz, ktora nie wystartowala (zepsuty import, brak interpretera), konczy sie kodem != 0
+# i bez JSON-a deny; Claude Code przepuszcza wtedy narzedzie, wiec powloka zamienia kazdy
+# taki kod na 2 (blokada). stdout strazy (JSON deny) przechodzi bez zmian, stdin jest dziedziczony.
+_GALAZ_AWARII_STRAZY = (
+    '; kod=$?; if [ "$kod" -ne 0 ]; then echo "straż roli: awaria straży (kod $kod)" >&2; '
+    "exit 2; fi"
+)
+
+
+def _polecenie_strazy(rola: Rola, worktree: Path, wykonywalny: str = sys.executable) -> str:
+    """Linia `sh` uruchamiajaca straz roli z galezia awarii (kod != 0 -> kod 2)."""
+    straz = (
+        f"{shlex.quote(wykonywalny)} -I {shlex.quote(str(_STRAZ_ROLI))} "
+        f"--rola {shlex.quote(rola.value)} --worktree {shlex.quote(str(worktree))}"
+    )
+    return straz + _GALAZ_AWARII_STRAZY
+
+
 def ustawienia_hookow(
     plik: Path, *, rola: Rola | None = None, worktree: Path | None = None
 ) -> dict[str, Any]:
@@ -148,13 +167,9 @@ def ustawienia_hookow(
     if rola is not None and worktree is not None:
         # WHY brak `|| true` i `if`: odmowa idzie kodem 0 i JSON-em na stdout, a straz jest
         # fail-closed sama - zdjecie kodu wyjscia albo warunek wylaczylyby ja po cichu.
-        straz = (
-            f"{shlex.quote(sys.executable)} -I {shlex.quote(str(_STRAZ_ROLI))} "
-            f"--rola {shlex.quote(rola.value)} --worktree {shlex.quote(str(worktree))}"
-        )
         hooki["PreToolUse"].append({
             "matcher": _MATCHER_STRAZY,
-            "hooks": [{"type": "command", "command": straz}],
+            "hooks": [{"type": "command", "command": _polecenie_strazy(rola, worktree)}],
         })
     return {"hooks": hooki}
 
@@ -310,7 +325,9 @@ def _dane_odmowy(ev: dict) -> tuple[str, str, str]:
         if wartosc is not None and not isinstance(wartosc, str):
             raise BladZdarzeniaHooka(nazwa)
         pola.append(wartosc or "")
-    return pola[0], pola[1], pola[2]
+    # HAR-219: komenda niesie sekrety (np. `GH_TOKEN=...`); maskujemy ja u zrodla, wiec tekst
+    # odmowy, tekst powtorzenia i klucz licznika powtorzen widza ten sam zamaskowany napis
+    return pola[0], maskuj_komende(pola[1]), pola[2]
 
 
 def _tekst_odmowy(ev: dict) -> str:
