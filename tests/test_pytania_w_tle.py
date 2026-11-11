@@ -52,8 +52,9 @@ def test_inne_narzedzie_w_sesji_w_tle_przechodzi_bez_decyzji_hooka():
     assert hook('{"tool_name": "Bash"}', "bg") == ""
 
 
-@pytest.mark.parametrize("wejscie", ["to nie json", "[]", "{}", '{"tool_name": 1}', ""],
-                         ids=["nie-json", "lista", "brak-tool_name", "tool_name-nie-napis", "puste"])
+@pytest.mark.parametrize("wejscie", ["to nie json", "[]", "{}", '{"tool_name": 1}', "", "[" * 200000],
+                         ids=["nie-json", "lista", "brak-tool_name", "tool_name-nie-napis", "puste",
+                              "zagniezdzenie"])
 def test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa(wejscie):
     assert odmowa(hook(wejscie, "bg"))
 

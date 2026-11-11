@@ -32,22 +32,22 @@ test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_o
 # Krotka except: ValueError (nie JSON).
 [[mutant]]
 plik = ".claude/hooks/pytania_w_tle.py"
-szukaj = "except (ValueError, KeyError, TypeError):"
-zamien = "except (KeyError, TypeError):"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (KeyError, TypeError, RecursionError):"
 test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
 
 # Krotka except: KeyError (brak tool_name).
 [[mutant]]
 plik = ".claude/hooks/pytania_w_tle.py"
-szukaj = "except (ValueError, KeyError, TypeError):"
-zamien = "except (ValueError, TypeError):"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (ValueError, TypeError, RecursionError):"
 test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
 
 # Krotka except: TypeError (lista zamiast obiektu).
 [[mutant]]
 plik = ".claude/hooks/pytania_w_tle.py"
-szukaj = "except (ValueError, KeyError, TypeError):"
-zamien = "except (ValueError, KeyError):"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (ValueError, KeyError, RecursionError):"
 test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
 
 # tool_name nie-napis to nieczytelne wejscie.
@@ -77,3 +77,10 @@ plik = ".claude/hooks/pytania_w_tle.py"
 szukaj = "tekst = sys.stdin.buffer.read()"
 zamien = "tekst = sys.stdin.read()"
 test = "tests/test_pytania_w_tle.py::test_wejscie_spoza_utf8_w_sesji_w_tle_to_odmowa_nie_traceback"
+
+# Krotka except: RecursionError (zbyt glebokie zagniezdzenie JSON) - bez niego hook pada i przepuszcza pytanie.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (ValueError, KeyError, TypeError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
