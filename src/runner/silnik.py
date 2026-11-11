@@ -7,8 +7,12 @@ pozwala `needs`. Krok z `approval: true` zawiesza run na bramce BEZ procesu agen
 zdarzenia), kroki niezalezne od bramki dochodza do konca, potem drugi zapis, pauza testowa
 i `step_waiting` jako ostatnie zdarzenie runu. Wszystkie odczyty (rejestr skilli,
 workflow, project.yaml) ida z worktree (stan z commita), nie z repozytorium uzytkownika.
-Silnik nie sprzata worktree: zostaje do odbioru. Fan-out, konsensus, foreach i petla
-naprawcza to osobne tickety.
+Silnik nie sprzata worktree: zostaje do odbioru. Fan-out, konsensus i foreach to osobne tickety.
+
+Petla naprawcza (HAR-109, D28): krok z `on_fail: {retry, max}` po porazce wraca do celu `retry`
+(wszystkie kroki na sciezce `needs` od celu do kroku nieudanego) z raportem porazki jako
+wejsciem celu, co najwyzej `max` razy; potem `step_failed` z powodem wyczerpania i koniec runu.
+Kazdy start kroku zwieksza jego licznik prob (checkpoint: `proby`), a zdarzenia kroku niosa `attempt`.
 
 Wznowienie po decyzji (HAR-173): `wznow_run` czyta WYLACZNIE checkpoint z dysku i kopie
 workflow w katalogu runu, wiec dziala w nowej instancji runnera. `approve` zapisuje decyzje
@@ -35,6 +39,7 @@ import shutil
 import sys
 import time
 import weakref
+from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -65,9 +70,16 @@ from runner.checkpoint import (
     zapisz_checkpoint,
 )
 from runner.dowody import wykonaj_check
-from runner.graf import StanKroku, nastepne
+from runner.graf import StanKroku, kroki_do_powtorzenia, nastepne
 from runner.kotwice import PLIK_NOTATKI
-from runner.krok import KATALOG_RUNU, PomiarKroku, WynikKroku, _zapisz_atomowo, wykonaj_krok
+from runner.krok import (
+    KATALOG_RUNU,
+    PomiarKroku,
+    WynikKroku,
+    _blad_identyfikatora,
+    _zapisz_atomowo,
+    wykonaj_krok,
+)
 from runner.krok_diff import wykonaj_diff
 from runner.weryfikacja import kroki_weryfikujace
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
@@ -84,6 +96,7 @@ KROK_WALIDACJI = "walidacja"   # krok, na ktorym kokpit widzi blad przed startem
 TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"
 TEKST_PRZERWANIA = "przerwany przy śmierci runnera — nie wznawiamy"
 DECYZJE = ("approve", "reject")
+LINIE_OGONA = 20   # ostatnie linie `output` kroku nieudanego w raporcie porazki (HAR-109)
 KATALOG_ARTEFAKTOW = KATALOG_RUNU / "artifacts"   # decyzje czlowieka jako wejscia krokow
 # blokada per run: sprawdzenie oczekiwania i zapis checkpointu bez `waiting_on` sa atomowe
 # wzgledem drugiego polecenia `resume`; slaba mapa nie trzyma blokad zakonczonych runow
@@ -190,11 +203,23 @@ def _sciezka_decyzji(step_id: str) -> Path:
     return KATALOG_ARTEFAKTOW / f"decyzja_{step_id}.json"
 
 
-def _zdarzenie(run_id: str, kind: str, step_id: str, agent_id: str, text: str, **reszta) -> dict:
-    return {
+def _zdarzenie(
+    run_id: str, kind: str, step_id: str, agent_id: str, text: str, *,
+    attempt: int | None = None, **reszta,
+) -> dict:
+    """Zdarzenie runu; `attempt` (numer proby kroku) tylko dla zdarzen kroku."""
+    zdarzenie = {
         "kind": kind, "run_id": run_id, "step_id": step_id, "agent_id": agent_id,
         "text": text, **reszta,
     }
+    if attempt is not None:
+        zdarzenie["attempt"] = attempt
+    return zdarzenie
+
+
+def _sciezka_raportu(cel: str, nr: int) -> Path:
+    """Sciezka raportu porazki wzgledem worktree: artefakt celu petli naprawczej (HAR-109)."""
+    return KATALOG_ARTEFAKTOW / cel / "_naprawa" / f"proba_{nr}.md"
 
 
 def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | None:
@@ -236,16 +261,29 @@ async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
 async def _krok(
     run_id: str, id_kroku: str, p: Przygotowany, profil: ProfilBackendu,
     uruchom_agenta: UruchomAgenta, emit: Emit, zatwierdzone: frozenset[str] = frozenset(),
+    *, proba: int, ogon: deque[str] | None = None,
 ) -> WynikKroku:
     """Jeden krok: specyfikacja agenta, prompt, polecenie; blad budowy to `PorazkaKroku`.
 
     Krok systemowy idzie do wykonawcy z rejestru, bez agenta. Krok zatwierdzony na bramce
-    dostaje artefakt decyzji jako ostatnie wejscie."""
+    dostaje artefakt decyzji jako ostatnie wejscie. Cel petli naprawczej w probie > 1 dostaje
+    sciezke raportu porazki poprzedniej proby, jesli plik istnieje (HAR-109). Zdarzenia `output`
+    niosa numer proby, a ich tekst trafia do `ogon` (raport porazki)."""
     krok = next(k for k in p.workflow.kroki if k.id == id_kroku)
     if krok.skill is None:
         return await _krok_systemowy(krok, p)
     skill = p.rejestr.skille[krok.skill]
     wejscia = [_wejscie(p, id_kroku, artefakt) for artefakt in skill.consumes]
+    if proba > 1:
+        raport = _sciezka_raportu(id_kroku, proba - 1)
+        try:
+            (p.worktree.sciezka / raport).stat()
+        except FileNotFoundError:
+            pass
+        except OSError as e:     # nie umiemy stwierdzic, czy raport jest: nie przepuszczamy
+            raise PorazkaKroku(f"nie sprawdzono raportu porażki ({type(e).__name__})") from e
+        else:
+            wejscia.append(raport.as_posix())
     if id_kroku in zatwierdzone:
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
     spec = SpecKroku(
@@ -269,8 +307,16 @@ async def _krok(
             dodatkowe["zmienione_linie"] = p.worktree.katalog_runu / producent / PLIK_LINII
     if skill.verdict is not None:
         dodatkowe["werdykt"] = skill.verdict
+
+    async def emit_proby(zdarzenie: dict) -> None:
+        if zdarzenie.get("kind") == "output":
+            zdarzenie = {**zdarzenie, "attempt": proba}
+            if ogon is not None:
+                ogon.append(str(zdarzenie.get("text", "")))
+        await emit(zdarzenie)
+
     return await uruchom_agenta(
-        spec, argv, p.worktree.sciezka, emit, katalog_runu=p.worktree.katalog_runu,
+        spec, argv, p.worktree.sciezka, emit_proby, katalog_runu=p.worktree.katalog_runu,
         prompt=prompt, **dodatkowe)
 
 
@@ -315,13 +361,13 @@ async def _zapisz(p: Przygotowany, cp: Checkpoint) -> BladCheckpointu | None:
 
 def _checkpoint(
     run_id: str, nazwa: str, p: Przygotowany, stany: Mapping[str, StanKroku],
-    startowane: set[str], czeka: Oczekiwanie | None,
+    startowane: Mapping[str, int], czeka: Oczekiwanie | None,
 ) -> Checkpoint:
     return Checkpoint(
         run_id=run_id, repozytorium=str(p.repozytorium), workflow=nazwa,
         base_commit=p.worktree.base_commit, worktree=str(p.worktree.sciezka),
         kroki={
-            i: StanKrokuCheckpointu(stan.value, 1 if i in startowane else 0)
+            i: StanKrokuCheckpointu(stan.value, startowane.get(i, 0))
             for i, stan in stany.items()
         },
         waiting_on=czeka,
@@ -336,6 +382,80 @@ def _pola_pomiaru(pomiar: PomiarKroku) -> dict:
         "tokens_in": pomiar.tokens_in, "tokens_out": pomiar.tokens_out,
         "num_turns": pomiar.num_turns, "session_id": pomiar.session_id,
     }
+
+
+def _ogon_dowodu(p: Przygotowany, id_kroku: str, dowod: Mapping[str, object]) -> str:
+    """`stdout_tail` z pliku dowodu kroku `check`; nieczytelny plik to linia, nie wyjatek."""
+    try:
+        plik = p.worktree.katalog_runu / id_kroku / str(dowod["plik"])
+        # mutanty UTF-8 i None sa rownowazne (nazwa kodeka bez rozroznienia wielkosci liter,
+        # domyslne kodowanie procesu to UTF-8); inne kodowanie chroni reczny mutant
+        dane = json.loads(plik.read_text(encoding="utf-8"))  # pragma: no mutate
+        return str(dane["stdout_tail"])
+    except (OSError, ValueError, TypeError, KeyError, RecursionError) as e:
+        return f"ogon niedostępny ({type(e).__name__})"
+
+
+def _zapisz_raport_porazki(
+    p: Przygotowany, id_kroku: str, proba: int, cel: str, proba_celu: int,
+    wynik: WynikKroku | None, powod: str | None, ogon: list[str],
+) -> str | None:
+    """Raport porazki jako artefakt celu petli naprawczej; `None` albo opis bledu zapisu."""
+    blad = _blad_identyfikatora(cel)
+    if blad is not None:
+        return blad
+    kod = wynik.kod_wyjscia if wynik is not None else None
+    werdykt = wynik.werdykt if wynik is not None else None
+    linie = [
+        f"# Raport porażki kroku {id_kroku}", "",
+        f"- krok: {id_kroku}",
+        f"- próba kroku: {proba}",
+        f"- kod wyjścia: {'brak' if kod is None else kod}",
+        f"- powód: {'brak' if powod is None else powod}",
+        f"- werdykt: {'brak' if werdykt is None else werdykt}",
+        "", "## Ogon logu", "", *ogon,
+    ]
+    if wynik is not None and wynik.dowod is not None and "plik" in wynik.dowod:
+        linie += ["", "## Ogon wyjścia komendy", "", _ogon_dowodu(p, id_kroku, wynik.dowod)]
+    # mutant UTF-8 jest rownowazny (nazwa kodeka bez rozroznienia wielkosci liter);
+    # inne kodowanie chroni reczny mutant
+    tresc = ("\n".join(linie) + "\n").encode("utf-8")  # pragma: no mutate
+    try:
+        _zapisz_atomowo(p.worktree.sciezka / _sciezka_raportu(cel, proba_celu), tresc)
+    except OSError as e:
+        return type(e).__name__
+    return None
+
+
+async def _obsluz_porazke(
+    p: Przygotowany, krok: Krok, startowane: Mapping[str, int], wynik: WynikKroku | None,
+    powod: str | None, ogon: list[str],
+) -> tuple[str | None, list[str]]:
+    """(tekst `step_failed`, kroki do powtorzenia) dla kroku z `on_fail` (HAR-109).
+
+    `max` to liczba PONOWIEN: krok w probie `p` wraca, gdy `p - 1 < max`. Raport porazki
+    powstaje tez przy wyczerpaniu. Brak mozliwosci ponowienia (blad zapisu raportu, zly cel)
+    to porazka bez powtorzenia, nigdy cicha."""
+    on_fail = krok.on_fail
+    if on_fail is None:
+        return powod, []
+    # cel mogl zostac pominiety (np. brak capability) i nigdy nie wystartowac, a krok nieudany
+    # i tak ruszyl (pominiety przodek liczy sie jak gotowy); bez startu celu nie ma do czego
+    # wracac ani numeru raportu, wiec to porazka bez ponowienia i bez raportu
+    if startowane.get(on_fail.retry, 0) == 0:
+        return f"nie można ponowić kroku {krok.id}: cel {on_fail.retry} nie wystartował", []
+    try:
+        powtarzane = kroki_do_powtorzenia(p.workflow, on_fail.retry, krok.id)
+    except ValueError as e:
+        return f"nie można ponowić kroku {krok.id}: {e}", []
+    blad = await asyncio.to_thread(
+        _zapisz_raport_porazki, p, krok.id, startowane[krok.id], on_fail.retry,
+        startowane[on_fail.retry], wynik, powod, ogon)
+    if blad is not None:
+        return f"nie zapisano raportu porażki ({blad})", []
+    if startowane[krok.id] - 1 < on_fail.max:
+        return powod, powtarzane
+    return f"wyczerpany limit {on_fail.max} ponowień kroku {krok.id}", []
 
 
 async def _blad_przed_startem(emit: Emit, run_id: str, tekst: str) -> None:
@@ -376,23 +496,27 @@ async def wykonaj_run(
 
     await _wykonaj_plan(
         run_id, polecenie["workflow"],     # nazwa sprawdzona w `_przygotuj`
-        p, {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}, set(), frozenset(),
+        p, {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}, {}, frozenset(),
         profil, uruchom_agenta, emit)
 
 
 async def _wykonaj_plan(
     run_id: str, nazwa: str, p: Przygotowany, stany: dict[str, StanKroku],
-    startowane: set[str], zatwierdzone: frozenset[str], profil: ProfilBackendu,
+    startowane: dict[str, int], zatwierdzone: frozenset[str], profil: ProfilBackendu,
     uruchom_agenta: UruchomAgenta, emit: Emit,
 ) -> None:
     """Petla planu wspolna dla `wykonaj_run` i `wznow_run`: rusza od podanych stanow krokow.
 
     `zatwierdzone` to kroki z bramka, ktorych decyzja juz zapadla: nie zatrzymuja sie drugi
-    raz, a ich agent dostaje artefakt decyzji wsrod wejsc."""
+    raz, a ich agent dostaje artefakt decyzji wsrod wejsc. `startowane` to licznik startow
+    per krok (numer proby). Ponowienie kroku z `on_fail` cofa kroki sciezki do `OCZEKUJE`, a te
+    z bramka wracaja do bramek: nowa decyzja czlowieka (HAR-109)."""
     capabilities = p.projekt.capabilities
     w_toku: dict[asyncio.Task, tuple[str, float]] = {}
     ostatni = "run"
     bramki = {k.id for k in p.workflow.kroki if k.approval and k.id not in zatwierdzone}
+    krok_po_id = {k.id: k for k in p.workflow.kroki}
+    ogony: dict[str, deque[str]] = {}
     oczekiwanie: Oczekiwanie | None = None     # najwyzej jedna zawieszona bramka naraz
     blad_zapisu: BladCheckpointu | None = None
     try:
@@ -402,7 +526,8 @@ async def _wykonaj_plan(
                 stany[id_kroku] = StanKroku.POMINIETY
                 await emit(_zdarzenie(
                     run_id, "step_skipped", id_kroku, id_kroku,
-                    f"{plan.powody[id_kroku].value}: {powod}"))
+                    f"{plan.powody[id_kroku].value}: {powod}",
+                    attempt=startowane.get(id_kroku, 0) + 1))
             for id_kroku in plan.do_startu:
                 if blad_zapisu is not None:
                     break      # bez dalszych startow; kroki w toku dobiegaja konca
@@ -418,13 +543,17 @@ async def _wykonaj_plan(
                         blad_zapisu = await _zapisz(
                             p, _checkpoint(run_id, nazwa, p, stany, startowane, oczekiwanie))
                     continue
-                startowane.add(id_kroku)
+                startowane[id_kroku] = startowane.get(id_kroku, 0) + 1
+                ogony[id_kroku] = deque(maxlen=LINIE_OGONA)
                 # mutant None jest rownowazny dla `nastepne` (planuje tylko OCZEKUJE, a `needs`
                 # spelnia tylko ZAKONCZONY/POMINIETY); chroni go reczny mutant W_TOKU -> OCZEKUJE
                 stany[id_kroku] = StanKroku.W_TOKU  # pragma: no mutate
-                await emit(_zdarzenie(run_id, "step_started", id_kroku, id_kroku, ""))
+                await emit(_zdarzenie(
+                    run_id, "step_started", id_kroku, id_kroku, "", attempt=startowane[id_kroku]))
                 zadanie = asyncio.create_task(
-                    _krok(run_id, id_kroku, p, profil, uruchom_agenta, emit, zatwierdzone))
+                    _krok(
+                        run_id, id_kroku, p, profil, uruchom_agenta, emit, zatwierdzone,
+                        proba=startowane[id_kroku], ogon=ogony[id_kroku]))
                 w_toku[zadanie] = (id_kroku, time.monotonic())
             if not w_toku:
                 break
@@ -432,6 +561,7 @@ async def _wykonaj_plan(
             for zadanie in [z for z in w_toku if z in gotowe]:
                 id_kroku, start = w_toku.pop(zadanie)
                 dodatkowe: dict[str, object] = {}
+                wynik: WynikKroku | None = None
                 try:
                     wynik = zadanie.result()
                 except PorazkaKroku as e:
@@ -450,11 +580,24 @@ async def _wykonaj_plan(
                 czas_ms = int((time.monotonic() - start) * 1000)
                 stany[id_kroku] = StanKroku.ZAKONCZONY if udany else StanKroku.NIEUDANY
                 ostatni = id_kroku
+                powtarzane: list[str] = []
+                if not udany:
+                    # porazka kroku z `on_fail`: ponowienie albo wyczerpanie (przed propagacja
+                    # porazki do potomkow w `nastepne`); bez `on_fail` powod zostaje jak byl
+                    powod, powtarzane = await _obsluz_porazke(
+                        p, krok_po_id[id_kroku], startowane, wynik, powod, list(ogony[id_kroku]))
                 # nieudany krok ma powod (krok.py); text zakonczonego to pusty napis
                 await emit(_zdarzenie(
                     run_id, "step_finished" if udany else "step_failed", id_kroku, id_kroku,
-                    "" if udany else powod,
+                    "" if udany else powod, attempt=startowane[id_kroku],
                     duration_ms=czas_ms, **_pola_pomiaru(pomiar), **dodatkowe))
+                for powtarzany in powtarzane:
+                    stany[powtarzany] = StanKroku.OCZEKUJE
+                    if krok_po_id[powtarzany].approval:
+                        # wystarczy `bramki`: krok cofniety na bramke nie startuje w tym wywolaniu
+                        # (zatrzymanie na `step_waiting`), a nowa decyzja przychodzi przez
+                        # `wznow_run` z nowym `zatwierdzone`
+                        bramki.add(powtarzany)
     finally:
         zadania = list(w_toku)
         for zadanie in zadania:
@@ -469,11 +612,13 @@ async def _wykonaj_plan(
             # run czeka na czlowieka: `step_waiting` jest ostatnim zdarzeniem, bez `run_finished`
             await _pauza_testowa()
             await emit(_zdarzenie(
-                run_id, "step_waiting", oczekiwanie.step_id, oczekiwanie.step_id, TEKST_CZEKANIA))
+                run_id, "step_waiting", oczekiwanie.step_id, oczekiwanie.step_id, TEKST_CZEKANIA,
+                attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
             return
         await emit(_zdarzenie(
             run_id, "step_failed", oczekiwanie.step_id, oczekiwanie.step_id,
-            f"zapis checkpointu nieudany: {blad_zapisu}"))
+            f"zapis checkpointu nieudany: {blad_zapisu}",
+            attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
     await emit(_zdarzenie(
         run_id, "run_finished", ostatni, "", "", cost_usd=None, cost_source="unavailable",
         kroki_weryfikujace=kroki_weryfikujace(p.workflow, p.rejestr)))
@@ -545,7 +690,7 @@ async def _porazka_wznowienia(emit: Emit, run_id: str, step_id: str, tekst: str)
 async def _przyjmij_decyzje(
     run_id: str, step_id: str, decyzja: str, powod: str | None, dom: Path, root: Path | None,
     emit: Emit,
-) -> tuple[str, Przygotowany, dict[str, StanKroku], set[str], list[str]] | None:
+) -> tuple[str, Przygotowany, dict[str, StanKroku], dict[str, int], list[str]] | None:
     """Pod blokadą runu: odczyt checkpointu, decyzja i zapis checkpointu bez `waiting_on`.
 
     `None` gdy polecenie ignorowane albo run odrzucony (zdarzenia juz poszly); inaczej
@@ -566,7 +711,7 @@ async def _przyjmij_decyzje(
     stany = _stany_z_checkpointu(cp)
     if set(stany) != {k.id for k in p.workflow.kroki}:
         raise BladWznowienia("checkpoint nie pasuje do kopii workflow: inne kroki")
-    startowane = {i for i, k in cp.kroki.items() if k.proby > 0}
+    startowane = {i: k.proby for i, k in cp.kroki.items()}
     przerwane = [i for i, stan in stany.items() if stan is StanKroku.W_TOKU]
     for id_kroku in przerwane:
         stany[id_kroku] = StanKroku.NIEUDANY
@@ -602,7 +747,9 @@ async def wznow_run(
         return
     nazwa, p, stany, startowane, przerwane = start
     for id_kroku in przerwane:
-        await emit(_zdarzenie(run_id, "step_failed", id_kroku, id_kroku, TEKST_PRZERWANIA))
+        await emit(_zdarzenie(
+            run_id, "step_failed", id_kroku, id_kroku, TEKST_PRZERWANIA,
+            attempt=startowane[id_kroku]))
     await _wykonaj_plan(
         run_id, nazwa, p, stany, startowane, frozenset({step_id}), profil, uruchom_agenta,
         emit)

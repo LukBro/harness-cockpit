@@ -1011,3 +1011,86 @@ def test_porazka_jednej_galezi_konczy_run_z_jej_id_gdy_druga_galaz_dobiegla_konc
     assert pierwszy.do_startu == ["d"]
     stany = {"a": NIEUDANY, "b": ZAKONCZONY, "c": POMINIETY, "d": ZAKONCZONY}
     assert podsumowanie(stany) == Podsumowanie(skonczony=True, nieudane=["a"])
+
+
+# --- kroki_do_powtorzenia: sciezka needs od celu do kroku nieudanego (HAR-109) ----------------------
+
+
+def powtorz(tmp_path, kroki, cel, krok):
+    from runner.graf import kroki_do_powtorzenia   # import leniwy: brak funkcji nie psuje reszty pliku
+
+    workflow, _ = swiat(tmp_path, kroki)
+    return kroki_do_powtorzenia(workflow, cel, krok)
+
+
+LANCUCH = [("a", []), ("b", ["a"]), ("c", ["b"])]
+DIAMENT = [("a", []), ("b", ["a"]), ("d", ["a"]), ("c", ["b", "d"])]
+
+
+def test_powtorzenie_lancucha_od_pierwszego_kroku_obejmuje_wszystkie_kroki_do_nieudanego(tmp_path):
+    assert powtorz(tmp_path, LANCUCH, "a", "c") == ["a", "b", "c"]
+
+
+def test_powtorzenie_od_srodka_lancucha_nie_obejmuje_krokow_przed_celem(tmp_path):
+    assert powtorz(tmp_path, LANCUCH, "b", "c") == ["b", "c"]
+
+
+def test_powtorzenie_nie_obejmuje_krokow_po_nieudanym(tmp_path):
+    kroki = [*LANCUCH, ("d", ["c"])]
+    assert powtorz(tmp_path, kroki, "a", "b") == ["a", "b"]
+
+
+def test_powtorzenie_w_diamencie_obejmuje_obie_galezie_miedzy_celem_a_nieudanym(tmp_path):
+    assert powtorz(tmp_path, DIAMENT, "a", "c") == ["a", "b", "d", "c"]
+
+
+def test_powtorzenie_w_diamencie_od_jednej_galezi_pomija_druga(tmp_path):
+    assert powtorz(tmp_path, DIAMENT, "b", "c") == ["b", "c"]
+
+
+def test_powtorzenie_pomija_potomka_celu_ktory_nie_jest_przodkiem_nieudanego(tmp_path):
+    # d zalezy od celu `a`, ale nieudany krok `b` od `d` nie zalezy
+    assert powtorz(tmp_path, DIAMENT, "a", "b") == ["a", "b"]
+
+
+def test_powtorzenie_pomija_krok_niezalezny_od_sciezki(tmp_path):
+    kroki = [*LANCUCH, ("e", [])]
+    assert powtorz(tmp_path, kroki, "a", "c") == ["a", "b", "c"]
+
+
+def test_powtorzenie_pomija_przodka_celu_spoza_sciezki(tmp_path):
+    kroki = [("p", []), ("a", ["p"]), ("b", ["a"])]
+    assert powtorz(tmp_path, kroki, "a", "b") == ["a", "b"]
+
+
+def test_kolejnosc_powtarzanych_krokow_jest_kolejnoscia_workflow_a_nie_topologiczna(tmp_path):
+    kroki = [("c", ["b"]), ("b", ["a"]), ("a", [])]
+    assert powtorz(tmp_path, kroki, "a", "c") == ["c", "b", "a"]
+
+
+def test_kolejnosc_galezi_diamentu_jest_kolejnoscia_workflow_a_nie_alfabetyczna(tmp_path):
+    kroki = [("a", []), ("z", ["a"]), ("b", ["a"]), ("c", ["z", "b"])]
+    assert powtorz(tmp_path, kroki, "a", "c") == ["a", "z", "b", "c"]
+
+
+@pytest.mark.parametrize("cel, krok", [
+    ("b", "d"),          # cel nie jest przodkiem nieudanego (galaz obok)
+    ("c", "a"),          # cel jest potomkiem nieudanego
+    ("c", "c"),          # cel jest nieudanym krokiem
+    ("nie_ma", "c"),     # cel nie istnieje
+])
+def test_powtorzenie_do_celu_ktory_nie_jest_przodkiem_nieudanego_jest_bledem(tmp_path, cel, krok):
+    with pytest.raises(ValueError):
+        powtorz(tmp_path, DIAMENT, cel, krok)
+
+
+def test_powtorzenie_nieistniejacego_kroku_nieudanego_ma_komunikat_nieznany_krok(tmp_path):
+    with pytest.raises(ValueError) as blad:
+        powtorz(tmp_path, DIAMENT, "a", "nie_ma")
+    assert str(blad.value) == "nieznany krok: nie_ma"
+
+
+def test_powtorzenie_do_celu_spoza_przodkow_ma_komunikat_ze_wskazaniem_celu_i_kroku(tmp_path):
+    with pytest.raises(ValueError) as blad:
+        powtorz(tmp_path, DIAMENT, "b", "d")
+    assert str(blad.value) == "cel b nie jest przodkiem kroku d"
