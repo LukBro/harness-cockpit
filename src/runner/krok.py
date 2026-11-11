@@ -41,7 +41,11 @@ from cockpit.services.walidacja import (
 from cockpit.services.kroki_systemowe import PLIK_LINII
 from runner.agent import SpecKroku
 from runner.kotwice import KODOWANIE, PLIK_NOTATKI, sprawdz_kotwice, wczytaj_zmienione_linie, wyciagnij_kotwice
-from runner.straznik import ZMIENNA_BRAK_PYTHONPATH_AGENTA, ZMIENNA_PYTHONPATH_AGENTA
+from runner.straznik import (
+    CZAS_NA_ZAKONCZENIE_S,
+    ZMIENNA_BRAK_PYTHONPATH_AGENTA,
+    ZMIENNA_PYTHONPATH_AGENTA,
+)
 
 # Katalog runu to jedyne miejsce, w ktorym rola bez zapisu moze pisac (werdykty).
 KATALOG_RUNU = Path(".cockpit") / "_run"
@@ -56,8 +60,13 @@ KATALOG_PROMPTOW = "prompty"
 INT4_MAX = 2_147_483_647
 LIMIT_SESSION_ID = 100   # kolumna step_run.session_id to String(100)
 PODTYPY_BUDZETU = frozenset({"error_max_budget_usd", "error_max_turns"})
-# Straznik daje agentowi 5 s na SIGTERM, potem SIGKILL; runner czeka dluzej.
-LIMIT_NA_STRAZNIKA_S = 8
+# Straznik daje agentowi CZAS_NA_ZAKONCZENIE_S na SIGTERM, potem SIGKILL. Runner czeka
+# dwukrotnosc karencji z zapasem: zabity przed swoim SIGKILL-em straznik zostawilby agenta
+# ignorujacego SIGTERM jako sierote (HAR-227). Petla 20x przy load ~550 (12 rdzeni)
+# pokazala, ze wykrycie EOF i planista straznika zjadaja kilka sekund ponad karencje,
+# wiec zapas 5 s nie wystarczal (limit 20 s).
+ZAPAS_NA_STRAZNIKA_S = 10
+LIMIT_NA_STRAZNIKA_S = 2 * CZAS_NA_ZAKONCZENIE_S + ZAPAS_NA_STRAZNIKA_S
 # Katalog z pakietem `runner` biezacego drzewa (bez resolve: pod mutmut sciezka
 # wskazuje kopie w `mutants/src/`). Trafia na poczatek PYTHONPATH straznika, zeby
 # importowal kod z tego drzewa, a nie z editable install glownego checkoutu.

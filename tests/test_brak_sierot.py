@@ -1777,8 +1777,9 @@ async def test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_
     tmp_path, katalog_kroku, pgid_do_sprzatania
 ):
     # Straznik daje agentowi 5 s na SIGTERM, potem SIGKILL. Gdyby runner czekal na
-    # straznika krocej (LIMIT_NA_STRAZNIKA_S < 5), zabilby go przed jego SIGKILL-em
-    # i agent ignorujacy SIGTERM zostalby sierota - to wykrywa `grupa_umarla`.
+    # straznika krocej niz jego karencja (LIMIT_NA_STRAZNIKA_S, HAR-227: 2 * karencja + zapas),
+    # zabilby go przed jego SIGKILL-em i agent ignorujacy SIGTERM zostalby sierota -
+    # to wykrywa `grupa_umarla`.
     # Czas od anulowania do konca zadania nie jest tu sprawdzany: pod obciazeniem nie da
     # sie go zagwarantowac, wiec LIMIT_KONCA_KROKU to tylko zabezpieczenie przed zawieszeniem.
     plik = tmp_path / "agent.pid"
@@ -1800,3 +1801,158 @@ async def test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_
         await asyncio.wait({zadanie}, timeout=LIMIT_KONCA_KROKU)
 
     assert await grupa_umarla(pgid, limit=LIMIT_ZNIKNIECIA)
+
+
+# --- HAR-227: limit na straznika liczony z karencji, karencja na zegarze monotonicznym ---
+
+# Sen straznika w karencji pod obciazeniem: dluzszy niz dawny staly limit 8 s, a 11 s ponizej
+# limitu runnera 20 s - zapas na wykrycie EOF i planiste pod obciazeniem (petle 20x przy load
+# ~400-550: zapas 4 s i 6 s nie wystarczal). Kierunek "ponizej" jest odporny: pod obciazeniem
+# straznik jest wolniejszy, wiec mutant z limitem 8 s tym pewniej zabija go przed SIGKILL-em.
+SEN_STRAZNIKA_POD_OBCIAZENIEM_S = 9.0
+KOD_STRAZNIKA_Z_WOLNYM_SNEM = """
+import sys, time
+import runner.straznik as straznik
+prawdziwy_sen = time.sleep
+def wolny_sen(sekundy):
+    if sekundy == straznik.KROK_PETLI_S:
+        open(%r, "w").close()
+        prawdziwy_sen(%r)
+    else:
+        prawdziwy_sen(sekundy)
+time.sleep = wolny_sen
+sys.exit(straznik.main(sys.argv[1:], 0))
+"""
+
+
+async def test_wolny_straznik_pod_obciazeniem_nie_zostawia_agenta_ignorujacego_sigterm_jako_sieroty(
+    monkeypatch, tmp_path, katalog_kroku, pgid_do_sprzatania
+):
+    znacznik = tmp_path / "wolny-sen.znacznik"
+    kod = KOD_STRAZNIKA_Z_WOLNYM_SNEM % (str(znacznik), SEN_STRAZNIKA_POD_OBCIAZENIEM_S)
+    oryginal = krok.asyncio.create_subprocess_exec
+    zapis: dict = {"straznik_uruchomiony": False}
+
+    async def straznik_z_wolnym_snem(*argv, **kwargs):
+        assert argv[1:3] == ("-m", "runner.straznik")
+        zapis["straznik_uruchomiony"] = True
+        return await oryginal(argv[0], "-c", kod, *argv[3:], **kwargs)
+
+    monkeypatch.setattr(krok.asyncio, "create_subprocess_exec", straznik_z_wolnym_snem)
+    plik = tmp_path / "agent.pid"
+    zadanie = asyncio.create_task(
+        wykonaj_krok(spec(), agent_spiacy(plik, ignoruj_sigterm=True), katalog_kroku, emit_pusty)
+    )
+    try:
+        await czekaj_na_warunek(plik.exists, LIMIT_START, "agent zapisal pid i pgid")
+        pgid = int(plik.read_text().split()[1])
+        pgid_do_sprzatania.append(pgid)
+
+        zadanie.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await czekaj_bez_anulowania(
+                zadanie, LIMIT_KONCA_KROKU, "koniec zadania kroku po anulowaniu"
+            )
+    finally:
+        zadanie.cancel()
+        await asyncio.wait({zadanie}, timeout=LIMIT_KONCA_KROKU)
+
+    # sen straznika w karencji faktycznie byl spowolniony (inaczej test nic nie symuluje)
+    assert zapis["straznik_uruchomiony"]
+    assert znacznik.exists()
+    assert await grupa_umarla(pgid, limit=LIMIT_ZNIKNIECIA)
+
+
+class SztucznyZegar:
+    """Zegar monotoniczny i sen straznika: sen przesuwa zegar o `przesuniecie` (domyslnie o argument)."""
+
+    LIMIT_SNOW = 1000
+
+    def __init__(self, start: float = 100.0, przesuniecie: float | None = None):
+        self.teraz = start
+        self.przesuniecie = przesuniecie
+        self.sny: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.teraz
+
+    def sleep(self, sekundy: float) -> None:
+        self.sny.append(sekundy)
+        assert len(self.sny) < self.LIMIT_SNOW, "karencja nie konczy sie mimo uplywu zegara"
+        self.teraz += sekundy if self.przesuniecie is None else self.przesuniecie
+
+
+class AgentAtrapa:
+    pid = 4242
+
+    def __init__(self, kod_popen: int = -15):
+        self.kod_popen = kod_popen
+        self.odebrany = False
+
+    def poll(self):
+        self.odebrany = True
+
+    def wait(self) -> int:
+        return self.kod_popen
+
+
+@pytest.fixture
+def zegar_i_sygnaly(monkeypatch):
+    def zainstaluj(zegar: SztucznyZegar, *, grupa_istnieje):
+        sygnaly: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            straznik, "time", types.SimpleNamespace(monotonic=zegar.monotonic, sleep=zegar.sleep)
+        )
+        monkeypatch.setattr(straznik, "_grupa_istnieje", grupa_istnieje)
+        monkeypatch.setattr(
+            straznik, "_wyslij_sygnal", lambda pgid, sygnal: sygnaly.append((pgid, sygnal))
+        )
+        return sygnaly
+
+    return zainstaluj
+
+
+def test_karencja_konczy_sie_dokladnie_gdy_zegar_osiaga_termin_a_nie_chwile_pozniej(
+    monkeypatch, zegar_i_sygnaly
+):
+    monkeypatch.setattr(straznik, "CZAS_NA_ZAKONCZENIE_S", 4)
+    monkeypatch.setattr(straznik, "KROK_PETLI_S", 0.5)
+    zegar = SztucznyZegar(start=100.0)
+    sygnaly = zegar_i_sygnaly(zegar, grupa_istnieje=lambda pgid: True)
+
+    kod = straznik._zakoncz_grupe(AgentAtrapa(kod_popen=-15))
+
+    # 100 -> 104 po 8 snach po 0.5 s: zegar trafia w termin i karencja sie konczy
+    assert zegar.sny == [0.5] * 8
+    assert sygnaly == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
+    assert kod == 143
+
+
+def test_karencja_agenta_liczy_sie_zegarem_a_nie_liczba_prob_snu(monkeypatch, zegar_i_sygnaly):
+    monkeypatch.setattr(straznik, "CZAS_NA_ZAKONCZENIE_S", 5)
+    # pod obciazeniem kazdy sen trwa 2.5 s zamiast KROK_PETLI_S
+    zegar = SztucznyZegar(start=100.0, przesuniecie=2.5)
+    sygnaly = zegar_i_sygnaly(zegar, grupa_istnieje=lambda pgid: True)
+
+    straznik._zakoncz_grupe(AgentAtrapa())
+
+    assert zegar.sny == [straznik.KROK_PETLI_S] * 2
+    assert sygnaly[-1] == (4242, signal.SIGKILL)
+
+
+def test_grupa_odebrana_po_poll_konczy_karencje_bez_snu_a_sigkill_i_tak_idzie(zegar_i_sygnaly):
+    agent = AgentAtrapa(kod_popen=-9)
+    zegar = SztucznyZegar()
+    sygnaly = zegar_i_sygnaly(zegar, grupa_istnieje=lambda pgid: not agent.odebrany)
+
+    kod = straznik._zakoncz_grupe(agent)
+
+    assert zegar.sny == []
+    assert sygnaly == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
+    assert kod == 137
+
+
+def test_limit_czekania_runnera_na_straznika_pochodzi_z_karencji_straznika_z_zapasem():
+    assert krok.ZAPAS_NA_STRAZNIKA_S == 10
+    assert krok.LIMIT_NA_STRAZNIKA_S == 2 * straznik.CZAS_NA_ZAKONCZENIE_S + krok.ZAPAS_NA_STRAZNIKA_S
+    assert krok.LIMIT_NA_STRAZNIKA_S > straznik.CZAS_NA_ZAKONCZENIE_S
