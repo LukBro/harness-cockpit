@@ -41,9 +41,11 @@ def main(a):
     key, opcje, i = a[0], {}, 1
     while i < len(a):
         if a[i] == "--bez-wspolautora":
-            opcje["bez"] = True; i += 1
+            opcje["bez"] = True
+            i += 1
         elif a[i] in ("--komunikat", "--autor-email") and i + 1 < len(a):
-            opcje[a[i]] = a[i + 1]; i += 2
+            opcje[a[i]] = a[i + 1]
+            i += 2
         else:
             print(f"bramka_commita: nieznany argument {a[i]}", file=sys.stderr)
             return 64

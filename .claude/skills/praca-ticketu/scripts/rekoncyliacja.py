@@ -90,9 +90,11 @@ def main(a):
     for ag, zgl in raporty.items():
         moje = {x for x in zmienione if ag in wlasciciel.get(x, [])}
         for x in sorted(zgl - zmienione):
-            print(f"RAPORT: {ag} zgłosił {x}, git go nie zmienił"); niezg += 1
+            print(f"RAPORT: {ag} zgłosił {x}, git go nie zmienił")
+            niezg += 1
         for x in sorted(moje - zgl):
-            print(f"RAPORT: {ag} nie zgłosił {x}"); niezg += 1
+            print(f"RAPORT: {ag} nie zgłosił {x}")
+            niezg += 1
     kod = 1 if (poza or niezg) else 0
     print(f"REKONCYLIACJA: kod={kod} zmienione={len(zmienione)} poza_przydzialem={len(poza)} niezgodne_raporty={niezg}")
     return kod
