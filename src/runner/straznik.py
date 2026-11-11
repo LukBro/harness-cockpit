@@ -6,7 +6,8 @@
 agent zostawalby sierota. Straznik jest procesem posrednim: agent dziala w jego
 wlasnej grupie (pid == pgid), a straznik czyta swoje stdin (potok od runnera).
 EOF na stdin (runner zamknal potok albo umarl) lub SIGTERM -> SIGTERM do grupy
-agenta, po CZAS_NA_ZAKONCZENIE_S SIGKILL, wyjscie.
+agenta, po CZAS_NA_ZAKONCZENIE_S SIGKILL, wyjscie. Ta sama sciezka po samodzielnym koncu
+agenta (HAR-205): jego wnuki nie przezywaja i nie trzymaja stdout kroku.
 
 Kod wyjscia: kod agenta; agent zabity sygnalem N -> 128+N. stdout/stderr agenta to
 deskryptory straznika (dziedziczone), wiec wyjscie przechodzi bez zmian.
@@ -174,7 +175,9 @@ def _uruchom(
     while True:
         zwrocony = agent.poll()
         if zwrocony is not None:
-            return _kod_wyjscia(zwrocony)
+            # agent skonczyl sam: wnuki (np. `npm run dev &`) trzymalyby stdout i krok wisialby
+            # na EOF (HAR-205). Ta sama sciezka co przy EOF na stdin; kod agenta zostaje.
+            return _zakoncz_grupe(agent)
         if zdarzenie.wait(KROK_PETLI_S):
             return _zakoncz_grupe(agent)
 
