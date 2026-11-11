@@ -1,0 +1,663 @@
+# Tabela recznych mutantow HAR-219 (straz roli: fail-closed przy awarii startu i obejscia
+# no_git_write): stale, zbiory, wyrazenia regularne i napisy poza funkcjami w
+# src/runner/straz_roli.py, src/runner/hooks.py i src/runner/maskowanie.py - mutmut ich nie mutuje.
+# Kazdy wiersz zmienia jeden element; wskazany test (caly, ze wszystkimi parametrami) musi
+# na nim oblac. Cale literaly zbiorow i wyrazen sa mutowane osobnym wierszem (pusty zbior,
+# wyrazenie, ktore nigdy nie pasuje), zeby kazda linia literalu miala wiersz.
+
+# Blok try/except importow (straz_roli.py, caly): importy bez ochrony; zepsuty import konczy sie tracebackiem zamiast JSON-em deny.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_BLAD_STARTU: BaseException | None = None\ntry:\n    from cockpit.services.invariants import Rola, profil_roli  # noqa: E402\n    from cockpit.services.walidacja import (  # noqa: E402\n        _OPCJE_Z_ARGUMENTEM,\n        _ZNAKI_POWLOKI,\n        _to_git,\n        waliduj_definicje,\n    )\n    from runner.maskowanie import maskuj_komende  # noqa: E402\nexcept Exception as exc:\n    _BLAD_STARTU = exc"
+zamien = "_BLAD_STARTU: BaseException | None = None\nfrom cockpit.services.invariants import Rola, profil_roli  # noqa: E402\nfrom cockpit.services.walidacja import (  # noqa: E402\n    _OPCJE_Z_ARGUMENTEM,\n    _ZNAKI_POWLOKI,\n    _to_git,\n    waliduj_definicje,\n)\nfrom runner.maskowanie import maskuj_komende  # noqa: E402"
+test = "tests/test_straz_roli.py::test_zepsuty_import_strazy_uruchomionej_bezposrednio_daje_json_deny_z_nazwa_wyjatku"
+
+# except Exception zawezone do ImportError: zaleznosc rzucajaca RuntimeError albo SyntaxError nie jest lapana.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "except Exception as exc:"
+zamien = "except ImportError as exc:"
+test = "tests/test_straz_roli.py::test_zaleznosc_strazy_zepsuta_innym_wyjatkiem_niz_blad_importu_daje_json_deny_z_nazwa_klasy"
+
+# Blad startu nie jest zapamietywany: straz po zepsutym imporcie nie wie, ze ma odmowic.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    _BLAD_STARTU = exc"
+zamien = "    _BLAD_STARTU = None"
+test = "tests/test_straz_roli.py::test_zepsuty_import_strazy_uruchomionej_bezposrednio_daje_json_deny_z_nazwa_wyjatku"
+
+# Wartosc poczatkowa bledu startu rozna od None: straz odmawia wszystkiego takze po udanym starcie.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_BLAD_STARTU: BaseException | None = None"
+zamien = "_BLAD_STARTU: BaseException | None = \"\""
+test = "tests/test_straz_roli.py::test_straz_bez_bledu_importu_ma_pusty_blad_startu"
+
+# _GIT_TWORZY_COMMIT: podpolecenie merge znika ze zbioru, git merge przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"merge\","
+zamien = "    \"merge_\","
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_TWORZY_COMMIT: podpolecenie cherry-pick znika ze zbioru, git cherry-pick przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"cherry-pick\","
+zamien = "    \"cherry-pick_\","
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_TWORZY_COMMIT: podpolecenie revert znika ze zbioru, git revert przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"revert\","
+zamien = "    \"revert_\","
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_TWORZY_COMMIT: podpolecenie rebase znika ze zbioru, git rebase przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"rebase\","
+zamien = "    \"rebase_\","
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_TWORZY_COMMIT: podpolecenie am znika ze zbioru, git am przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"am\","
+zamien = "    \"am_\","
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_TWORZY_COMMIT: podpolecenie stash znika ze zbioru, git stash przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"stash\","
+zamien = "    \"stash_\","
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_TWORZY_COMMIT pusty (caly literal): zadne podpolecenie tworzace commit nie jest odmawiane przez zbior.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_GIT_TWORZY_COMMIT = frozenset({\n    \"commit\",\n    \"push\",\n    \"merge\",\n    \"cherry-pick\",\n    \"revert\",\n    \"rebase\",\n    \"am\",\n    \"stash\",\n})"
+zamien = "_GIT_TWORZY_COMMIT = frozenset()"
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _GIT_OPCJE_ZAPISU: opcja --ou znika ze zbioru, git diff|log|show z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--ou\","
+zamien = "    \"--ou_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _GIT_OPCJE_ZAPISU: opcja --ext-diff znika ze zbioru, git diff|log|show z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--ext-diff\","
+zamien = "    \"--ext-diff_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _GIT_OPCJE_ZAPISU: opcja --textconv znika ze zbioru, git diff|log|show z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--textconv\","
+zamien = "    \"--textconv_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _GIT_OPCJE_ZAPISU pusty (caly literal): zadna opcja gita nie jest odmawiana.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_GIT_OPCJE_ZAPISU = frozenset({\n    \"--ou\",\n    \"--ext-diff\",\n    \"--textconv\",\n})"
+zamien = "_GIT_OPCJE_ZAPISU = frozenset()"
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _RG_OPCJE_WYKONANIA: opcja --pre znika ze zbioru, rg z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--pre\","
+zamien = "    \"--pre_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _RG_OPCJE_WYKONANIA: opcja --pre-glob znika ze zbioru, rg z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--pre-glob\","
+zamien = "    \"--pre-glob_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _RG_OPCJE_WYKONANIA: opcja -z znika ze zbioru, rg z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"-z\","
+zamien = "    \"-z_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _RG_OPCJE_WYKONANIA: opcja --search-zip znika ze zbioru, rg z nia przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--search-zip\","
+zamien = "    \"--search-zip_\","
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _RG_OPCJE_WYKONANIA pusty (caly literal): zadna opcja rg nie jest odmawiana.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_RG_OPCJE_WYKONANIA = frozenset({\n    \"--pre\",\n    \"--pre-glob\",\n    \"-z\",\n    \"--search-zip\",\n})"
+zamien = "_RG_OPCJE_WYKONANIA = frozenset()"
+test = "tests/test_straz_roli.py::test_opcja_zapisujaca_albo_uruchamiajaca_polecenie_jest_odmowiona_w_roli_bez_zapisu"
+
+# _USUN_CUDZYSLOWY bez cudzyslowu ": `"g"it merge x` sklada sie w git dopiero w powloce.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "str.maketrans(\"\", \"\", \"\\\"'\\\\\")"
+zamien = "str.maketrans(\"\", \"\", \"'\\\\\")"
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _USUN_CUDZYSLOWY bez apostrofu: `g'it' rebase main` sklada sie w git dopiero w powloce.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "str.maketrans(\"\", \"\", \"\\\"'\\\\\")"
+zamien = "str.maketrans(\"\", \"\", \"\\\"\\\\\")"
+test = "tests/test_straz_roli.py::test_git_tworzacy_commit_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _USUN_CUDZYSLOWY bez ukosnika: `gi\t commit` i `g\it merge x` skladaja sie w git dopiero w powloce.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "str.maketrans(\"\", \"\", \"\\\"'\\\\\")"
+zamien = "str.maketrans(\"\", \"\", \"\\\"'\")"
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _ANSI_C bez znaku $ w wyrazeniu: `$'g'it commit` zostaje z `$` i nie sklada sie w git.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\$(?=['\\\"])\""
+zamien = "r\"(?=['\\\"])\""
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _ANSI_C z `$` jako kotwica konca (bez ucieczki): wyrazenie nigdy nie pasuje przed cudzyslowem.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\$(?=['\\\"])\""
+zamien = "r\"$(?=['\\\"])\""
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _ANSI_C bez lookahead: kazdy `$` znika, takze `echo $git commit` (zmienna git) liczy sie jako git commit.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\$(?=['\\\"])\""
+zamien = "r\"\\$\""
+test = "tests/test_straz_roli.py::test_dolar_bez_cudzyslowu_nie_skleja_nazwy_gita_i_polecenie_nie_jest_odmawiane"
+
+# _ANSI_C bez apostrofu w klasie: `$'g'it commit` zostaje z `$`.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\$(?=['\\\"])\""
+zamien = "r\"\\$(?=[\\\"])\""
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _ANSI_C bez cudzyslowu w klasie: `$"g"it commit` zostaje z `$`.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\$(?=['\\\"])\""
+zamien = "r\"\\$(?=['])\""
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _ANSI_C nigdy nie pasuje (caly literal): `$'g'it commit` i `$"g"it commit` nie sa zdejmowane.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_ANSI_C = re.compile(r\"\\$(?=['\\\"])\")"
+zamien = "_ANSI_C = re.compile(r\"(?!)\")"
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _ANSI_C zastepuje `$` napisem XXXX zamiast usuwac: `$'g'it` staje sie `XXXXgit`.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_ANSI_C.sub(\"\", komenda)"
+zamien = "_ANSI_C.sub(\"XXXX\", komenda)"
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# `_ANSI_C.sub` pominiete w wariancie komendy: `$'g'it commit` nie jest zdejmowane.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_ANSI_C.sub(\"\", komenda).translate(_USUN_CUDZYSLOWY)"
+zamien = "komenda.translate(_USUN_CUDZYSLOWY)"
+test = "tests/test_straz_roli.py::test_git_zlozony_w_powloce_z_ucieczki_albo_cudzyslowu_ansi_c_jest_odmowiony_w_kazdej_roli"
+
+# _OPCJE_KONFIGURACJI bez -c: `git -c alias.c=commit c` nie jest aliasem przez opcje.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"-c\","
+zamien = "    \"-c_\","
+test = "tests/test_straz_roli.py::test_alias_gita_ustawiony_przez_opcje_c_jest_odmowiony_w_kazdej_roli"
+
+# _OPCJE_KONFIGURACJI bez --config-env: `git --config-env alias.c=V c` nie jest aliasem przez opcje.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"--config-env\","
+zamien = "    \"--config-env_\","
+test = "tests/test_straz_roli.py::test_alias_gita_przez_config_env_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# _OPCJE_KONFIGURACJI pusty (caly literal): zadna opcja gita nie ustawia aliasu przez osobny token.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_OPCJE_KONFIGURACJI = frozenset({\n    \"-c\",\n    \"--config-env\",\n})"
+zamien = "_OPCJE_KONFIGURACJI = frozenset()"
+test = "tests/test_straz_roli.py::test_alias_gita_przez_config_env_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem"
+
+# `_powod_git`: `and` zamiast `or` miedzy operandami - opcja z argumentem spoza konfiguracji (`--git-dir d`) nie jest pomijana.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "in _OPCJE_Z_ARGUMENTEM or tokeny[j] in _OPCJE_KONFIGURACJI else 1"
+zamien = "in _OPCJE_Z_ARGUMENTEM and tokeny[j] in _OPCJE_KONFIGURACJI else 1"
+test = "tests/test_straz_roli.py::test_zakazany_git_pomija_wartosc_opcji_globalnej_i_znajduje_commit_za_nia"
+
+# `_powod_git`: `not in` zamiast `in` dla zbioru konfiguracji - opcje bez argumentu (`--no-pager`) pochlaniaja podpolecenie.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "or tokeny[j] in _OPCJE_KONFIGURACJI else 1"
+zamien = "or tokeny[j] not in _OPCJE_KONFIGURACJI else 1"
+test = "tests/test_straz_roli.py::test_zakazany_git_pomija_wartosc_opcji_globalnej_i_znajduje_commit_za_nia"
+
+# `_powod_git`: bez operandu `_OPCJE_Z_ARGUMENTEM` - `git --git-dir d commit` bierze `d` za podpolecenie.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "j += 2 if tokeny[j].lower() in _OPCJE_Z_ARGUMENTEM or tokeny[j] in _OPCJE_KONFIGURACJI else 1"
+zamien = "j += 2 if tokeny[j] in _OPCJE_KONFIGURACJI else 1"
+test = "tests/test_straz_roli.py::test_zakazany_git_pomija_wartosc_opcji_globalnej_i_znajduje_commit_za_nia"
+
+# `_powod_git`: bez operandu `_OPCJE_KONFIGURACJI` - `git --config-env k=v commit` bierze `k=v` za podpolecenie.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "j += 2 if tokeny[j].lower() in _OPCJE_Z_ARGUMENTEM or tokeny[j] in _OPCJE_KONFIGURACJI else 1"
+zamien = "j += 2 if tokeny[j].lower() in _OPCJE_Z_ARGUMENTEM else 1"
+test = "tests/test_straz_roli.py::test_podpolecenie_tworzace_commit_po_opcji_config_env_jest_odmowione_w_kazdej_roli"
+
+# Krotka `except (OSError, ValueError)` w `_przekierowanie_poza_worktree` bez ValueError: bajt zerowy w celu konczy sie wyjatkiem.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "except (OSError, ValueError):"
+zamien = "except OSError:"
+test = "tests/test_straz_roli.py::test_cel_przekierowania_z_bajtem_zerowym_jest_odmowiony_jako_nie_do_oceny"
+
+# Krotka `except (OSError, ValueError)` w `_przekierowanie_poza_worktree` bez OSError: usuniety biezacy katalog konczy sie wyjatkiem.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "except (OSError, ValueError):"
+zamien = "except ValueError:"
+test = "tests/test_straz_roli.py::test_cel_wzgledny_gdy_nie_da_sie_rozwiazac_biezacego_katalogu_jest_odmowiony_jako_nie_do_oceny"
+
+# _ZNAKI_SKLADNI bez znaku (: token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\");<>|&\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _ZNAKI_SKLADNI bez znaku ): token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\"(;<>|&\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _ZNAKI_SKLADNI bez znaku ;: token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\"()<>|&\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _ZNAKI_SKLADNI bez znaku <: token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\"();>|&\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _ZNAKI_SKLADNI bez znaku >: token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\"();<|&\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _ZNAKI_SKLADNI bez znaku |: token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\"();<>&\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _ZNAKI_SKLADNI bez znaku &: token albo cel z tym znakiem nie jest skladnia (brak celu przekierowania nie jest odmawiany).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "frozenset(\"();<>|&\")"
+zamien = "frozenset(\"();<>|\")"
+test = "tests/test_straz_roli.py::test_znak_skladni_powloki_jako_cel_przekierowania_jest_odmowiony_z_tym_znakiem_w_powodzie"
+
+# _DEV_NULL z innym napisem: przekierowanie do /dev/null liczy sie jako zapis poza worktree.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "_DEV_NULL = \"/dev/null\""
+zamien = "_DEV_NULL = \"/dev/nullx\""
+test = "tests/test_straz_roli.py::test_przekierowania_w_worktree_do_dev_null_i_deskryptorow_sa_dozwolone"
+
+# _CEL_NIEOCENIANY bez znaku $ (zmienna): cel z tym znakiem jest oceniany jak zwykla sciezka.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"[$`~*?]\""
+zamien = "r\"[`~*?]\""
+test = "tests/test_straz_roli.py::test_przekierowanie_do_celu_ktorego_nie_da_sie_ocenic_jest_odmowione"
+
+# _CEL_NIEOCENIANY bez znaku ` (podstawienie polecenia): cel z tym znakiem jest oceniany jak zwykla sciezka.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"[$`~*?]\""
+zamien = "r\"[$~*?]\""
+test = "tests/test_straz_roli.py::test_przekierowanie_do_celu_ktorego_nie_da_sie_ocenic_jest_odmowione"
+
+# _CEL_NIEOCENIANY bez znaku ~ (tylda): cel z tym znakiem jest oceniany jak zwykla sciezka.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"[$`~*?]\""
+zamien = "r\"[$`*?]\""
+test = "tests/test_straz_roli.py::test_przekierowanie_do_celu_ktorego_nie_da_sie_ocenic_jest_odmowione"
+
+# _CEL_NIEOCENIANY bez znaku * (gwiazdka): cel z tym znakiem jest oceniany jak zwykla sciezka.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"[$`~*?]\""
+zamien = "r\"[$`~?]\""
+test = "tests/test_straz_roli.py::test_przekierowanie_do_celu_ktorego_nie_da_sie_ocenic_jest_odmowione"
+
+# _CEL_NIEOCENIANY bez znaku ? (znak zapytania): cel z tym znakiem jest oceniany jak zwykla sciezka.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"[$`~*?]\""
+zamien = "r\"[$`~*]\""
+test = "tests/test_straz_roli.py::test_przekierowanie_do_celu_ktorego_nie_da_sie_ocenic_jest_odmowione"
+
+# _DESKRYPTOR tylko jedna cyfra (`\d` zamiast `\d+`): `>&12` liczy sie jako plik.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\d+-?|-\""
+zamien = "r\"\\d-?|-\""
+test = "tests/test_straz_roli.py::test_kopia_deskryptora_nie_jest_zapisem_do_pliku_nawet_gdy_cwd_jest_poza_worktree"
+
+# _DESKRYPTOR bez `-?` po cyfrach: `>&2-` (przeniesienie deskryptora) liczy sie jako plik.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\d+-?|-\""
+zamien = "r\"\\d+|-\""
+test = "tests/test_straz_roli.py::test_kopia_deskryptora_nie_jest_zapisem_do_pliku_nawet_gdy_cwd_jest_poza_worktree"
+
+# _DESKRYPTOR bez alternatywy `|-`: `>&-` (zamkniecie deskryptora) liczy sie jako plik.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\d+-?|-\""
+zamien = "r\"\\d+-?\""
+test = "tests/test_straz_roli.py::test_kopia_deskryptora_nie_jest_zapisem_do_pliku_nawet_gdy_cwd_jest_poza_worktree"
+
+# _DESKRYPTOR dopuszcza pusty cel (`\d*`): przekierowanie bez celu przechodzi jako kopia deskryptora.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "r\"\\d+-?|-\""
+zamien = "r\"\\d*-?|-\""
+test = "tests/test_straz_roli.py::test_przekierowanie_bez_celu_na_koncu_komendy_jest_odmowione_z_pustym_celem"
+
+# _GALAZ_AWARII_STRAZY: kod strazy zapisany jako 0 (`kod=0`): kod != 0 nie blokuje narzedzia.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "; kod=$?; if"
+zamien = "; kod=0; if"
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY: warunek `-eq 0` zamiast `-ne 0`: galaz awarii odpala przy sprawnej strazy.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "-ne 0"
+zamien = "-eq 0"
+test = "tests/test_straz_roli.py::test_sprawna_straz_przepuszczajaca_polecenie_nie_uruchamia_galezi_awarii"
+
+# _GALAZ_AWARII_STRAZY: warunek `-ne 1` zamiast `-ne 0`: tylko kod 1 jest awaria (kod 1 nie).
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "-ne 0"
+zamien = "-ne 1"
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY: `exit 1` zamiast `exit 2`: kod 1 nie blokuje narzedzia w Claude Code.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "exit 2; fi"
+zamien = "exit 1; fi"
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY: `exit 0` zamiast `exit 2`: awaria strazy przepuszcza narzedzie.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "exit 2; fi"
+zamien = "exit 0; fi"
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY: komunikat idzie na stdout zamiast na stderr (brak `>&2`).
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "(kod $kod)\" >&2;"
+zamien = "(kod $kod)\";"
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY: tresc komunikatu bez polskich znakow.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "straż roli: awaria straży (kod $kod)"
+zamien = "straz roli: awaria strazy (kod $kod)"
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY: w komunikacie `$?` zamiast `$kod` (kod testu `[`, czyli 0).
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "(kod $kod)\""
+zamien = "(kod $?)\""
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _GALAZ_AWARII_STRAZY pusta (caly literal): polecenie hooka bez galezi awarii.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = "_GALAZ_AWARII_STRAZY = (\n    '; kod=$?; if [ \"$kod\" -ne 0 ]; then echo \"straż roli: awaria straży (kod $kod)\" >&2; '\n    \"exit 2; fi\"\n)"
+zamien = "_GALAZ_AWARII_STRAZY = \"\""
+test = "tests/test_straz_roli.py::test_straz_konczaca_sie_kodem_1_daje_kod_2_i_dokladnie_komunikat_awarii_na_stderr"
+
+# _PRZYPISANIE_SEKRETU bez czlonu TOKEN: zmienna z tym czlonem w nazwie nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+zamien = "(?:SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU bez czlonu SECRET: zmienna z tym czlonem w nazwie nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+zamien = "(?:TOKEN|PASSWORD|PASSWD|KEY|AUTH)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU bez czlonu PASSWORD: zmienna z tym czlonem w nazwie nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+zamien = "(?:TOKEN|SECRET|PASSWD|KEY|AUTH)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU bez czlonu PASSWD: zmienna z tym czlonem w nazwie nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+zamien = "(?:TOKEN|SECRET|PASSWORD|KEY|AUTH)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU bez czlonu KEY: zmienna z tym czlonem w nazwie nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+zamien = "(?:TOKEN|SECRET|PASSWORD|PASSWD|AUTH)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU bez czlonu AUTH: zmienna z tym czlonem w nazwie nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
+zamien = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU bez poczatkowego `\w*`: nazwa z czlonem w srodku (MONKEY, GH_TOKEN) nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(\\b\\w*(?:TOKEN"
+zamien = "(\\b(?:TOKEN"
+test = "tests/test_sekrety_w_logach.py::test_nazwa_zawierajaca_czlon_sekretu_w_srodku_tez_maskuje_wartosc"
+
+# _PRZYPISANIE_SEKRETU bez koncowego `\w*`: nazwa z dalszym ciagiem po czlonie (API_KEY_ID) nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "AUTH)\\w*=)("
+zamien = "AUTH)=)("
+test = "tests/test_sekrety_w_logach.py::test_nazwa_zmiennej_z_czlonem_sekretu_i_dalszym_ciagiem_tez_maskuje_wartosc"
+
+# _PRZYPISANIE_SEKRETU bez flagi IGNORECASE: nazwa malymi literami nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    re.IGNORECASE,\n)\n# ... oraz"
+zamien = ")\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_nazwa_zmiennej_sekretu_jest_rozpoznawana_bez_rozroznienia_wielkosci_liter"
+
+# _PRZYPISANIE_SEKRETU bez wartosci w cudzyslowie: wartosc ze spacja maskowana do pierwszej spacji.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "\\w*=)(\\\"[^\\\"]*\\\"|"
+zamien = "\\w*=)("
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_w_cudzyslowach_ze_spacja_jest_zamaskowana_cala"
+
+# _PRZYPISANIE_SEKRETU bez wartosci w apostrofach: wartosc ze spacja maskowana do pierwszej spacji.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "'[^']*'|\\S+)\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "\\S+)\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_w_cudzyslowach_ze_spacja_jest_zamaskowana_cala"
+
+# _PRZYPISANIE_SEKRETU bez alternatywy `\S+`: wartosc bez cudzyslowu nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "|\\S+)\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = ")\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _PRZYPISANIE_SEKRETU nigdy nie pasuje (caly literal): zadne przypisanie nie jest maskowane.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "_PRZYPISANIE_SEKRETU = re.compile(\n    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)(\\\"[^\\\"]*\\\"|'[^']*'|\\S+)\",\n    re.IGNORECASE,\n)"
+zamien = "_PRZYPISANIE_SEKRETU = re.compile(r\"(?!)\")"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU bez opcji --token: wartosc po spacji nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:token|password|secret)"
+zamien = "(?:password|secret)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU bez opcji --password: wartosc po spacji nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:token|password|secret)"
+zamien = "(?:token|secret)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU bez opcji --secret: wartosc po spacji nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:token|password|secret)"
+zamien = "(?:token|password)"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU bez `\s+` po nazwie opcji: `--token x` (spacja) nie jest maskowane.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:=|\\s+))"
+zamien = "(?:=))"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU bez alternatywy `=`: `--token='abc'def` zostaje z ogonem `def` po pierwszym przebiegu `_PRZYPISANIE_SEKRETU`.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:=|\\s+))"
+zamien = "(?:\\s+))"
+test = "tests/test_sekrety_w_logach.py::test_opcja_z_wartoscia_po_rownasie_w_cudzyslowie_sklejona_z_reszta_tokenu_jest_zamaskowana_cala"
+
+# _OPCJA_SEKRETU z pojedynczym `\s` zamiast `\s+`: dwie spacje przed wartoscia psuja maskowanie.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:=|\\s+))"
+zamien = "(?:=|\\s))"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
+
+# _OPCJA_SEKRETU bez wartosci w cudzyslowie: wartosc ze spacja maskowana do pierwszej spacji.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "(?:=|\\s+))(\\\"[^\\\"]*\\\"|"
+zamien = "(?:=|\\s+))("
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
+
+# _OPCJA_SEKRETU bez wartosci w apostrofach: wartosc ze spacja maskowana do pierwszej spacji.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "'[^']*'|\\S+)\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "\\S+)\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
+
+# _OPCJA_SEKRETU bez alternatywy `\S+`: wartosc bez cudzyslowu nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "|\\S+)\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = ")\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU bez flagi IGNORECASE: `--TOKEN x` wielkimi literami nie jest maskowane.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = ")\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
+
+# _OPCJA_SEKRETU nigdy nie pasuje (caly literal): zadna opcja z sekretem nie jest maskowana.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "_OPCJA_SEKRETU = re.compile(\n    r\"(--(?:token|password|secret)(?:=|\\s+))(\\\"[^\\\"]*\\\"|'[^']*'|\\S+)\",\n    re.IGNORECASE,\n)"
+zamien = "_OPCJA_SEKRETU = re.compile(r\"(?!)\")"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
+
+# _GWIAZDKI z dwiema gwiazdkami: zamaskowana wartosc ma inny ksztalt niz ***.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "_GWIAZDKI = \"***\""
+zamien = "_GWIAZDKI = \"**\""
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _GIT_TWORZY_COMMIT: podpolecenie commit znika ze zbioru; `git --config-env k=v commit` omija `waliduj_definicje`, wiec decyduje tylko element zbioru.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"commit\","
+zamien = "    \"commit_\","
+test = "tests/test_straz_roli.py::test_podpolecenie_tworzace_commit_po_opcji_config_env_jest_odmowione_w_kazdej_roli"
+
+# _GIT_TWORZY_COMMIT: podpolecenie push znika ze zbioru; `git --config-env k=v push origin main` omija `waliduj_definicje`.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = "    \"push\","
+zamien = "    \"push_\","
+test = "tests/test_straz_roli.py::test_podpolecenie_tworzace_commit_po_opcji_config_env_jest_odmowione_w_kazdej_roli"
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)(\\\"[^\\\"]*\\\"|'[^']*'|\\S+)\","
+uzasadnienie = "Kotwica `\\b` na poczatku `_PRZYPISANIE_SEKRETU` jest redundantna: poczatek najbardziej wysunietego w lewo dopasowania nie moze stac za znakiem slowa, bo `\\w*` zaczynajace wczesniej pochlonie ten znak i tez dopasuje; po znaku niebedacym slowem granica `\\b` zachodzi sama. Wynik `sub` jest ten sam z kotwica i bez niej, zadne wejscie nie odroznia wersji. Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
+
