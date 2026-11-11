@@ -25,6 +25,7 @@ from runner.maskowanie import (
     _LOGGERY_MASKOWANE,
     _SEKRETY,
     FiltrSekretow,
+    maskuj_komende,
     zainstaluj_maskowanie,
     zarejestruj_sekret,
 )
@@ -480,3 +481,146 @@ def test_maskowanie_dziala_gdy_logging_nie_ma_handlera_ostatniej_szansy(monkeypa
     monkeypatch.setattr(logging, "lastResort", None)
     zainstaluj_maskowanie()
     assert _FILTR in logging.getLogger().filters
+
+
+# --- HAR-219: maskowanie sekretow w komendzie zdarzenia ToolDenied -------------------------
+
+
+@pytest.mark.parametrize(
+    "nazwa",
+    [
+        pytest.param("GH_TOKEN", id="TOKEN"),
+        pytest.param("MOJ_SECRET", id="SECRET"),
+        pytest.param("DB_PASSWORD", id="PASSWORD"),
+        pytest.param("DB_PASSWD", id="PASSWD"),
+        pytest.param("API_KEY", id="KEY"),
+        pytest.param("HTTP_AUTH", id="AUTH"),
+    ],
+)
+def test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami(nazwa):
+    assert maskuj_komende(f"{nazwa}=sekret12345 ls -la") == f"{nazwa}=*** ls -la"
+
+
+@pytest.mark.parametrize(
+    "nazwa", ["gh_token", "Moj_Secret", "db_password", "db_passwd", "api_key", "http_auth"]
+)
+def test_nazwa_zmiennej_sekretu_jest_rozpoznawana_bez_rozroznienia_wielkosci_liter(nazwa):
+    assert maskuj_komende(f"{nazwa}=sekret12345 ls") == f"{nazwa}=*** ls"
+
+
+def test_nazwa_zawierajaca_czlon_sekretu_w_srodku_tez_maskuje_wartosc():
+    assert maskuj_komende("MONKEY=banan ls") == "MONKEY=*** ls"
+
+
+def test_kilka_przypisan_sekretow_w_jednej_komendzie_jest_zamaskowanych_kazde_osobno():
+    wynik = maskuj_komende("GH_TOKEN=a1 DB_PASSWORD=b2 ls")
+
+    assert wynik == "GH_TOKEN=*** DB_PASSWORD=*** ls"
+
+
+def test_przypisanie_zmiennej_o_nazwie_niebedacej_sekretem_zostaje_bez_zmian():
+    assert maskuj_komende("PATH=/usr/bin GH_TOKEN=x ls") == "PATH=/usr/bin GH_TOKEN=*** ls"
+
+
+@pytest.mark.parametrize(
+    "komenda,oczekiwana",
+    [
+        pytest.param("deploy --token abc123 -v", "deploy --token *** -v", id="token-spacja"),
+        pytest.param("deploy --token=abc123 -v", "deploy --token=*** -v", id="token-rowna-sie"),
+        pytest.param("deploy --password pw1 -v", "deploy --password *** -v", id="password-spacja"),
+        pytest.param("deploy --password=pw1 -v", "deploy --password=*** -v", id="password-eq"),
+        pytest.param("deploy --secret s3 -v", "deploy --secret *** -v", id="secret-spacja"),
+        pytest.param("deploy --secret=s3 -v", "deploy --secret=*** -v", id="secret-rowna-sie"),
+    ],
+)
+def test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami(komenda, oczekiwana):
+    assert maskuj_komende(komenda) == oczekiwana
+
+
+def test_znany_sekret_z_rejestru_jest_zamaskowany_w_komendzie():
+    zarejestruj_sekret(TOKEN)
+
+    wynik = maskuj_komende("curl https://x/" + TOKEN + " -v")
+
+    assert wynik == "curl https://x/" + mask(TOKEN) + " -v"
+
+
+def test_naglowek_bearer_w_komendzie_jest_zamaskowany():
+    assert maskuj_komende("echo Bearer abc12345 koniec") == "echo Bearer ******** koniec"
+
+
+def test_zmienna_cockpit_token_ze_srodowiska_jest_zamaskowana_w_komendzie(monkeypatch):
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN)
+
+    assert maskuj_komende("echo " + TOKEN) == "echo " + mask(TOKEN)
+
+
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        "git status --short",
+        "ls -la src",
+        "echo git is great",
+        "pytest -q --name x",
+        "",
+    ],
+)
+def test_komenda_bez_sekretu_zostaje_bez_zmian(komenda):
+    assert maskuj_komende(komenda) == komenda
+
+
+@pytest.mark.parametrize(
+    "komenda,oczekiwana",
+    [
+        pytest.param('GH_TOKEN="ab cd" ls', "GH_TOKEN=*** ls", id="cudzyslow-ze-spacja"),
+        pytest.param("GH_TOKEN='ab cd' ls", "GH_TOKEN=*** ls", id="apostrofy-ze-spacja"),
+        pytest.param("MY_PASSWD='p q' ls", "MY_PASSWD=*** ls", id="apostrofy-passwd"),
+        pytest.param('X_AUTH="a b" ls', "X_AUTH=*** ls", id="cudzyslow-auth"),
+    ],
+)
+def test_wartosc_przypisania_sekretu_w_cudzyslowach_ze_spacja_jest_zamaskowana_cala(
+    komenda, oczekiwana
+):
+    assert maskuj_komende(komenda) == oczekiwana
+
+
+@pytest.mark.parametrize(
+    "nazwa", ["API_KEY_ID", "GH_TOKEN_NEW", "DB_PASSWORD_FILE", "X_SECRET_2", "A_AUTH_B", "K_PASSWD_X"]
+)
+def test_nazwa_zmiennej_z_czlonem_sekretu_i_dalszym_ciagiem_tez_maskuje_wartosc(nazwa):
+    assert maskuj_komende(f"{nazwa}=abc ls") == f"{nazwa}=*** ls"
+
+
+@pytest.mark.parametrize(
+    "komenda,oczekiwana",
+    [
+        pytest.param("deploy --token  abc123 -v", "deploy --token  *** -v", id="dwie-spacje"),
+        pytest.param('deploy --token "a b" -v', "deploy --token *** -v", id="cudzyslow-ze-spacja"),
+        pytest.param("deploy --token 'a b' -v", "deploy --token *** -v", id="apostrofy-ze-spacja"),
+        pytest.param("deploy --TOKEN abc123 -v", "deploy --TOKEN *** -v", id="wielkie-litery"),
+        pytest.param("deploy --Password pw1 -v", "deploy --Password *** -v", id="mieszane-litery"),
+        pytest.param("deploy --SECRET s3 -v", "deploy --SECRET *** -v", id="secret-wielkimi"),
+    ],
+)
+def test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu(
+    komenda, oczekiwana
+):
+    assert maskuj_komende(komenda) == oczekiwana
+
+
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("mytool --token='abc'def", id="apostrofy-sklejone-z-dalszymi-znakami"),
+        pytest.param('mytool --token="abc"def', id="cudzyslow-sklejony-z-dalszymi-znakami"),
+    ],
+)
+def test_opcja_z_wartoscia_po_rownasie_w_cudzyslowie_sklejona_z_reszta_tokenu_jest_zamaskowana_cala(
+    komenda
+):
+    assert maskuj_komende(komenda) == "mytool --token=***"
+
+
+@pytest.mark.parametrize("komenda", ["echo --token", "ls --tokens", "deploy --secretive x"])
+def test_opcja_bez_wartosci_albo_o_innej_nazwie_nie_jest_zmieniana(komenda):
+    assert maskuj_komende(komenda) == komenda

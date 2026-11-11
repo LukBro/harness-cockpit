@@ -8,7 +8,10 @@ import ast
 import sys
 from pathlib import Path
 
-API = Path(__file__).resolve().parent.parent / "src" / "cockpit" / "api"
+SRC = Path(__file__).resolve().parent.parent / "src" / "cockpit"
+API = SRC / "api"
+DOZWOLONE_ROLI = frozenset({"services/dostep.py", "db/models.py"})
+TYPY_CZLONKOSTWA = frozenset({"Kontekst", "Membership"})
 ZAKAZANE_WYWOLANIA = {"select", "insert", "update", "delete", "execute", "add", "commit"}
 METODY_SESJI = {
     "get", "scalar", "scalars", "merge", "flush", "refresh",
@@ -51,30 +54,42 @@ def _wlasne_wezly(funkcja: ast.AST):
             kolejka.extend(ast.iter_child_nodes(w))
 
 
-def _nazwy_sesji(funkcja: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    """Nazwy zwiazane z typem AsyncSession: parametry i zmienne z adnotacja w tej funkcji."""
+def _typ_czlonkostwa(adnotacja: ast.expr | None) -> bool:
+    """Adnotacja `Kontekst`/`Membership`, takze przez modul (`dostep.Kontekst`)."""
+    if isinstance(adnotacja, ast.Name):
+        return adnotacja.id in TYPY_CZLONKOSTWA
+    return isinstance(adnotacja, ast.Attribute) and adnotacja.attr in TYPY_CZLONKOSTWA
+
+
+def _nazwy_typu(funkcja: ast.FunctionDef | ast.AsyncFunctionDef, pasuje) -> set[str]:
+    """Nazwy zwiazane z typem spelniajacym `pasuje`: parametry i zmienne z adnotacja w tej funkcji."""
     a = funkcja.args
-    nazwy = {p.arg for p in [*a.posonlyargs, *a.args, *a.kwonlyargs] if _async_session(p.annotation)}
+    nazwy = {p.arg for p in [*a.posonlyargs, *a.args, *a.kwonlyargs] if pasuje(p.annotation)}
     for w in _wlasne_wezly(funkcja):
         if (
             isinstance(w, ast.AnnAssign)
             and isinstance(w.target, ast.Name)
-            and _async_session(w.annotation)
+            and pasuje(w.annotation)
         ):
             nazwy.add(w.target.id)
     return nazwy
 
 
-def _sesje_wywolan(drzewo: ast.AST) -> dict[int, set[str]]:
-    """Dla kazdego wywolania: nazwy sesji najblizszej obejmujacej je funkcji."""
+def _nazwy_wezlow(drzewo: ast.AST, pasuje, rodzaj: type) -> dict[int, set[str]]:
+    """Dla kazdego wezla `rodzaj`: nazwy typu `pasuje` najblizszej obejmujacej go funkcji."""
     wynik: dict[int, set[str]] = {}
     for f in ast.walk(drzewo):
         if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            nazwy = _nazwy_sesji(f)
+            nazwy = _nazwy_typu(f, pasuje)
             for w in _wlasne_wezly(f):
-                if isinstance(w, ast.Call):
+                if isinstance(w, rodzaj):
                     wynik[id(w)] = nazwy
     return wynik
+
+
+def _sesje_wywolan(drzewo: ast.AST) -> dict[int, set[str]]:
+    """Dla kazdego wywolania: nazwy sesji najblizszej obejmujacej je funkcji."""
+    return _nazwy_wezlow(drzewo, _async_session, ast.Call)
 
 
 def sprawdz(katalog: Path = API) -> list[str]:
@@ -124,11 +139,56 @@ def sprawdz(katalog: Path = API) -> list[str]:
     return problemy
 
 
+def _odczyt_roli(w: ast.AST, czlonkostwa: dict[int, set[str]]) -> str | None:
+    """Opis odczytu roli czlonkostwa w wezle albo None, gdy wezel go nie jest."""
+    if isinstance(w, ast.Attribute) and w.attr == "rola":
+        o = w.value
+        if isinstance(o, ast.Name) and o.id == "Membership":
+            return ast.unparse(w)
+        if isinstance(o, ast.Attribute) and o.attr == "Membership":
+            return ast.unparse(w)
+        if isinstance(o, ast.Name) and o.id in czlonkostwa.get(id(w), set()):
+            return ast.unparse(w)
+    if isinstance(w, ast.Name) and w.id == "RolaWZespole":
+        return ast.unparse(w)
+    if isinstance(w, ast.Attribute) and w.attr == "RolaWZespole":
+        return ast.unparse(w)
+    if isinstance(w, ast.ImportFrom) and any(a.name == "RolaWZespole" for a in w.names):
+        return "import RolaWZespole"
+    return None
+
+
+def sprawdz_role_czlonkostwa(katalog: Path = SRC) -> list[str]:
+    """Rola czlonkostwa w zespole jest czytana tylko w services/dostep.py i db/models.py."""
+    problemy: list[str] = []
+    for plik in sorted(katalog.rglob("*.py")):
+        rel = plik.relative_to(katalog).as_posix()
+        if rel in DOZWOLONE_ROLI:
+            continue
+        drzewo = ast.parse(plik.read_text(), filename=str(plik))
+        czlonkostwa = _nazwy_wezlow(drzewo, _typ_czlonkostwa, ast.Attribute)
+        znalezione = []
+        for w in ast.walk(drzewo):
+            opis = _odczyt_roli(w, czlonkostwa)
+            if opis is not None:
+                znalezione.append((w.lineno, w.col_offset, opis))
+        for linia, _, opis in sorted(znalezione):
+            problemy.append(f"{rel}:{linia} rola czlonkostwa poza services/dostep.py: {opis}")
+    return problemy
+
+
 if __name__ == "__main__":
     p = sprawdz()
+    r = sprawdz_role_czlonkostwa()
     if p:
         print("Warstwa api/ dotyka bazy. Przenies to do cockpit/services/:")
         for x in p:
             print("  ", x)
+    if r:
+        print("Rola czlonkostwa czytana poza services/dostep.py i db/models.py:")
+        for x in r:
+            print("  ", x)
+    if p or r:
         sys.exit(1)
     print("api/ nie dotyka bazy - w porzadku")
+    print("rola czlonkostwa tylko w services/dostep.py - w porzadku")
