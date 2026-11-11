@@ -65,7 +65,7 @@ def test_obciety_tekst_zdarzenia_ma_na_ekranie_oznaczenie_z_pelna_dlugoscia(
     expect(page.locator("li", has_text="tekst-calosci-bez-dlugosci")).to_be_visible()
     expect(page.locator("li", has_text="tekst-calosci-z-dlugoscia")).to_be_visible()
 
-    # od teraz GET runu oddaje zamrozona historie bez nowych zdarzen (trasa nie lapie /stream),
+    # od teraz GET runu oddaje zamrozona historie bez nowych zdarzen (trasa nie lapie /events),
     # wiec zdarzenie wyslane ponizej moze dotrzec do ekranu wylacznie strumieniem
     historia = page.request.get(f"{adres_kokpitu}/api/runs/{run_id}").json()
     page.route(
@@ -107,7 +107,7 @@ def test_obciete_zdarzenie_bez_pomiaru_dlugosci_pokazuje_dlugosc_nieznana_a_nie_
                       "tekst-bez-pomiaru", DLUGOSC_ZDARZENIA_Z_HISTORII)
 
     # API samo nie wytwarza obcietego zdarzenia bez dlugosci, wiec stan podstawiamy w odpowiedzi
-    # historii; trasa lapie kazdy GET tego runu (takze ten z onopen strumienia), ale nie /stream
+    # historii; trasa lapie kazdy GET tego runu (takze ten z onopen strumienia), ale nie /events
     podmienione = []
 
     def podmien_dlugosc(route):

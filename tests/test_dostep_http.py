@@ -107,7 +107,7 @@ async def _liczba_runow(swiat, tenant_id: str | None = None) -> int:
 
 async def _odczyt(klient: AsyncClient, metoda: str, sciezka: str) -> int:
     """Kod odpowiedzi; strumien czytamy tylko do naglowkow i zamykamy (rozlaczenie klienta)."""
-    if sciezka.endswith("/stream"):
+    if sciezka.endswith(("/stream", "/events")):
         async with klient.stream(metoda, sciezka) as odp:
             return odp.status_code
     return (await klient.request(metoda, sciezka, json={} if metoda == "POST" else None)).status_code
@@ -116,7 +116,7 @@ async def _odczyt(klient: AsyncClient, metoda: str, sciezka: str) -> int:
 TRASY_RUNU = {
     "uruchomienie_runu": ("POST", "/api/runs"),
     "odczyt_runu": ("GET", "/api/runs/{run}"),
-    "strumien_runu": ("GET", "/api/runs/{run}/stream"),
+    "strumien_runu": ("GET", "/api/runs/{run}/events"),
     "integracja_runu": ("POST", "/api/runs/{run}/integrate"),
     "commit_runu": ("POST", "/api/runs/{run}/commit"),
 }
@@ -154,14 +154,14 @@ async def test_token_runnera_nie_zastepuje_sesji_przy_uruchamianiu_runu(swiat):
 # --- izolacja zespolow: cudzy run to 404, wlasny to 200 -----------------------------------------
 
 
-@pytest.mark.parametrize("wzor", ["/api/runs/{run}", "/api/runs/{run}/stream"],
+@pytest.mark.parametrize("wzor", ["/api/runs/{run}", "/api/runs/{run}/events"],
                          ids=["odczyt_runu", "strumien_runu"])
 async def test_czlonek_zespolu_nie_widzi_runu_cudzego_zespolu(swiat, wzor):
     klient = await _zalogowany(swiat, swiat.wlasciciel_a)
     assert await _odczyt(klient, "GET", wzor.format(run=swiat.run_b)) == 404
 
 
-@pytest.mark.parametrize("wzor", ["/api/runs/{run}", "/api/runs/{run}/stream"],
+@pytest.mark.parametrize("wzor", ["/api/runs/{run}", "/api/runs/{run}/events"],
                          ids=["odczyt_runu", "strumien_runu"])
 async def test_czlonek_zespolu_widzi_wlasny_run(swiat, wzor):
     klient = await _zalogowany(swiat, swiat.wlasciciel_a)
@@ -177,7 +177,7 @@ async def test_odczyt_runu_zwraca_run_zespolu_z_sesji(swiat):
 
 async def test_strumien_cudzego_runu_nie_zostawia_subskrypcji(swiat):
     klient = await _zalogowany(swiat, swiat.wlasciciel_a)
-    assert await _odczyt(klient, "GET", f"/api/runs/{swiat.run_b}/stream") == 404
+    assert await _odczyt(klient, "GET", f"/api/runs/{swiat.run_b}/events") == 404
     assert bus._run_subscribers.get(swiat.run_b, []) == []
 
 
@@ -435,7 +435,7 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("GET", "/api/runs"): {"kontekst_sesji"},
         ("POST", "/api/runs"): {"kontekst_sesji"},
         ("GET", "/api/runs/{run_id}"): {"kontekst_sesji"},
-        ("GET", "/api/runs/{run_id}/stream"): {"kontekst_sesji_strumienia"},
+        ("GET", "/api/runs/{run_id}/events"): {"kontekst_sesji_strumienia"},
         ("GET", "/api/runs/{run_id}/diff"): {"kontekst_sesji"},
         ("POST", "/api/runs/{run_id}/decision"): {"kontekst_sesji"},
         ("POST", "/api/runs/{run_id}/integrate"): {"kontekst_sesji"},
@@ -469,7 +469,7 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("POST", "/api/runs"),
         ("POST", "/api/events"),
         ("GET", "/api/runs/{run_id}"),
-        ("GET", "/api/runs/{run_id}/stream"),
+        ("GET", "/api/runs/{run_id}/events"),
         ("GET", "/api/runs/{run_id}/diff"),
         ("POST", "/api/runs/{run_id}/decision"),
         ("POST", "/api/runs/{run_id}/integrate"),

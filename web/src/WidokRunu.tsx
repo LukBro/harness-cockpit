@@ -147,10 +147,10 @@ export function WidokRunu({
       }
     }
 
-    // Strumien nie odtwarza historii, wiec GET idzie zawsze, takze gdy strumien
-    // sie nie otwiera; onopen dociaga po (ponownym) polaczeniu. Scalanie po seq.
+    // Serwer wznawia strumien od Last-Event-ID; GET i onopen zostaja jako obrona
+    // w glab (steps/status/pokrycie). Scalanie po seq.
     dociagnijRef.current = dociagnij;
-    const es = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`);
+    const es = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
     void dociagnij();
     es.onopen = () => {
       if (anulowano) return;
