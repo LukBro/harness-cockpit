@@ -74,6 +74,24 @@ async def czlonkostwo(s: AsyncSession, user_id: str, tenant_id: str) -> Membersh
     return m
 
 
+async def rola_czlonka(s: AsyncSession, user_id: str, tenant_id: str) -> RolaWZespole | None:
+    return (
+        await s.execute(
+            select(Membership.rola).where(
+                Membership.user_id == user_id, Membership.tenant_id == tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+def rola_tekstem(kontekst: Kontekst) -> str:
+    return kontekst.rola.value
+
+
+def dodaj_wlasciciela(s: AsyncSession, tenant_id: str, user_id: str) -> None:
+    s.add(Membership(tenant_id=tenant_id, user_id=user_id, rola=RolaWZespole.owner))
+
+
 def wymagaj(kontekst: Kontekst, uprawnienie: Uprawnienie) -> None:
     if uprawnienie not in MACIERZ_ROL[kontekst.rola]:
         raise Zabronione(f"rola {kontekst.rola.value} nie może {_CZYNNOSCI[uprawnienie]}")

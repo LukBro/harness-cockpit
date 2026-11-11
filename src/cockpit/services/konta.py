@@ -17,9 +17,9 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cockpit.db.models import BlokadaLogowania, Membership, RolaWZespole, Sesja, Tenant, User
+from cockpit.db.models import BlokadaLogowania, Sesja, Tenant, User
 from cockpit.services import sesje
-from cockpit.services.dostep import Kontekst
+from cockpit.services.dostep import Kontekst, dodaj_wlasciciela, rola_tekstem
 from cockpit.services.errors import (
     BrakDostepu,
     NieprawidloweObecneHaslo,
@@ -72,7 +72,7 @@ async def zarejestruj(
     try:
         await s.flush()
         # czlonkostwo dopiero po flush: id zespolu i uzytkownika musza juz istniec
-        s.add(Membership(tenant_id=tenant.id, user_id=user.id, rola=RolaWZespole.owner))
+        dodaj_wlasciciela(s, tenant.id, user.id)
         await s.commit()
     except IntegrityError as blad:
         await s.rollback()
@@ -207,7 +207,7 @@ async def zmien_haslo(
 class Profil:
     email: str
     zespol: str
-    rola: RolaWZespole
+    rola: str
 
 
 async def profil(s: AsyncSession, kontekst: Kontekst) -> Profil:
@@ -218,7 +218,7 @@ async def profil(s: AsyncSession, kontekst: Kontekst) -> Profil:
     ).scalar_one_or_none()
     if user is None or nazwa is None:
         raise BrakDostepu(sesje.KOMUNIKAT_SESJI)
-    return Profil(email=user.email, zespol=nazwa, rola=kontekst.rola)
+    return Profil(email=user.email, zespol=nazwa, rola=rola_tekstem(kontekst))
 
 
 async def zmien_haslo_uzytkownika(
