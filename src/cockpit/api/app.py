@@ -161,6 +161,21 @@ class DowodIn(BaseModel):
     plik: str = Field(min_length=1, max_length=255)
 
 
+class WpisManifestuIn(BaseModel):
+    """Wpis manifestu kroku (HAR-169): sciezka i hash, nigdy tresc; brak pomiaru to None, nie zero.
+    Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    warstwa: str = Field(min_length=1, max_length=64)
+    sciezka: str | None = Field(default=None, min_length=1, max_length=255)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]
+
+
 class EventIn(BaseModel):
     run_id: str
     event_id: str = Field(min_length=1)    # nadaje runner; idempotencja (HAR-39)
@@ -191,6 +206,7 @@ class EventIn(BaseModel):
     verdict: str | None = Field(default=None, min_length=1, max_length=200)
     kotwice: _ListaKotwic | None = None
     artefakty: _ListaArtefaktow | None = None
+    manifest: _ListaManifestu | None = None    # tylko w context_manifest (HAR-169)
 
     def dane(self) -> dict | None:
         """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""
@@ -203,6 +219,8 @@ class EventIn(BaseModel):
             dane["kotwice"] = self.kotwice
         if self.artefakty is not None:
             dane["artefakty"] = self.artefakty
+        if self.manifest is not None:
+            dane["manifest"] = [w.model_dump() for w in self.manifest]
         return dane or None
 
 

@@ -53,6 +53,8 @@ PROFIL_DOMYSLNY: Mapping[str, Mapping[Tier, str]] = MappingProxyType({
 })
 """Profil domyslny per backend; jedyny znany backend to `claude`."""
 
+ZDANIE_KONTEKSTU = "Przeczytaj te pliki; przy sprzeczności instrukcji wygrywa plik wyżej na liście."
+
 NAZWA_PLIKU_PROFILU = "backendy.json"
 
 FLAGI_STRUMIENIA: tuple[str, ...] = ("--output-format", "stream-json", "--verbose")
@@ -87,6 +89,7 @@ class SpecKroku:
     komendy: Mapping[str, str]
     budget_usd: float | None = None
     max_turns: int | None = None
+    kontekst: tuple[str, ...] = ()     # sciezki warstw instrukcji w kolejnosci pierwszenstwa (HAR-169)
 
 
 def sciezka_profilu(env: Mapping[str, str] | None = None) -> Path:
@@ -201,6 +204,8 @@ def _sprawdz_pola(spec: SpecKroku) -> None:
         _bez_znakow_sterujacych(f"wejscia[{i}]", sciezka)
     for i, sciezka in enumerate(spec.wyjscia):
         _bez_znakow_sterujacych(f"wyjscia[{i}]", sciezka)
+    for i, sciezka in enumerate(spec.kontekst):
+        _bez_znakow_sterujacych(f"kontekst[{i}]", sciezka)
     for nazwa, komenda in spec.komendy.items():
         _bez_znakow_sterujacych("komendy", nazwa)
         _bez_znakow_sterujacych(f"komendy[{nazwa}]", komenda)
@@ -214,6 +219,9 @@ def zbuduj_prompt(spec: SpecKroku) -> str:
     linie += _sekcja("wyjście:", [f"- {p}" for p in spec.wyjscia])
     linie.append("")
     linie += _sekcja("komendy:", [f"{n} = {k}" for n, k in spec.komendy.items()])
+    if spec.kontekst:
+        linie += ["", "kontekst (w kolejności pierwszeństwa):", *(f"- {p}" for p in spec.kontekst)]
+        linie.append(ZDANIE_KONTEKSTU)
     return "\n".join(linie)
 
 

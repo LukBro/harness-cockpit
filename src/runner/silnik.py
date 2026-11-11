@@ -40,7 +40,7 @@ import sys
 import time
 import weakref
 from collections import deque
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +80,7 @@ from runner.krok import (
     _zapisz_atomowo,
     wykonaj_krok,
 )
+from runner.kontekst import BladManifestu, Manifest, zloz_manifest
 from runner.krok_diff import wykonaj_diff
 from runner.weryfikacja import kroki_weryfikujace
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
@@ -258,6 +259,27 @@ async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
     return await wykonawca(krok, p)
 
 
+async def _zloz_i_zapisz_manifest(
+    p: Przygotowany, krok: Krok, sciezki_planu: Sequence[str],
+) -> Manifest:
+    """Manifest kroku ze skillem w `<katalog_runu>/manifest-<id>.json`; blad to `PorazkaKroku`."""
+    assert krok.skill is not None
+    if (blad := _blad_identyfikatora(krok.id)) is not None:
+        raise PorazkaKroku(blad)
+    try:
+        manifest = await asyncio.to_thread(
+            zloz_manifest, p.worktree.sciezka, krok.id, sciezki_planu, skill_id=krok.skill)
+        # mutant ensure_ascii=None jest rownowazny (json czyta go jako bool); wariant True chroni reczny mutant HAR-169
+        tresc = json.dumps(manifest.jako_listy(), ensure_ascii=False).encode()  # pragma: no mutate
+        await asyncio.to_thread(
+            _zapisz_atomowo, p.worktree.katalog_runu / f"manifest-{krok.id}.json", tresc)
+    except BladManifestu as e:
+        raise PorazkaKroku(str(e)) from e
+    except OSError as e:
+        raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e
+    return manifest
+
+
 async def _krok(
     run_id: str, id_kroku: str, p: Przygotowany, profil: ProfilBackendu,
     uruchom_agenta: UruchomAgenta, emit: Emit, zatwierdzone: frozenset[str] = frozenset(),
@@ -286,11 +308,14 @@ async def _krok(
             wejscia.append(raport.as_posix())
     if id_kroku in zatwierdzone:
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
+    manifest = await _zloz_i_zapisz_manifest(p, krok, skill.consumes + skill.produces)
     spec = SpecKroku(
         run_id=run_id, step_id=krok.id, agent_id=krok.id, skill_id=krok.skill,
         rola=skill.role, wejscia=wejscia, wyjscia=list(skill.produces),
         komendy={n: p.projekt.capabilities[n] for n in skill.needs if n in p.projekt.capabilities},
         budget_usd=krok.budget_usd, max_turns=krok.max_turns,
+        # lekcje wchodza do manifestu raz na wpis, a do promptu raz jako plik
+        kontekst=tuple(dict.fromkeys(w.sciezka for w in manifest.wpisy if w.sciezka is not None)),
     )
     try:
         prompt = zbuduj_prompt(spec)
@@ -307,6 +332,10 @@ async def _krok(
             dodatkowe["zmienione_linie"] = p.worktree.katalog_runu / producent / PLIK_LINII
     if skill.verdict is not None:
         dodatkowe["werdykt"] = skill.verdict
+
+    await emit(_zdarzenie(
+        run_id, "context_manifest", krok.id, krok.id, "", attempt=proba,
+        manifest=manifest.jako_listy()))
 
     async def emit_proby(zdarzenie: dict) -> None:
         if zdarzenie.get("kind") == "output":

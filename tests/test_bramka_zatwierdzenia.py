@@ -483,7 +483,7 @@ async def test_pauza_jest_po_krokach_niezaleznych_a_przed_step_waiting_z_zapisan
 
     assert pauzy == [7]
     ((rodzaje_w_oknie, cp_w_oknie),) = w_oknie
-    assert rodzaje_w_oknie == ["step_started", "step_finished"]      # krok `c` skonczony, bramka jeszcze nie
+    assert rodzaje_w_oknie == ["step_started", "context_manifest", "step_finished"]      # krok `c` skonczony, bramka jeszcze nie
     assert cp_w_oknie["kroki"]["c"] == {"stan": "zakonczony", "proby": 1}   # zapis nr 2 przed pauza
     assert cp_w_oknie["waiting_on"]["step_id"] == "a"
     assert rodzaje(zapisane)[-1] == "step_waiting"
@@ -666,8 +666,8 @@ async def test_zabicie_silnika_w_oknie_po_checkpoincie_zostawia_kompletny_checkp
     assert surowy["kroki"]["c"] == {"stan": "zakonczony", "proby": 1}
     assert wczytaj_checkpoint(s.katalog_runu).waiting_on.step_id == "a"
     assert [p.name for p in s.katalog_runu.iterdir() if "checkpoint" in p.name] == [PLIK]
-    # zabity przed ogloszeniem czekania: jedyne zdarzenia to start i koniec kroku niezaleznego
-    assert _rodzaje_z_pliku(plik_zdarzen) == ["step_started", "step_finished"]
+    # zabity przed ogloszeniem czekania: jedyne zdarzenia to start, manifest i koniec kroku niezaleznego
+    assert _rodzaje_z_pliku(plik_zdarzen) == ["step_started", "context_manifest", "step_finished"]
     assert plik_agenta.read_text().split() == ["c"]             # agent bramki nigdy nie ruszyl
 
 
@@ -693,7 +693,7 @@ async def test_zabicie_silnika_w_trakcie_kroku_niezaleznego_zostawia_checkpoint_
     surowy = json.loads((s.katalog_runu / PLIK).read_text(encoding="utf-8"))
     assert surowy["waiting_on"]["step_id"] == "a"
     assert surowy["kroki"]["a"] == {"stan": "oczekuje", "proby": 0}
-    assert _rodzaje_z_pliku(plik_zdarzen) == ["step_started"]      # ani step_waiting, ani koniec `c`
+    assert _rodzaje_z_pliku(plik_zdarzen) == ["step_started", "context_manifest"]   # ani step_waiting, ani koniec `c`
 
 
 # =====================================================================================

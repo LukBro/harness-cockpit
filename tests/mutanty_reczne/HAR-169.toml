@@ -1,0 +1,462 @@
+# Tabela recznych mutantow HAR-169: manifest kroku (warstwy instrukcji z sha256, lekcje filtrowane
+# po zakresie) - elementy poza zasiegiem mutmuta (kod 3 z tools/mutanty_zmian.py): limity `Field(...)`
+# i konfiguracja WpisManifestuIn oraz pole EventIn.manifest w app.py, stala KIND_MANIFESTU w runs.py,
+# stala ZDANIE_KONTEKSTU i pole SpecKroku.kontekst w agent.py, stale, limity i dataclassy w
+# runner/kontekst.py oraz dataclass WpisLekcji w lekcje.py.
+#
+# Pominiete jako niezaimportowalne: usuniecie domyslnej wartosci pola `kontekst` w SpecKroku (pole bez
+# wartosci domyslnej po polach z domyslnymi to TypeError przy imporcie), usuniecie bazy `BaseModel`
+# z WpisManifestuIn (FastAPI odrzuca typ spoza pydantic przy imporcie aplikacji).
+
+# plik lekcji
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'PLIK_LEKCJI = ".ai/lessons.md"'
+zamien = 'PLIK_LEKCJI = ".ai/lekcje.md"'
+test = "tests/test_manifest_kontekstu.py::test_lekcja_pasujaca_do_kroku_i_sciezek_planu_trafia_do_manifestu_z_id_sciezka_i_hashem_bloku"
+
+# plik project.yaml
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'PLIK_PROJEKTU = ".cockpit/project.yaml"'
+zamien = 'PLIK_PROJEKTU = ".cockpit/projekt.yaml"'
+test = "tests/test_manifest_kontekstu.py::test_wpis_pliku_warstwy_ma_sciezke_wzgledna_sha256_i_rozmiar_w_bajtach_faktycznej_tresci[project-yaml]"
+
+# limit wpisow w gore
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WPISOW = 1000'
+zamien = 'MAX_WPISOW = 1001'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiac_jednym_wpisem_jest_odrzucony_przez_runner_z_pelnym_komunikatem"
+
+# limit wpisow w dol
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WPISOW = 1000'
+zamien = 'MAX_WPISOW = 999'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiacem_wpisow_jest_przyjety_przez_runnera"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WARSTWA = 64'
+zamien = 'MAX_WARSTWA = 65'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[warstwa-65]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WARSTWA = 64'
+zamien = 'MAX_WARSTWA = 63'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[warstwa-64]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_SCIEZKA = 255'
+zamien = 'MAX_SCIEZKA = 256'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sciezka-256]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_SCIEZKA = 255'
+zamien = 'MAX_SCIEZKA = 254'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sciezka-255]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ID = 64'
+zamien = 'MAX_ID = 65'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[id-65]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ID = 64'
+zamien = 'MAX_ID = 63'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[id-64]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ROZMIAR = 2_147_483_647'
+zamien = 'MAX_ROZMIAR = 2_147_483_648'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[rozmiar-ponad-max]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ROZMIAR = 2_147_483_647'
+zamien = 'MAX_ROZMIAR = 2_147_483_646'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[rozmiar-max]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-f]{65}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-a]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-f]{63}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-a]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[1-9a-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-zera]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-8a-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-dziewiatki]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-e]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-f]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9A-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sha-wielkie-litery]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-g]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sha-nie-hex]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'class BladManifestu(BladDziedziny):'
+zamien = 'class BladManifestu(Exception):'
+test = "tests/test_limity_manifestu.py::test_blad_manifestu_jest_bledem_dziedziny"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''@dataclass(frozen=True)
+class WpisManifestu:'''
+zamien = '''@dataclass
+class WpisManifestu:'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_jest_niezmienny"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    warstwa: str
+'''
+zamien = '''    warstwa: str = ""
+'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_wymaga_warstwy"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'sciezka: str | None = None'
+zamien = 'sciezka: str | None = ""'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'sha256: str | None = None'
+zamien = 'sha256: str | None = ""'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+# brak pomiaru to nie zero
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'rozmiar: int | None = None'
+zamien = 'rozmiar: int | None = 0'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '    id: str | None = None'
+zamien = '    id: str | None = ""'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    sciezka: str | None = None
+    sha256: str | None = None'''
+zamien = '''    sha256: str | None = None
+    sciezka: str | None = None'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ma_pola_w_kolejnosci_warstwa_sciezka_sha256_rozmiar_id"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''@dataclass(frozen=True)
+class Manifest:'''
+zamien = '''@dataclass
+class Manifest:'''
+test = "tests/test_limity_manifestu.py::test_manifest_jest_niezmienny"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wpisy: tuple[WpisManifestu, ...] = ()'
+zamien = 'wpisy: tuple[WpisManifestu, ...] = (WpisManifestu(warstwa="x"),)'
+test = "tests/test_limity_manifestu.py::test_pusty_manifest_nie_ma_wpisow"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''@dataclass(frozen=True)
+class WpisLekcji:'''
+zamien = '''@dataclass
+class WpisLekcji:'''
+test = "tests/test_wpisy_lekcji.py::test_wpis_lekcji_jest_niezmienny"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''    id: str
+    krok: str'''
+zamien = '''    krok: str
+    id: str'''
+test = "tests/test_wpisy_lekcji.py::test_wpis_lekcji_ma_pola_w_kolejnosci_id_krok_sciezki_tekst"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''    sciezki: tuple[str, ...]
+    tekst: str'''
+zamien = '''    tekst: str
+    sciezki: tuple[str, ...]'''
+test = "tests/test_wpisy_lekcji.py::test_wpis_lekcji_ma_pola_w_kolejnosci_id_krok_sciezki_tekst"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'KIND_MANIFESTU = "context_manifest"'
+zamien = 'KIND_MANIFESTU = "context_manifesty"'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'kind not in _KONCZACE_KROK and kind != KIND_MANIFESTU'
+zamien = 'kind not in _KONCZACE_KROK and kind == KIND_MANIFESTU'
+test = "tests/test_ingest_context_manifest.py::test_manifest_przy_innym_rodzaju_zdarzenia_niz_context_manifest_jest_odrzucony[output]"
+
+[[mutant]]
+plik = "src/runner/agent.py"
+szukaj = 'ZDANIE_KONTEKSTU = "Przeczytaj te pliki; przy sprzeczności instrukcji wygrywa plik wyżej na liście."'
+zamien = 'ZDANIE_KONTEKSTU = "Przeczytaj te pliki; przy sprzeczności instrukcji wygrywa plik niżej na liście."'
+test = "tests/test_limity_manifestu.py::test_zdanie_reguly_w_prompcie_mowi_ze_przy_sprzecznosci_wygrywa_plik_wyzej_na_liscie"
+
+[[mutant]]
+plik = "src/runner/agent.py"
+szukaj = 'kontekst: tuple[str, ...] = ()'
+zamien = 'kontekst: tuple[str, ...] = ("x",)'
+test = "tests/test_polecenie_agenta.py::test_kontekst_domyslnie_jest_pusty_a_polecenie_agenta_go_nie_dotyczy"
+
+# konfiguracja klasy wygrywa z model_config, wiec to samo co extra=ignore
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'class WpisManifestuIn(BaseModel):'
+zamien = 'class WpisManifestuIn(BaseModel, extra="ignore"):'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[nieznany-klucz]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="ignore", strict=True)'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[nieznany-klucz]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=False)'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[rozmiar-napis]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=False)'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[rozmiar-bool]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'warstwa: str = Field(min_length=1, max_length=64)'
+zamien = 'warstwa: str = Field(min_length=0, max_length=64)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[warstwa-pusta]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'warstwa: str = Field(min_length=1, max_length=64)'
+zamien = 'warstwa: str = Field(min_length=1, max_length=65)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[warstwa-65]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'warstwa: str = Field(min_length=1, max_length=64)'
+zamien = 'warstwa: str = Field(min_length=1, max_length=63)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[warstwa-64]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(default=None, min_length=0, max_length=255)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sciezka-pusta]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(default=None, min_length=1, max_length=256)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sciezka-256]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(default=None, min_length=1, max_length=254)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sciezka-255]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(min_length=1, max_length=255)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"[0-9a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sha-przed-64-znakami-cos-jeszcze]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sha-po-64-znakach-cos-jeszcze]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{63}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-a]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{65}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-a]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[1-9a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-zera]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-8a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-dziewiatki]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-e]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-f]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9A-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sha-wielkie-litery-hex]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-g]{64}$")'
+test = "tests/test_ingest_context_manifest.py::test_wpis_manifestu_z_zla_wartoscia_jest_odrzucony_bez_zapisu[sha256-nie-hex]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(pattern=r"^[0-9a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=1, le=2_147_483_647)'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
+test = "tests/test_ingest_context_manifest.py::test_wpis_manifestu_z_zla_wartoscia_jest_odrzucony_bez_zapisu[rozmiar-ujemny]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_648)'
+test = "tests/test_ingest_context_manifest.py::test_wpis_manifestu_z_zla_wartoscia_jest_odrzucony_bez_zapisu[rozmiar-ponad-int4]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_646)'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(ge=0, le=2_147_483_647)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(default=None, min_length=0, max_length=64)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[id-pusty]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(default=None, min_length=1, max_length=65)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[id-65]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(default=None, min_length=1, max_length=63)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[id-64]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(min_length=1, max_length=64)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]'
+zamien = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1001)]'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiac_jednym_wpisem_jest_odrzucony_przez_api_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]'
+zamien = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=999)]'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiacem_wpisow_jest_przyjety_przez_api"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'manifest: _ListaManifestu | None = None'
+zamien = 'manifest: _ListaManifestu | None'
+test = "tests/test_ingest_context_manifest.py::test_zdarzenie_context_manifest_bez_manifestu_nie_ma_danych"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'if self.manifest is not None:'
+zamien = 'if self.manifest:'
+test = "tests/test_limity_manifestu.py::test_pusta_lista_manifestu_jest_zapisana_jako_pusta_lista_a_nie_brak_danych"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'json.dumps(manifest.jako_listy(), ensure_ascii=False)'
+zamien = 'json.dumps(manifest.jako_listy(), ensure_ascii=True)'
+test = "tests/test_limity_manifestu.py::test_manifest_w_pliku_runu_zachowuje_polskie_znaki_w_sciezkach_bez_ucieczek"
+

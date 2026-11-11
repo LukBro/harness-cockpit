@@ -252,7 +252,7 @@ async def test_zakonczenie_runu_czekajacego_na_decyzje_daje_run_do_odbioru(klien
 # --- czysta maszyna przejsc ---
 
 _KINDY = ("step_started", "step_finished", "step_failed", "step_aborted", "step_skipped",
-          "step_waiting", "output", "run_finished")
+          "step_waiting", "output", "run_finished", "context_manifest")
 
 # Wyjatki od reguly "bez zmiany": (obecny, kind) -> oczekiwany, gdy brak nieudanych krokow.
 _ZMIANY = {
@@ -336,3 +336,30 @@ async def test_zdarzenie_inne_niz_koniec_runu_nie_wylicza_nieudanych_krokow(
     assert wywolania == []
     await _zdarzenie(klient, run_id, "run_finished")
     assert wywolania == [run_id]
+
+
+# --- context_manifest nie rusza statusu runu (HAR-169) ---
+
+MANIFEST_WEJSCIE = [{"warstwa": "niezmienniki_silnika", "sciezka": None, "sha256": None,
+                     "rozmiar": None, "id": None}]
+
+
+async def test_zdarzenie_context_manifest_przyjete_przez_api_nie_zmienia_statusu_runu(klient):
+    run_id = await _nowy_run(klient)
+    przed = await _liczba_zdarzen_w_bazie(run_id)
+
+    r = await _zdarzenie(klient, run_id, "context_manifest", manifest=MANIFEST_WEJSCIE)
+
+    assert r.status_code == 200
+    assert await _status_w_bazie(run_id) == RunStatus.running
+    assert await _liczba_zdarzen_w_bazie(run_id) == przed + 1
+
+
+async def test_run_z_manifestem_kroku_konczy_sie_stanem_do_odbioru_nie_gotowe(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_started")
+    await _zdarzenie(klient, run_id, "context_manifest", manifest=MANIFEST_WEJSCIE)
+    await _zdarzenie(klient, run_id, "step_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
+
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept

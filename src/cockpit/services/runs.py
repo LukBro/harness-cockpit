@@ -39,6 +39,7 @@ KIND_ODBIORU = "acceptance"   # decyzja odbioru dowodow (HAR-170); tez w `RODZAJ
 LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
+KIND_MANIFESTU = "context_manifest"   # manifest warstw instrukcji kroku (HAR-169); nie rusza statusu runu
 _PROBY_SEQ = 5  # ile razy powtarzamy wyliczenie seq po kolizji (HAR-25)
 _OGRANICZENIE_SEQ = "uq_event_run_seq"  # nazwa z UniqueConstraint(run_id, seq) w modelu
 _KOLUMNY_SEQ_SQLITE = frozenset({"event.run_id", "event.seq"})
@@ -422,7 +423,7 @@ async def zapisz_zdarzenie(
         )
     if kroki_weryfikujace and kind != _KONIEC_RUNU:
         raise NiespojneDane("kroki_weryfikujace wolno przeslac tylko w zdarzeniu run_finished")
-    if dane and kind not in _KONCZACE_KROK:
+    if dane and kind not in _KONCZACE_KROK and kind != KIND_MANIFESTU:
         raise NiespojneDane(
             "dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")
     # tekst ponad limit nigdy nie udaje calosci: znacznik i pelna dlugosc (HAR-56)
