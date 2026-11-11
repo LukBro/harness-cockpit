@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.db.models import Base, Membership, RolaWZespole, Sesja, Tenant, User
-from cockpit.services import konta, sesje
+from cockpit.services import dostep, konta, sesje
 from cockpit.services.dostep import Kontekst
 from cockpit.services.errors import (
     BladDziedziny,
@@ -181,7 +181,7 @@ async def test_awaria_przy_tworzeniu_czlonkostwa_nie_zostawia_zespolu_ani_uzytko
     def membership_rzucajace(*args, **kwargs):
         raise Awaria("awaria przy czlonkostwie")
 
-    monkeypatch.setattr(konta, "Membership", membership_rzucajace)
+    monkeypatch.setattr(dostep, "Membership", membership_rzucajace)
 
     async with maker() as s:
         with pytest.raises(Awaria):
@@ -720,7 +720,7 @@ async def test_blad_bazy_niezwiazany_z_adresem_przy_rejestracji_nie_jest_zajetym
     prawdziwe = Membership
     # czlonkostwo bez zespolu: NOT NULL na membership.tenant_id, a nie kolizja adresu
     monkeypatch.setattr(
-        konta, "Membership", lambda **kw: prawdziwe(**{**kw, "tenant_id": None})
+        dostep, "Membership", lambda **kw: prawdziwe(**{**kw, "tenant_id": None})
     )
 
     async with maker() as s:
@@ -901,7 +901,7 @@ async def test_po_awarii_rejestracji_ta_sama_sesja_zapisuje_kolejna_rejestracje_
             raise Awaria("awaria przy czlonkostwie")
         return prawdziwe(*args, **kwargs)
 
-    monkeypatch.setattr(konta, "Membership", membership_psujace_pierwsze_wywolanie)
+    monkeypatch.setattr(dostep, "Membership", membership_psujace_pierwsze_wywolanie)
 
     async with maker() as s:
         with pytest.raises(Awaria):

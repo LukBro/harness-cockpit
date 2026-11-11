@@ -9,7 +9,7 @@
 # limitu konca kroku.
 [[mutant]]
 plik = "src/runner/krok.py"
-szukaj = "LIMIT_NA_STRAZNIKA_S = 8"
+szukaj = "LIMIT_NA_STRAZNIKA_S = 2 * CZAS_NA_ZAKONCZENIE_S + ZAPAS_NA_STRAZNIKA_S"
 zamien = "LIMIT_NA_STRAZNIKA_S = 1"
 test = "tests/test_brak_sierot.py::test_anulowanie_kroku_z_agentem_ignorujacym_sigterm_zabija_jego_grupe_sigkillem_straznika"
 
