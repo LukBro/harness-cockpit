@@ -1,0 +1,26 @@
+# Tabela recznych mutantow HAR-109: stala i kodeki silnika petli naprawczej, ktorych mutmut
+# nie mutuje albo mutuje niepelnie. Kazde `szukaj` wystepuje w pliku dokladnie raz.
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "LINIE_OGONA = 20"
+zamien = "LINIE_OGONA = 19"
+test = "tests/test_petla_naprawcza.py::test_raport_porazki_ma_dokladnie_dwadziescia_ostatnich_linii_logu_kroku"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "LINIE_OGONA = 20"
+zamien = "LINIE_OGONA = 21"
+test = "tests/test_petla_naprawcza.py::test_raport_porazki_ma_dokladnie_dwadziescia_ostatnich_linii_logu_kroku"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''dane = json.loads(plik.read_text(encoding="utf-8"))'''
+zamien = '''dane = json.loads(plik.read_text(encoding="XXutf-8XX"))'''
+test = "tests/test_petla_naprawcza.py::test_czytelny_plik_dowodu_daje_stdout_tail_doslownie"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '("\n".join(linie) + "\n").encode("utf-8")'
+zamien = '("\n".join(linie) + "\n").encode("XXutf-8XX")'
+test = "tests/test_petla_naprawcza.py::test_raport_porazki_ma_dokladna_tresc_z_ogonem_logu"
