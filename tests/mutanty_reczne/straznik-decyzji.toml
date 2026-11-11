@@ -1,0 +1,86 @@
+# Tabela recznych mutantow PR straznik-decyzji: hook .claude/hooks/pytania_w_tle.py
+# (poza zasiegiem mutmuta). Wiersz: element | mutacja | test, ktory po mutacji oblewa.
+
+# Rodzaj sesji: tylko `bg` jest sesja w tle.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if os.environ.get("CLAUDE_CODE_SESSION_KIND") != "bg":'
+zamien = 'if os.environ.get("CLAUDE_CODE_SESSION_KIND") == "bg":'
+test = "tests/test_pytania_w_tle.py::test_sesja_w_tle_nie_pyta_czlowieka_tylko_dostaje_protokol_decyzji"
+
+# Sesja interaktywna nie dostaje odmowy (usuniecie warunku rodzaju sesji).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if os.environ.get("CLAUDE_CODE_SESSION_KIND") != "bg":'
+zamien = 'if False:'
+test = "tests/test_pytania_w_tle.py::test_sesja_interaktywna_pyta_czlowieka_bez_zmian"
+
+# Inne narzedzie przechodzi.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if narzedzie(tekst) not in (None, "AskUserQuestion"):'
+zamien = 'if False:'
+test = "tests/test_pytania_w_tle.py::test_inne_narzedzie_w_sesji_w_tle_przechodzi_bez_decyzji_hooka"
+
+# Nieczytelne wejscie (None) to odmowa, nie zgoda.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = 'if narzedzie(tekst) not in (None, "AskUserQuestion"):'
+zamien = 'if narzedzie(tekst) != "AskUserQuestion":'
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Krotka except: ValueError (nie JSON).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (KeyError, TypeError, RecursionError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Krotka except: KeyError (brak tool_name).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (ValueError, TypeError, RecursionError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Krotka except: TypeError (lista zamiast obiektu).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (ValueError, KeyError, RecursionError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# tool_name nie-napis to nieczytelne wejscie.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "return nazwa if isinstance(nazwa, str) else None"
+zamien = "return nazwa"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"
+
+# Decyzja to deny, nie ask/allow.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = '"permissionDecision": "deny",'
+zamien = '"permissionDecision": "ask",'
+test = "tests/test_pytania_w_tle.py::test_sesja_w_tle_nie_pyta_czlowieka_tylko_dostaje_protokol_decyzji"
+
+# Blad odczytu stdin (OSError) to odmowa, nie traceback (fail-open).
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "    except OSError:\n        tekst = b\"\""
+zamien = "    except ImportError:\n        tekst = b\"\""
+test = "tests/test_pytania_w_tle.py::test_blad_odczytu_wejscia_w_sesji_w_tle_to_odmowa"
+
+# Bajty zamiast tekstu: wejscie spoza UTF-8 trafia do except ValueError w narzedzie().
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "tekst = sys.stdin.buffer.read()"
+zamien = "tekst = sys.stdin.read()"
+test = "tests/test_pytania_w_tle.py::test_wejscie_spoza_utf8_w_sesji_w_tle_to_odmowa_nie_traceback"
+
+# Krotka except: RecursionError (zbyt glebokie zagniezdzenie JSON) - bez niego hook pada i przepuszcza pytanie.
+[[mutant]]
+plik = ".claude/hooks/pytania_w_tle.py"
+szukaj = "except (ValueError, KeyError, TypeError, RecursionError):"
+zamien = "except (ValueError, KeyError, TypeError):"
+test = "tests/test_pytania_w_tle.py::test_nieczytelne_wejscie_w_sesji_w_tle_to_odmowa"

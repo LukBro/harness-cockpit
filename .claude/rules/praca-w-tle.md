@@ -12,7 +12,20 @@ rana, a pętla sprintu nie startuje nowych ticketów (HAR-13, HAR-24, HAR-40, HA
   agentów, ustawienia) nie edytujesz — regułę z review zapisujesz w komentarzu ticketu jako
   linię `REGULA: …`, a retro przenosi ją przez osobny PR.
 
+## Decyzje: strażnik zamiast człowieka
+
+Sesja w tle nie używa AskUserQuestion (hook `.claude/hooks/pytania_w_tle.py` odmawia; HAR-219, HAR-180).
+Decyzje ocenia strażnik decyzji (`.git/monolynx/straznik`) według CLAUDE.md, `.claude/rules` i ticketu.
+
+- Gdy decyzja nie wynika z ticketu, CLAUDE.md ani reguł: zakończ turę wiadomością, której pierwsza linia
+  to `DECYZJA-POTRZEBNA: <czego dotyczy>`, dalej dowody (plik:linia, wynik komendy), opcje
+  `- <etykieta>: <skutek>` i rekomendacja. Żadnej opcji nie wykonujesz przed odpowiedzią.
+- Odpowiedź „Decyzja strażnika …” wykonujesz jak decyzję właściciela.
+- `rework` strażnika (komentarz „Strażnik decyzji: rework”) poprawiasz na tej samej gałęzi, bez
+  `--force`/`--amend`, ten sam PR.
+
 ## Co sprawdzić w review
 
 - Raport agenta wymienia komendę z `rm -rf` albo `sed -i` na pliku repozytorium = **-10**.
 - Artefakty narzędzi (`*-E`, `*.orig`, katalogi `mut*`) w diffie = **-25**.
+- AskUserQuestion albo pytanie bez linii `DECYZJA-POTRZEBNA` w sesji w tle = **-10**.
