@@ -44,7 +44,18 @@ def test_rejestr_repozytorium_zawiera_trzy_skille_budowy(rejestr):
 
 
 def test_wczytanie_skilli_budowy_nie_pomija_zadnego_pliku(rejestr):
-    assert rejestr.pominiete == []
+    budowy = korzen_repozytorium() / ".cockpit" / "skills"
+    assert [p for p in rejestr.pominiete if p.plik.is_relative_to(budowy)] == []
+
+
+def test_skill_claude_code_bez_roli_jest_pominiety_jako_nie_skill_kokpitu(rejestr):
+    """`.claude/skills/` to źródło nieścisłe: skill Claude Code bez `role` (praca-ticketu) jest
+    pomijany z powodem, a nie traktowany jak zepsuty skill kokpitu."""
+    claude = korzen_repozytorium() / ".claude" / "skills"
+    pominiete = {p.plik.relative_to(claude).parts[0]: p.powod for p in rejestr.pominiete
+                 if p.plik.is_relative_to(claude)}
+    assert pominiete["praca-ticketu"] == "brak pola role - to nie skill kokpitu"
+    assert all(p.plik.is_relative_to(claude) for p in rejestr.pominiete)
 
 
 @pytest.mark.parametrize("id", IDENTYFIKATORY)
