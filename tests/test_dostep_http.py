@@ -26,7 +26,7 @@ from cockpit.api.zaleznosci import (
     trasa_publiczna,
 )
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Event, RolaWZespole, Run, RunStatus
+from cockpit.db.models import Base, Event, Project, RolaWZespole, Run, RunStatus
 from sesja_testowa import (
     HASLO_TESTOWE,
     zaloguj_klienta,
@@ -312,6 +312,111 @@ async def test_odbior_runu_ktory_jeszcze_trwa_dostaje_409_a_zdarzenie_nie_powsta
     assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
 
 
+# --- HAR-180: capabilities projektu (PATCH) i skille projektu (GET) ----------------------------
+
+async def _projekt_zespolu(swiat, tenant_id: str, runner_id: str, path: str = "/repo/app") -> str:
+    async with swiat.maker() as s:
+        projekt = Project(tenant_id=tenant_id, runner_id=runner_id, path=path, name="app")
+        s.add(projekt)
+        await s.commit()
+        return projekt.id
+
+
+@pytest.fixture
+def runner_nie_jest_pytany(monkeypatch):
+    """Odmowa dostepu musi zapasc PRZED pytaniem runnera: kazde zapytanie to porazka testu."""
+    wywolania: list[tuple] = []
+
+    async def zapytaj(*args, **kwargs):
+        wywolania.append(args)
+        raise AssertionError("runner nie moze byc pytany przy odmowie dostepu")
+
+    monkeypatch.setattr(bus, "zapytaj", zapytaj)
+    return wywolania
+
+
+async def test_obserwator_nie_zmienia_capabilities_projektu_swojego_zespolu(
+    swiat, runner_nie_jest_pytany,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+
+    odp = await klient.patch(f"/api/projects/{projekt}", json={"capabilities": {"test": "pytest"}})
+
+    # runner zespolu A jest online, wiec 403 to odmowa roli, nie brak runnera (409)
+    assert odp.status_code == 403
+    assert runner_nie_jest_pytany == []
+
+
+async def test_czlonek_zespolu_nie_zmienia_capabilities_projektu_cudzego_zespolu(
+    swiat, runner_nie_jest_pytany,
+):
+    cudzy = await _projekt_zespolu(swiat, swiat.tenant_b, swiat.runner_b, "/repo/cudzy")
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await klient.patch(f"/api/projects/{cudzy}", json={"capabilities": {"test": "pytest"}})
+
+    assert odp.status_code == 404
+    assert runner_nie_jest_pytany == []
+
+
+async def test_bez_sesji_zmiana_capabilities_projektu_dostaje_401_takze_na_localhoscie(
+    swiat, runner_nie_jest_pytany,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = swiat.nowy_klient()
+    assert klient.base_url.host == "127.0.0.1"
+
+    odp = await klient.patch(f"/api/projects/{projekt}", json={"capabilities": {"test": "pytest"}})
+
+    assert odp.status_code == 401
+    assert runner_nie_jest_pytany == []
+
+
+async def test_zmiana_capabilities_bez_tokenu_csrf_dostaje_403_z_komunikatem_o_braku_tokenu(
+    swiat, runner_nie_jest_pytany,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    del klient.headers[NAGLOWEK_CSRF]
+
+    odp = await klient.patch(f"/api/projects/{projekt}", json={"capabilities": {"test": "pytest"}})
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "brak tokenu CSRF"}
+    assert runner_nie_jest_pytany == []
+
+
+async def test_bez_sesji_odczyt_skilli_projektu_dostaje_401_takze_na_localhoscie(swiat):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = swiat.nowy_klient()
+    assert klient.base_url.host == "127.0.0.1"
+
+    lista = await klient.get("/api/skills", params={"project": projekt})
+    szczegoly = await klient.get("/api/skills/x", params={"project": projekt})
+
+    assert (lista.status_code, szczegoly.status_code) == (401, 401)
+
+
+async def test_obserwator_widzi_liste_skilli_projektu_swojego_zespolu(swiat):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+
+    odp = await klient.get("/api/skills", params={"project": projekt})
+
+    assert (odp.status_code, odp.json()) == (200, {"odswiezono_at": None, "skille": []})
+
+
+@pytest.mark.parametrize("sciezka", ["/api/skills", "/api/skills/x"], ids=["lista", "szczegoly"])
+async def test_czlonek_zespolu_nie_widzi_skilli_projektu_cudzego_zespolu(swiat, sciezka):
+    cudzy = await _projekt_zespolu(swiat, swiat.tenant_b, swiat.runner_b, "/repo/cudzy")
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await klient.get(sciezka, params={"project": cudzy})
+
+    assert odp.status_code == 404
+
+
 # --- trasy publiczne dzialaja bez sesji -------------------------------------------------------
 
 
@@ -450,6 +555,9 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("POST", "/api/katalog/odswiez"): {"kontekst_sesji"},
         ("GET", "/api/projects"): {"kontekst_sesji"},
         ("POST", "/api/projects"): {"kontekst_sesji"},
+        ("PATCH", "/api/projects/{project_id}"): {"kontekst_sesji"},
+        ("GET", "/api/skills"): {"kontekst_sesji"},
+        ("GET", "/api/skills/{skill_id}"): {"kontekst_sesji"},
         ("POST", "/api/konto/wyloguj"): {"kontekst_sesji"},
         ("POST", "/api/konto/wyloguj-wszedzie"): {"kontekst_sesji"},
         ("POST", "/api/konto/haslo"): {"kontekst_sesji"},
@@ -483,6 +591,9 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("POST", "/api/katalog/odswiez"),
         ("GET", "/api/projects"),
         ("POST", "/api/projects"),
+        ("PATCH", "/api/projects/{project_id}"),
+        ("GET", "/api/skills"),
+        ("GET", "/api/skills/{skill_id}"),
         ("POST", "/api/konto/rejestracja"),
         ("POST", "/api/konto/logowanie"),
         ("GET", "/api/konto/ja"),

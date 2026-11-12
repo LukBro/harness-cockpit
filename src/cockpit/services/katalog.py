@@ -1,8 +1,10 @@
 """Katalog skilli i workflow w bazie, odswiezany przez runnera na zadanie (HAR-67).
 
-W bazie leza wylacznie metadane (id, nazwa, rola, sciezka). Runner oddaje sam frontmatter
-SKILL.md, wiec tresc briefu nie opuszcza maszyny uzytkownika (BRO-86). Odczyt katalogu nie
-pyta runnera - dziala takze offline, z data ostatniego odswiezenia.
+W bazie leza wylacznie metadane (id, nazwa, rola, consumes, produces, zakres, sciezka). Runner
+oddaje sam frontmatter SKILL.md, wiec tresc briefu nie opuszcza maszyny uzytkownika (BRO-86).
+Odczyt katalogu nie pyta runnera - dziala takze offline, z data ostatniego odswiezenia.
+Skill zepsuty (BlednySkill) ma wiersz z komunikatem w `problem` (HAR-180); `katalog()` go nie
+oddaje - to czytelnik skilli (`skille_api`) pokazuje problemy.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from cockpit.db.models import Definicja, Runner
 
 from . import zapytania_runnera
 from .errors import BlednySkill, StanNiemozliwy
-from .skills import ZRODLA, metadane_skilla
+from .skills import ZRODLA, skill_z_tekstu
 from .zapytania_runnera import Wyslij
 
 # Dlugosci kolumn `definicja`: dluzsza wartosc to zepsuta pozycja, nie blad calego odswiezenia.
@@ -76,32 +78,59 @@ def _sprawdz_ksztalt(wynik: Any) -> list[dict]:
     return projekty
 
 
-def _skille_projektu(skille: list[dict]) -> tuple[dict[str, tuple[str, str, str]], int]:
-    """({id: (nazwa, rola, sciezka)}, liczba pominietych). Wygrywa zrodlo o wyzszym priorytecie."""
-    wybrane: dict[str, tuple[str, str, str]] = {}
+def _pola_skilla(skill: dict) -> dict[str, Any] | None:
+    """Nazwa, rola, listy i problem skilla z jego frontmattera; None: nie skill kokpitu
+    (zrodlo niescisle, brak `role`). Skill zepsuty niesie komunikat BlednySkill w `problem`,
+    nazwe katalogu zamiast nazwy i brak roli oraz list."""
+    scisle = _SCISLE[(skill["zrodlo"], skill["podkatalog"])]
+    try:
+        if skill["frontmatter"] is None:
+            # runner nie oddal frontmattera: skill scisly to blad, niescisly to "nie skill"
+            if not scisle:
+                return None
+            raise BlednySkill(f"brak frontmattera w '{skill['katalog']}'")
+        sparsowany = skill_z_tekstu(
+            f"---\n{skill['frontmatter']}\n---\n", skill["katalog"], scisle=scisle)
+    except BlednySkill as e:
+        return {"nazwa": skill["katalog"], "rola": None, "consumes": None, "produces": None,
+                "problem": str(e)}
+    if sparsowany is None:
+        return None
+    return {"nazwa": sparsowany.name, "rola": sparsowany.role.value,
+            "consumes": list(sparsowany.consumes), "produces": list(sparsowany.produces),
+            "problem": None}
+
+
+def _skille_projektu(skille: list[dict]) -> tuple[list[dict[str, Any]], int]:
+    """(pola wierszy skilli, liczba pominietych). Dla id wygrywa zrodlo o wyzszym priorytecie.
+
+    Skill zepsuty ma wiersz z `problem` i jest tez liczony jako pominiety. Zakres: id tylko
+    w domu to `globalny`, w repo bez domu `lokalny`, w repo i w domu `nadpisany` (dane z repo)."""
+    wybrane: dict[str, tuple[dict[str, Any], bool]] = {}
+    globalne: set[str] = set()   # id poprawnych skilli domowych
     pominiete = 0
     for skill in sorted(skille, key=lambda s: _PRIORYTET[(s["zrodlo"], s["podkatalog"])]):
-        klucz_zrodla = (skill["zrodlo"], skill["podkatalog"])
-        if skill["frontmatter"] is None:
+        pola = _pola_skilla(skill)
+        if pola is None:
             pominiete += 1
             continue
-        try:
-            meta = metadane_skilla(
-                skill["frontmatter"], skill["katalog"], scisle=_SCISLE[klucz_zrodla])
-        except BlednySkill:
+        w_domu = skill["zrodlo"] == "dom"
+        klucz = skill["katalog"]
+        sciezka = f"~/{skill['sciezka']}" if w_domu else skill["sciezka"]
+        za_dlugi = (len(klucz) > _MAX_KLUCZ or len(pola["nazwa"]) > _MAX_KLUCZ
+                    or len(sciezka) > _MAX_SCIEZKA)
+        if pola["problem"] is not None or za_dlugi:
             pominiete += 1
+        if za_dlugi:
             continue
-        if meta is None:   # zrodlo niescisle, brak `role`: nie skill kokpitu
-            pominiete += 1
-            continue
-        id_skilla, nazwa, rola = meta
-        sciezka = skill["sciezka"] if skill["zrodlo"] == "repo" else f"~/{skill['sciezka']}"
-        if (len(id_skilla) > _MAX_KLUCZ or len(nazwa) > _MAX_KLUCZ
-                or len(sciezka) > _MAX_SCIEZKA):
-            pominiete += 1
-            continue
-        wybrane.setdefault(id_skilla, (nazwa, rola, sciezka))
-    return wybrane, pominiete
+        if w_domu and pola["problem"] is None:
+            globalne.add(klucz)
+        wybrane.setdefault(klucz, ({**pola, "klucz": klucz, "sciezka": sciezka}, w_domu))
+    wiersze = [
+        {**pola, "zakres": ("globalny" if w_domu
+                            else "nadpisany" if klucz in globalne else "lokalny")}
+        for klucz, (pola, w_domu) in wybrane.items()]
+    return wiersze, pominiete
 
 
 def _workflow_projektu(workflow: list[dict]) -> tuple[dict[str, str], int]:
@@ -134,12 +163,9 @@ def _wiersze(
         pominiete += pominiete_skille + pominiete_wf
         wspolne = {"tenant_id": tenant_id, "runner_id": runner_id, "projekt": p["projekt"],
                    "odswiezono_at": teraz}
+        wiersze += [Definicja(**wspolne, rodzaj="skill", **pola) for pola in skille]
         wiersze += [
-            Definicja(**wspolne, rodzaj="skill", klucz=id_skilla, nazwa=nazwa, rola=rola,
-                      sciezka=sciezka)
-            for id_skilla, (nazwa, rola, sciezka) in skille.items()]
-        wiersze += [
-            Definicja(**wspolne, rodzaj="workflow", klucz=nazwa, nazwa=nazwa, rola=None,
+            Definicja(**wspolne, rodzaj="workflow", klucz=nazwa, nazwa=nazwa,
                       sciezka=sciezka)
             for nazwa, sciezka in workflow.items()]
     return wiersze, pominiete
@@ -155,12 +181,11 @@ def _iso(moment: datetime) -> str:
 async def katalog(s: AsyncSession, tenant_id: str) -> dict:
     """Ostatni zapisany katalog zespolu; tylko baza, bez pytania runnera."""
     wiersze = (await s.execute(
-        select(Definicja).where(Definicja.tenant_id == tenant_id)
+        select(Definicja).where(Definicja.tenant_id == tenant_id, Definicja.problem.is_(None))
     )).scalars().all()
     wiersze = sorted(wiersze, key=lambda w: (w.projekt, w.rodzaj, w.klucz, w.runner_id))
     # runnery odswiezane osobno: najstarsza data mowi, jak stary jest najstarszy fragment
-    najstarszy = min((_iso(w.odswiezono_at) for w in wiersze), default=None,
-                     key=lambda d: datetime.fromisoformat(d))
+    najstarszy = min((_iso(w.odswiezono_at) for w in wiersze), default=None)
     return {
         "odswiezono_at": najstarszy,
         "definicje": [{

@@ -170,6 +170,8 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/pliki"), ("GET", "/api/pliki/lista"), ("PUT", "/api/pliki"),
         ("GET", "/api/runners"), ("GET", "/api/katalog"), ("POST", "/api/katalog/odswiez"),
         ("GET", "/api/projects"), ("POST", "/api/projects"),
+        ("PATCH", "/api/projects/{project_id}"),
+        ("GET", "/api/skills"), ("GET", "/api/skills/{skill_id}"),
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
     })
@@ -239,6 +241,9 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("POST", "/api/katalog/odswiez"): ("KatalogOdswiezony", False),
         ("GET", "/api/projects"): ("Projekt", True),
         ("POST", "/api/projects"): ("Projekt", False),
+        ("PATCH", "/api/projects/{project_id}"): ("CapabilitiesProjektu", False),
+        ("GET", "/api/skills"): ("ListaSkilli", False),
+        ("GET", "/api/skills/{skill_id}"): ("SkillSzczegoly", False),
         ("POST", "/api/konto/rejestracja"): ("TokenCsrf", False),
         ("POST", "/api/konto/logowanie"): ("TokenCsrf", False),
         ("GET", "/api/konto/ja"): ("Profil", False),
@@ -299,6 +304,9 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("POST", "/api/katalog/odswiez"), {"401", "409", "500"}),
     (("POST", "/api/projects"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/projects"), {"401", "500"}),
+    (("PATCH", "/api/projects/{project_id}"), {"401", "403", "404", "409", "422", "500"}),
+    (("GET", "/api/skills"), {"401", "404", "422", "500"}),
+    (("GET", "/api/skills/{skill_id}"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/runs"), {"401", "422", "500"}),
     (("GET", "/api/runs/{run_id}"), {"401", "404", "500"}),
     (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
@@ -323,6 +331,11 @@ def test_rejestracja_nie_obiecuje_limitu_prob_bo_ten_ma_tylko_logowanie(schemat)
 def test_lista_projektow_bez_parametrow_nie_obiecuje_bledu_walidacji_422(schemat):
     # trasa bez wejścia nie ma czego walidować: dokładny zbiór, nie podzbiór
     assert _kody_bledow(schemat, ("GET", "/api/projects")) == {"401", "500"}
+
+
+def test_lista_skilli_czyta_tylko_cache_wiec_nie_obiecuje_403_ani_409(schemat):
+    # lista nie pyta runnera i nie ma kontroli uprawnień: dokładny zbiór, nie podzbiór
+    assert _kody_bledow(schemat, ("GET", "/api/skills")) == {"401", "404", "422", "500"}
 
 
 def test_lista_runow_opisuje_blad_walidacji_422_wlasnym_opisem_i_modelem_blad(schemat):
@@ -381,6 +394,15 @@ POLA_MODELI = {
     "Projekt": {"id": {S}, "runner_id": {S}, "path": {S}, "name": {S}, "stack": {"array"},
                 "created_at": {S}},
     "NowyProjekt": {"runner_id": {S}, "path": {S}},
+    # HAR-180: capabilities projektu w project.yaml i skille projektu ze znacznikiem zakresu
+    "ZmianaProjektu": {"capabilities": {"object"}},
+    "CapabilitiesProjektu": {"project_id": {S}, "capabilities": {"object"}},
+    "SkillNaLiscie": {"id": {S}, "name": {S}, "role": {S, N}, "consumes": {"array", N},
+                      "produces": {"array", N}, "zakres": {S}, "problem": {S, N}},
+    "ListaSkilli": {"odswiezono_at": {S, N}, "skille": {"array"}},
+    "SkillSzczegoly": {"id": {S}, "name": {S}, "role": {S}, "consumes": {"array"},
+                       "produces": {"array"}, "zakres": {S}, "sciezka": {S}, "frontmatter": {S},
+                       "brief": {S}},
     "DiffRunu": {"diff": {S}},
     "PlikOdczytany": {"sciezka": {S}, "tresc": {S}, "rozmiar": {INT}},
     "WpisPliku": {"sciezka": {S}, "katalog": {B}},
@@ -439,6 +461,7 @@ def test_rodzaj_runnera_w_schemacie_to_zamknieta_lista_rodzajow(schemat):
     ("RunnerZespolu", "backends", "BackendRunnera"),
     ("Katalog", "definicje", "DefinicjaKatalogu"),
     ("KatalogOdswiezony", "definicje", "DefinicjaKatalogu"),
+    ("ListaSkilli", "skille", "SkillNaLiscie"),
     ("DowodyRunu", "twierdzenia", "TwierdzenieRunu"),
     ("DowodyRunu", "dowody", "DowodKroku"),
     ("DowodyRunu", "werdykty", "WerdyktKroku"),
@@ -458,6 +481,8 @@ def test_pole_listowe_modelu_wskazuje_model_elementu(schemat, model, pole, eleme
     ("DecyzjaOdbioru", "decyzja", {"accept", "send_back"}),
     ("DecyzjaOdbioruIn", "decyzja", {"accept", "send_back"}),
     ("DowodIn", "source", {"engine", "agent"}),
+    ("SkillNaLiscie", "zakres", {"globalny", "lokalny", "nadpisany"}),
+    ("SkillSzczegoly", "zakres", {"globalny", "lokalny", "nadpisany"}),
 ])
 def test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci(schemat, model, pole, wartosci):
     wlasciwosc = schemat["components"]["schemas"][model]["properties"][pole]
@@ -526,6 +551,49 @@ def test_filtr_projektu_na_liscie_runow_ma_limit_36_znakow_i_jest_opcjonalny(sch
     assert parametry["project"]["required"] is False
     schemat_pola = parametry["project"]["schema"]
     assert {w.get("maxLength") for w in schemat_pola.get("anyOf", [schemat_pola])} >= {36}
+
+
+def test_zmiana_projektu_odpowiada_kodem_200_a_nie_201(schemat):
+    assert (TRASY[("PATCH", "/api/projects/{project_id}")].status_code or 200) == 200
+    assert "200" in _operacja(schemat, ("PATCH", "/api/projects/{project_id}"))["responses"]
+
+
+def test_cialo_zmiany_projektu_zabrania_obcych_pol_a_capabilities_to_mapa_nazwa_komenda(schemat):
+    wejscie = schemat["components"]["schemas"]["ZmianaProjektu"]
+    assert wejscie["additionalProperties"] is False
+    assert set(wejscie["required"]) == {"capabilities"}
+    pole = wejscie["properties"]["capabilities"]
+    assert pole["type"] == "object"
+    wartosci = pole["additionalProperties"]
+    typy = {w.get("type") for w in wartosci.get("anyOf", [wartosci])}
+    assert typy == {"string", "null"}   # null albo pusty napis usuwa capability
+
+
+@pytest.mark.parametrize("klucz", [("GET", "/api/skills"), ("GET", "/api/skills/{skill_id}")],
+                         ids=lambda k: f"{k[0]} {k[1]}")
+def test_filtr_projektu_skilli_jest_wymagany_i_ma_limit_36_znakow(schemat, klucz):
+    parametry = {p["name"]: p for p in _operacja(schemat, klucz)["parameters"]}
+    assert parametry["project"]["required"] is True
+    assert parametry["project"]["in"] == "query"
+    assert parametry["project"]["schema"]["maxLength"] == 36
+
+
+@pytest.mark.parametrize(("klucz", "parametr"), [
+    (("PATCH", "/api/projects/{project_id}"), "project_id"),
+    (("GET", "/api/skills/{skill_id}"), "skill_id"),
+], ids=lambda v: f"{v[0]} {v[1]}" if isinstance(v, tuple) else v)
+def test_trasy_z_identyfikatorem_w_sciezce_opisuja_go_jako_wymagany_parametr_sciezki(
+    schemat, klucz, parametr,
+):
+    parametry = {p["name"]: p for p in _operacja(schemat, klucz)["parameters"]}
+    assert parametry[parametr]["in"] == "path"
+    assert parametry[parametr]["required"] is True
+
+
+def test_identyfikator_projektu_w_sciezce_zmiany_ma_limit_36_znakow(schemat):
+    parametry = {p["name"]: p for p in _operacja(
+        schemat, ("PATCH", "/api/projects/{project_id}"))["parameters"]}
+    assert parametry["project_id"]["schema"]["maxLength"] == 36
 
 
 def test_model_katalogu_po_odswiezeniu_ma_pole_pominiete_a_sam_katalog_nie(schemat):

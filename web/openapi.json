@@ -118,6 +118,27 @@
         "title": "BrakOdbioru",
         "type": "object"
       },
+      "CapabilitiesProjektu": {
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "capabilities"
+        ],
+        "title": "CapabilitiesProjektu",
+        "type": "object"
+      },
       "DaneLogowania": {
         "properties": {
           "email": {
@@ -1001,6 +1022,34 @@
         "title": "ListaPlikow",
         "type": "object"
       },
+      "ListaSkilli": {
+        "properties": {
+          "odswiezono_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Odswiezono At"
+          },
+          "skille": {
+            "items": {
+              "$ref": "#/components/schemas/SkillNaLiscie"
+            },
+            "title": "Skille",
+            "type": "array"
+          }
+        },
+        "required": [
+          "odswiezono_at",
+          "skille"
+        ],
+        "title": "ListaSkilli",
+        "type": "object"
+      },
       "NowyProjekt": {
         "properties": {
           "path": {
@@ -1616,6 +1665,152 @@
         "title": "RyzykaRunu",
         "type": "object"
       },
+      "SkillNaLiscie": {
+        "properties": {
+          "consumes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumes"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "produces": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produces"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "zakres": {
+            "enum": [
+              "globalny",
+              "lokalny",
+              "nadpisany"
+            ],
+            "title": "Zakres",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "consumes",
+          "produces",
+          "zakres",
+          "problem"
+        ],
+        "title": "SkillNaLiscie",
+        "type": "object"
+      },
+      "SkillSzczegoly": {
+        "properties": {
+          "brief": {
+            "title": "Brief",
+            "type": "string"
+          },
+          "consumes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Consumes",
+            "type": "array"
+          },
+          "frontmatter": {
+            "title": "Frontmatter",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "produces": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Produces",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sciezka": {
+            "title": "Sciezka",
+            "type": "string"
+          },
+          "zakres": {
+            "enum": [
+              "globalny",
+              "lokalny",
+              "nadpisany"
+            ],
+            "title": "Zakres",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "consumes",
+          "produces",
+          "zakres",
+          "sciezka",
+          "frontmatter",
+          "brief"
+        ],
+        "title": "SkillSzczegoly",
+        "type": "object"
+      },
       "TokenCsrf": {
         "properties": {
           "csrf": {
@@ -1843,6 +2038,36 @@
           "nowe"
         ],
         "title": "ZmianaHasla",
+        "type": "object"
+      },
+      "ZmianaProjektu": {
+        "additionalProperties": false,
+        "description": "Zmiana capabilities projektu (HAR-180): nazwa -> komenda; pusta komenda albo null usuwa.\nPoza `capabilities` nic sie nie zmienia (`stack`, `tickets` to 422).",
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "title": "Capabilities",
+            "type": "object"
+          }
+        },
+        "required": [
+          "capabilities"
+        ],
+        "title": "ZmianaProjektu",
         "type": "object"
       }
     }
@@ -2763,6 +2988,106 @@
           }
         },
         "summary": "Podlacz Projekt"
+      }
+    },
+    "/api/projects/{project_id}": {
+      "patch": {
+        "operationId": "zmien_projekt_api_projects__project_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZmianaProjektu"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilitiesProjektu"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Zmien Projekt"
       }
     },
     "/api/runners": {
@@ -3909,6 +4234,175 @@
           }
         },
         "summary": "Run Stream"
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "operationId": "lista_skilli_api_skills_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListaSkilli"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Lista Skilli"
+      }
+    },
+    "/api/skills/{skill_id}": {
+      "get": {
+        "operationId": "szczegoly_skilla_api_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSzczegoly"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Szczegoly Skilla"
       }
     }
   }

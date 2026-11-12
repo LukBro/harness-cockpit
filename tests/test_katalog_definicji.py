@@ -20,16 +20,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from typing import get_args
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, select, update
+from sqlalchemy import JSON, Text, delete, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from transport_asgi import TransportASGIStrumieniujacy
 
 from cockpit.api import app as app_mod
 from cockpit.api import bus
+from cockpit.api.schematy import ZakresSkilla
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Definicja, Membership, RolaWZespole, Runner, Tenant, User
 from cockpit.services import katalog
@@ -433,6 +435,23 @@ async def _wiersze(zespoly) -> list[dict]:
                                         w["rodzaj"], w["klucz"]))
 
 
+async def _wiersze_pelne(zespoly) -> list[dict]:
+    """Jak `_wiersze`, z polami skilla z HAR-180 (consumes, produces, zakres, problem)."""
+    async with zespoly.maker() as s:
+        wiersze = (await s.execute(select(Definicja))).scalars().all()
+    wynik = [{c: getattr(w, c) for c in (
+        "tenant_id", "runner_id", "projekt", "rodzaj", "klucz", "nazwa", "rola", "sciezka",
+        "consumes", "produces", "zakres", "problem")} for w in wiersze]
+    return sorted(wynik, key=lambda w: (w["tenant_id"], w["runner_id"], w["projekt"],
+                                        w["rodzaj"], w["klucz"]))
+
+
+async def _poprawne_skille(zespoly) -> list[dict]:
+    """Wiersze skilli bez problemu: to, co kokpit uznaje za dzialajace skille."""
+    return [w for w in await _wiersze_pelne(zespoly)
+            if w["rodzaj"] == "skill" and w["problem"] is None]
+
+
 def _tresc(wiersze: list[dict]) -> list[dict]:
     """Wiersze bez id i daty - to, co mowi katalog, a nie kiedy go zapisano."""
     return [{k: v for k, v in w.items() if k not in ("id", "odswiezono_at")} for w in wiersze]
@@ -644,7 +663,8 @@ async def test_zepsuty_skill_scisly_jest_pomijany_a_reszta_katalogu_zapisana(
 
     wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
 
-    assert [w["klucz"] for w in await _wiersze(zespoly)] == ["dobry"]
+    # HAR-180: zepsuty skill ma wiersz z problemem, ale nie jest poprawnym skillem
+    assert [w["klucz"] for w in await _poprawne_skille(zespoly)] == ["dobry"]
     assert wynik["pominiete"] == 1
 
 
@@ -1689,8 +1709,349 @@ async def test_skill_z_niepoprawna_data_we_frontmatterze_jest_pominiety_a_reszta
 
     wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
 
-    assert [w["klucz"] for w in await _wiersze(zespoly)] == ["dobry"]
+    assert [w["klucz"] for w in await _poprawne_skille(zespoly)] == ["dobry"]
     assert wynik["pominiete"] == 1
+
+
+# =================================================================================
+# 4b. HAR-180: consumes, produces, zakres i problem skilla w wierszach definicji
+# =================================================================================
+
+def _fm_z_listami(id_skilla: str, *, role: str = "author", consumes=(), produces=()) -> str:
+    wiersze = [f"id: {id_skilla}", f"name: Skill {id_skilla}", f"role: {role}"]
+    if consumes:
+        wiersze.append("consumes: [" + ", ".join(consumes) + "]")
+    if produces:
+        wiersze.append("produces: [" + ", ".join(produces) + "]")
+    return "\n".join(wiersze) + "\n"
+
+
+async def test_skill_z_frontmatterem_zapisuje_w_wierszu_consumes_produces_i_brak_problemu(zespoly):
+    fm = _fm_z_listami("x", consumes=("diff.md", "plan.md"), produces=("raport.md",))
+
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[_skill("x", fm)])))
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["consumes"], w["produces"], w["problem"]) == (
+        ["diff.md", "plan.md"], ["raport.md"], None)
+
+
+async def test_skill_bez_consumes_i_produces_ma_w_wierszu_puste_listy_a_nie_brak(zespoly):
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[_skill("x", _fm("x"))])))
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["consumes"], w["produces"]) == ([], [])
+
+
+async def test_skill_autora_z_dwoma_artefaktami_jest_poprawny_i_zachowuje_oba(zespoly):
+    fm = _fm_z_listami("x", role="author", produces=("a.md", "b.md"))
+
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[_skill("x", fm)])))
+
+    [w] = await _poprawne_skille(zespoly)
+    assert w["produces"] == ["a.md", "b.md"]
+
+
+@pytest.mark.parametrize("rola", ["reviewer", "gatherer"])
+async def test_skill_roli_bez_zapisu_z_dwoma_artefaktami_ma_wiersz_z_problemem_jak_w_rejestrze(
+    zespoly, rola,
+):
+    fm = _fm_z_listami("dwa", role=rola, produces=("a.md", "b.md"))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[_skill("dwa", fm)])))
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert w["problem"] == f"skill dwa: rola {rola} oddaje jeden artefakt, produces ma 2: a.md, b.md"
+    assert await _poprawne_skille(zespoly) == []
+    assert wynik["pominiete"] == 1
+
+
+async def test_skill_roli_bez_zapisu_z_jednym_artefaktem_jest_poprawny(zespoly):
+    fm = _fm_z_listami("jeden", role="reviewer", produces=("a.md",))
+
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[_skill("jeden", fm)])))
+
+    [w] = await _poprawne_skille(zespoly)
+    assert w["produces"] == ["a.md"]
+
+
+async def test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu(zespoly):
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", workflow=["w"])))
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["rodzaj"], w["consumes"], w["produces"], w["zakres"], w["problem"]) == (
+        "workflow", None, None, None, None)
+
+
+ZAKRESY = [
+    pytest.param([("repo", ".cockpit/skills")], "lokalny", id="tylko_repo_kokpitu"),
+    pytest.param([("repo", ".claude/skills")], "lokalny", id="tylko_repo_claude"),
+    pytest.param([("repo", ".agents/skills")], "lokalny", id="tylko_repo_agents"),
+    pytest.param([("dom", ".cockpit/skills")], "globalny", id="tylko_dom"),
+    pytest.param([("repo", ".cockpit/skills"), ("dom", ".cockpit/skills")], "nadpisany",
+                 id="repo_kokpitu_i_dom"),
+    pytest.param([("repo", ".claude/skills"), ("dom", ".cockpit/skills")], "nadpisany",
+                 id="repo_claude_i_dom"),
+    pytest.param([("repo", ".agents/skills"), ("dom", ".cockpit/skills")], "nadpisany",
+                 id="repo_agents_i_dom"),
+    pytest.param([("repo", ".cockpit/skills"), ("repo", ".claude/skills"),
+                  ("dom", ".cockpit/skills")], "nadpisany", id="dwa_zrodla_repo_i_dom"),
+    pytest.param([("repo", ".cockpit/skills"), ("repo", ".claude/skills")], "lokalny",
+                 id="dwa_zrodla_repo_bez_domu"),
+    pytest.param([("repo", ".claude/skills"), ("repo", ".agents/skills")], "lokalny",
+                 id="claude_i_agents_bez_domu"),
+]
+
+
+@pytest.mark.parametrize(("zrodla", "zakres"), ZAKRESY)
+async def test_zakres_skilla_wynika_z_tego_gdzie_lezy_jego_id_lokalnie_globalnie_albo_w_obu(
+    zespoly, zrodla, zakres,
+):
+    skille = [
+        _skill("x", "name: Z " + podkatalog + "\nrole: author\n"
+               if podkatalog != ".cockpit/skills" else _fm("x", nazwa=f"Z {baza}"),
+               zrodlo=baza, podkatalog=podkatalog)
+        for baza, podkatalog in zrodla]
+
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=skille)))
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert w["zakres"] == zakres
+
+
+async def test_nadpisany_skill_ma_dane_wygrywajacego_lokalnego_a_nie_globalnego(zespoly):
+    fm_repo = _fm_z_listami("x", role="reviewer", consumes=("lokalny.md",), produces=("l.md",))
+    fm_dom = _fm_z_listami("x", role="author", consumes=("globalny.md",), produces=("g.md",))
+    odp = _odp(_wpis("/p", skille=[
+        _skill("x", fm_dom, zrodlo="dom"), _skill("x", fm_repo)]))   # dom pierwszy: kolejnosc
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["zakres"], w["rola"], w["consumes"], w["produces"], w["sciezka"]) == (
+        "nadpisany", "reviewer", ["lokalny.md"], ["l.md"], ".cockpit/skills/x/SKILL.md")
+
+
+async def test_nadpisanie_jest_liczone_w_obrebie_projektu_a_ten_sam_skill_domowy_zostaje_globalny(
+    zespoly,
+):
+    odp = _odp(
+        _wpis("/p/pierwszy", skille=[
+            _skill("x", _fm("x", nazwa="Z repo")), _skill("x", _fm("x", nazwa="Z domu"), zrodlo="dom")]),
+        _wpis("/p/drugi", skille=[_skill("x", _fm("x", nazwa="Z domu"), zrodlo="dom")]),
+    )
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    zakresy = {w["projekt"]: w["zakres"] for w in await _wiersze_pelne(zespoly)}
+    assert zakresy == {"/p/pierwszy": "nadpisany", "/p/drugi": "globalny"}
+
+
+async def test_zepsuty_skill_globalny_o_innym_id_nie_zmienia_zakresu_poprawnego_skilla_lokalnego(
+    zespoly,
+):
+    # zadne id sie nie powtarza: lokalny `x` zostaje lokalny, zepsuty `zly` jest globalny
+    odp = _odp(_wpis("/p", skille=[
+        _skill("x", _fm("x")), _skill("zly", _fm("zly", role="czarodziej"), zrodlo="dom")]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    zakresy = {w["klucz"]: w["zakres"] for w in await _wiersze_pelne(zespoly)}
+    assert zakresy == {"x": "lokalny", "zly": "globalny"}
+
+
+async def test_zepsuty_skill_z_repo_ma_wiersz_z_nazwa_katalogu_komunikatem_i_bez_roli(zespoly):
+    odp = _odp(_wpis("/p", skille=[_skill("zly", _fm("zly", role="czarodziej"))]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    assert await _wiersze_pelne(zespoly) == [{
+        "tenant_id": zespoly.ids.a, "runner_id": "runner-a", "projekt": "/p", "rodzaj": "skill",
+        "klucz": "zly", "nazwa": "zly", "rola": None, "sciezka": ".cockpit/skills/zly/SKILL.md",
+        "consumes": None, "produces": None, "zakres": "lokalny",
+        "problem": "nieznana rola 'czarodziej' w 'zly' "
+                   "(dozwolone: author, reviewer, executor, gatherer)"}]
+
+
+async def test_zepsuty_skill_z_domu_ma_wiersz_z_zakresem_globalnym_i_sciezka_z_tylda(zespoly):
+    odp = _odp(_wpis("/p", skille=[_skill("zly", _fm("inny-id"), zrodlo="dom")]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["klucz"], w["zakres"], w["sciezka"], w["rola"]) == (
+        "zly", "globalny", "~/.cockpit/skills/zly/SKILL.md", None)
+    assert w["problem"] == "id 'inny-id' rozni sie od nazwy katalogu 'zly' w 'zly'"
+
+
+async def test_zepsuty_skill_ze_zrodla_konwencyjnego_z_rola_ma_wiersz_z_problemem(zespoly):
+    fm = "role: czarodziej\n"
+    odp = _odp(_wpis("/p", skille=[_skill("cudzy", fm, podkatalog=".claude/skills")]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["klucz"], w["zakres"], w["problem"]) == (
+        "cudzy", "lokalny",
+        "nieznana rola 'czarodziej' w 'cudzy' (dozwolone: author, reviewer, executor, gatherer)")
+
+
+ZEPSUTE_Z_KOMUNIKATEM = {k: v for k, v in ZEPSUTE_FRONTMATTERY.items()
+                         if k != "nazwa_dluzsza_niz_kolumna"}
+
+
+@pytest.mark.parametrize("frontmatter", ZEPSUTE_Z_KOMUNIKATEM.values(),
+                         ids=ZEPSUTE_Z_KOMUNIKATEM.keys())
+async def test_kazdy_zepsuty_skill_scisly_ma_wiersz_z_niepustym_komunikatem_problemu(
+    zespoly, frontmatter,
+):
+    odp = _odp(_wpis("/p", skille=[_skill("zly", frontmatter), _skill("dobry", _fm("dobry"))]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    wiersze = {w["klucz"]: w for w in await _wiersze_pelne(zespoly)}
+    assert set(wiersze) == {"zly", "dobry"}
+    assert isinstance(wiersze["zly"]["problem"], str) and wiersze["zly"]["problem"]
+    assert wiersze["zly"]["rola"] is None
+    assert wiersze["dobry"]["problem"] is None
+
+
+async def test_skill_niescisly_bez_roli_nie_ma_wiersza_z_problemem(zespoly):
+    odp = _odp(_wpis("/p", skille=[
+        _skill("cudzy", "name: Cudzy skill innego narzedzia\n", podkatalog=".claude/skills")]))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    assert await _wiersze_pelne(zespoly) == []
+    assert wynik["pominiete"] == 1
+
+
+async def test_po_naprawie_skilla_kolejne_odswiezenie_zastepuje_problem_poprawnym_wierszem(zespoly):
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[
+        _skill("x", _fm("x", role="czarodziej"))])))
+    assert (await _wiersze_pelne(zespoly))[0]["problem"]   # kontrast: najpierw problem
+
+    await _odswiez(zespoly, zespoly.ids.a, _odp(_wpis("/p", skille=[_skill("x", _fm("x"))])))
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["problem"], w["rola"], w["zakres"]) == (None, "author", "lokalny")
+
+
+async def test_skille_z_problemem_nie_sa_definicjami_w_odczycie_katalogu_ani_w_odpowiedzi_odswiezenia(
+    zespoly,
+):
+    odp = _odp(_wpis("/p", skille=[
+        _skill("zly", _fm("zly", role="czarodziej")), _skill("dobry", _fm("dobry"))]))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    async with zespoly.maker() as s:
+        odczyt = await katalog.katalog(s, zespoly.ids.a)
+    assert [d["klucz"] for d in odczyt["definicje"]] == ["dobry"]
+    assert [d["klucz"] for d in wynik["definicje"]] == ["dobry"]
+    assert wynik["pominiete"] == 1
+    assert set(odczyt["definicje"][0]) == {
+        "runner_id", "projekt", "rodzaj", "klucz", "nazwa", "rola", "sciezka", "odswiezono_at"}
+
+
+@pytest.mark.parametrize("podkatalog", [".claude/skills", ".agents/skills"])
+async def test_skill_niescisly_bez_frontmattera_od_runnera_nie_ma_wiersza_i_jest_pominiety(
+    zespoly, podkatalog,
+):
+    odp = _odp(_wpis("/p", skille=[
+        _skill("cudzy", None, podkatalog=podkatalog), _skill("dobry", _fm("dobry"))]))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    assert [w["klucz"] for w in await _wiersze_pelne(zespoly)] == ["dobry"]
+    assert wynik["pominiete"] == 1
+
+
+async def test_skill_scisly_bez_frontmattera_od_runnera_ma_problem_o_braku_frontmattera(zespoly):
+    odp = _odp(_wpis("/p", skille=[_skill("goly", None)]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["klucz"], w["rola"], w["problem"]) == ("goly", None, "brak frontmattera w 'goly'")
+
+
+def _zepsuty_z_za_dluga_nazwa_katalogu() -> dict:
+    dlugi = "k" * 201
+    return _skill(dlugi, _fm(dlugi, role="czarodziej"))
+
+
+def _zepsuty_z_za_dluga_sciezka() -> dict:
+    return {**_skill("zly", _fm("zly", role="czarodziej")), "sciezka": "s" * 1025}
+
+
+def _zepsuty_z_domu_z_za_dluga_sciezka() -> dict:
+    return {**_skill("zly", _fm("zly", role="czarodziej"), zrodlo="dom"), "sciezka": "s" * 1023}
+
+
+@pytest.mark.parametrize("zepsuty", [
+    pytest.param(_zepsuty_z_za_dluga_nazwa_katalogu, id="za_dluga_nazwa_katalogu"),
+    pytest.param(_zepsuty_z_za_dluga_sciezka, id="za_dluga_sciezka_repo"),
+    pytest.param(_zepsuty_z_domu_z_za_dluga_sciezka, id="za_dluga_sciezka_z_tylda_z_domu"),
+])
+async def test_zepsuty_skill_przekraczajacy_kolumny_nie_ma_wiersza_i_jest_liczony_raz(
+    zespoly, zepsuty,
+):
+    odp = _odp(_wpis("/p", skille=[zepsuty(), _skill("dobry", _fm("dobry"))]))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    assert [w["klucz"] for w in await _wiersze_pelne(zespoly)] == ["dobry"]
+    assert wynik["pominiete"] == 1
+
+
+async def test_dwa_zepsute_skille_przekraczajace_kolumny_to_dwie_pominiete(zespoly):
+    odp = _odp(_wpis("/p", skille=[
+        _zepsuty_z_za_dluga_nazwa_katalogu(), _zepsuty_z_za_dluga_sciezka()]))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    assert await _wiersze_pelne(zespoly) == []
+    assert wynik["pominiete"] == 2
+
+
+async def test_zepsuty_skill_domowy_o_id_poprawnego_skilla_z_repo_nie_czyni_go_nadpisanym(zespoly):
+    odp = _odp(_wpis("/p", skille=[
+        _skill("x", _fm("inny-id"), zrodlo="dom"), _skill("x", _fm("x"))]))
+
+    wynik, _ = await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    [w] = await _wiersze_pelne(zespoly)
+    assert (w["klucz"], w["zakres"], w["problem"], w["rola"]) == ("x", "lokalny", None, "author")
+    assert wynik["pominiete"] == 1   # zepsuty skill domowy jest liczony
+
+
+async def test_brak_list_zakresu_i_problemu_jest_w_bazie_brakiem_a_nie_json_null(zespoly):
+    # measured_or_null: zepsuty skill nie ma consumes/produces - kolumna jest NULL w SQL, a nie
+    # tekstem `null` (ORM oddaje None w obu przypadkach, dlatego pytamy bazy wprost)
+    odp = _odp(_wpis("/p", skille=[_skill("zly", _fm("zly", role="czarodziej"))], workflow=["w"]))
+
+    await _odswiez(zespoly, zespoly.ids.a, odp)
+
+    async with zespoly.maker() as s:
+        wiersze = (await s.execute(text(
+            "SELECT rodzaj, consumes IS NULL, produces IS NULL, zakres IS NULL, problem IS NULL "
+            "FROM definicja ORDER BY rodzaj"))).all()
+    assert [tuple(w) for w in wiersze] == [
+        ("skill", True, True, False, False),
+        ("workflow", True, True, True, True)]
+
+
+def test_kolumna_zakresu_miesci_najdluzszy_zakres_a_problem_jest_tekstem_bez_limitu():
+    kolumny = Definicja.__table__.c
+
+    assert kolumny.zakres.type.length == 20
+    assert kolumny.zakres.type.length >= max(len(z) for z in get_args(ZakresSkilla))
+    assert type(kolumny.problem.type) is Text
+    assert type(kolumny.consumes.type) is JSON
+    assert kolumny.consumes.type.none_as_null is True
+    assert type(kolumny.produces.type) is JSON
+    assert kolumny.produces.type.none_as_null is True
 
 
 # =================================================================================
