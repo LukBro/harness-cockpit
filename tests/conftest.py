@@ -11,7 +11,9 @@ nie zmienia.
 
 HAR-143: test z markerem `baza` w workerze xdist (przebieg `-n`) przy ustawionym
 COCKPIT_TEST_DATABASE_URL konczy sie porazka, nie skipem: testy bazy dziela jedna
-baze worktree (`alembic downgrade base`) i port 8799 w demo, wiec ida sekwencyjnie.
+baze worktree (`alembic downgrade base`) i port demo z COCKPIT_DEMO_PORT, wiec ida sekwencyjnie.
+HAR-236: wyjatek stanowi test z markerem `e2e` - w workerze xdist ma wlasna baze
+(`baza_workera` w tests/e2e/conftest.py), wiec e2e ida rownolegle (`-n 4`).
 """
 from __future__ import annotations
 
@@ -87,6 +89,8 @@ def _w_workerze_xdist(item: pytest.Item) -> bool:
 def pytest_runtest_setup(item: pytest.Item) -> None:
     if not _wymaga_bazy(item) or not os.environ.get(ZMIENNA_URL_BAZY):
         return
+    if item.get_closest_marker("e2e") is not None:
+        return  # e2e ma w workerze wlasna baze (HAR-236)
     if _w_workerze_xdist(item):
         pytest.fail(
             "Test bazy w workerze xdist: testy bazy dziela jedna baze "

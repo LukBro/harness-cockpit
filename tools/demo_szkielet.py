@@ -5,6 +5,19 @@ import os
 import sys
 from pathlib import Path
 
+
+def port_demo() -> int:
+    # COCKPIT_DEMO_PORT: port serwera przelotu (domyslnie 8799; pusta wartosc = domyslna).
+    # Walidacja przed czymkolwiek innym: zla wartosc to blad, nie cichy powrot do 8799.
+    surowy = os.environ.get("COCKPIT_DEMO_PORT", "") or "8799"
+    if not (surowy.isascii() and surowy.isdigit() and 1 <= int(surowy) <= 65535):
+        sys.exit("COCKPIT_DEMO_PORT musi byc liczba calkowita 1..65535 "
+                 f"(jest: '{surowy}')")
+    return int(surowy)
+
+
+PORT = port_demo()
+
 KORZEN = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(KORZEN / "src"))
 
@@ -61,7 +74,7 @@ except ModuleNotFoundError as e:
             "uzyj postgresql+asyncpg://")
 from runner.client import Runner
 
-BASE = "http://127.0.0.1:8799"
+BASE = f"http://127.0.0.1:{PORT}"
 TOKEN = "demo-token"
 EMAIL = "demo@example.com"
 HASLO = "demo-haslo-przelotu"   # konto jednorazowe w bazie testowej; nie idzie przez argv
@@ -87,7 +100,7 @@ async def zasiej():
 
 
 async def main():
-    config = uvicorn.Config("cockpit.api.app:app", host="127.0.0.1", port=8799,
+    config = uvicorn.Config("cockpit.api.app:app", host="127.0.0.1", port=PORT,
                             log_level="error")
     server = uvicorn.Server(config)
     serve = asyncio.create_task(server.serve())

@@ -5,16 +5,33 @@ Skrypt `tools/mutanty_zmian.py` mapuje diff względem bazy na wzorce mutantów
 przeżywające mutanty. Testy nie uruchamiają ani gita, ani mutmuta: diff,
 źródła i wyniki mutmuta są daną w `tmp_path`, a `uruchom` jest podmieniane.
 """
+import contextlib
+import fnmatch
+import io
+import json
+import os
+import re
 import subprocess
 import sys
+import time
+import types
 from pathlib import Path
 
 import pytest
 
+from procesy import czy_zyje, uruchom_proces_sync, zakoncz_proces_sync
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import mutanty_zmian  # noqa: E402
 
+# Zabezpieczenie przed zawieszeniem, nie oczekiwany czas: fork/exec gita pod obciazeniem
+# rownoleglych sesji trwa dziesiatki sekund (HAR-236, runda 3).
+LIMIT_PROCESU_POMOCNICZEGO = 180
+
 BladNarzedzia = mutanty_zmian.BladNarzedzia
+# Prawdziwe `uruchom` z chwili importu: testy trybu przyrostowego puszczaja przez nie gita,
+# a podmieniaja tylko `python -m mutmut`.
+PRAWDZIWE_URUCHOM = mutanty_zmian.uruchom
 ZNAK = "\u01c1"  # separator klasy i metody w nazwach mutantów mutmuta
 
 # Linie: 1 stała, 4-6 zapisz, 9-10 zapisz_wiele.
@@ -1903,3 +1920,1352 @@ def test_pragma_block_w_ciele_przypadku_zglasza_dalsze_instrukcje_ciala_ale_nie_
         "    return 0 + 1\n"
     )
     assert _bez(zrodlo, 4, 6, 8, 9) == [6]
+
+
+# =============================================================================
+# HAR-236: pomiar faz, --max-children i tryb przyrostowy --od-przebiegu
+# =============================================================================
+
+FAZY_CZASU = [
+    "wybor_funkcji",
+    "mutmut_statystyki",
+    "mutmut_przygotowanie",
+    "mutmut_mutanty",
+    "mutmut_results",
+    "razem",
+]
+BRAK_POMIARU = "brak pomiaru"
+
+
+def _czasy(err: str) -> dict[str, str]:
+    """Faza -> tekst po dwukropku z linii `czas fazy ...`, w kolejnosci wypisania."""
+    wynik: dict[str, str] = {}
+    for linia in err.splitlines():
+        if linia.startswith("czas fazy "):
+            nazwa, _, wartosc = linia.removeprefix("czas fazy ").partition(": ")
+            assert nazwa not in wynik, f"faza {nazwa} wypisana dwa razy"
+            wynik[nazwa] = wartosc
+    return wynik
+
+
+def _sekundy(wartosc: str) -> float:
+    assert re.fullmatch(r"\d+\.\d s", wartosc), f"to nie jest pomiar z jednym miejscem: {wartosc!r}"
+    return float(wartosc.removesuffix(" s"))
+
+
+# --- czas faz na stderr (mutmut podmieniony, bez linii markerow) -------------------------------
+
+
+def test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_a(), results=_wyniki((KLUCZ_A, "killed")))
+
+    assert _main(monkeypatch, tmp_path, s) == 0
+
+    czasy = _czasy(capsys.readouterr().err)
+    assert list(czasy) == FAZY_CZASU
+    for faza in ("wybor_funkcji", "mutmut_results", "razem"):
+        _sekundy(czasy[faza])
+
+
+def test_faza_mutmuta_bez_linii_markera_w_wyjsciu_nie_ma_pomiaru_zamiast_zera(
+    monkeypatch, tmp_path, capsys
+):
+    # Wyjscie `mutmut run` nie ma ani `Running stats`, ani `Running clean tests`, ani
+    # `Running mutation testing`: nic nie wolno zapisac jako `0.0 s` (measured_or_null).
+    s = _Srodowisko(
+        diff=_diff_a(), run_out="Generating mutants\ndone\n", results=_wyniki((KLUCZ_A, "killed"))
+    )
+
+    assert _main(monkeypatch, tmp_path, s) == 0
+
+    czasy = _czasy(capsys.readouterr().err)
+    for faza in ("mutmut_statystyki", "mutmut_przygotowanie", "mutmut_mutanty"):
+        assert czasy[faza] == BRAK_POMIARU, faza
+
+
+def test_gdy_mutmut_nie_byl_wolany_zadna_jego_faza_nie_ma_pomiaru(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko()
+
+    assert _main(monkeypatch, tmp_path, s) == 0
+
+    assert s.mutmut("run") == []
+    czasy = _czasy(capsys.readouterr().err)
+    assert list(czasy) == FAZY_CZASU
+    for faza in ("mutmut_statystyki", "mutmut_przygotowanie", "mutmut_mutanty", "mutmut_results"):
+        assert czasy[faza] == BRAK_POMIARU, faza
+    _sekundy(czasy["wybor_funkcji"])
+    _sekundy(czasy["razem"])
+
+
+def test_czas_faz_jest_wypisany_takze_przy_bledzie_mutmuta_z_pomiarem_tylko_faz_ktore_sie_odbyly(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_a(), run_rc=1, run_out="Traceback: cos innego")
+
+    assert _main(monkeypatch, tmp_path, s) == 2
+
+    zrzut = capsys.readouterr()
+    assert zrzut.out == ""
+    czasy = _czasy(zrzut.err)
+    assert list(czasy) == FAZY_CZASU
+    _sekundy(czasy["wybor_funkcji"])
+    _sekundy(czasy["razem"])
+    for faza in ("mutmut_statystyki", "mutmut_przygotowanie", "mutmut_mutanty", "mutmut_results"):
+        assert czasy[faza] == BRAK_POMIARU, faza  # `mutmut results` w ogole sie nie odbylo
+
+
+def test_linie_czasu_nie_zmieniaja_stdout_ani_kodu_wyjscia(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(diff=_diff_a(), results=_wyniki((KLUCZ_A, "survived")))
+
+    assert _main(monkeypatch, tmp_path, s) == 1
+
+    zrzut = capsys.readouterr()
+    assert zrzut.out == f"{KLUCZ_A}\n"
+    assert "czas fazy" not in zrzut.out
+
+
+# --- --max-children ---------------------------------------------------------------------------
+
+
+def test_max_children_trafia_do_mutmut_run_przed_wzorcami(monkeypatch, tmp_path):
+    s = _Srodowisko(diff=_diff("src/cockpit/services/a.py", "@@ -1,5 +1,5 @@"))
+
+    _main(monkeypatch, tmp_path, s, "--max-children", "3")
+
+    assert s.mutmut("run")[0] == [
+        sys.executable,
+        "-m",
+        "mutmut",
+        "run",
+        "--max-children",
+        "3",
+        "cockpit.services.a.x_inna__mutmut_*",
+        "cockpit.services.a.x_zapisz__mutmut_*",
+    ]
+
+
+@pytest.mark.parametrize("liczba", ["1", "8", "64"])
+def test_max_children_przekazuje_wartosc_doslownie_takze_najmniejsza_dozwolona(
+    monkeypatch, tmp_path, liczba
+):
+    s = _Srodowisko(diff=_diff_a())
+
+    _main(monkeypatch, tmp_path, s, "--max-children", liczba)
+
+    assert s.mutmut("run")[0][4:6] == ["--max-children", liczba]
+
+
+def test_bez_max_children_mutmut_run_nie_dostaje_tej_opcji(monkeypatch, tmp_path):
+    s = _Srodowisko(diff=_diff_a())
+
+    _main(monkeypatch, tmp_path, s)
+
+    assert "--max-children" not in s.mutmut("run")[0]
+
+
+# "٣" (cyfra arabsko-indyjska) przechodzi isdigit() i int(), "+3", " 3" i "1_0" przechodza int():
+# kazdy odrzuca tylko jeden warunek `_liczba_dzieci`.
+@pytest.mark.parametrize(
+    "wartosc",
+    [
+        "0",
+        "-1",
+        "abc",
+        "1.5",
+        "",
+        pytest.param("٣", id="cyfra_arabsko_indyjska"),
+        pytest.param("+3", id="plus_przed_liczba"),
+        pytest.param(" 3", id="spacja_przed_liczba"),
+        pytest.param("1_0", id="podkreslnik_w_liczbie"),
+    ],
+)
+def test_zla_wartosc_max_children_to_blad_argumentow_kodem_2_bez_uruchamiania_czegokolwiek(
+    monkeypatch, tmp_path, wartosc
+):
+    s = _Srodowisko(diff=_diff_a())
+
+    with pytest.raises(SystemExit) as wyjscie:
+        _main(monkeypatch, tmp_path, s, "--max-children", wartosc)
+
+    assert wyjscie.value.code == 2
+    assert s.wywolania == []
+
+
+# --- zapis przebiegu: repozytorium git w tmp_path, mutmut podmieniony -------------------------
+
+SCIEZKA_A = "src/cockpit/services/a.py"
+SCIEZKA_K = "src/cockpit/services/k.py"
+KLUCZ_ZAPISZ = KLUCZ_A  # cockpit.services.a.x_zapisz__mutmut_1
+KLUCZ_INNA = "cockpit.services.a.x_inna__mutmut_1"
+WZ_ZAPISZ = "cockpit.services.a.x_zapisz__mutmut_*"
+WZ_INNA = "cockpit.services.a.x_inna__mutmut_*"
+WZ_METODA_K = f"cockpit.services.k.x{ZNAK}K{ZNAK}m__mutmut_*"
+OBA_WZORCE = [WZ_INNA, WZ_ZAPISZ]  # posortowane, jak w `wzorce`
+PYPROJECT_PRZEBIEGU = '[tool.mutmut]\nsource_paths = ["src/cockpit/services/"]\n'
+TRESC_TESTU_A = "def test_a():\n    assert True\n"
+SKROT_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _zrodlo_a(zapisz: int, inna: int) -> str:
+    return f"def zapisz():\n    return {zapisz}\n\n\ndef inna():\n    return {inna}\n"
+
+
+def _git_t(katalog: Path, *argv: str) -> str:
+    polecenie = [
+        "git",
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "commit.gpgsign=false",
+        "-c", "user.name=LukBro",
+        "-c", "user.email=lukaszbrowar@gmail.com",
+        *argv,
+    ]  # fmt: skip
+    proces = uruchom_proces_sync(
+        polecenie, cwd=katalog, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        wyjscie, blad = proces.communicate(timeout=LIMIT_PROCESU_POMOCNICZEGO)
+    finally:
+        zakoncz_proces_sync(proces, nazwa="git w repozytorium przebiegu")
+    assert proces.returncode == 0, blad
+    return wyjscie
+
+
+def _repo_git(korzen: Path) -> Path:
+    """Repozytorium z jednym commitem: funkcje `zapisz` i `inna` (zwracaja 1 i 2) oraz dwa pliki testow."""
+    pliki = {
+        "pyproject.toml": PYPROJECT_PRZEBIEGU,
+        ".gitignore": "__pycache__/\n",
+        SCIEZKA_A: _zrodlo_a(1, 2),
+        "tests/test_a.py": TRESC_TESTU_A,
+        "tests/test_c.py": "def test_c():\n    assert True\n",
+    }
+    for sciezka, tresc in pliki.items():
+        cel = korzen / sciezka
+        cel.parent.mkdir(parents=True, exist_ok=True)
+        cel.write_text(tresc, encoding="utf-8")
+    _git_t(korzen, "init", "-q")
+    _git_t(korzen, "add", "-A")
+    _git_t(korzen, "commit", "-q", "-m", "start")
+    return korzen
+
+
+def _wzorce_z_argv(argv: list[str]) -> list[str]:
+    reszta = argv[4:]
+    return reszta[2:] if reszta[:1] == ["--max-children"] else reszta
+
+
+class _FalszywyMutmut:
+    """Zastepuje `python -m mutmut run|results`; git idzie przez prawdziwe `uruchom`.
+
+    `results` zwraca statusy mutantow z `mutanty` tylko dla wzorcow OSTATNIEGO `run`, a nie
+    z calego cache: przezywajacy mutant niezmutowanej funkcji moze wiec trafic do wyniku
+    wylacznie z zapisu przebiegu."""
+
+    def __init__(self) -> None:
+        self.mutanty: dict[str, str] = {}
+        self.runy: list[list[str]] = []
+        self.run_rc = 0
+        self.run_out = ""
+        self.results_wszystkie = False  # prawdziwe `results` pokazuje caly cache, nie tylko ostatni run
+        self._wzorce_ostatniego_runu: list[str] = []
+
+    def __call__(self, argv, *args, **kwargs):
+        if argv[1:3] != ["-m", "mutmut"]:
+            return PRAWDZIWE_URUCHOM(argv, *args, **kwargs)
+        if argv[3] == "run":
+            self.runy.append(list(argv))
+            self._wzorce_ostatniego_runu = _wzorce_z_argv(argv)
+            return subprocess.CompletedProcess(argv, self.run_rc, stdout=self.run_out, stderr="")
+        assert argv[3] == "results", argv
+        linie = "".join(
+            f"    {klucz}: {status}\n"
+            for klucz, status in self.mutanty.items()
+            if self.results_wszystkie
+            or any(fnmatch.fnmatchcase(klucz, w) for w in self._wzorce_ostatniego_runu)
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout=f"Results:\n{linie}", stderr="")
+
+    def wzorce_runow(self) -> list[list[str]]:
+        return [_wzorce_z_argv(argv) for argv in self.runy]
+
+
+class _Przyrost:
+    """Repozytorium + zapis przebiegu w tmp_path; `przebieg()` to prawdziwe `main` z `--od-przebiegu`."""
+
+    def __init__(self, tmp_path: Path, monkeypatch) -> None:
+        self.korzen = _repo_git(tmp_path / "repo")
+        self.zapis = tmp_path / "przebieg.json"
+        self.mutmut = _FalszywyMutmut()
+        monkeypatch.setattr(mutanty_zmian, "uruchom", self.mutmut)
+        monkeypatch.chdir(self.korzen)
+
+    def zrodlo(self, zapisz: int = 1, inna: int = 2) -> None:
+        self.plik(SCIEZKA_A, _zrodlo_a(zapisz, inna))
+
+    def plik(self, sciezka: str, tresc: str) -> None:
+        cel = self.korzen / sciezka
+        cel.parent.mkdir(parents=True, exist_ok=True)
+        cel.write_text(tresc, encoding="utf-8")
+
+    def git(self, *argv: str) -> None:
+        _git_t(self.korzen, *argv)
+
+    def przebieg(self, *argv: str, z_zapisem: bool = True) -> int:
+        opcje = ["--od-przebiegu", str(self.zapis)] if z_zapisem else []
+        return mutanty_zmian.main(["--korzen", str(self.korzen), "--baza", "HEAD", *opcje, *argv])
+
+    def wczytaj_zapis(self) -> dict:
+        return json.loads(self.zapis.read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def przyrost(tmp_path, monkeypatch) -> _Przyrost:
+    return _Przyrost(tmp_path, monkeypatch)
+
+
+def _linie_stderr(zrzut) -> list[str]:
+    return zrzut.err.splitlines()
+
+
+def test_runda_poprawek_mutuje_tylko_funkcje_zmieniona_od_poprzedniego_przebiegu(
+    przyrost, capsys
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    pierwszy = capsys.readouterr()
+
+    przyrost.zrodlo(zapisz=5, inna=4)  # poprawka tylko w `zapisz`; `inna` ma ten sam tekst co w przebiegu 1
+    assert przyrost.przebieg() == 0
+    drugi = capsys.readouterr()
+
+    assert przyrost.mutmut.wzorce_runow() == [OBA_WZORCE, [WZ_ZAPISZ]]
+    assert "przyrostowo: mutuję 2 z 2 funkcji" in _linie_stderr(pierwszy)
+    assert "przyrostowo: mutuję 1 z 2 funkcji" in _linie_stderr(drugi)
+
+
+def test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu(przyrost, capsys):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert not przyrost.zapis.exists()
+
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert "przyrostowo: zapis unieważniony — brak zapisu" in linie
+    assert "przyrostowo: mutuję 2 z 2 funkcji" in linie
+    assert przyrost.mutmut.wzorce_runow() == [OBA_WZORCE]
+
+
+def test_przezywajacy_mutant_z_poprzedniego_przebiegu_w_niezmienionej_funkcji_nadal_daje_kod_1(
+    przyrost, capsys
+):
+    przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 1
+    assert capsys.readouterr().out == f"{KLUCZ_INNA}\n"
+    przyrost.mutmut.mutanty[KLUCZ_ZAPISZ] = "killed"
+
+    przyrost.zrodlo(zapisz=5, inna=4)  # `inna` bez zmian, `zapisz` mutowana od nowa i zabita
+    kod = przyrost.przebieg()
+
+    zrzut = capsys.readouterr()
+    assert przyrost.mutmut.wzorce_runow()[-1] == [WZ_ZAPISZ]  # `mutmut results` nie widzi `inna`
+    assert kod == 1
+    assert zrzut.out == f"{KLUCZ_INNA}\n"
+
+
+def test_przezywajace_z_zapisu_i_nowo_przezywajace_sa_na_stdout_razem_posortowane(
+    przyrost, capsys
+):
+    przyrost.mutmut.mutanty[KLUCZ_INNA] = "no tests"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 1
+    capsys.readouterr()
+    przyrost.mutmut.mutanty[KLUCZ_ZAPISZ] = "survived"
+
+    przyrost.zrodlo(zapisz=5, inna=4)
+
+    assert przyrost.przebieg() == 1
+    assert capsys.readouterr().out == f"{KLUCZ_INNA}\n{KLUCZ_ZAPISZ}\n"
+
+
+def test_funkcja_zmutowana_od_nowa_nie_dziedziczy_przezywajacych_z_zapisu_gdy_nowy_przebieg_je_zabil(
+    przyrost, capsys
+):
+    przyrost.mutmut.mutanty[KLUCZ_ZAPISZ] = "survived"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 1
+    capsys.readouterr()
+    przyrost.mutmut.mutanty[KLUCZ_ZAPISZ] = "killed"  # po poprawce testy zabijaja mutanta
+
+    przyrost.zrodlo(zapisz=5, inna=4)
+
+    assert przyrost.przebieg() == 0
+    assert capsys.readouterr().out == ""
+    assert przyrost.wczytaj_zapis()["funkcje"][WZ_ZAPISZ]["przezywajace"] == []
+
+
+@pytest.mark.parametrize(
+    ("ocalaly", "lista_kodu_3", "kod"),
+    [
+        pytest.param(True, False, 1, id="przezywajacy_w_zapisie_to_kod_1"),
+        pytest.param(False, False, 0, id="zapis_bez_przezywajacych_to_kod_0"),
+        pytest.param(False, True, 3, id="lista_kodu_3_bez_przezywajacych_to_kod_3"),
+    ],
+)
+def test_przebieg_bez_zmian_funkcji_bierze_wynik_z_zapisu_i_nie_wola_mutmuta(
+    przyrost, capsys, ocalaly, lista_kodu_3, kod
+):
+    if lista_kodu_3:  # nowy plik spoza `source_paths`: mutmut go nie mutuje (kod 3 w kazdym przebiegu)
+        przyrost.plik("src/cockpit/api/nowy.py", "def f():\n    return 1\n")
+    if ocalaly:
+        przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == kod
+    pierwszy = capsys.readouterr()
+
+    assert przyrost.przebieg() == kod
+
+    drugi = capsys.readouterr()
+    assert len(przyrost.mutmut.runy) == 1  # drugi przebieg nie zawolal `mutmut run`
+    assert drugi.out == pierwszy.out
+    assert "przyrostowo: mutuję 0 z 2 funkcji" in _linie_stderr(drugi)
+
+
+def test_przebieg_z_samego_zapisu_nie_mierzy_faz_mutmuta(przyrost, capsys):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+
+    assert przyrost.przebieg() == 0
+
+    czasy = _czasy(capsys.readouterr().err)
+    for faza in ("mutmut_statystyki", "mutmut_przygotowanie", "mutmut_mutanty", "mutmut_results"):
+        assert czasy[faza] == BRAK_POMIARU, faza
+    _sekundy(czasy["wybor_funkcji"])
+    _sekundy(czasy["razem"])
+
+
+def test_funkcja_nieobecna_w_zapisie_jest_mutowana_a_reszta_idzie_z_zapisu(przyrost, capsys):
+    przyrost.zrodlo(zapisz=3, inna=2)  # `inna` bez zmian wzgledem bazy: poza lista
+    assert przyrost.przebieg() == 0
+    assert list(przyrost.wczytaj_zapis()["funkcje"]) == [WZ_ZAPISZ]
+    capsys.readouterr()
+
+    przyrost.zrodlo(zapisz=3, inna=4)
+
+    assert przyrost.przebieg() == 0
+    assert przyrost.mutmut.wzorce_runow()[-1] == [WZ_INNA]
+    assert "przyrostowo: mutuję 1 z 2 funkcji" in _linie_stderr(capsys.readouterr())
+    assert set(przyrost.wczytaj_zapis()["funkcje"]) == set(OBA_WZORCE)
+
+
+def _uszkodzenie_bez_klucza(*sciezka: str):
+    def uszkodz(zapis: dict) -> str:
+        kopia = json.loads(json.dumps(zapis))
+        cel = kopia
+        for klucz in sciezka[:-1]:
+            cel = cel[klucz]
+        del cel[sciezka[-1]]
+        return json.dumps(kopia)
+
+    return uszkodz
+
+
+def _uszkodzenie_wartosci(*sciezka: str, wartosc):
+    def uszkodz(zapis: dict) -> str:
+        kopia = json.loads(json.dumps(zapis))
+        cel = kopia
+        for klucz in sciezka[:-1]:
+            cel = cel[klucz]
+        cel[sciezka[-1]] = wartosc
+        return json.dumps(kopia)
+
+    return uszkodz
+
+
+USZKODZENIA_ZAPISU = {
+    "nie_json": lambda zapis: "{niepoprawny json",
+    "pusty_plik": lambda zapis: "",
+    "bajty_spoza_utf8": lambda zapis: b"\xff\xfe\xfa{",
+    "json_nie_jest_obiektem": lambda zapis: "[]",
+    "inna_wersja": _uszkodzenie_wartosci("wersja", wartosc=2),
+    "brak_wersji": _uszkodzenie_bez_klucza("wersja"),
+    "brak_odcisku_testow": _uszkodzenie_bez_klucza("odcisk_testow"),
+    "funkcje_nie_sa_obiektem": _uszkodzenie_wartosci("funkcje", wartosc=[]),
+    "wpis_funkcji_bez_odcisku": _uszkodzenie_bez_klucza("funkcje", WZ_INNA, "odcisk"),
+    "wpis_funkcji_bez_przezywajacych": _uszkodzenie_bez_klucza(
+        "funkcje", WZ_INNA, "przezywajace"
+    ),
+    "przezywajace_nie_sa_lista": _uszkodzenie_wartosci(
+        "funkcje", WZ_INNA, "przezywajace", wartosc="mutant"
+    ),
+    # JSON `true` == 1 w Pythonie: tylko straznik typu bool odrzuca taka wersje
+    "wersja_to_logiczne_true": _uszkodzenie_wartosci("wersja", wartosc=True),
+    "odcisk_testow_nie_jest_napisem": _uszkodzenie_wartosci("odcisk_testow", wartosc=5),
+    "wpis_funkcji_nie_jest_obiektem": _uszkodzenie_wartosci("funkcje", WZ_INNA, wartosc="tekst"),
+    "odcisk_funkcji_nie_jest_napisem": _uszkodzenie_wartosci(
+        "funkcje", WZ_INNA, "odcisk", wartosc=7
+    ),
+    "przezywajace_zawieraja_nie_napis": _uszkodzenie_wartosci(
+        "funkcje", WZ_INNA, "przezywajace", wartosc=[1]
+    ),
+    # json.loads rzuca RecursionError (nie ValueError) na zbyt glebokim zagniezdzeniu
+    "zbyt_gleboko_zagniezdzony_json": lambda zapis: "[" * 200000,
+}
+
+
+@pytest.mark.parametrize("uszkodzenie", list(USZKODZENIA_ZAPISU))
+def test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis(
+    przyrost, capsys, uszkodzenie
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+    nowa_tresc = USZKODZENIA_ZAPISU[uszkodzenie](przyrost.wczytaj_zapis())
+    if isinstance(nowa_tresc, bytes):
+        przyrost.zapis.write_bytes(nowa_tresc)
+    else:
+        przyrost.zapis.write_text(nowa_tresc, encoding="utf-8")
+
+    # Zrodla bez zmian od przebiegu 1: gdyby zapis nie byl odrzucony, nic nie bylo do mutowania.
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert "przyrostowo: zapis unieważniony — nieczytelny zapis" in linie
+    assert "przyrostowo: mutuję 2 z 2 funkcji" in linie
+    assert przyrost.mutmut.wzorce_runow() == [OBA_WZORCE, OBA_WZORCE]
+    assert przyrost.wczytaj_zapis()["wersja"] == 1  # zapis naprawiony po pelnym przebiegu
+
+
+def _zmien_tresc_pliku_testow(przyrost: _Przyrost) -> None:
+    przyrost.plik("tests/test_a.py", "def test_a():\n    assert 1 == 1\n")
+
+
+def _dodaj_plik_testow(przyrost: _Przyrost) -> None:
+    przyrost.plik("tests/test_nowy.py", "def test_nowy():\n    assert True\n")
+
+
+def _przenies_plik_testow_bez_zmiany_tresci(przyrost: _Przyrost) -> None:
+    przyrost.git("mv", "tests/test_a.py", "tests/test_b.py")
+
+
+def _usun_plik_testow(przyrost: _Przyrost) -> None:
+    przyrost.git("rm", "-q", "tests/test_c.py")
+
+
+def _zmien_pyproject(przyrost: _Przyrost) -> None:
+    przyrost.plik("pyproject.toml", PYPROJECT_PRZEBIEGU + "# zmiana konfiguracji\n")
+
+
+@pytest.mark.parametrize(
+    "zmiana",
+    [
+        pytest.param(_zmien_tresc_pliku_testow, id="zmiana_tresci_sledzonego_pliku_testow"),
+        pytest.param(_dodaj_plik_testow, id="nowy_nieslezony_plik_testow"),
+        pytest.param(_przenies_plik_testow_bez_zmiany_tresci, id="ta_sama_tresc_inna_sciezka"),
+        pytest.param(_usun_plik_testow, id="usuniecie_pliku_testow"),
+        pytest.param(_zmien_pyproject, id="zmiana_pyproject_toml"),
+    ],
+)
+def test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje(
+    przyrost, capsys, zmiana
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+    zmiana(przyrost)
+
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert "przyrostowo: zapis unieważniony — zmiana testów" in linie
+    assert "przyrostowo: mutuję 2 z 2 funkcji" in linie
+    assert przyrost.mutmut.wzorce_runow() == [OBA_WZORCE, OBA_WZORCE]
+
+
+def _dodaj_plik_poza_testami(przyrost: _Przyrost) -> None:
+    przyrost.plik("docs/notatka.md", "notatka\n")
+
+
+def _dodaj_plik_ignorowany_przez_git_pod_testami(przyrost: _Przyrost) -> None:
+    przyrost.plik("tests/__pycache__/test_a.cpython-314.pyc", "bajtkod")
+
+
+@pytest.mark.parametrize(
+    "zmiana",
+    [
+        pytest.param(_dodaj_plik_poza_testami, id="plik_poza_testami_i_pyproject"),
+        pytest.param(_dodaj_plik_ignorowany_przez_git_pod_testami, id="plik_ignorowany_przez_git"),
+    ],
+)
+def test_zmiana_poza_testami_i_pyproject_nie_uniewaznia_zapisu(przyrost, capsys, zmiana):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+    zmiana(przyrost)
+
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert not [x for x in linie if x.startswith("przyrostowo: zapis unieważniony")]
+    assert "przyrostowo: mutuję 0 z 2 funkcji" in linie
+    assert len(przyrost.mutmut.runy) == 1
+
+
+def test_odcisk_funkcji_obejmuje_jej_dekorator(przyrost, capsys):
+    przyrost.plik(SCIEZKA_K, "class K:\n    @staticmethod\n    def m():\n        return 1\n")
+    przyrost.git("add", "-A")
+    przyrost.git("commit", "-q", "-m", "klasa")
+    przyrost.plik(SCIEZKA_K, "class K:\n    @staticmethod\n    def m():\n        return 2\n")
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+
+    # Ten sam tekst ciala, zmieniony wylacznie dekorator.
+    przyrost.plik(SCIEZKA_K, "class K:\n    @classmethod\n    def m():\n        return 2\n")
+
+    assert przyrost.przebieg() == 0
+    assert przyrost.mutmut.wzorce_runow() == [[WZ_METODA_K], [WZ_METODA_K]]
+    assert "przyrostowo: mutuję 1 z 1 funkcji" in _linie_stderr(capsys.readouterr())
+
+
+@pytest.mark.parametrize(
+    ("przezywajaca_inna", "plik_poza_zasiegiem", "kod"),
+    [
+        pytest.param(False, False, 0, id="kod_0"),
+        pytest.param(True, False, 1, id="kod_1"),
+        pytest.param(False, True, 3, id="kod_3"),
+    ],
+)
+def test_po_przebiegu_z_kodem_0_1_albo_3_zapis_ma_wpis_dla_kazdego_wzorca(
+    przyrost, przezywajaca_inna, plik_poza_zasiegiem, kod
+):
+    if przezywajaca_inna:
+        przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    if plik_poza_zasiegiem:
+        przyrost.plik("src/cockpit/api/nowy.py", "def f():\n    return 1\n")
+    przyrost.zrodlo(zapisz=3, inna=4)
+
+    assert przyrost.przebieg() == kod
+
+    zapis = przyrost.wczytaj_zapis()
+    assert zapis["wersja"] == 1
+    assert SKROT_SHA256.fullmatch(zapis["odcisk_testow"])
+    assert set(zapis["funkcje"]) == set(OBA_WZORCE)
+    for wpis in zapis["funkcje"].values():
+        assert SKROT_SHA256.fullmatch(wpis["odcisk"])
+    # Rozne funkcje maja rozne odciski (odcisk liczony z tekstu funkcji, nie stala).
+    assert zapis["funkcje"][WZ_INNA]["odcisk"] != zapis["funkcje"][WZ_ZAPISZ]["odcisk"]
+    assert zapis["funkcje"][WZ_INNA]["przezywajace"] == ([KLUCZ_INNA] if przezywajaca_inna else [])
+    assert zapis["funkcje"][WZ_ZAPISZ]["przezywajace"] == []
+
+
+def test_nowy_zapis_przenosi_wpis_niezmienionej_funkcji_bez_zmian_a_zmienionej_przelicza(
+    przyrost,
+):
+    przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    przyrost.przebieg()
+    stary = przyrost.wczytaj_zapis()
+
+    przyrost.zrodlo(zapisz=5, inna=4)
+    przyrost.przebieg()
+
+    nowy = przyrost.wczytaj_zapis()
+    assert nowy["funkcje"][WZ_INNA] == stary["funkcje"][WZ_INNA]
+    assert nowy["funkcje"][WZ_ZAPISZ]["odcisk"] != stary["funkcje"][WZ_ZAPISZ]["odcisk"]
+    assert nowy["odcisk_testow"] == stary["odcisk_testow"]
+
+
+@pytest.mark.parametrize("zmien_pozostala", [False, True], ids=["bez_mutowania", "z_mutowaniem"])
+def test_po_przebiegu_zapis_zawiera_tylko_wzorce_biezacej_listy(
+    przyrost, capsys, zmien_pozostala
+):
+    przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 1
+    assert set(przyrost.wczytaj_zapis()["funkcje"]) == set(OBA_WZORCE)
+    capsys.readouterr()
+
+    # `inna` wraca do tekstu z bazy, wiec wypada z listy zmienionych funkcji.
+    przyrost.zrodlo(zapisz=5 if zmien_pozostala else 3, inna=2)
+    kod = przyrost.przebieg()
+
+    zrzut = capsys.readouterr()
+    assert list(przyrost.wczytaj_zapis()["funkcje"]) == [WZ_ZAPISZ]
+    assert kod == 0  # przezywajacy mutant `inna` nie moze wrocic z zapisu: funkcji nie ma na liscie
+    assert zrzut.out == ""
+    ile = 1 if zmien_pozostala else 0
+    assert f"przyrostowo: mutuję {ile} z 1 funkcji" in _linie_stderr(zrzut)
+
+
+def test_blad_mutmuta_nie_nadpisuje_zapisu_a_nastepny_przebieg_liczy_od_starego_stanu(
+    przyrost, capsys
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    bajty = przyrost.zapis.read_bytes()
+    capsys.readouterr()
+    przyrost.zrodlo(zapisz=5, inna=4)
+    przyrost.mutmut.run_rc = 1
+    przyrost.mutmut.run_out = "Traceback: cos innego"
+
+    assert przyrost.przebieg() == 2
+
+    assert przyrost.zapis.read_bytes() == bajty
+    przyrost.mutmut.run_rc = 0
+    assert przyrost.przebieg() == 0
+    # Gdyby nieudany przebieg zapisal odcisk `zapisz`, trzeci przebieg nie mialby czego mutowac.
+    assert przyrost.mutmut.wzorce_runow() == [OBA_WZORCE, [WZ_ZAPISZ], [WZ_ZAPISZ]]
+
+
+@pytest.mark.parametrize("wariant", ["brak_katalogu_zapisu", "zapis_jest_katalogiem"])
+def test_nieudany_zapis_przebiegu_to_blad_narzedzia_z_kodem_2(przyrost, tmp_path, capsys, wariant):
+    if wariant == "brak_katalogu_zapisu":
+        przyrost.zapis = tmp_path / "nie-ma-takiego-katalogu" / "przebieg.json"
+    else:
+        przyrost.zapis.mkdir()
+    przyrost.zrodlo(zapisz=3, inna=4)
+
+    assert przyrost.przebieg() == 2
+
+    assert "blad: " in capsys.readouterr().err
+
+
+def test_bez_opcji_od_przebiegu_nie_ma_linii_przyrostowo_ani_zapisu(przyrost, capsys):
+    przyrost.zrodlo(zapisz=3, inna=4)
+
+    assert przyrost.przebieg(z_zapisem=False) == 0
+
+    assert not [x for x in _linie_stderr(capsys.readouterr()) if x.startswith("przyrostowo:")]
+    assert not przyrost.zapis.exists()
+    assert przyrost.mutmut.wzorce_runow() == [OBA_WZORCE]
+
+
+def test_max_children_dziala_razem_z_trybem_przyrostowym(przyrost):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg("--max-children", "2") == 0
+    przyrost.zrodlo(zapisz=5, inna=4)
+
+    assert przyrost.przebieg("--max-children", "2") == 0
+
+    assert przyrost.mutmut.runy[-1] == [
+        sys.executable,
+        "-m",
+        "mutmut",
+        "run",
+        "--max-children",
+        "2",
+        WZ_ZAPISZ,
+    ]
+
+
+# --- pomiar faz z prawdziwego strumienia (atrapa `python -m mutmut` jako skrypt) -----------------
+
+# Atrapa pisze markery jak spinner mutmuta: czesc z `\r` (bez konca linii), czesc z `\n`.
+# Pomiar nie zalezy od czasu scianowego (HAR-236, runda 3: sny i przedzialy oblewaly sie pod
+# obciazeniem 200+): narzedzie widzi zegar sterowany przez atrape. Atrapa ustawia czas wirtualny
+# (plik `czas`), drukuje marker i czeka, az narzedzie ODCZYTA zegar (licznik `odczyty`), dopiero
+# potem przesuwa czas dalej. Dzieki temu kazdy znacznik dostaje dokladnie ten czas, w ktorym
+# zostal wydrukowany, a kazdy blad wyboru znacznika daje inna, dokladna liczbe sekund.
+CZAS_POCZATKOWY = 1000  # nie zero: pomiar "od zera zegara" dalby ~1000 s
+ZEGAR_ATRAPY = """T="$(dirname "$0")"
+ustaw_czas() { echo "$1" > "$T/czas.nowy"; mv "$T/czas.nowy" "$T/czas"; }
+# krok CZAS TEKST: czas wirtualny, marker, czekanie na odczyt zegara przez narzedzie
+# (do 3000 prob; bez odczytu atrapa konczy sie kodem 98, a test oblewa na pomiarze)
+krok() {
+  n="$(cat "$T/odczyty")"
+  ustaw_czas "$1"
+  printf "$2"
+  i=0
+  while [ "$(cat "$T/odczyty")" -le "$n" ]; do
+    i=$((i + 1))
+    [ "$i" -le 3000 ] || exit 98
+    sleep 0.02
+  done
+}
+"""
+
+
+class _ZegarSterowany:
+    """Podstawia `time` w `mutanty_zmian`: `monotonic()` czyta czas wirtualny z pliku atrapy i
+    publikuje licznik odczytow (po odczycie czasu, wiec atrapa nie przesunie zegara przed nim)."""
+
+    def __init__(self, katalog: Path) -> None:
+        self.katalog = katalog
+        self.odczyty = 0
+        self._zapisz("czas", float(CZAS_POCZATKOWY))
+        self._zapisz("odczyty", 0)
+
+    def _zapisz(self, nazwa: str, wartosc: float) -> None:
+        tymczasowy = self.katalog / f"{nazwa}.zapis"
+        tymczasowy.write_text(f"{wartosc:g}" if nazwa == "czas" else f"{wartosc}")
+        os.replace(tymczasowy, self.katalog / nazwa)
+
+    def monotonic(self) -> float:
+        czas = float((self.katalog / "czas").read_text())
+        self.odczyty += 1
+        self._zapisz("odczyty", self.odczyty)
+        return czas
+
+
+ATRAPA_MUTMUTA_PELNA = (
+    """#!/bin/sh
+"""
+    + ZEGAR_ATRAPY
+    + """case "$3" in
+  run)
+    printf '\\r⠙ Generating mutants\\r'
+    krok 1002 '\\rRunning stats\\r'
+    krok 1003 '\\rRunning clean tests\\r'
+    krok 1005 'Running mutation testing\\n'
+    ustaw_czas 1009
+    echo done ;;
+  results)
+    ustaw_czas 1010
+    echo "Results:"
+    echo "    cockpit.services.a.x_zapisz__mutmut_1: killed" ;;
+esac
+exit 0
+"""
+)
+ATRAPA_MUTMUTA_BEZ_STATYSTYK = """#!/bin/sh
+case "$3" in
+  run)
+    printf 'Generating mutants\\n'
+    printf 'Running clean tests\\n'
+    printf 'Running mutation testing\\n'
+    echo done ;;
+  results) echo "Results:" ;;
+esac
+exit 0
+"""
+ATRAPA_MUTMUTA_BEZ_MUTOWANIA = """#!/bin/sh
+case "$3" in
+  run)
+    printf 'Running stats\\n'
+    printf 'Running clean tests\\n'
+    echo done ;;
+  results) echo "Results:" ;;
+esac
+exit 0
+"""
+
+
+def _przebieg_z_atrapa(katalog: Path, skrypt: str) -> types.SimpleNamespace:
+    """`main` z prawdziwym `uruchom` i prawdziwym gitem; `sys.executable` wskazuje atrapa mutmuta,
+    a zegar narzedzia jest sterowany przez atrape (`_ZegarSterowany`)."""
+    korzen = _repo_git(katalog / "repo")
+    (korzen / SCIEZKA_A).write_text(_zrodlo_a(3, 4), encoding="utf-8")
+    atrapa = katalog / "atrapa_mutmuta.sh"
+    atrapa.write_text(skrypt, encoding="utf-8")
+    atrapa.chmod(0o755)
+    zegar = _ZegarSterowany(katalog)
+    wyjscie, blad = io.StringIO(), io.StringIO()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sys, "executable", str(atrapa))
+        mp.setattr(mutanty_zmian, "time", types.SimpleNamespace(monotonic=zegar.monotonic))
+        mp.chdir(korzen)
+        with contextlib.redirect_stdout(wyjscie), contextlib.redirect_stderr(blad):
+            kod = mutanty_zmian.main(["--korzen", str(korzen), "--baza", "HEAD"])
+    return types.SimpleNamespace(kod=kod, out=wyjscie.getvalue(), err=blad.getvalue())
+
+
+@pytest.fixture(scope="module")
+def przebieg_z_markerami(tmp_path_factory) -> types.SimpleNamespace:
+    return _przebieg_z_atrapa(tmp_path_factory.mktemp("markery"), ATRAPA_MUTMUTA_PELNA)
+
+
+def test_przebieg_ze_strumienia_mutmuta_nie_zmienia_stdout_i_kodu_a_fazy_ida_w_kolejnosci(
+    przebieg_z_markerami,
+):
+    assert przebieg_z_markerami.kod == 0
+    assert przebieg_z_markerami.out == ""
+    assert list(_czasy(przebieg_z_markerami.err)) == FAZY_CZASU
+
+
+def test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests(przebieg_z_markerami):
+    sekundy = _sekundy(_czasy(przebieg_z_markerami.err)["mutmut_statystyki"])
+    # czas wirtualny 1002 -> 1003; do `Running mutation testing` byloby 3 s, do konca procesu 7 s,
+    # od startu do `Running clean tests` tez 3 s
+    assert sekundy == 1.0
+
+
+def test_czas_przygotowania_liczony_od_startu_mutmut_run_do_running_mutation_testing(
+    przebieg_z_markerami,
+):
+    sekundy = _sekundy(_czasy(przebieg_z_markerami.err)["mutmut_przygotowanie"])
+    # start 1000 -> `Running mutation testing` 1005; od `Running stats` byloby 3 s, od
+    # `Running clean tests` 2 s, do konca procesu 9 s
+    assert sekundy == 5.0
+
+
+def test_czas_mutantow_liczony_od_running_mutation_testing_do_konca_procesu(
+    przebieg_z_markerami,
+):
+    sekundy = _sekundy(_czasy(przebieg_z_markerami.err)["mutmut_mutanty"])
+    # `Running mutation testing` 1005 -> koniec procesu 1009; od `Running clean tests` byloby 6 s,
+    # od startu 9 s
+    assert sekundy == 4.0
+
+
+def test_czas_mutmut_results_obejmuje_wywolanie_results(przebieg_z_markerami):
+    sekundy = _sekundy(_czasy(przebieg_z_markerami.err)["mutmut_results"])
+    assert sekundy == 1.0  # czas wirtualny 1009 -> 1010; faza nie obejmuje poprzednich (10 s)
+
+
+def test_czas_calkowity_obejmuje_wszystkie_fazy_a_wybor_funkcji_jest_krotszy_od_calosci(
+    przebieg_z_markerami,
+):
+    czasy = {faza: _sekundy(wartosc) for faza, wartosc in _czasy(przebieg_z_markerami.err).items()}
+    assert czasy["razem"] == 10.0  # start 1000 -> koniec `mutmut results` 1010
+    # liczone od startu przebiegu (1000), nie od zera zegara (1000 s), i do wyboru funkcji, nie do
+    # konca (10 s): w czasie wirtualnym wybor funkcji nie trwa
+    assert czasy["wybor_funkcji"] == 0.0
+    assert czasy["wybor_funkcji"] < czasy["razem"]
+
+
+def test_mutmut_bez_linii_running_stats_ma_pomiar_pozostalych_faz_ale_nie_statystyk(tmp_path):
+    wynik = _przebieg_z_atrapa(tmp_path, ATRAPA_MUTMUTA_BEZ_STATYSTYK)
+
+    czasy = _czasy(wynik.err)
+    assert wynik.kod == 0
+    assert czasy["mutmut_statystyki"] == BRAK_POMIARU
+    _sekundy(czasy["mutmut_przygotowanie"])
+    _sekundy(czasy["mutmut_mutanty"])
+
+
+def test_mutmut_bez_linii_running_mutation_testing_nie_ma_pomiaru_przygotowania_ani_mutantow(
+    tmp_path,
+):
+    wynik = _przebieg_z_atrapa(tmp_path, ATRAPA_MUTMUTA_BEZ_MUTOWANIA)
+
+    czasy = _czasy(wynik.err)
+    assert wynik.kod == 0
+    _sekundy(czasy["mutmut_statystyki"])
+    assert czasy["mutmut_przygotowanie"] == BRAK_POMIARU
+    assert czasy["mutmut_mutanty"] == BRAK_POMIARU
+    _sekundy(czasy["mutmut_results"])
+
+
+# =============================================================================
+# HAR-236, tura 2: elementy, ktore tools/ (poza zasiegiem mutmuta) chroni tylko tymi testami
+# =============================================================================
+
+ZRODLO_ODWROCONA_KOLEJNOSC = (
+    "def b_druga():\n    return 2\n\n\ndef a_pierwsza():\n    return 1\n"
+)
+
+
+def test_wzorce_pliku_sa_posortowane_takze_gdy_kolejnosc_funkcji_w_pliku_jest_odwrotna():
+    # Zmienione linie 2 i 6 leza w `b_druga` (kolejnosc w pliku: pierwsza) i `a_pierwsza`.
+    assert _wzorce(ZRODLO_ODWROCONA_KOLEJNOSC, 2, 6) == [
+        f"{MODUL}.x_a_pierwsza__mutmut_*",
+        f"{MODUL}.x_b_druga__mutmut_*",
+    ]
+
+
+# --- uruchamianie `mutmut run` strumieniowo ----------------------------------------------------
+
+
+def test_brak_interpretera_dla_mutmut_run_to_blad_narzedzia_z_nazwa_programu(tmp_path):
+    brak = str(tmp_path / "nie-ma-takiego-programu")
+
+    with pytest.raises(BladNarzedzia) as blad:
+        mutanty_zmian.uruchom([brak, "-m", "mutmut", "run"])
+
+    assert str(blad.value).startswith(f"nie da sie uruchomic {brak}: ")
+
+
+# Wyjscie z bajtami, ktore psuja naiwne dekodowanie: znak U+2819 (3 bajty) rozdzielony snem
+# na dwa odczyty, pojedynczy niepoprawny bajt 0xFF i urwany znak na samym koncu. Stderr idzie
+# do tego samego strumienia (merge), a wyjscie jest diagnostyka kodu 2.
+ATRAPA_MUTMUTA_Z_BAJTAMI = """#!/bin/sh
+case "$3" in
+  run)
+    printf 'poczatek\\n'
+    printf '\\342\\240'
+    sleep 0.3
+    printf '\\231 koniec-znaku\\n'
+    printf 'zly-bajt-\\377-po\\n'
+    echo "boom na stderr" >&2
+    printf 'urwany-\\342'
+    exit 1 ;;
+esac
+exit 0
+"""
+
+
+def test_diagnostyka_bledu_mutmuta_zawiera_stderr_i_poprawnie_zdekodowane_bajty(tmp_path):
+    wynik = _przebieg_z_atrapa(tmp_path, ATRAPA_MUTMUTA_Z_BAJTAMI)
+
+    assert wynik.kod == 2
+    assert wynik.out == ""
+    assert wynik.err.startswith(
+        "blad: mutmut run zakonczyl sie bledem:\n"
+        "poczatek\n"
+        "⠙ koniec-znaku\n"
+        "zly-bajt-\ufffd-po\n"
+        "boom na stderr\n"
+        "urwany-\ufffd\n"
+    )
+
+
+ATRAPA_MUTMUTA_MARKER_W_KAWALKACH = (
+    """#!/bin/sh
+"""
+    + ZEGAR_ATRAPY
+    + """case "$3" in
+  run)
+    ustaw_czas 1001
+    printf '⠙ Generating\\rRunning mut'
+    sleep 1
+    krok 1002 'ation testing'
+    ustaw_czas 1003
+    printf ' ...\\n'
+    ustaw_czas 1004 ;;
+  results) echo "Results:" ;;
+esac
+exit 0
+"""
+)
+
+
+def test_marker_rozdzielony_na_dwa_odczyty_jest_rozpoznany_a_czas_liczony_od_pierwszego_widzenia(
+    tmp_path,
+):
+    wynik = _przebieg_z_atrapa(tmp_path, ATRAPA_MUTMUTA_MARKER_W_KAWALKACH)
+
+    czasy = _czasy(wynik.err)
+    assert wynik.kod == 0
+    # Marker widac dopiero po drugim odczycie (czas 1002); kolejny odczyt (czas 1003, marker wciaz w
+    # niedokonczonej linii) go nie przesuwa: faza mutantow to 1002 -> 1004, przygotowanie 1000 -> 1002.
+    assert _sekundy(czasy["mutmut_mutanty"]) == 2.0
+    assert _sekundy(czasy["mutmut_przygotowanie"]) == 2.0
+    assert czasy["mutmut_statystyki"] == BRAK_POMIARU
+
+
+ATRAPA_MUTMUTA_ZAWIESZONA = """#!/bin/sh
+case "$3" in
+  run)
+    echo "$$" > "$(dirname "$0")/atrapa.pid"
+    exec sleep 300 ;;
+esac
+exit 0
+"""
+
+
+class _OsZepsutyOdczyt:
+    """Moduł `os` widziany przez narzedzie: `read` czeka na pid atrapy, potem rzuca wyjatek."""
+
+    def __init__(self, plik_pid: Path) -> None:
+        self.plik_pid = plik_pid
+
+    def __getattr__(self, nazwa: str):
+        return getattr(os, nazwa)
+
+    def read(self, fd: int, rozmiar: int) -> bytes:
+        koniec = time.monotonic() + 30
+        while not self.plik_pid.exists() and time.monotonic() < koniec:
+            time.sleep(0.05)
+        raise RuntimeError("zepsuty odczyt")
+
+
+class _PopenZLapaniem(subprocess.Popen):
+    zlapane: list = []
+
+    def __init__(self, *argumenty, **opcje):
+        super().__init__(*argumenty, **opcje)
+        _PopenZLapaniem.zlapane.append(self)
+
+
+def _lapanie_popen(monkeypatch) -> list:
+    _PopenZLapaniem.zlapane = []
+    monkeypatch.setattr(subprocess, "Popen", _PopenZLapaniem)
+    return _PopenZLapaniem.zlapane
+
+
+def _procesy_mutmut_run(zlapane: list) -> list:
+    return [p for p in zlapane if list(p.args)[1:4] == ["-m", "mutmut", "run"]]
+
+
+def test_wyjatek_podczas_czytania_strumienia_zabija_proces_mutmuta_i_zamyka_strumien(
+    tmp_path, monkeypatch
+):
+    zlapane = _lapanie_popen(monkeypatch)
+    monkeypatch.setattr(mutanty_zmian, "os", _OsZepsutyOdczyt(tmp_path / "atrapa.pid"))
+
+    with pytest.raises(RuntimeError, match="zepsuty odczyt"):
+        _przebieg_z_atrapa(tmp_path, ATRAPA_MUTMUTA_ZAWIESZONA)
+
+    pid = int((tmp_path / "atrapa.pid").read_text())
+    (proces,) = _procesy_mutmut_run(zlapane)
+    assert proces.pid == pid
+    assert proces.returncode is not None  # zabity i odebrany
+    assert not czy_zyje(pid)
+    assert proces.stdout.closed
+
+
+def test_po_zwyklym_przebiegu_strumien_mutmuta_jest_zamkniety_a_proces_odebrany(
+    tmp_path, monkeypatch
+):
+    zlapane = _lapanie_popen(monkeypatch)
+
+    wynik = _przebieg_z_atrapa(tmp_path, ATRAPA_MUTMUTA_BEZ_STATYSTYK)
+
+    assert wynik.kod == 0
+    (proces,) = _procesy_mutmut_run(zlapane)
+    assert proces.stdout.closed
+    assert proces.returncode == 0
+
+
+# --- tryb przyrostowy: zapis, odcisk, komunikaty -----------------------------------------------
+
+
+def test_przebieg_z_zapisem_bez_zmienionych_funkcji_tworzy_pusty_zapis_i_nie_wola_mutmuta(
+    przyrost, capsys
+):
+    # Zrodla bez zmian wzgledem bazy: lista funkcji jest pusta, a zapis i tak powstaje.
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert "przyrostowo: zapis unieważniony — brak zapisu" in linie
+    assert "przyrostowo: mutuję 0 z 0 funkcji" in linie
+    assert przyrost.mutmut.runy == []
+    assert przyrost.wczytaj_zapis()["funkcje"] == {}
+
+    assert przyrost.przebieg() == 0  # pusty zapis jest poprawny: nie jest unieważniany
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert not [x for x in linie if x.startswith("przyrostowo: zapis unieważniony")]
+    assert "przyrostowo: mutuję 0 z 0 funkcji" in linie
+
+
+def test_wynik_results_z_cache_nie_wnosi_przezywajacych_funkcji_ktorych_nie_mutowano(
+    przyrost, capsys
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+    # Stary wpis w cache mutmuta (zapis o nim nie wie); `results` pokazuje caly cache.
+    przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    przyrost.mutmut.results_wszystkie = True
+
+    przyrost.zrodlo(zapisz=5, inna=4)  # mutowana tylko `zapisz`
+
+    assert przyrost.przebieg() == 0
+    assert przyrost.mutmut.wzorce_runow()[-1] == [WZ_ZAPISZ]
+    assert capsys.readouterr().out == ""
+
+
+def test_wiele_przezywajacych_z_zapisu_i_z_nowego_przebiegu_jest_na_stdout_alfabetycznie(
+    przyrost, capsys
+):
+    for numer in range(1, 7):
+        przyrost.mutmut.mutanty[f"cockpit.services.a.x_inna__mutmut_{numer}"] = "survived"
+        przyrost.mutmut.mutanty[f"cockpit.services.a.x_zapisz__mutmut_{numer}"] = "survived"
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 1
+    capsys.readouterr()
+
+    przyrost.zrodlo(zapisz=5, inna=4)  # `inna` z zapisu, `zapisz` z nowego przebiegu
+
+    assert przyrost.przebieg() == 1
+    oczekiwane = sorted(przyrost.mutmut.mutanty)
+    assert len(oczekiwane) == 12
+    assert capsys.readouterr().out == "".join(f"{klucz}\n" for klucz in oczekiwane)
+
+
+BRAK_PRZEZYWAJACYCH = "brak przezywajacych mutantow w zmienionych funkcjach"
+
+
+@pytest.mark.parametrize(
+    ("scenariusz", "komunikat_jest"),
+    [
+        pytest.param("wszystkie_zabite", True, id="wszystkie_zabite_w_tym_przebiegu"),
+        pytest.param("jest_przezywajacy", False, id="jest_przezywajacy_mutant"),
+        pytest.param("zmiana_poza_zasiegiem", False, id="zmiana_poza_zasiegiem_mutmuta"),
+        pytest.param("z_samego_zapisu", False, id="nic_nie_mutowano_wynik_z_zapisu"),
+    ],
+)
+def test_komunikat_o_braku_przezywajacych_tylko_gdy_ten_przebieg_mutowal_i_nic_nie_przezylo(
+    przyrost, capsys, scenariusz, komunikat_jest
+):
+    if scenariusz == "jest_przezywajacy":
+        przyrost.mutmut.mutanty[KLUCZ_INNA] = "survived"
+    if scenariusz == "zmiana_poza_zasiegiem":
+        przyrost.plik("src/cockpit/api/nowy.py", "def f():\n    return 1\n")
+    przyrost.zrodlo(zapisz=3, inna=4)
+    kod_pierwszego = przyrost.przebieg()
+    if scenariusz == "z_samego_zapisu":
+        assert kod_pierwszego == 0
+        capsys.readouterr()
+        przyrost.przebieg()  # drugi przebieg: nic do mutowania
+    linie = _linie_stderr(capsys.readouterr())
+
+    assert (BRAK_PRZEZYWAJACYCH in linie) is komunikat_jest
+
+
+class _SrodowiskoZBledemLsFilesTestow(_Srodowisko):
+    """Jak `_Srodowisko`, ale `git ls-files` listujacy `tests` (odcisk testow) konczy sie bledem."""
+
+    def __call__(self, argv):
+        if argv[:2] == ["git", "ls-files"] and argv[-1] == "tests":
+            self.wywolania.append(list(argv))
+            return self._wynik(argv, 128, "", "fatal: zepsute ls-files")
+        return super().__call__(argv)
+
+
+def test_blad_git_ls_files_przy_odcisku_testow_daje_kod_2_z_komunikatem_i_bez_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    s = _SrodowiskoZBledemLsFilesTestow(diff=_diff_a())
+
+    kod = _main(monkeypatch, tmp_path, s, "--od-przebiegu", str(tmp_path / "zapis.json"))
+
+    assert kod == 2
+    zrzut = capsys.readouterr()
+    assert "blad: git ls-files tests nie powiodl sie: fatal: zepsute ls-files" in zrzut.err
+    assert s.mutmut("run") == []
+    assert not (tmp_path / "zapis.json").exists()
+
+
+SKRYPT_ODCISKU_TESTOW = (
+    "import os, sys\n"
+    "from pathlib import Path\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "import mutanty_zmian\n"
+    "os.chdir(sys.argv[2])\n"
+    "print(mutanty_zmian.odcisk_testow(Path(sys.argv[2])))\n"
+)
+
+
+def _odcisk_w_procesie(repo: Path, ziarno_skrotu: str) -> str:
+    korzen = Path(__file__).resolve().parent.parent
+    proces = uruchom_proces_sync(
+        [sys.executable, "-c", SKRYPT_ODCISKU_TESTOW, str(korzen / "tools"), str(repo)],
+        cwd=korzen,
+        env={**os.environ, "PYTHONHASHSEED": ziarno_skrotu},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        wyjscie, blad = proces.communicate(timeout=LIMIT_PROCESU_POMOCNICZEGO)
+    finally:
+        zakoncz_proces_sync(proces, nazwa="odcisk testow w osobnym procesie")
+    assert proces.returncode == 0, blad
+    return wyjscie.strip()
+
+
+def test_odcisk_testow_nie_zalezy_od_kolejnosci_zbioru_sciezek_w_procesie(tmp_path):
+    repo = _repo_git(tmp_path / "repo")
+    for numer in range(8):
+        cel = repo / "tests" / f"test_dodatkowy_{numer}.py"
+        cel.write_text(f"def test_{numer}():\n    assert True\n", encoding="utf-8")
+    _git_t(repo, "add", "-A")
+
+    odciski = {_odcisk_w_procesie(repo, ziarno) for ziarno in ("1", "2", "3", "4")}
+
+    assert len(odciski) == 1  # losowa kolejnosc zbioru dawalaby rozne odciski w roznych procesach
+    assert SKROT_SHA256.fullmatch(next(iter(odciski)))
+
+
+def test_plik_testow_usuniety_z_dysku_ale_wciaz_sledzony_uniewaznia_zapis(przyrost, capsys):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+    (przyrost.korzen / "tests" / "test_c.py").unlink()  # bez `git rm`: wciaz na liscie ls-files
+
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert "przyrostowo: zapis unieważniony — zmiana testów" in linie
+
+
+def test_katalog_w_miejscu_sledzonego_pliku_testow_to_blad_narzedzia_z_kodem_2(
+    przyrost, capsys
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    plik = przyrost.korzen / "tests" / "test_c.py"
+    plik.unlink()
+    plik.mkdir()  # `git ls-files` wciaz go listuje, ale to nie jest plik
+
+    assert przyrost.przebieg() == 2
+
+    assert "blad: tests/test_c.py: nie da sie odczytac: " in capsys.readouterr().err
+    assert not przyrost.zapis.exists()
+
+
+def test_podzial_funkcji_na_inne_linie_przy_tym_samym_tekscie_zmienia_jej_odcisk(przyrost, capsys):
+    przyrost.plik(SCIEZKA_A, "def zapisz():\n    return (1,\n        2)\n\n\ndef inna():\n    return 2\n")
+    przyrost.git("add", "-A")
+    przyrost.git("commit", "-q", "-m", "wieloliniowe")
+    przyrost.plik(SCIEZKA_A, "def zapisz():\n    return (1,\n        3)\n\n\ndef inna():\n    return 2\n")
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+
+    # Po laczeniu linii przez "" tekst bylby ten sam: `    return (1,        3)`.
+    przyrost.plik(SCIEZKA_A, "def zapisz():\n    return (1,        3)\n\n\ndef inna():\n    return 2\n")
+
+    assert przyrost.przebieg() == 0
+    assert "przyrostowo: mutuję 1 z 1 funkcji" in _linie_stderr(capsys.readouterr())
+    assert przyrost.mutmut.wzorce_runow() == [[WZ_ZAPISZ], [WZ_ZAPISZ]]
+
+
+def test_wzorzec_metody_z_separatorem_klasy_przechodzi_przez_zapis_bez_utraty_znakow(
+    przyrost, capsys
+):
+    przyrost.plik(SCIEZKA_K, "class K:\n    def m(self):\n        return 1\n")
+    przyrost.git("add", "-A")
+    przyrost.git("commit", "-q", "-m", "klasa")
+    przyrost.plik(SCIEZKA_K, "class K:\n    def m(self):\n        return 2\n")
+    assert przyrost.przebieg() == 0
+    capsys.readouterr()
+
+    assert przyrost.przebieg() == 0
+
+    linie = _linie_stderr(capsys.readouterr())
+    assert not [x for x in linie if x.startswith("przyrostowo: zapis unieważniony")]
+    assert "przyrostowo: mutuję 0 z 1 funkcji" in linie
+    assert ZNAK in przyrost.zapis.read_text(encoding="utf-8")  # zapis nie zamienia znaku na \u01c1
+
+
+def test_plik_zapisu_ma_ustalony_format_klucze_posortowane_wciecie_i_koncowy_newline(przyrost):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+
+    tekst = przyrost.zapis.read_text(encoding="utf-8")
+
+    zapis = json.loads(tekst)
+    assert list(zapis) == ["funkcje", "odcisk_testow", "wersja"]
+    assert tekst == json.dumps(zapis, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+    assert tekst.startswith('{\n "funkcje": {\n')
+
+
+class _OsBezMoznosciPodmiany:
+    """Moduł `os` widziany przez narzedzie: `replace` konczy sie `OSError`."""
+
+    def __getattr__(self, nazwa: str):
+        return getattr(os, nazwa)
+
+    def replace(self, zrodlo, cel):
+        raise OSError("brak miejsca")
+
+
+def test_nieudana_podmiana_zapisu_zostawia_stary_zapis_i_nie_zostawia_pliku_tymczasowego(
+    przyrost, monkeypatch, capsys
+):
+    przyrost.zrodlo(zapisz=3, inna=4)
+    assert przyrost.przebieg() == 0
+    stare_bajty = przyrost.zapis.read_bytes()
+    capsys.readouterr()
+    monkeypatch.setattr(mutanty_zmian, "os", _OsBezMoznosciPodmiany())
+    przyrost.zrodlo(zapisz=5, inna=4)
+
+    assert przyrost.przebieg() == 2
+
+    assert f"{przyrost.zapis}: nie da sie zapisac przebiegu: brak miejsca" in capsys.readouterr().err
+    assert przyrost.zapis.read_bytes() == stare_bajty
+    assert sorted(p.name for p in przyrost.zapis.parent.iterdir() if p.name.endswith(".tmp")) == []

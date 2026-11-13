@@ -115,7 +115,7 @@ jobs:
           COCKPIT_WYMAGAJ_BAZY: "1"
 
       - name: Test e2e - przelot w przegladarce na PostgreSQL
-        run: pytest -m e2e
+        run: pytest -m e2e -n 4
         env:
           COCKPIT_WYMAGAJ_BAZY: "1"
 

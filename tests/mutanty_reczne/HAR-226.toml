@@ -67,7 +67,7 @@ test = "tests/test_testy_pelne.py::test_przebieg_przerwany_sygnalem_zwalnia_swoj
 # Sprzatanie nie zwalnia wlasnej blokady: po koncu procesu katalog blokady nadal istnieje.
 [[mutant]]
 plik = "tools/testy_pelne.sh"
-szukaj = "if [ \"$wlasciciel\" = \"$$\" ]; then\n    rm -rf \"$BLOKADA\""
+szukaj = "if [ \"$wlasciciel\" = \"$$\" ]; then\n    rm -rf \"$kat\""
 zamien = "if [ \"$wlasciciel\" = \"$$\" ]; then\n    :"
 test = "tests/test_testy_pelne.py::test_przebieg_przerwany_sygnalem_zwalnia_swoja_blokade"
 

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import tomllib
 import types
@@ -4095,3 +4096,409 @@ def test_skrypt_uruchomiony_jako_program_z_pokrycie_kod3_konczy_sie_kodem_1_i_wy
     assert kod == 1, blad
     assert wyjscie == f"{PLIK_P}:5\n"
     assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+# =============================================================================
+# HAR-236: `-j K` / `--procesy K` - wiersze zwykle w puli watkow, front/e2e/baza po kolei
+# =============================================================================
+#
+# Zaslepka `uruchom_test` zastepuje prawdziwy pytest (50 wierszy z prawdziwym pytestem
+# trwaloby minuty), a reszta `_zabity` jest prawdziwa: kopia repo, nakladanie mutacji, ocena
+# kodu. Zaslepka widzi mutacje w kopii: `= 99999` zabija mutanta, kazda inna zmiana (sam
+# komentarz) pozwala mu przezyc; `# s<ms>` wydluza test, `blad<n>` zglasza BladNarzedzia.
+# Dzieki temu kolejnosc konca wierszy w puli jest inna niz kolejnosc w tabeli.
+
+PLIK_WIELE = "src/wiele.py"
+PLIK_WEB_WIELE = "web/src/wiele.txt"
+PLIK_TESTU_PULI = "tests/test_pula.py"
+PLIK_TESTU_BAZY = "tests/test_baza.py"
+PLIK_TESTU_Z_SLOWEM_BAZA = "tests/test_baza_slowo.py"
+PLIK_TESTU_E2E = "tests/e2e/test_front.py"
+LICZBA_WIERSZY_TABELI = 50
+BAZOWA_PAUZA_S = 0.01
+PAUZA_WIERSZA_SZEREGOWEGO_MS = 60
+
+TRESC_WIELE = "".join(f"ZMIENNA_{i:02d} = {i}\n" for i in range(LICZBA_WIERSZY_TABELI))
+TRESC_WEB_WIELE = "".join(f"W_{i:02d} = {i}\n" for i in range(LICZBA_WIERSZY_TABELI))
+PLIKI_PULI = {
+    PLIK_WIELE: TRESC_WIELE,
+    PLIK_WEB_WIELE: TRESC_WEB_WIELE,
+    PLIK_TESTU_PULI: "def test_pula():\n    assert True\n",
+    # `mark.baza` jest tylko w tym pliku: wiersze z innymi plikami testow nie moga przez niego
+    # trafic do kolejki szeregowej.
+    PLIK_TESTU_BAZY: "import pytest\n\n\n@pytest.mark.baza\ndef test_baza():\n    assert True\n",
+    # Slowo `baza` bez `mark.baza`: tylko dokladny napis `mark.baza` jest sygnalem testu bazy.
+    PLIK_TESTU_Z_SLOWEM_BAZA: "# testy bazy: baza, mark - ale bez markera\n\n\ndef test_slowo():\n    assert True\n",
+    PLIK_TESTU_E2E: "def test_front():\n    assert True\n",
+}
+
+
+def _linia_zmiennej(i: int, plik: str = PLIK_WIELE) -> str:
+    return f"{'W' if plik == PLIK_WEB_WIELE else 'ZMIENNA'}_{i:02d} = {i}"
+
+
+def _wiersz_puli(
+    i: int,
+    *,
+    test: str = PLIK_TESTU_PULI,
+    plik: str = PLIK_WIELE,
+    przezywa: bool = False,
+    pauza_ms: int = 0,
+    blad: bool = False,
+) -> str:
+    """Wiersz tabeli dla linii `i`; node id testu ma sufiks `::test_<i>` (unikalny w tabeli)."""
+    szukaj = _linia_zmiennej(i, plik)
+    wartosc = i if przezywa else 99999
+    zamien = szukaj.rsplit(" = ", 1)[0] + f" = {wartosc}  # s{pauza_ms}" + (f" blad{i}" if blad else "")
+    return _mutant(szukaj, zamien, test=f"{test}::test_{i}", plik=plik)
+
+
+def _repo_puli(tmp_path: Path, tabela: str) -> Path:
+    repo = tmp_path / "repo"
+    for sciezka, tresc in {**PLIKI_PULI, TABELA_W_REPO: tabela}.items():
+        cel = repo / sciezka
+        cel.parent.mkdir(parents=True, exist_ok=True)
+        cel.write_text(tresc, encoding="utf-8")
+    _git(repo, "init", "-q")
+    return repo
+
+
+class _SledzenieWierszy:
+    """Zaslepka `uruchom_test` z dziennikiem: ile wywolan trwa naraz i kiedy kazde trwalo."""
+
+    def __init__(self) -> None:
+        self.blokada = threading.Lock()
+        self.aktywne = 0
+        self.max_aktywnych = 0
+        self.kolejnosc: list[str] = []
+        self.przedzialy: dict[str, list[tuple[float, float]]] = {}
+
+    def __call__(self, kopia: Path, test: str, limit: float) -> int:
+        tekst = "".join(
+            (kopia / plik).read_text(encoding="utf-8") for plik in (PLIK_WIELE, PLIK_WEB_WIELE)
+        )
+        pauza = re.search(r"# s(\d+)", tekst)
+        start = time.monotonic()
+        with self.blokada:
+            self.aktywne += 1
+            self.max_aktywnych = max(self.max_aktywnych, self.aktywne)
+            self.kolejnosc.append(test)
+        try:
+            time.sleep(BAZOWA_PAUZA_S + (int(pauza.group(1)) / 1000 if pauza else 0))
+            blad = re.search(r"blad(\d+)", tekst)
+            if blad:
+                raise BladNarzedzia(f"blad wiersza {blad.group(1)}")
+            wyjatek = re.search(r"wyjatek(\d+)", tekst)
+            if wyjatek:
+                raise RuntimeError(f"wyjatek wiersza {wyjatek.group(1)}")
+            return 1 if "= 99999" in tekst else 0
+        finally:
+            koniec = time.monotonic()
+            with self.blokada:
+                self.aktywne -= 1
+                self.przedzialy.setdefault(test, []).append((start, koniec))
+
+    def zakres_wiersza(self, test: str) -> tuple[float, float]:
+        """Od startu pierwszego do konca ostatniego wywolania testu (przebieg bazowy i po mutacji)."""
+        przedzialy = self.przedzialy[test]
+        return min(s for s, _ in przedzialy), max(k for _, k in przedzialy)
+
+
+def _zaslepki_puli(monkeypatch) -> _SledzenieWierszy:
+    sledzenie = _SledzenieWierszy()
+    monkeypatch.setattr(mutanty_reczne, "uruchom_test", sledzenie)
+    # Front nie jest tematem tych testow (wiersze frontu maja swoje testy powyzej).
+    monkeypatch.setattr(mutanty_reczne, "zbuduj_front", lambda kopia, limit: None)
+    return sledzenie
+
+
+def _przebieg_puli(repo: Path, *opcje: str) -> int:
+    return _main([TABELA_W_REPO, "--korzen", str(repo), "--limit", "60", *opcje])
+
+
+def _zakresy_rozlaczne(zakresy: list[tuple[float, float]]) -> bool:
+    uporzadkowane = sorted(zakresy)
+    return all(a[1] <= b[0] for a, b in zip(uporzadkowane, uporzadkowane[1:]))
+
+
+def _linia_przezywajacego(i: int, pauza_ms: int) -> str:
+    szukaj = _linia_zmiennej(i)
+    return f"{PLIK_WIELE}: {szukaj} → ZMIENNA_{i:02d} = {i}  # s{pauza_ms}"
+
+
+def test_tabela_z_piecdziesieciu_wierszy_na_czterech_procesach_daje_ten_sam_wynik_co_szeregowo(
+    tmp_path, capsys, monkeypatch
+):
+    przezywajace = {7: 150, 11: 0, 21: 0, 40: 100}  # nr wiersza -> pauza (ms) jego testu
+    wiersze = []
+    for i in range(LICZBA_WIERSZY_TABELI):
+        wiersze.append(
+            _wiersz_puli(
+                i,
+                # 11 jest wierszem szeregowym (test e2e) i przezywa: lista ma zachowac kolejnosc tabeli
+                test=PLIK_TESTU_E2E if i in (11, 12) else PLIK_TESTU_PULI,
+                przezywa=i in przezywajace,
+                pauza_ms=przezywajace.get(i, 0),
+            )
+        )
+    assert len(wiersze) >= 50
+    _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+    oczekiwane = "".join(f"{_linia_przezywajacego(i, ms)}\n" for i, ms in przezywajace.items())
+
+    kod_szeregowo = _przebieg_puli(repo, "-j", "1")
+    szeregowo = capsys.readouterr()
+    kod_rownolegle = _przebieg_puli(repo, "-j", "4")
+    rownolegle = capsys.readouterr()
+
+    assert (kod_szeregowo, kod_rownolegle) == (1, 1)
+    assert szeregowo.out == oczekiwane  # test ma co porownywac: lista nie jest pusta ani przypadkowa
+    assert rownolegle.out == szeregowo.out
+    assert rownolegle.err == szeregowo.err == ""
+
+
+def test_bez_opcji_j_przebieg_jest_identyczny_jak_z_j_1_i_idzie_po_kolei(
+    tmp_path, capsys, monkeypatch
+):
+    wiersze = [_wiersz_puli(i, przezywa=i in (2, 5), pauza_ms=5) for i in range(8)]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod_domyslny = _przebieg_puli(repo)
+    domyslny = capsys.readouterr()
+    kolejnosc_domyslna = list(sledzenie.kolejnosc)
+    maks_domyslny = sledzenie.max_aktywnych
+    sledzenie.kolejnosc.clear()
+    kod_j1 = _przebieg_puli(repo, "-j", "1")
+    j1 = capsys.readouterr()
+
+    assert (kod_domyslny, kod_j1) == (1, 1)
+    assert domyslny.out == j1.out
+    assert domyslny.out.count("\n") == 2
+    # dwa wywolania na wiersz (bez mutacji i po niej), wiersz po wierszu, w kolejnosci tabeli
+    assert kolejnosc_domyslna == [f"{PLIK_TESTU_PULI}::test_{i}" for i in range(8) for _ in (0, 1)]
+    assert sledzenie.kolejnosc == kolejnosc_domyslna
+    assert maks_domyslny == 1
+    assert sledzenie.max_aktywnych == 1
+
+
+@pytest.mark.parametrize(
+    ("opcja", "procesy"),
+    [
+        pytest.param("-j", 2, id="j_2"),
+        pytest.param("-j", 4, id="j_4"),
+        pytest.param("--procesy", 3, id="procesy_3"),
+    ],
+)
+def test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach(
+    tmp_path, capsys, monkeypatch, opcja, procesy
+):
+    wiersze = [_wiersz_puli(i, pauza_ms=30) for i in range(16)]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, opcja, str(procesy))
+
+    assert kod == 0, capsys.readouterr().err
+    assert 2 <= sledzenie.max_aktywnych <= procesy
+    assert len(sledzenie.kolejnosc) == 32  # kazdy wiersz dwa razy: nic nie zgubiono w puli
+
+
+def test_kontrola_detektora_nakladania_zwykle_wiersze_w_puli_nakladaja_sie_w_czasie(
+    tmp_path, monkeypatch
+):
+    """Bez tej kontroli test szeregowosci ponizej moglby przechodzic, bo detektor nigdy nie
+    widzi nakladania: tu ten sam ksztalt wierszy, ale zwyklych, i zakresy MUSZA sie przecinac."""
+    wiersze = [_wiersz_puli(i, pauza_ms=PAUZA_WIERSZA_SZEREGOWEGO_MS) for i in range(6)]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    assert _przebieg_puli(repo, "-j", "4") == 0
+
+    zakresy = [sledzenie.zakres_wiersza(f"{PLIK_TESTU_PULI}::test_{i}") for i in range(6)]
+    assert not _zakresy_rozlaczne(zakresy)
+
+
+@pytest.mark.parametrize(
+    "wiersz_szeregowy",
+    [
+        pytest.param(
+            lambda i: _wiersz_puli(i, test=PLIK_TESTU_E2E, pauza_ms=PAUZA_WIERSZA_SZEREGOWEGO_MS),
+            id="test_pod_tests_e2e",
+        ),
+        pytest.param(
+            lambda i: _wiersz_puli(
+                i, plik=PLIK_WEB_WIELE, pauza_ms=PAUZA_WIERSZA_SZEREGOWEGO_MS
+            ),
+            id="plik_pod_web",
+        ),
+        pytest.param(
+            lambda i: _wiersz_puli(
+                i, test=PLIK_TESTU_BAZY, pauza_ms=PAUZA_WIERSZA_SZEREGOWEGO_MS
+            ),
+            id="plik_testu_z_mark_baza",
+        ),
+    ],
+)
+def test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow(
+    tmp_path, capsys, monkeypatch, wiersz_szeregowy
+):
+    # Parzyste numery: wiersze szeregowe, nieparzyste: zwykle, w jednej tabeli i w jednej puli.
+    numery_szeregowe = [0, 2, 4, 6, 8, 10]
+    wiersze = [
+        wiersz_szeregowy(i) if i % 2 == 0 else _wiersz_puli(i, pauza_ms=30) for i in range(12)
+    ]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, "-j", "4")
+
+    assert kod == 0, capsys.readouterr().err
+    # node id kazdego wiersza konczy sie `_<numer wiersza>`, niezaleznie od wariantu wiersza
+    zakresy = [
+        sledzenie.zakres_wiersza(test)
+        for test in sledzenie.przedzialy
+        if int(test.rsplit("_", 1)[1]) in numery_szeregowe
+    ]
+    assert len(zakresy) == len(numery_szeregowe)  # wszystkie wiersze szeregowe sie wykonaly
+    assert _zakresy_rozlaczne(zakresy)
+
+
+def test_plik_testu_ze_slowem_baza_bez_mark_baza_nie_jest_wierszem_szeregowym(
+    tmp_path, capsys, monkeypatch
+):
+    wiersze = [
+        _wiersz_puli(i, test=PLIK_TESTU_Z_SLOWEM_BAZA, pauza_ms=PAUZA_WIERSZA_SZEREGOWEGO_MS)
+        for i in range(8)
+    ]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, "-j", "4")
+
+    assert kod == 0, capsys.readouterr().err
+    assert sledzenie.max_aktywnych >= 2
+
+
+def test_blad_narzedzia_w_wierszu_puli_daje_kod_2_z_komunikatem_pierwszego_wiersza_tabeli(
+    tmp_path, capsys, monkeypatch
+):
+    # Wiersz 2 zglasza blad po 300 ms, wiersz 3 od razu: w czasie konca pierwszy jest 3, w tabeli 2.
+    # Wiersz 4 trwa jeszcze, gdy blad wiersza 2 jest juz znany: pula nie zostawia go w tle.
+    wiersze = [
+        _wiersz_puli(0, przezywa=True),
+        _wiersz_puli(1, przezywa=True),
+        _wiersz_puli(2, pauza_ms=300, blad=True),
+        _wiersz_puli(3, blad=True),
+        _wiersz_puli(4, pauza_ms=500),
+        _wiersz_puli(5),
+        _wiersz_puli(6),
+    ]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, "-j", "4")
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.strip() == "blad: blad wiersza 2"
+    assert zrzut.out == ""  # przezywajace wiersze 0 i 1 nie sa wypisywane: blad ma pierwszenstwo
+    assert sledzenie.aktywne == 0  # zadne wywolanie nie zostalo w tle po powrocie z main
+
+
+@pytest.mark.parametrize("opcja", ["-j", "--procesy"])
+# "٣" przechodzi isdigit() i int(); "+3", " 3" i "1_0" przechodza int(): kazdy odrzuca tylko
+# jeden warunek `_procesy`.
+@pytest.mark.parametrize(
+    "wartosc",
+    [
+        "0",
+        "abc",
+        "-1",
+        "1.5",
+        "",
+        pytest.param("٣", id="cyfra_arabsko_indyjska"),
+        pytest.param("+3", id="plus_przed_liczba"),
+        pytest.param(" 3", id="spacja_przed_liczba"),
+        pytest.param("1_0", id="podkreslnik_w_liczbie"),
+    ],
+)
+def test_zla_liczba_procesow_to_blad_argumentow_kodem_2_bez_uruchamiania_testow(
+    tmp_path, monkeypatch, opcja, wartosc
+):
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, _wiersz_puli(0))
+
+    kod = _przebieg_puli(repo, opcja, wartosc)
+
+    assert kod == 2
+    assert sledzenie.kolejnosc == []
+
+
+def test_wiersz_z_nieczytelnym_plikiem_testu_jest_szeregowy_a_nie_w_puli(
+    tmp_path, capsys, monkeypatch
+):
+    # Brak pliku testu w kopii: bez dowodu, ze nie ma w nim `mark.baza`, wiersz nie wchodzi do puli.
+    wiersze = [
+        _wiersz_puli(i, test="tests/test_nie_istnieje.py", pauza_ms=30) for i in range(8)
+    ]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, "-j", "4")
+
+    assert kod == 0, capsys.readouterr().err
+    assert len(sledzenie.kolejnosc) == 16  # kazdy wiersz dwa razy
+    assert sledzenie.max_aktywnych == 1
+
+
+def test_blad_narzedzia_w_wierszu_szeregowym_wczesniejszym_w_tabeli_wygrywa_z_bledem_z_puli(
+    tmp_path, capsys, monkeypatch
+):
+    wiersze = [
+        _wiersz_puli(0),
+        _wiersz_puli(1),
+        _wiersz_puli(2, test=PLIK_TESTU_E2E, blad=True),  # szeregowy, wczesniejszy w tabeli
+        _wiersz_puli(3),
+        _wiersz_puli(4),
+        _wiersz_puli(5, blad=True),  # z puli, pozniejszy w tabeli
+        _wiersz_puli(6),
+    ]
+    _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, "-j", "4")
+
+    zrzut = capsys.readouterr()
+    assert kod == 2
+    assert zrzut.err.strip() == "blad: blad wiersza 2"
+    assert zrzut.out == ""
+
+
+def test_wiersz_szeregowy_za_bledem_narzedzia_z_puli_nie_jest_uruchamiany(
+    tmp_path, capsys, monkeypatch
+):
+    wiersze = [
+        _wiersz_puli(0),
+        _wiersz_puli(1, blad=True),
+        _wiersz_puli(2),
+        _wiersz_puli(3, test=PLIK_TESTU_E2E),
+    ]
+    sledzenie = _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    kod = _przebieg_puli(repo, "-j", "4")
+
+    assert kod == 2
+    assert capsys.readouterr().err.strip() == "blad: blad wiersza 1"
+    assert f"{PLIK_TESTU_E2E}::test_3" not in sledzenie.kolejnosc
+
+
+def test_nieoczekiwany_wyjatek_w_wierszu_puli_nie_jest_polykany(tmp_path, monkeypatch):
+    wiersze = [_wiersz_puli(i) for i in range(4)]
+    wiersze[2] = wiersze[2].replace("# s0", "# s0 wyjatek2")
+    _zaslepki_puli(monkeypatch)
+    repo = _repo_puli(tmp_path, "".join(wiersze))
+
+    with pytest.raises(RuntimeError, match="wyjatek wiersza 2"):
+        _przebieg_puli(repo, "-j", "4")

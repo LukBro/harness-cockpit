@@ -1,0 +1,3152 @@
+# Tabela recznych mutantow HAR-236: bramki lokalne szybciej (pomiar faz, --max-children, tryb
+# przyrostowy --od-przebiegu, bramki_lokalne.sh, -j w mutanty_reczne.py, e2e na workerach xdist).
+#
+# Pliki tools/ sa poza zasiegiem mutmuta, wiec KAZDY zmieniony element tools/mutanty_zmian.py,
+# tools/mutanty_reczne.py, tools/bramki_lokalne.sh i tools/testy_pelne.sh ma tu wiersz z testem,
+# ktory oblewa po mutacji. Fixture `baza_workera` w tests/e2e/conftest.py (CREATE/DROP DATABASE
+# na PostgreSQL) nie ma wiersza: jego test wymaga bazy, a kopie repozytorium tabeli jej nie maja;
+# sprawdza go przebieg `-m e2e -n 4` na PostgreSQL (nazwa i adres bazy workera: osobna funkcja
+# `url_bazy_workera` ma wiersze ponizej).
+#
+# Mutanty rownowazne sa na koncu tabeli jako [[rownowazny]] z uzasadnieniem.
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    return sorted(wzorce_z_odciskami_dla_pliku(sciezka, zrodlo, linie))"
+zamien = "    return list(wzorce_z_odciskami_dla_pliku(sciezka, zrodlo, linie))"
+test = "tests/test_mutanty_zmian.py::test_wzorce_pliku_sa_posortowane_takze_gdy_kolejnosc_funkcji_w_pliku_jest_odwrotna"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    return sorted(wzorce_z_odciskami(zmiany, source_paths, korzen))"
+zamien = "    return list(wzorce_z_odciskami(zmiany, source_paths, korzen))"
+test = "tests/test_mutanty_zmian.py::test_wiele_plikow_daje_wzorce_posortowane_bez_powtorzen"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    lista = sorted(odciski)"
+zamien = "    lista = list(odciski)"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return hashlib.sha256(tekst.encode(\"utf-8\")).hexdigest()"
+zamien = "return hashlib.md5(tekst.encode(\"utf-8\")).hexdigest()"
+test = "tests/test_mutanty_zmian.py::test_po_przebiegu_z_kodem_0_1_albo_3_zapis_ma_wpis_dla_kazdego_wzorca[kod_0]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "_odcisk_tekstu(\"\\n\".join(fizyczne[start - 1 : koniec]))"
+zamien = "_odcisk_tekstu(\"\\n\".join(fizyczne[start : koniec]))"
+test = "tests/test_mutanty_zmian.py::test_odcisk_funkcji_obejmuje_jej_dekorator"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "_odcisk_tekstu(\"\\n\".join(fizyczne[start - 1 : koniec]))"
+zamien = "_odcisk_tekstu(\"\\n\".join(fizyczne[start - 1 : koniec - 1]))"
+test = "tests/test_mutanty_zmian.py::test_runda_poprawek_mutuje_tylko_funkcje_zmieniona_od_poprzedniego_przebiegu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "_odcisk_tekstu(\"\\n\".join(fizyczne[start - 1 : koniec]))"
+zamien = "_odcisk_tekstu(\"\".join(fizyczne[start - 1 : koniec]))"
+test = "tests/test_mutanty_zmian.py::test_podzial_funkcji_na_inne_linie_przy_tym_samym_tekscie_zmienia_jej_odcisk"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wynik[wzorzec] = odcisk(metoda)"
+zamien = "wynik[wzorzec] = \"\""
+test = "tests/test_mutanty_zmian.py::test_odcisk_funkcji_obejmuje_jej_dekorator"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wynik[f\"{modul}.x_{wezel.name}__mutmut_*\"] = odcisk(wezel)"
+zamien = "wynik[f\"{modul}.x_{wezel.name}__mutmut_*\"] = \"\""
+test = "tests/test_mutanty_zmian.py::test_po_przebiegu_z_kodem_0_1_albo_3_zapis_ma_wpis_dla_kazdego_wzorca[kod_0]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"wybor_funkcji\",\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"mutmut_statystyki\",\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"mutmut_przygotowanie\",\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"mutmut_mutanty\",\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"mutmut_results\",\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"razem\",\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    \"mutmut_statystyki\",\n    \"mutmut_przygotowanie\",\n"
+zamien = "    \"mutmut_przygotowanie\",\n    \"mutmut_statystyki\",\n"
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "(\"statystyki\", \"Running stats\"),"
+zamien = "(\"statystyki\", \"Running statz\"),"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "(\"statystyki\", \"Running stats\"),"
+zamien = "(\"statystykiX\", \"Running stats\"),"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "(\"czyste_testy\", \"Running clean tests\"),"
+zamien = "(\"czyste_testy\", \"Running clean testz\"),"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "(\"czyste_testy\", \"Running clean tests\"),"
+zamien = "(\"czyste_testyX\", \"Running clean tests\"),"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "(\"mutanty\", \"Running mutation testing\"),"
+zamien = "(\"mutanty\", \"Running mutation testinz\"),"
+test = "tests/test_mutanty_zmian.py::test_czas_przygotowania_liczony_od_startu_mutmut_run_do_running_mutation_testing"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "(\"mutanty\", \"Running mutation testing\"),"
+zamien = "(\"mutantyX\", \"Running mutation testing\"),"
+test = "tests/test_mutanty_zmian.py::test_czas_mutantow_liczony_od_running_mutation_testing_do_konca_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if argv[1:4] == [\"-m\", \"mutmut\", \"run\"]:"
+zamien = "if argv[1:4] == [\"-m\", \"mutmut\", \"runx\"]:"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "proces = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)\n    except OSError as blad:"
+zamien = "proces = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)\n    except ZeroDivisionError as blad:"
+test = "tests/test_mutanty_zmian.py::test_brak_interpretera_dla_mutmut_run_to_blad_narzedzia_z_nazwa_programu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "stdout=subprocess.PIPE, stderr=subprocess.STDOUT)"
+zamien = "stdout=subprocess.PIPE, stderr=subprocess.PIPE)"
+test = "tests/test_mutanty_zmian.py::test_diagnostyka_bledu_mutmuta_zawiera_stderr_i_poprawnie_zdekodowane_bajty"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "znaczniki: dict[str, float] = {\"start\": time.monotonic()}"
+zamien = "znaczniki: dict[str, float] = {\"start\": time.monotonic() + 100.0}"
+test = "tests/test_mutanty_zmian.py::test_czas_przygotowania_liczony_od_startu_mutmut_run_do_running_mutation_testing"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "codecs.getincrementaldecoder(\"utf-8\")(errors=\"replace\")"
+zamien = "codecs.getincrementaldecoder(\"utf-8\")(errors=\"strict\")"
+test = "tests/test_mutanty_zmian.py::test_diagnostyka_bledu_mutmuta_zawiera_stderr_i_poprawnie_zdekodowane_bajty"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "tekst = dekoder.decode(kawalek)"
+zamien = "tekst = kawalek.decode(\"utf-8\", errors=\"replace\")"
+test = "tests/test_mutanty_zmian.py::test_diagnostyka_bledu_mutmuta_zawiera_stderr_i_poprawnie_zdekodowane_bajty"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "zebrane.append(dekoder.decode(b\"\", final=True))"
+zamien = "zebrane.append(\"\")"
+test = "tests/test_mutanty_zmian.py::test_diagnostyka_bledu_mutmuta_zawiera_stderr_i_poprawnie_zdekodowane_bajty"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "okno += tekst"
+zamien = "okno = tekst"
+test = "tests/test_mutanty_zmian.py::test_marker_rozdzielony_na_dwa_odczyty_jest_rozpoznany_a_czas_liczony_od_pierwszego_widzenia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if nazwa not in znaczniki and fragment in okno:"
+zamien = "if fragment in okno:"
+test = "tests/test_mutanty_zmian.py::test_marker_rozdzielony_na_dwa_odczyty_jest_rozpoznany_a_czas_liczony_od_pierwszego_widzenia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if nazwa not in znaczniki and fragment in okno:"
+zamien = "if nazwa not in znaczniki and fragment in tekst:"
+test = "tests/test_mutanty_zmian.py::test_marker_rozdzielony_na_dwa_odczyty_jest_rozpoznany_a_czas_liczony_od_pierwszego_widzenia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "okno = ROZDZIELACZ_LINII.split(okno)[-1]"
+zamien = "okno = \"\""
+test = "tests/test_mutanty_zmian.py::test_marker_rozdzielony_na_dwa_odczyty_jest_rozpoznany_a_czas_liczony_od_pierwszego_widzenia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "okno = ROZDZIELACZ_LINII.split(okno)[-1]"
+zamien = "okno = ROZDZIELACZ_LINII.split(okno)[0]"
+test = "tests/test_mutanty_zmian.py::test_marker_rozdzielony_na_dwa_odczyty_jest_rozpoznany_a_czas_liczony_od_pierwszego_widzenia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "kod = proces.wait()\n        znaczniki[\"koniec\"] = time.monotonic()"
+zamien = "kod = proces.wait()\n        znaczniki[\"koniec\"] = znaczniki[\"mutanty\"]"
+test = "tests/test_mutanty_zmian.py::test_czas_mutantow_liczony_od_running_mutation_testing_do_konca_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if proces.poll() is None:\n            proces.kill()"
+zamien = "if False:\n            proces.kill()"
+test = "tests/test_mutanty_zmian.py::test_wyjatek_podczas_czytania_strumienia_zabija_proces_mutmuta_i_zamyka_strumien"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            proces.kill()\n            proces.wait()\n        proces.stdout.close()"
+zamien = "            proces.kill()\n            proces.wait()"
+test = "tests/test_mutanty_zmian.py::test_wyjatek_podczas_czytania_strumienia_zabija_proces_mutmuta_i_zamyka_strumien"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            proces.kill()\n            proces.wait()\n        proces.stdout.close()"
+zamien = "            proces.kill()\n        proces.stdout.close()"
+test = "tests/test_mutanty_zmian.py::test_wyjatek_podczas_czytania_strumienia_zabija_proces_mutmuta_i_zamyka_strumien"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wynik.znaczniki = znaczniki  # type: ignore[attr-defined]"
+zamien = "wynik.znaczniki = {}  # type: ignore[attr-defined]"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.start = time.monotonic()"
+zamien = "self.start = 0.0"
+test = "tests/test_mutanty_zmian.py::test_czas_calkowity_obejmuje_wszystkie_fazy_a_wybor_funkcji_jest_krotszy_od_calosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if od is not None and do is not None:"
+zamien = "if do is not None:"
+test = "tests/test_mutanty_zmian.py::test_mutmut_bez_linii_running_stats_ma_pomiar_pozostalych_faz_ale_nie_statystyk"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if od is not None and do is not None:"
+zamien = "if od is not None:"
+test = "tests/test_mutanty_zmian.py::test_mutmut_bez_linii_running_mutation_testing_nie_ma_pomiaru_przygotowania_ani_mutantow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.fazy[faza] = do - od"
+zamien = "self.fazy[faza] = od - do"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "z = getattr(bieg, \"znaczniki\", None) or {}"
+zamien = "z = getattr(bieg, \"znacznik\", None) or {}"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_statystyki\", z.get(\"statystyki\"), z.get(\"czyste_testy\"))"
+zamien = "self.zmierz(\"mutmut_statystyki\", z.get(\"statystyki\"), z.get(\"koniec\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_statystyki\", z.get(\"statystyki\"), z.get(\"czyste_testy\"))"
+zamien = "self.zmierz(\"mutmut_statystykiX\", z.get(\"statystyki\"), z.get(\"czyste_testy\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_przygotowanie\", z.get(\"start\"), z.get(\"mutanty\"))"
+zamien = "self.zmierz(\"mutmut_przygotowanie\", z.get(\"statystyki\"), z.get(\"mutanty\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_przygotowania_liczony_od_startu_mutmut_run_do_running_mutation_testing"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_przygotowanie\", z.get(\"start\"), z.get(\"mutanty\"))"
+zamien = "self.zmierz(\"mutmut_przygotowanie\", z.get(\"start\"), z.get(\"koniec\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_przygotowania_liczony_od_startu_mutmut_run_do_running_mutation_testing"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_przygotowanie\", z.get(\"start\"), z.get(\"mutanty\"))"
+zamien = "self.zmierz(\"mutmut_przygotowanieX\", z.get(\"start\"), z.get(\"mutanty\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_przygotowania_liczony_od_startu_mutmut_run_do_running_mutation_testing"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_mutanty\", z.get(\"mutanty\"), z.get(\"koniec\"))"
+zamien = "self.zmierz(\"mutmut_mutanty\", z.get(\"czyste_testy\"), z.get(\"koniec\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_mutantow_liczony_od_running_mutation_testing_do_konca_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.zmierz(\"mutmut_mutanty\", z.get(\"mutanty\"), z.get(\"koniec\"))"
+zamien = "self.zmierz(\"mutmut_mutantyX\", z.get(\"mutanty\"), z.get(\"koniec\"))"
+test = "tests/test_mutanty_zmian.py::test_czas_mutantow_liczony_od_running_mutation_testing_do_konca_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "self.fazy[\"razem\"] = time.monotonic() - self.start"
+zamien = "self.fazy[\"razem\"] = time.monotonic()"
+test = "tests/test_mutanty_zmian.py::test_czas_calkowity_obejmuje_wszystkie_fazy_a_wybor_funkcji_jest_krotszy_od_calosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wartosc = \"brak pomiaru\" if sekundy is None else f\"{sekundy:.1f} s\""
+zamien = "wartosc = \"brak pomiaru\" if sekundy is None else f\"{sekundy:.2f} s\""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wartosc = \"brak pomiaru\" if sekundy is None else f\"{sekundy:.1f} s\""
+zamien = "wartosc = \"brak pomiaru\" if sekundy is not None else f\"{sekundy:.1f} s\""
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wartosc = \"brak pomiaru\" if sekundy is None else f\"{sekundy:.1f} s\""
+zamien = "wartosc = \"brak pomiarux\" if sekundy is None else f\"{sekundy:.1f} s\""
+test = "tests/test_mutanty_zmian.py::test_gdy_mutmut_nie_byl_wolany_zadna_jego_faza_nie_ma_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "print(f\"czas fazy {faza}: {wartosc}\", file=sys.stderr)"
+zamien = "print(f\"czas fazy {faza}: {wartosc}\")"
+test = "tests/test_mutanty_zmian.py::test_linie_czasu_nie_zmieniaja_stdout_ani_kodu_wyjscia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "print(f\"czas fazy {faza}: {wartosc}\", file=sys.stderr)"
+zamien = "print(f\"czas fazy! {faza}: {wartosc}\", file=sys.stderr)"
+test = "tests/test_mutanty_zmian.py::test_przebieg_wypisuje_na_stderr_czas_kazdej_fazy_w_ustalonej_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    finally:\n        czasy.wypisz()"
+zamien = "    finally:\n        pass"
+test = "tests/test_mutanty_zmian.py::test_czas_faz_jest_wypisany_takze_przy_bledzie_mutmuta_z_pomiarem_tylko_faz_ktore_sie_odbyly"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)"
+zamien = "return _przebieg(args.baza, args.korzen, czasy, None, args.od_przebiegu)"
+test = "tests/test_mutanty_zmian.py::test_max_children_trafia_do_mutmut_run_przed_wzorcami"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)"
+zamien = "return _przebieg(args.baza, args.korzen, czasy, args.max_children, None)"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        default=None,\n        metavar=\"N\","
+zamien = "        default=8,\n        metavar=\"N\","
+test = "tests/test_mutanty_zmian.py::test_bez_max_children_mutmut_run_nie_dostaje_tej_opcji"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        default=None,\n        metavar=\"PLIK\","
+zamien = "        default=Path(\"/nie/ma/zapisu.json\"),\n        metavar=\"PLIK\","
+test = "tests/test_mutanty_zmian.py::test_bez_opcji_od_przebiegu_nie_ma_linii_przyrostowo_ani_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isdigit()) or int(tekst) < 1:"
+test = "tests/test_mutanty_zmian.py::test_zla_wartosc_max_children_to_blad_argumentow_kodem_2_bez_uruchamiania_czegokolwiek[cyfra_arabsko_indyjska]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isascii()) or int(tekst) < 1:"
+test = "tests/test_mutanty_zmian.py::test_zla_wartosc_max_children_to_blad_argumentow_kodem_2_bez_uruchamiania_czegokolwiek[plus_przed_liczba]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 0:"
+test = "tests/test_mutanty_zmian.py::test_zla_wartosc_max_children_to_blad_argumentow_kodem_2_bez_uruchamiania_czegokolwiek[0]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isascii() and tekst.isdigit()):"
+test = "tests/test_mutanty_zmian.py::test_zla_wartosc_max_children_to_blad_argumentow_kodem_2_bez_uruchamiania_czegokolwiek[0]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if od_przebiegu is not None:\n        odcisk_testow_teraz = odcisk_testow(korzen)"
+zamien = "    if od_przebiegu is None:\n        odcisk_testow_teraz = odcisk_testow(korzen)"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if zapis is not None and zapis[\"odcisk_testow\"] != odcisk_testow_teraz:"
+zamien = "if zapis is not None and zapis[\"odcisk_testow\"] == odcisk_testow_teraz:"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_tresci_sledzonego_pliku_testow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if zapis is not None and zapis[\"odcisk_testow\"] != odcisk_testow_teraz:"
+zamien = "if zapis[\"odcisk_testow\"] != odcisk_testow_teraz:"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "zapis, powod = None, \"zmiana testów\""
+zamien = "zapis, powod = None, \"zmiana testow\""
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_pyproject_toml]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "print(f\"przyrostowo: zapis unieważniony — {powod}\", file=sys.stderr)"
+zamien = "print(f\"przyrostowo: zapis uniewazniony — {powod}\", file=sys.stderr)"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "print(f\"przyrostowo: zapis unieważniony — {powod}\", file=sys.stderr)"
+zamien = "print(f\"przyrostowo: zapis unieważniony - {powod}\", file=sys.stderr)"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w for w in lista if poprzednie.get(w, {}).get(\"odcisk\") != odciski[w]"
+zamien = "w for w in lista if poprzednie.get(w, {}).get(\"odcisk\") == odciski[w]"
+test = "tests/test_mutanty_zmian.py::test_runda_poprawek_mutuje_tylko_funkcje_zmieniona_od_poprzedniego_przebiegu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w for w in lista if poprzednie.get(w, {}).get(\"odcisk\") != odciski[w]"
+zamien = "w for w in lista if poprzednie[w].get(\"odcisk\") != odciski[w]"
+test = "tests/test_mutanty_zmian.py::test_funkcja_nieobecna_w_zapisie_jest_mutowana_a_reszta_idzie_z_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w for w in lista if poprzednie.get(w, {}).get(\"odcisk\") != odciski[w]"
+zamien = "w for w in lista if poprzednie.get(w, {})[\"odcisk\"] != odciski[w]"
+test = "tests/test_mutanty_zmian.py::test_funkcja_nieobecna_w_zapisie_jest_mutowana_a_reszta_idzie_z_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "for w in lista if w not in do_mutowania}"
+zamien = "for w in lista if w in do_mutowania}"
+test = "tests/test_mutanty_zmian.py::test_przezywajacy_mutant_z_poprzedniego_przebiegu_w_niezmienionej_funkcji_nadal_daje_kod_1"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "print(f\"przyrostowo: mutuję {len(do_mutowania)} z {len(lista)} funkcji\", file=sys.stderr)"
+zamien = "print(f\"przyrostowo: mutuję {len(lista)} z {len(do_mutowania)} funkcji\", file=sys.stderr)"
+test = "tests/test_mutanty_zmian.py::test_runda_poprawek_mutuje_tylko_funkcje_zmieniona_od_poprzedniego_przebiegu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "czasy.zmierz(\"wybor_funkcji\", czasy.start, time.monotonic())"
+zamien = "czasy.zmierz(\"wybor_funkcji\", 0.0, time.monotonic())"
+test = "tests/test_mutanty_zmian.py::test_czas_calkowity_obejmuje_wszystkie_fazy_a_wybor_funkcji_jest_krotszy_od_calosci"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not lista and od_przebiegu is None:"
+zamien = "if not lista:"
+test = "tests/test_mutanty_zmian.py::test_przebieg_z_zapisem_bez_zmienionych_funkcji_tworzy_pusty_zapis_i_nie_wola_mutmuta"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if do_mutowania:\n        polecenie ="
+zamien = "    if lista:\n        polecenie ="
+test = "tests/test_mutanty_zmian.py::test_przebieg_bez_zmian_funkcji_bierze_wynik_z_zapisu_i_nie_wola_mutmuta[przezywajacy_w_zapisie_to_kod_1]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if max_children is not None:"
+zamien = "if max_children is None:"
+test = "tests/test_mutanty_zmian.py::test_max_children_trafia_do_mutmut_run_przed_wzorcami"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "polecenie += [\"--max-children\", str(max_children)]"
+zamien = "polecenie += [\"--max-children\", max_children]"
+test = "tests/test_mutanty_zmian.py::test_max_children_trafia_do_mutmut_run_przed_wzorcami"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        polecenie = [sys.executable, \"-m\", \"mutmut\", \"run\"]\n"
+zamien = "        polecenie = [sys.executable, \"-m\", \"mutmut\", \"runx\"]\n"
+test = "tests/test_mutanty_zmian.py::test_max_children_trafia_do_mutmut_run_przed_wzorcami"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        czasy.z_mutmuta(bieg)\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_czas_statystyk_liczony_od_running_stats_do_running_clean_tests"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if \"nothing matches\" not in f\"{bieg.stdout}\\n{bieg.stderr}\":"
+zamien = "if \"nothing matches\" in f\"{bieg.stdout}\\n{bieg.stderr}\":"
+test = "tests/test_mutanty_zmian.py::test_mutmut_run_z_innym_bledem_daje_kod_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if wyniki.returncode != 0:"
+zamien = "            if wyniki.returncode == 0:"
+test = "tests/test_mutanty_zmian.py::test_mutmut_results_z_bledem_daje_kod_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "czasy.zmierz(\"mutmut_results\", start_results, time.monotonic())"
+zamien = "czasy.zmierz(\"mutmut_results\", czasy.start, time.monotonic())"
+test = "tests/test_mutanty_zmian.py::test_czas_mutmut_results_obejmuje_wywolanie_results"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "nowe_przezywajace = przezywajace(wyniki.stdout, do_mutowania)"
+zamien = "nowe_przezywajace = przezywajace(wyniki.stdout, lista)"
+test = "tests/test_mutanty_zmian.py::test_wynik_results_z_cache_nie_wnosi_przezywajacych_funkcji_ktorych_nie_mutowano"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "survivory = sorted({*nowe_przezywajace,"
+zamien = "survivory = list({*nowe_przezywajace,"
+test = "tests/test_mutanty_zmian.py::test_wiele_przezywajacych_z_zapisu_i_z_nowego_przebiegu_jest_na_stdout_alfabetycznie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "survivory = sorted({*nowe_przezywajace, *(m for lista_m in z_zapisu.values() for m in lista_m)})"
+zamien = "survivory = sorted({*nowe_przezywajace})"
+test = "tests/test_mutanty_zmian.py::test_przezywajacy_mutant_z_poprzedniego_przebiegu_w_niezmienionej_funkcji_nadal_daje_kod_1"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "survivory = sorted({*nowe_przezywajace, *(m for lista_m in z_zapisu.values() for m in lista_m)})"
+zamien = "survivory = sorted({*(m for lista_m in z_zapisu.values() for m in lista_m)})"
+test = "tests/test_mutanty_zmian.py::test_funkcja_zmutowana_od_nowa_nie_dziedziczy_przezywajacych_z_zapisu_gdy_nowy_przebieg_je_zabil"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "                    if w in z_zapisu\n"
+zamien = "                    if w not in z_zapisu\n"
+test = "tests/test_mutanty_zmian.py::test_nowy_zapis_przenosi_wpis_niezmienionej_funkcji_bez_zmian_a_zmienionej_przelicza"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "for m in nowe_przezywajace if fnmatch.fnmatchcase(m, w)]"
+zamien = "for m in nowe_przezywajace if fnmatch.fnmatchcase(w, m)]"
+test = "tests/test_mutanty_zmian.py::test_po_przebiegu_z_kodem_0_1_albo_3_zapis_ma_wpis_dla_kazdego_wzorca[kod_1]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            for w in lista\n        }"
+zamien = "            for w in do_mutowania\n        }"
+test = "tests/test_mutanty_zmian.py::test_nowy_zapis_przenosi_wpis_niezmienionej_funkcji_bez_zmian_a_zmienionej_przelicza"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "zapisz_przebieg(od_przebiegu, odcisk_testow_teraz, funkcje)"
+zamien = "zapisz_przebieg(od_przebiegu, \"\", funkcje)"
+test = "tests/test_mutanty_zmian.py::test_po_przebiegu_z_kodem_0_1_albo_3_zapis_ma_wpis_dla_kazdego_wzorca[kod_0]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if do_mutowania and not survivory and not poza_zasiegiem:"
+zamien = "if not survivory and not poza_zasiegiem:"
+test = "tests/test_mutanty_zmian.py::test_komunikat_o_braku_przezywajacych_tylko_gdy_ten_przebieg_mutowal_i_nic_nie_przezylo[nic_nie_mutowano_wynik_z_zapisu]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if do_mutowania and not survivory and not poza_zasiegiem:"
+zamien = "if do_mutowania and not poza_zasiegiem:"
+test = "tests/test_mutanty_zmian.py::test_komunikat_o_braku_przezywajacych_tylko_gdy_ten_przebieg_mutowal_i_nic_nie_przezylo[jest_przezywajacy_mutant]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if do_mutowania and not survivory and not poza_zasiegiem:"
+zamien = "if do_mutowania and not survivory:"
+test = "tests/test_mutanty_zmian.py::test_komunikat_o_braku_przezywajacych_tylko_gdy_ten_przebieg_mutowal_i_nic_nie_przezylo[zmiana_poza_zasiegiem_mutmuta]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "print(\"brak przezywajacych mutantow w zmienionych funkcjach\", file=sys.stderr)"
+zamien = "print(\"brak przezywajacych mutantow w zmienionych funkcjach!\", file=sys.stderr)"
+test = "tests/test_mutanty_zmian.py::test_komunikat_o_braku_przezywajacych_tylko_gdy_ten_przebieg_mutowal_i_nic_nie_przezylo[wszystkie_zabite_w_tym_przebiegu]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--exclude-standard\", \"--\", \"tests\"])"
+zamien = "uruchom([\"git\", \"ls-files\", \"-co\", \"--exclude-standard\", \"--\", \"tests\"])"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_tresci_sledzonego_pliku_testow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--exclude-standard\", \"--\", \"tests\"])"
+zamien = "uruchom([\"git\", \"ls-files\", \"-z\", \"-c\", \"--exclude-standard\", \"--\", \"tests\"])"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[nowy_nieslezony_plik_testow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--exclude-standard\", \"--\", \"tests\"])"
+zamien = "uruchom([\"git\", \"ls-files\", \"-z\", \"-o\", \"--exclude-standard\", \"--\", \"tests\"])"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_tresci_sledzonego_pliku_testow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--exclude-standard\", \"--\", \"tests\"])"
+zamien = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--\", \"tests\"])"
+test = "tests/test_mutanty_zmian.py::test_zmiana_poza_testami_i_pyproject_nie_uniewaznia_zapisu[plik_ignorowany_przez_git]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--exclude-standard\", \"--\", \"tests\"])"
+zamien = "uruchom([\"git\", \"ls-files\", \"-z\", \"-co\", \"--exclude-standard\", \"--\", \"docs\"])"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_tresci_sledzonego_pliku_testow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if lista.returncode != 0:\n        raise BladNarzedzia(f\"git ls-files tests"
+zamien = "    if lista.returncode == 0:\n        raise BladNarzedzia(f\"git ls-files tests"
+test = "tests/test_mutanty_zmian.py::test_blad_git_ls_files_przy_odcisku_testow_daje_kod_2_z_komunikatem_i_bez_mutmuta"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "sciezki = sorted({s for s in lista.stdout.split(\"\\0\") if s} | {\"pyproject.toml\"})"
+zamien = "sciezki = list({s for s in lista.stdout.split(\"\\0\") if s} | {\"pyproject.toml\"})"
+test = "tests/test_mutanty_zmian.py::test_odcisk_testow_nie_zalezy_od_kolejnosci_zbioru_sciezek_w_procesie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "sciezki = sorted({s for s in lista.stdout.split(\"\\0\") if s} | {\"pyproject.toml\"})"
+zamien = "sciezki = sorted({s for s in lista.stdout.split(\"\\0\") if s})"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_pyproject_toml]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "sciezki = sorted({s for s in lista.stdout.split(\"\\0\") if s} | {\"pyproject.toml\"})"
+zamien = "sciezki = sorted({s for s in lista.stdout.split(\"\\0\")} | {\"pyproject.toml\"})"
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "continue  # sledzony, ale usuniety z dysku: brak pliku to tez stan (inny odcisk)"
+zamien = "raise"
+test = "tests/test_mutanty_zmian.py::test_plik_testow_usuniety_z_dysku_ale_wciaz_sledzony_uniewaznia_zapis"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        except OSError as blad:\n            raise BladNarzedzia(f\"{sciezka}: nie da sie odczytac: {blad}\") from blad"
+zamien = "        except ZeroDivisionError as blad:\n            raise BladNarzedzia(f\"{sciezka}: nie da sie odczytac: {blad}\") from blad"
+test = "tests/test_mutanty_zmian.py::test_katalog_w_miejscu_sledzonego_pliku_testow_to_blad_narzedzia_z_kodem_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "skrot.update(sciezka.encode(\"utf-8\") + b\"\\0\" + hashlib.sha256(tresc).digest())"
+zamien = "skrot.update(hashlib.sha256(tresc).digest())"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[ta_sama_tresc_inna_sciezka]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "skrot.update(sciezka.encode(\"utf-8\") + b\"\\0\" + hashlib.sha256(tresc).digest())"
+zamien = "skrot.update(sciezka.encode(\"utf-8\") + b\"\\0\")"
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_albo_pyproject_uniewaznia_zapis_i_przelicza_wszystkie_funkcje[zmiana_tresci_sledzonego_pliku_testow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not isinstance(zapis, dict) or zapis.get(\"wersja\") != WERSJA_ZAPISU:"
+zamien = "if zapis.get(\"wersja\") != WERSJA_ZAPISU:"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[json_nie_jest_obiektem]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not isinstance(zapis, dict) or zapis.get(\"wersja\") != WERSJA_ZAPISU:"
+zamien = "if not isinstance(zapis, dict):"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[inna_wersja]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if isinstance(zapis[\"wersja\"], bool):"
+zamien = "if False:"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[wersja_to_logiczne_true]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "not isinstance(zapis.get(\"odcisk_testow\"), str)"
+zamien = "zapis.get(\"odcisk_testow\") is None"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[odcisk_testow_nie_jest_napisem]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "or not isinstance(funkcje, dict):"
+zamien = "or funkcje is None:"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[funkcje_nie_sa_obiektem]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        isinstance(wpis, dict)\n        and"
+zamien = "        True\n        and"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[wpis_funkcji_nie_jest_obiektem]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "and isinstance(wpis.get(\"odcisk\"), str)"
+zamien = "and wpis.get(\"odcisk\") is not None"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[odcisk_funkcji_nie_jest_napisem]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "and isinstance(wpis.get(\"przezywajace\"), list)"
+zamien = "and wpis.get(\"przezywajace\") is not None"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[przezywajace_nie_sa_lista]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "and all(isinstance(m, str) for m in wpis[\"przezywajace\"])"
+zamien = "and True"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[przezywajace_zawieraja_nie_napis]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    return all(\n        isinstance(wpis, dict)"
+zamien = "    return any(\n        isinstance(wpis, dict)"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[wpis_funkcji_bez_odcisku]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "WERSJA_ZAPISU = 1"
+zamien = "WERSJA_ZAPISU = 2"
+test = "tests/test_mutanty_zmian.py::test_po_przebiegu_z_kodem_0_1_albo_3_zapis_ma_wpis_dla_kazdego_wzorca[kod_0]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return None, \"brak zapisu\""
+zamien = "return None, \"brak zapisux\""
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystko_z_powodem_brak_zapisu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "except (OSError, ValueError, RecursionError):"
+zamien = "except (ValueError, RecursionError):"
+test = "tests/test_mutanty_zmian.py::test_nieudany_zapis_przebiegu_to_blad_narzedzia_z_kodem_2[zapis_jest_katalogiem]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "except (OSError, ValueError, RecursionError):"
+zamien = "except (OSError, RecursionError):"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[nie_json]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "except (OSError, ValueError, RecursionError):"
+zamien = "except (OSError, ValueError):"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[zbyt_gleboko_zagniezdzony_json]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if not _poprawny_zapis(zapis):"
+zamien = "if False:"
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_daje_pelny_przebieg_z_powodem_nieczytelny_zapis[inna_wersja]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "zapis = json.loads(sciezka.read_text(encoding=\"utf-8\"))"
+zamien = "zapis = json.loads(sciezka.read_text(encoding=\"ascii\"))"
+test = "tests/test_mutanty_zmian.py::test_wzorzec_metody_z_separatorem_klasy_przechodzi_przez_zapis_bez_utraty_znakow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        ensure_ascii=False,\n"
+zamien = "        ensure_ascii=True,\n"
+test = "tests/test_mutanty_zmian.py::test_wzorzec_metody_z_separatorem_klasy_przechodzi_przez_zapis_bez_utraty_znakow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        indent=1,\n"
+zamien = "        indent=2,\n"
+test = "tests/test_mutanty_zmian.py::test_plik_zapisu_ma_ustalony_format_klucze_posortowane_wciecie_i_koncowy_newline"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        sort_keys=True,\n"
+zamien = "        sort_keys=False,\n"
+test = "tests/test_mutanty_zmian.py::test_plik_zapisu_ma_ustalony_format_klucze_posortowane_wciecie_i_koncowy_newline"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "tymczasowy.write_text(tresc + \"\\n\", encoding=\"utf-8\")"
+zamien = "tymczasowy.write_text(tresc, encoding=\"utf-8\")"
+test = "tests/test_mutanty_zmian.py::test_plik_zapisu_ma_ustalony_format_klucze_posortowane_wciecie_i_koncowy_newline"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "tymczasowy.write_text(tresc + \"\\n\", encoding=\"utf-8\")"
+zamien = "tymczasowy.write_text(tresc + \"\\n\", encoding=\"ascii\")"
+test = "tests/test_mutanty_zmian.py::test_wzorzec_metody_z_separatorem_klasy_przechodzi_przez_zapis_bez_utraty_znakow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "tymczasowy.unlink(missing_ok=True)"
+zamien = "pass"
+test = "tests/test_mutanty_zmian.py::test_nieudana_podmiana_zapisu_zostawia_stary_zapis_i_nie_zostawia_pliku_tymczasowego"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "raise BladNarzedzia(f\"{sciezka}: nie da sie zapisac przebiegu: {blad}\") from blad"
+zamien = "raise BladNarzedzia(f\"{sciezka}: nie da sie zapisac przebieg: {blad}\") from blad"
+test = "tests/test_mutanty_zmian.py::test_nieudana_podmiana_zapisu_zostawia_stary_zapis_i_nie_zostawia_pliku_tymczasowego"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        os.replace(tymczasowy, sciezka)"
+zamien = "        pass"
+test = "tests/test_mutanty_zmian.py::test_nieudana_podmiana_zapisu_zostawia_stary_zapis_i_nie_zostawia_pliku_tymczasowego"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "MARKER_TESTU_BAZY = b\"mark.baza\""
+zamien = "MARKER_TESTU_BAZY = b\"mark.bazx\""
+test = "tests/test_mutanty_reczne.py::test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow[plik_testu_z_mark_baza]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "MARKER_TESTU_BAZY = b\"mark.baza\""
+zamien = "MARKER_TESTU_BAZY = b\"baza\""
+test = "tests/test_mutanty_reczne.py::test_plik_testu_ze_slowem_baza_bez_mark_baza_nie_jest_wierszem_szeregowym"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        z_markerem = True"
+zamien = "        z_markerem = False"
+test = "tests/test_mutanty_reczne.py::test_wiersz_z_nieczytelnym_plikiem_testu_jest_szeregowy_a_nie_w_puli"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return wymaga_frontu(mutant) or z_markerem"
+zamien = "return wymaga_frontu(mutant)"
+test = "tests/test_mutanty_reczne.py::test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow[plik_testu_z_mark_baza]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return wymaga_frontu(mutant) or z_markerem"
+zamien = "return z_markerem"
+test = "tests/test_mutanty_reczne.py::test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow[test_pod_tests_e2e]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return wymaga_frontu(mutant) or z_markerem"
+zamien = "return wymaga_frontu(mutant) and z_markerem"
+test = "tests/test_mutanty_reczne.py::test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow[test_pod_tests_e2e]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "    if procesy == 1:"
+zamien = "    if procesy != 1:"
+test = "tests/test_mutanty_reczne.py::test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach[j_2]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return [m for m in mutanty if not _zabity(korzen, m, limit, limit_budowy)]"
+zamien = "return [m for m in mutanty if _zabity(korzen, m, limit, limit_budowy)]"
+test = "tests/test_mutanty_reczne.py::test_bez_opcji_j_przebieg_jest_identyczny_jak_z_j_1_i_idzie_po_kolei"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "ThreadPoolExecutor(max_workers=procesy)"
+zamien = "ThreadPoolExecutor(max_workers=procesy + 1)"
+test = "tests/test_mutanty_reczne.py::test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach[j_2]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "ThreadPoolExecutor(max_workers=procesy)"
+zamien = "ThreadPoolExecutor(max_workers=1)"
+test = "tests/test_mutanty_reczne.py::test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach[j_2]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "szeregowe = [n for n, m in enumerate(mutanty) if _wiersz_szeregowy(korzen, m)]"
+zamien = "szeregowe = [n for n, m in enumerate(mutanty) if not _wiersz_szeregowy(korzen, m)]"
+test = "tests/test_mutanty_reczne.py::test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow[test_pod_tests_e2e]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "zwykle = [n for n in range(len(mutanty)) if n not in szeregowe]"
+zamien = "zwykle = [n for n in range(len(mutanty)) if n in szeregowe]"
+test = "tests/test_mutanty_reczne.py::test_wiersze_frontu_e2e_i_bazy_nie_nakladaja_sie_w_czasie_mimo_czterech_procesow[test_pod_tests_e2e]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "            przyszlosc.result()"
+zamien = "            pass"
+test = "tests/test_mutanty_reczne.py::test_nieoczekiwany_wyjatek_w_wierszu_puli_nie_jest_polykany"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        if any(isinstance(w, BladNarzedzia) and n < numer for n, w in wyniki.items()):"
+zamien = "        if any(isinstance(w, BladNarzedzia) and n > numer for n, w in wyniki.items()):"
+test = "tests/test_mutanty_reczne.py::test_blad_narzedzia_w_wierszu_szeregowym_wczesniejszym_w_tabeli_wygrywa_z_bledem_z_puli"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        if any(isinstance(w, BladNarzedzia) and n < numer for n, w in wyniki.items()):"
+zamien = "        if any(n < numer for n, w in wyniki.items()):"
+test = "tests/test_mutanty_reczne.py::test_tabela_z_piecdziesieciu_wierszy_na_czterech_procesach_daje_ten_sam_wynik_co_szeregowo"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "            break\n        wykonaj(numer)"
+zamien = "            pass\n        wykonaj(numer)"
+test = "tests/test_mutanty_reczne.py::test_wiersz_szeregowy_za_bledem_narzedzia_z_puli_nie_jest_uruchamiany"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "            wyniki[numer] = blad"
+zamien = "            raise"
+test = "tests/test_mutanty_reczne.py::test_blad_narzedzia_w_wierszu_szeregowym_wczesniejszym_w_tabeli_wygrywa_z_bledem_z_puli"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "    for numer in sorted(wyniki):"
+zamien = "    for numer in wyniki:"
+test = "tests/test_mutanty_reczne.py::test_blad_narzedzia_w_wierszu_puli_daje_kod_2_z_komunikatem_pierwszego_wiersza_tabeli"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "    return [m for n, m in enumerate(mutanty) if not wyniki[n]]"
+zamien = "    return [m for n, m in enumerate(mutanty) if wyniki[n]]"
+test = "tests/test_mutanty_reczne.py::test_tabela_z_piecdziesieciu_wierszy_na_czterech_procesach_daje_ten_sam_wynik_co_szeregowo"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isdigit()) or int(tekst) < 1:"
+test = "tests/test_mutanty_reczne.py::test_zla_liczba_procesow_to_blad_argumentow_kodem_2_bez_uruchamiania_testow[cyfra_arabsko_indyjska--j]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isascii()) or int(tekst) < 1:"
+test = "tests/test_mutanty_reczne.py::test_zla_liczba_procesow_to_blad_argumentow_kodem_2_bez_uruchamiania_testow[plus_przed_liczba--j]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 0:"
+test = "tests/test_mutanty_reczne.py::test_zla_liczba_procesow_to_blad_argumentow_kodem_2_bez_uruchamiania_testow[0--j]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:"
+zamien = "if not (tekst.isascii() and tekst.isdigit()):"
+test = "tests/test_mutanty_reczne.py::test_zla_liczba_procesow_to_blad_argumentow_kodem_2_bez_uruchamiania_testow[0--j]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        default=1,\n        metavar=\"K\","
+zamien = "        default=2,\n        metavar=\"K\","
+test = "tests/test_mutanty_reczne.py::test_bez_opcji_j_przebieg_jest_identyczny_jak_z_j_1_i_idzie_po_kolei"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        \"-j\",\n        \"--procesy\","
+zamien = "        \"--procesy\","
+test = "tests/test_mutanty_reczne.py::test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach[j_2]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        \"--procesy\",\n        type=_procesy,"
+zamien = "        \"--proceso\",\n        type=_procesy,"
+test = "tests/test_mutanty_reczne.py::test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach[procesy_3]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "_przezywajace(korzen, mutanty, args.limit, args.limit_budowy, args.procesy)"
+zamien = "_przezywajace(korzen, mutanty, args.limit, args.limit_budowy, 1)"
+test = "tests/test_mutanty_reczne.py::test_zwykle_wiersze_biegna_rownolegle_ale_nie_na_wiecej_niz_k_procesach[j_2]"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "_przezywajace(korzen, mutanty, args.limit, args.limit_budowy, args.procesy)"
+zamien = "_przezywajace(korzen, mutanty, args.limit_budowy, args.limit, args.procesy)"
+test = "tests/test_mutanty_reczne.py::test_limit_czasu_z_wiersza_polecen_trafia_do_uruchomienia_testu"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "E2E_PROCESY=\"${COCKPIT_E2E_PROCESY:-4}\""
+zamien = "E2E_PROCESY=\"${COCKPIT_E2E_PROCESY:-5}\""
+test = "tests/test_testy_pelne.py::test_przebieg_e2e_pelnego_zestawu_idzie_domyslnie_na_czterech_procesach"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  *[!0-9]*) blad \"COCKPIT_E2E_PROCESY musi byc liczba calkowita >= 1"
+zamien = "  *[!0-9]x*) blad \"COCKPIT_E2E_PROCESY musi byc liczba calkowita >= 1"
+test = "tests/test_testy_pelne.py::test_zla_liczba_procesow_e2e_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[abc]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  *[!0-9]*) blad \"COCKPIT_E2E_PROCESY musi byc liczba calkowita >= 1"
+zamien = "  *[!0-9]*) blad \"COCKPIT_E2E_PROCESY musi byc liczba calkowita >= 2"
+test = "tests/test_testy_pelne.py::test_zla_liczba_procesow_e2e_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[abc]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$E2E_PROCESY\" -ge 1 ] || blad"
+zamien = "[ \"$E2E_PROCESY\" -ge 0 ] || blad"
+test = "tests/test_testy_pelne.py::test_zla_liczba_procesow_e2e_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[0]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$E2E_PROCESY\" -ge 1 ] || blad \"COCKPIT_E2E_PROCESY musi byc liczba calkowita >= 1"
+zamien = "[ \"$E2E_PROCESY\" -ge 1 ] || blad \"COCKPIT_E2E_PROCESY musi byc liczba calkowita >= 2"
+test = "tests/test_testy_pelne.py::test_zla_liczba_procesow_e2e_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[0]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "-m e2e -rs -n \"$E2E_PROCESY\""
+zamien = "-m e2e -rs -n 4"
+test = "tests/test_testy_pelne.py::test_liczba_procesow_przebiegu_e2e_pochodzi_ze_zmiennej_i_nie_zmienia_pozostalych_przebiegow[7]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "-m e2e -rs -n \"$E2E_PROCESY\""
+zamien = "-m e2e -n \"$E2E_PROCESY\""
+test = "tests/test_testy_pelne.py::test_przebieg_e2e_pelnego_zestawu_idzie_domyslnie_na_czterech_procesach"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "-m e2e -rs -n \"$E2E_PROCESY\""
+zamien = "-m e2e -rs"
+test = "tests/test_testy_pelne.py::test_przebieg_e2e_pelnego_zestawu_idzie_domyslnie_na_czterech_procesach"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "\"$PY\" -m pytest -q -rs -m \"baza and not e2e\""
+zamien = "\"$PY\" -m pytest -q -rs -n 4 -m \"baza and not e2e\""
+test = "tests/test_rownolegly_przebieg.py::test_przebieg_testow_bazy_bez_e2e_w_pelnym_zestawie_jest_sekwencyjny_a_e2e_jest_jeden"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "-m e2e -rs -n \"$E2E_PROCESY\""
+zamien = "-m e2e -rs -n 4"
+test = "tests/test_rownolegly_przebieg.py::test_pelny_zestaw_ma_rownolegly_przebieg_bez_bazy_na_czterech_procesach_i_e2e_na_procesach_ze_zmiennej"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "PY=\"${PYTHON:-python}\""
+zamien = "PY=\"${PYTHON:-pythonx}\""
+test = "tests/test_bramki_lokalne.py::test_bez_zmiennej_python_mutanty_ida_przez_python_z_path"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "DZIECI=\"${COCKPIT_MUTMUT_DZIECI:-8}\""
+zamien = "DZIECI=\"${COCKPIT_MUTMUT_DZIECI:-9}\""
+test = "tests/test_bramki_lokalne.py::test_liczba_dzieci_mutmuta_to_osiem_albo_wartosc_ze_zmiennej[domyslnie_8]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  *[!0-9]*) blad \"COCKPIT_MUTMUT_DZIECI"
+zamien = "  *[!0-9]x*) blad \"COCKPIT_MUTMUT_DZIECI"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[abc]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  *[!0-9]*) blad \"COCKPIT_MUTMUT_DZIECI musi byc liczba calkowita >= 1"
+zamien = "  *[!0-9]*) blad \"COCKPIT_MUTMUT_DZIECI musi byc liczba calkowita >= 2"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[abc]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "[ \"$DZIECI\" -ge 1 ] || blad"
+zamien = "[ \"$DZIECI\" -ge 0 ] || blad"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[0]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "[ \"$DZIECI\" -ge 1 ] || blad \"COCKPIT_MUTMUT_DZIECI musi byc liczba calkowita >= 1"
+zamien = "[ \"$DZIECI\" -ge 1 ] || blad \"COCKPIT_MUTMUT_DZIECI musi byc liczba calkowita >= 2"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[0]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "if [ -n \"${COCKPIT_BRAMKI_KATALOG:-}\" ]; then"
+zamien = "if [ -z \"${COCKPIT_BRAMKI_KATALOG:-}\" ]; then"
+test = "tests/test_bramki_lokalne.py::test_nieistniejacy_katalog_logow_jest_tworzony"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  mkdir -p \"$KAT\" || blad \"nie udalo sie utworzyc katalogu logow '$KAT'\""
+zamien = "  mkdir -p \"$KAT\""
+test = "tests/test_bramki_lokalne.py::test_katalog_logow_ktorego_nie_da_sie_utworzyc_ma_w_komunikacie_sciezke"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "blad \"nie udalo sie utworzyc katalogu logow '$KAT'\""
+zamien = "blad \"nie udalo sie utworzyc katalogu logo '$KAT'\""
+test = "tests/test_bramki_lokalne.py::test_katalog_logow_ktorego_nie_da_sie_utworzyc_ma_w_komunikacie_sciezke"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "[ -w \"$KAT\" ] || blad \"katalog logow '$KAT' nie jest katalogiem do zapisu\""
+zamien = "[ -r \"$KAT\" ] || blad \"katalog logow '$KAT' nie jest katalogiem do zapisu\""
+test = "tests/test_bramki_lokalne.py::test_istniejacy_katalog_logow_bez_prawa_zapisu_to_kod_2_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "katalogiem do zapisu\""
+zamien = "katalogiem do odczytu\""
+test = "tests/test_bramki_lokalne.py::test_istniejacy_katalog_logow_bez_prawa_zapisu_to_kod_2_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "mktemp -d \"${TMPDIR:-/tmp}/bramki_lokalne.XXXXXX\""
+zamien = "mktemp -d \"/tmp/bramki_lokalne.XXXXXX\""
+test = "tests/test_bramki_lokalne.py::test_bez_katalogu_logow_w_zmiennej_skrypt_tworzy_katalog_tymczasowy_i_podaje_sciezki"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "mktemp -d \"${TMPDIR:-/tmp}/bramki_lokalne.XXXXXX\""
+zamien = "mktemp -d \"${TMPDIR:-/tmq}/bramki_lokalne.XXXXXX\""
+test = "tests/test_bramki_lokalne.py::test_bez_tmpdir_i_bez_katalogu_w_zmiennej_katalog_logow_powstaje_w_tmp"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "mktemp -d \"${TMPDIR:-/tmp}/bramki_lokalne.XXXXXX\""
+zamien = "mktemp -d \"${TMPDIR:-/tmp}/bramki.XXXXXX\""
+test = "tests/test_bramki_lokalne.py::test_bez_tmpdir_i_bez_katalogu_w_zmiennej_katalog_logow_powstaje_w_tmp"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "    || blad \"nie udalo sie utworzyc katalogu tymczasowego w '${TMPDIR:-/tmp}'\""
+zamien = "    || true"
+test = "tests/test_bramki_lokalne.py::test_nieistniejacy_tmpdir_bez_katalogu_w_zmiennej_to_kod_2_z_komunikatem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "katalogu tymczasowego w '${TMPDIR:-/tmp}'\""
+zamien = "katalogu tymczasowego w '${TMPDIR:-/tmq}'\""
+test = "tests/test_bramki_lokalne.py::test_nieudany_mktemp_bez_tmpdir_ma_w_komunikacie_katalog_tmp_a_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  *) KAT=\"$PWD/$KAT\" ;;"
+zamien = "  *) ;;"
+test = "tests/test_bramki_lokalne.py::test_wzgledny_katalog_logow_jest_liczony_od_biezacego_katalogu_a_nie_od_korzenia_repo"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  /*) ;;"
+zamien = "  /x*) ;;"
+test = "tests/test_bramki_lokalne.py::test_oba_wyniki_zielone_daja_kod_0_i_trzy_linie_podsumowania_na_koncu_stdout"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "cd \"$(dirname \"${BASH_SOURCE[0]}\")/..\""
+zamien = "cd \"$(dirname \"${BASH_SOURCE[0]}\")/.\""
+test = "tests/test_bramki_lokalne.py::test_skrypt_dziala_z_korzenia_repo_niezaleznie_od_biezacego_katalogu_i_domyslnie_wola_testy_pelne"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "TESTY=\"${COCKPIT_BRAMKI_TESTY:-tools/testy_pelne.sh}\""
+zamien = "TESTY=\"${COCKPIT_BRAMKI_TESTY:-tools/testy_pelne.sx}\""
+test = "tests/test_bramki_lokalne.py::test_skrypt_dziala_z_korzenia_repo_niezaleznie_od_biezacego_katalogu_i_domyslnie_wola_testy_pelne"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"testy: log $KAT/testy.log\""
+zamien = ":"
+test = "tests/test_bramki_lokalne.py::test_na_starcie_stdout_podaje_sciezki_logow_testow_i_mutantow_przed_podsumowaniem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"testy: log $KAT/testy.log\""
+zamien = "echo \"testy: lox $KAT/testy.log\""
+test = "tests/test_bramki_lokalne.py::test_na_starcie_stdout_podaje_sciezki_logow_testow_i_mutantow_przed_podsumowaniem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"mutanty: stdout $KAT/mutanty.stdout, stderr $KAT/mutanty.stderr\""
+zamien = ":"
+test = "tests/test_bramki_lokalne.py::test_na_starcie_stdout_podaje_sciezki_logow_testow_i_mutantow_przed_podsumowaniem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"mutanty: stdout $KAT/mutanty.stdout, stderr $KAT/mutanty.stderr\""
+zamien = "echo \"mutanty: stdout $KAT/mutanty.stdout, stderr $KAT/mutanty.stderx\""
+test = "tests/test_bramki_lokalne.py::test_na_starcie_stdout_podaje_sciezki_logow_testow_i_mutantow_przed_podsumowaniem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "set -m\ntrap 'przerwij 143' TERM"
+zamien = "trap 'przerwij 143' TERM"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "\"$TESTY\" < /dev/null > \"$KAT/testy.log\" 2>&1 &"
+zamien = "\"$TESTY\" > \"$KAT/testy.log\" 2>&1 &"
+test = "tests/test_bramki_lokalne.py::test_bramki_nie_dziedzicza_standardowego_wejscia_skryptu"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "\"$TESTY\" < /dev/null > \"$KAT/testy.log\" 2>&1 &"
+zamien = "\"$TESTY\" < /dev/null >> \"$KAT/testy.log\" 2>&1 &"
+test = "tests/test_bramki_lokalne.py::test_ponowne_uruchomienie_w_tym_samym_katalogu_nadpisuje_logi_zamiast_je_dopisywac"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "\"$TESTY\" < /dev/null > \"$KAT/testy.log\" 2>&1 &"
+zamien = "\"$TESTY\" < /dev/null > \"$KAT/testy.log\" 2>/dev/null &"
+test = "tests/test_bramki_lokalne.py::test_logi_testow_zbieraja_stdout_i_stderr_a_logi_mutantow_trzymaja_je_osobno"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  < /dev/null > \"$KAT/mutanty.stdout\" 2> \"$KAT/mutanty.stderr\" &"
+zamien = "  > \"$KAT/mutanty.stdout\" 2> \"$KAT/mutanty.stderr\" &"
+test = "tests/test_bramki_lokalne.py::test_bramki_nie_dziedzicza_standardowego_wejscia_skryptu"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  < /dev/null > \"$KAT/mutanty.stdout\" 2> \"$KAT/mutanty.stderr\" &"
+zamien = "  < /dev/null >> \"$KAT/mutanty.stdout\" 2> \"$KAT/mutanty.stderr\" &"
+test = "tests/test_bramki_lokalne.py::test_ponowne_uruchomienie_w_tym_samym_katalogu_nadpisuje_logi_zamiast_je_dopisywac"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  < /dev/null > \"$KAT/mutanty.stdout\" 2> \"$KAT/mutanty.stderr\" &"
+zamien = "  < /dev/null > \"$KAT/mutanty.stdout\" 2>> \"$KAT/mutanty.stderr\" &"
+test = "tests/test_bramki_lokalne.py::test_ponowne_uruchomienie_w_tym_samym_katalogu_nadpisuje_logi_zamiast_je_dopisywac"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  < /dev/null > \"$KAT/mutanty.stdout\" 2> \"$KAT/mutanty.stderr\" &"
+zamien = "  < /dev/null > \"$KAT/mutanty.stdout\" 2>&1 &"
+test = "tests/test_bramki_lokalne.py::test_logi_testow_zbieraja_stdout_i_stderr_a_logi_mutantow_trzymaja_je_osobno"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "env -u COCKPIT_TEST_DATABASE_URL -u COCKPIT_WYMAGAJ_BAZY \\"
+zamien = "env -u COCKPIT_WYMAGAJ_BAZY \\"
+test = "tests/test_bramki_lokalne.py::test_mutanty_dzialaja_bez_adresu_bazy_i_wymogu_bazy_a_testy_je_dostaja"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "env -u COCKPIT_TEST_DATABASE_URL -u COCKPIT_WYMAGAJ_BAZY \\"
+zamien = "env -u COCKPIT_TEST_DATABASE_URL \\"
+test = "tests/test_bramki_lokalne.py::test_mutanty_dzialaja_bez_adresu_bazy_i_wymogu_bazy_a_testy_je_dostaja"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "\"$PY\" tools/mutanty_zmian.py --max-children \"$DZIECI\" \"$@\" \\"
+zamien = "\"$PY\" tools/mutanty_zmian.py --max-children \"$DZIECI\" \\"
+test = "tests/test_bramki_lokalne.py::test_argumenty_skryptu_trafiaja_do_mutanty_zmian_po_max_children_bez_zmiany"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "\"$PY\" tools/mutanty_zmian.py --max-children \"$DZIECI\" \"$@\" \\"
+zamien = "\"$PY\" tools/mutanty_zmian.py --max-children 8 \"$@\" \\"
+test = "tests/test_bramki_lokalne.py::test_liczba_dzieci_mutmuta_to_osiem_albo_wartosc_ze_zmiennej[ze_zmiennej_3]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "\"$PY\" tools/mutanty_zmian.py --max-children \"$DZIECI\" \"$@\" \\"
+zamien = "\"$PY\" tools/mutanty_zmian.py --max-child \"$DZIECI\" \"$@\" \\"
+test = "tests/test_bramki_lokalne.py::test_argumenty_skryptu_trafiaja_do_mutanty_zmian_po_max_children_bez_zmiany"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "PID_MUTANTY=$!"
+zamien = "PID_MUTANTY=$PID_TESTY"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[zmiany_poza_zasiegiem_mutmuta_to_kod_3]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "for pid in \"$PID_TESTY\" \"$PID_MUTANTY\"; do"
+zamien = "for pid in \"$PID_TESTY\"; do"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "for pid in \"$PID_TESTY\" \"$PID_MUTANTY\"; do"
+zamien = "for pid in \"$PID_MUTANTY\"; do"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "kill -TERM -- \"-$pid\" 2>/dev/null || true"
+zamien = "kill -HUP -- \"-$pid\" 2>/dev/null || true"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap '' TERM INT"
+zamien = "trap '' TERM"
+test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_ani_nie_skraca_czekania[term_potem_int]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap '' TERM INT"
+zamien = "trap '' INT"
+test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_ani_nie_skraca_czekania[int_potem_term]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "( sleep 10; kill -KILL --"
+zamien = "( sleep 10; kill -CONT --"
+test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_ani_nie_skraca_czekania[term_potem_int]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "( sleep 10; kill -KILL -- \"-$PID_TESTY\" \"-$PID_MUTANTY\""
+zamien = "( sleep 10; kill -KILL -- \"-$PID_TESTY\""
+test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_ani_nie_skraca_czekania[term_potem_int]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "( sleep 10; kill -KILL -- \"-$PID_TESTY\" \"-$PID_MUTANTY\""
+zamien = "( sleep 10; kill -KILL -- \"-$PID_MUTANTY\""
+test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_ani_nie_skraca_czekania[term_potem_int]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "wait \"$PID_TESTY\" 2>/dev/null"
+zamien = ":"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[wolniejsze_testy-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "wait \"$PID_MUTANTY\" 2>/dev/null"
+zamien = ":"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[wolniejsze_mutanty-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  kill -KILL -- \"-$PID_TESTY\" \"-$PID_MUTANTY\" 2>/dev/null || true"
+zamien = "  :"
+test = "tests/test_bramki_lokalne.py::test_po_przerwaniu_wnuki_ignorujace_sigterm_i_straznik_dobijania_nie_zyja_juz_po_wyjsciu_skryptu"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  exit \"$1\""
+zamien = "  exit 1"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 143' TERM"
+zamien = "trap 'przerwij 142' TERM"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 130' INT"
+zamien = "trap 'przerwij 131' INT"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigint]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "KOD_TESTOW=$?"
+zamien = "KOD_TESTOW=0"
+test = "tests/test_bramki_lokalne.py::test_padniete_same_testy_daja_kod_niezerowy_gdy_mutanty_sa_czyste"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "KOD_MUTANTOW=$?"
+zamien = "KOD_MUTANTOW=0"
+test = "tests/test_bramki_lokalne.py::test_przezywajace_mutanty_daja_kod_1_gdy_testy_sa_zielone"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"testy: kod $KOD_TESTOW, log $KAT/testy.log\""
+zamien = "echo \"testy: kod $KOD_TESTOW, log $KAT/testy.logx\""
+test = "tests/test_bramki_lokalne.py::test_oba_wyniki_zielone_daja_kod_0_i_trzy_linie_podsumowania_na_koncu_stdout"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"mutanty: kod $KOD_MUTANTOW, stdout $KAT/mutanty.stdout, stderr $KAT/mutanty.stderr\""
+zamien = "echo \"mutanty: kod $KOD_MUTANTOW, stdout $KAT/mutanty.stdout, stderr $KAT/mutanty.stderx\""
+test = "tests/test_bramki_lokalne.py::test_oba_wyniki_zielone_daja_kod_0_i_trzy_linie_podsumowania_na_koncu_stdout"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  0|1|3) ;;"
+zamien = "  1|3) ;;"
+test = "tests/test_bramki_lokalne.py::test_oba_wyniki_zielone_daja_kod_0_i_trzy_linie_podsumowania_na_koncu_stdout"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  0|1|3) ;;"
+zamien = "  0|3) ;;"
+test = "tests/test_bramki_lokalne.py::test_przezywajace_mutanty_daja_kod_1_gdy_testy_sa_zielone"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  0|1|3) ;;"
+zamien = "  0|1) ;;"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[zmiany_poza_zasiegiem_mutmuta_to_kod_3]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  *) echo \"bramki: kod 2\"; exit 2 ;;"
+zamien = "  *) ;;"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[blad_narzedzia_mutantow_to_kod_2]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  *) echo \"bramki: kod 2\"; exit 2 ;;"
+zamien = "  *) echo \"bramki: kod 2\"; exit 1 ;;"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[nieznany_kod_mutantow_to_kod_2]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  *) echo \"bramki: kod 2\"; exit 2 ;;"
+zamien = "  *) echo \"bramki: kod 9\"; exit 2 ;;"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[brak_programu_mutantow_to_kod_2]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "if [ \"$KOD_TESTOW\" -ne 0 ] || [ \"$KOD_MUTANTOW\" -eq 1 ]; then"
+zamien = "if [ \"$KOD_TESTOW\" -ne 1 ] || [ \"$KOD_MUTANTOW\" -eq 1 ]; then"
+test = "tests/test_bramki_lokalne.py::test_padniete_same_testy_daja_kod_niezerowy_gdy_mutanty_sa_czyste"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "if [ \"$KOD_TESTOW\" -ne 0 ] || [ \"$KOD_MUTANTOW\" -eq 1 ]; then"
+zamien = "if [ \"$KOD_TESTOW\" -ne 0 ] || [ \"$KOD_MUTANTOW\" -eq 9 ]; then"
+test = "tests/test_bramki_lokalne.py::test_przezywajace_mutanty_daja_kod_1_gdy_testy_sa_zielone"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "if [ \"$KOD_TESTOW\" -ne 0 ] || [ \"$KOD_MUTANTOW\" -eq 1 ]; then"
+zamien = "if [ \"$KOD_MUTANTOW\" -eq 1 ]; then"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[kazdy_niezerowy_kod_testow_to_kod_1]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "elif [ \"$KOD_MUTANTOW\" -eq 3 ]; then"
+zamien = "elif [ \"$KOD_MUTANTOW\" -eq 9 ]; then"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[zmiany_poza_zasiegiem_mutmuta_to_kod_3]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  KOD=3"
+zamien = "  KOD=4"
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow[zmiany_poza_zasiegiem_mutmuta_to_kod_3]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  KOD=1\nelif"
+zamien = "  KOD=2\nelif"
+test = "tests/test_bramki_lokalne.py::test_padniete_same_testy_daja_kod_niezerowy_gdy_mutanty_sa_czyste"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  KOD=0\nfi"
+zamien = "  KOD=5\nfi"
+test = "tests/test_bramki_lokalne.py::test_oba_wyniki_zielone_daja_kod_0_i_trzy_linie_podsumowania_na_koncu_stdout"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "echo \"bramki: kod $KOD\""
+zamien = "echo \"bramki: kod $KOD \""
+test = "tests/test_bramki_lokalne.py::test_oba_wyniki_zielone_daja_kod_0_i_trzy_linie_podsumowania_na_koncu_stdout"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "exit \"$KOD\""
+zamien = "exit 0"
+test = "tests/test_bramki_lokalne.py::test_padniete_same_testy_daja_kod_niezerowy_gdy_mutanty_sa_czyste"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "blad() { echo \"BLAD: $*\" >&2; exit 2; }"
+zamien = "blad() { echo \"BLAD: $*\" >&2; exit 1; }"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[abc]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "blad() { echo \"BLAD: $*\" >&2; exit 2; }"
+zamien = "blad() { echo \"BLAD: $*\"; exit 2; }"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[abc]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "blad() { echo \"BLAD: $*\" >&2; exit 2; }"
+zamien = "blad() { echo \"BLAD $*\" >&2; exit 2; }"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_na_stderr_dokladnie_jeden_komunikat_bez_bledu_powloki[abc]"
+
+[[mutant]]
+plik = ".github/workflows/ci.yml"
+szukaj = "run: pytest -m e2e -n 4"
+zamien = "run: pytest -m e2e"
+test = "tests/test_rownolegly_przebieg.py::test_joby_poza_pythonem_uruchamiaja_rownolegle_tylko_przebieg_e2e_a_testy_bazy_zostaja_sekwencyjne"
+
+[[mutant]]
+plik = ".github/workflows/ci.yml"
+szukaj = "run: pytest -m e2e -n 4"
+zamien = "run: pytest -m e2e -n 2"
+test = "tests/test_rownolegly_przebieg.py::test_ci_ma_jeden_przebieg_testow_bazy_sekwencyjny_i_jeden_przebieg_e2e_na_czterech_procesach"
+
+[[mutant]]
+plik = ".github/workflows/ci.yml"
+szukaj = "run: pytest -v -rs -m \"baza and not e2e\""
+zamien = "run: pytest -v -rs -n 4 -m \"baza and not e2e\""
+test = "tests/test_rownolegly_przebieg.py::test_ci_ma_jeden_przebieg_testow_bazy_sekwencyjny_i_jeden_przebieg_e2e_na_czterech_procesach"
+
+[[mutant]]
+plik = "tests/conftest.py"
+szukaj = "    if item.get_closest_marker(\"e2e\") is not None:\n        return  # e2e ma w workerze wlasna baze (HAR-236)\n"
+zamien = ""
+test = "tests/test_rownolegly_przebieg.py::test_test_e2e_z_baza_w_workerze_xdist_przechodzi_a_test_bazy_bez_e2e_nadal_oblewa"
+
+[[mutant]]
+plik = "tests/conftest.py"
+szukaj = "if item.get_closest_marker(\"e2e\") is not None:"
+zamien = "if item.get_closest_marker(\"e2e\") is None:"
+test = "tests/test_rownolegly_przebieg.py::test_test_e2e_z_baza_w_workerze_xdist_przechodzi_a_test_bazy_bez_e2e_nadal_oblewa"
+
+[[mutant]]
+plik = "tests/conftest.py"
+szukaj = "if item.get_closest_marker(\"e2e\") is not None:"
+zamien = "if item.get_closest_marker(\"baza\") is not None:"
+test = "tests/test_rownolegly_przebieg.py::test_test_e2e_z_baza_w_workerze_xdist_przechodzi_a_test_bazy_bez_e2e_nadal_oblewa"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "if id_workera is None or not url.startswith(\"postgresql\"):"
+zamien = "if not url.startswith(\"postgresql\"):"
+test = "tests/test_rownolegly_przebieg.py::test_bez_xdist_adres_bazy_zostaje_oryginalny_a_wiec_baza_bez_sufiksu_nie_trafi_do_usuniecia"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "if id_workera is None or not url.startswith(\"postgresql\"):"
+zamien = "if id_workera is None:"
+test = "tests/test_rownolegly_przebieg.py::test_adres_spoza_postgresql_zostaje_oryginalny_takze_w_workerze_xdist[sqlite]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "assert oryginal.database, f\"URL bazy testowej bez nazwy bazy: {url!r}\""
+zamien = "pass"
+test = "tests/test_rownolegly_przebieg.py::test_adres_postgresql_bez_nazwy_bazy_to_blad_z_adresem_w_komunikacie"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "assert oryginal.database, f\"URL bazy testowej bez nazwy bazy: {url!r}\""
+zamien = "assert oryginal.database, f\"URL bazy testowej bez nazwy: {url!r}\""
+test = "tests/test_rownolegly_przebieg.py::test_adres_postgresql_bez_nazwy_bazy_to_blad_z_adresem_w_komunikacie"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "database=f\"{oryginal.database}_{id_workera}\""
+zamien = "database=f\"{oryginal.database}-{id_workera}\""
+test = "tests/test_rownolegly_przebieg.py::test_baza_workera_ma_nazwe_bazy_z_sufiksem_workera_a_reszta_adresu_zostaje_bez_zmian"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "database=f\"{oryginal.database}_{id_workera}\""
+zamien = "database=f\"{id_workera}_{oryginal.database}\""
+test = "tests/test_rownolegly_przebieg.py::test_kazdy_worker_xdist_dostaje_wlasna_nazwe_bazy[gw0]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = ").render_as_string(hide_password=False)"
+zamien = ").render_as_string(hide_password=True)"
+test = "tests/test_rownolegly_przebieg.py::test_baza_workera_ma_nazwe_bazy_z_sufiksem_workera_a_reszta_adresu_zostaje_bez_zmian"
+
+# === HAR-236 runda 4: punkt 7 (semafor, zasob, baza przebiegu, port demo) i przeniesione trapy ===
+
+# Domyslna liczba slotow: trzy zamiast dwoch (trzeci slot wolny przy dwoch zajetych).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "SLOTY=\"${COCKPIT_TESTY_SLOTY:-2}\""
+zamien = "SLOTY=\"${COCKPIT_TESTY_SLOTY:-3}\""
+test = "tests/test_testy_pelne.py::test_domyslnie_dwa_zajete_sloty_daja_kod_75_i_nie_powstaje_trzeci_slot"
+
+# Domyslna liczba slotow: jeden zamiast dwoch (drugi przebieg nie dostaje slotu 2).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "SLOTY=\"${COCKPIT_TESTY_SLOTY:-2}\""
+zamien = "SLOTY=\"${COCKPIT_TESTY_SLOTY:-1}\""
+test = "tests/test_testy_pelne.py::test_domyslnie_sa_dwa_sloty_drugi_przebieg_bierze_slot_2_i_nie_czeka[nieustawione]"
+
+# Napis nieliczbowy nie jest odrzucany wzorcem: do `-ge` dochodzi `abc` (blad powloki na stderr).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  *[!0-9]*) blad \"COCKPIT_TESTY_SLOTY musi"
+zamien = "  *[!0-9]x*) blad \"COCKPIT_TESTY_SLOTY musi"
+test = "tests/test_testy_pelne.py::test_zla_liczba_slotow_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[abc]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  *[!0-9]*) blad \"COCKPIT_TESTY_SLOTY musi byc liczba calkowita >= 1"
+zamien = "  *[!0-9]*) blad \"COCKPIT_TESTY_SLOTY musi byc liczba calkowita >= 2"
+test = "tests/test_testy_pelne.py::test_zla_liczba_slotow_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[abc]"
+
+# Zero slotow przechodzi walidacje.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$SLOTY\" -ge 1 ]"
+zamien = "[ \"$SLOTY\" -ge 0 ]"
+test = "tests/test_testy_pelne.py::test_zla_liczba_slotow_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[0]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "|| blad \"COCKPIT_TESTY_SLOTY musi byc liczba calkowita >= 1"
+zamien = "|| blad \"COCKPIT_TESTY_SLOTY musi byc liczba calkowita >= 2"
+test = "tests/test_testy_pelne.py::test_zla_liczba_slotow_konczy_przebieg_kodem_1_zanim_cokolwiek_wystartuje[0]"
+
+# Slot 1 to nie katalog $BLOKADA.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "KATALOGI_SLOTOW=(\"$BLOKADA\")"
+zamien = "KATALOGI_SLOTOW=(\"$BLOKADA.0\")"
+test = "tests/test_testy_pelne.py::test_w_czasie_przebiegu_blokada_nalezy_do_pid_skryptu"
+
+# Slot 2 pominiety.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "i=2\nwhile [ \"$i\" -le \"$SLOTY\" ]; do"
+zamien = "i=3\nwhile [ \"$i\" -le \"$SLOTY\" ]; do"
+test = "tests/test_testy_pelne.py::test_domyslnie_sa_dwa_sloty_drugi_przebieg_bierze_slot_2_i_nie_czeka[nieustawione]"
+
+# Dodatkowy slot `$BLOKADA.1` przy jednym slocie (komunikat wymienia dwa katalogi).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "i=2\nwhile [ \"$i\" -le \"$SLOTY\" ]; do"
+zamien = "i=1\nwhile [ \"$i\" -le \"$SLOTY\" ]; do"
+test = "tests/test_testy_pelne.py::test_przy_jednym_slocie_drugi_przebieg_czeka_i_po_limicie_konczy_sie_kodem_75"
+
+# Ostatni slot pominiety.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$i\" -le \"$SLOTY\" ]"
+zamien = "[ \"$i\" -lt \"$SLOTY\" ]"
+test = "tests/test_testy_pelne.py::test_domyslnie_sa_dwa_sloty_drugi_przebieg_bierze_slot_2_i_nie_czeka[nieustawione]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "KATALOGI_SLOTOW+=(\"$BLOKADA.$i\")"
+zamien = "KATALOGI_SLOTOW+=(\"$BLOKADA.x$i\")"
+test = "tests/test_testy_pelne.py::test_domyslnie_sa_dwa_sloty_drugi_przebieg_bierze_slot_2_i_nie_czeka[nieustawione]"
+
+# Co drugi slot: slot 3 nie istnieje.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "i=$((i + 1))"
+zamien = "i=$((i + 2))"
+test = "tests/test_testy_pelne.py::test_przy_trzech_slotach_i_dwoch_zajetych_przebieg_bierze_slot_3"
+
+# Katalog zasobu inny niz $BLOKADA.zasob.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "ZASOB=\"$BLOKADA.zasob\""
+zamien = "ZASOB=\"$BLOKADA.zasobx\""
+test = "tests/test_testy_pelne.py::test_wspolny_zasob_jest_trzymany_tylko_wokol_operacji_na_serwerze_i_przegladarce"
+
+# PID wlasciciela nigdy nie czytany: wlasny slot nie jest zwalniany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ -f \"$kat/pid\" ]; then\n    wlasciciel="
+zamien = "if [ -d \"$kat/pid\" ]; then\n    wlasciciel="
+test = "tests/test_testy_pelne.py::test_po_udanym_przebiegu_blokada_jest_zwolniona"
+
+# Nieczytelny pid przerywa sprzatanie i zmienia kod wyjscia (75 -> 1).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "wlasciciel=\"$(cat \"$kat/pid\" 2>/dev/null || true)\""
+zamien = "wlasciciel=\"$(cat \"$kat/pid\" 2>/dev/null)\""
+test = "tests/test_testy_pelne.py::test_nieczytelny_plik_pid_zajetego_slotu_nie_zmienia_kodu_75_ani_nie_wypisuje_bledu_cat"
+
+# Blad `cat` idzie na stderr.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "wlasciciel=\"$(cat \"$kat/pid\" 2>/dev/null || true)\""
+zamien = "wlasciciel=\"$(cat \"$kat/pid\" || true)\""
+test = "tests/test_testy_pelne.py::test_nieczytelny_plik_pid_zajetego_slotu_nie_zmienia_kodu_75_ani_nie_wypisuje_bledu_cat"
+
+# Zwalniany jest cudzy slot zamiast wlasnego.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ \"$wlasciciel\" = \"$$\" ]; then"
+zamien = "if [ \"$wlasciciel\" != \"$$\" ]; then"
+test = "tests/test_testy_pelne.py::test_po_udanym_przebiegu_blokada_jest_zwolniona"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -tA -c \"$1\"; }"
+zamien = "psql_db() { docker compose exec db psql -U cockpit -d cockpit_test -tA -c \"$1\"; }"
+test = "tests/test_testy_pelne.py::test_kazde_zapytanie_do_serwera_idzie_przez_psql_na_baze_administracyjna_jednym_argumentem_sql"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -tA -c \"$1\"; }"
+zamien = "psql_db() { docker compose exec -T db psql -U postgres -d cockpit_test -tA -c \"$1\"; }"
+test = "tests/test_testy_pelne.py::test_kazde_zapytanie_do_serwera_idzie_przez_psql_na_baze_administracyjna_jednym_argumentem_sql"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -tA -c \"$1\"; }"
+zamien = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit -tA -c \"$1\"; }"
+test = "tests/test_testy_pelne.py::test_kazde_zapytanie_do_serwera_idzie_przez_psql_na_baze_administracyjna_jednym_argumentem_sql"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -tA -c \"$1\"; }"
+zamien = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -t -c \"$1\"; }"
+test = "tests/test_testy_pelne.py::test_kazde_zapytanie_do_serwera_idzie_przez_psql_na_baze_administracyjna_jednym_argumentem_sql"
+
+# SQL bez cudzyslowu: rozbity na wiele argumentow.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -tA -c \"$1\"; }"
+zamien = "psql_db() { docker compose exec -T db psql -U cockpit -d cockpit_test -tA -c $1; }"
+test = "tests/test_testy_pelne.py::test_kazde_zapytanie_do_serwera_idzie_przez_psql_na_baze_administracyjna_jednym_argumentem_sql"
+
+# Znak `_` we wzorcu LIKE nie jest literalem: `<baza>xgw0` tez pasuje.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "LIKE '${nazwa}\\\\_gw%'"
+zamien = "LIKE '${nazwa}_gw%'"
+test = "tests/test_testy_pelne.py::test_bazy_workerow_e2e_sa_usuwane_razem_z_baza_przebiegu_ale_nie_bazy_spoza_wzorca"
+
+# Wzorzec bez `%`: bazy workerow nie sa znajdowane.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "\\\\_gw%'\")\" || return 1"
+zamien = "\\\\_gw'\")\" || return 1"
+test = "tests/test_testy_pelne.py::test_bazy_workerow_e2e_sa_usuwane_razem_z_baza_przebiegu_ale_nie_bazy_spoza_wzorca"
+
+# Blad listy workerow nie przerywa: baza przebiegu jest usuwana przy zywych bazach workerow.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "\\\\_gw%'\")\" || return 1"
+zamien = "\\\\_gw%'\")\""
+test = "tests/test_testy_pelne.py::test_gdy_nie_da_sie_usunac_baz_workerow_baza_przebiegu_nie_jest_usuwana_i_jest_blad[lista_baz_workerow]"
+
+# Blad usuniecia bazy workera nie przerywa funkcji.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(FORCE)\" >/dev/null || return 1\n  done"
+zamien = "(FORCE)\" >/dev/null\n  done"
+test = "tests/test_testy_pelne.py::test_gdy_nie_da_sie_usunac_baz_workerow_baza_przebiegu_nie_jest_usuwana_i_jest_blad[drop_bazy_workera]"
+
+# Znacznik polecenia usuniecia bazy workera idzie na stdout.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(FORCE)\" >/dev/null || return 1\n  done"
+zamien = "(FORCE)\" || return 1\n  done"
+test = "tests/test_testy_pelne.py::test_polecenia_sql_skryptu_nie_wypisuja_znacznikow_polecen_na_stdout"
+
+# Pusta linia listy daje polecenie usuniecia bazy o pustej nazwie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    case \"$w\" in\n      ''|*[!a-z0-9_]*) continue ;;"
+zamien = "    case \"$w\" in\n      *[!a-z0-9_]*) continue ;;"
+test = "tests/test_testy_pelne.py::test_zielony_przebieg_bez_workerow_usuwa_baze_przebiegu_dwa_razy_bez_polecenia_z_pusta_nazwa"
+
+# Baza workera ze znakiem spoza [a-z0-9_] jest usuwana.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    case \"$w\" in\n      ''|*[!a-z0-9_]*) continue ;;"
+zamien = "    case \"$w\" in\n      '') continue ;;"
+test = "tests/test_testy_pelne.py::test_bazy_workerow_e2e_sa_usuwane_razem_z_baza_przebiegu_ale_nie_bazy_spoza_wzorca"
+
+# Znacznik polecenia usuniecia bazy przebiegu idzie na stdout.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  psql_db \"DROP DATABASE IF EXISTS \\\"$nazwa\\\" WITH (FORCE)\" >/dev/null\n}"
+zamien = "  psql_db \"DROP DATABASE IF EXISTS \\\"$nazwa\\\" WITH (FORCE)\"\n}"
+test = "tests/test_testy_pelne.py::test_polecenia_sql_skryptu_nie_wypisuja_znacznikow_polecen_na_stdout"
+
+# Baza przebiegu nie jest usuwana.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  psql_db \"DROP DATABASE IF EXISTS \\\"$nazwa\\\" WITH (FORCE)\" >/dev/null\n}"
+zamien = "  :\n}"
+test = "tests/test_testy_pelne.py::test_baza_przebiegu_jest_tworzona_przed_testami_i_usunieta_po_zielonym_przebiegu"
+
+# Strazik `-z` odwrocony: plik `LOG_PEL` nie jest usuwany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$LOG_PEL\" ] || rm -f \"$LOG_PEL\""
+zamien = "[ -n \"$LOG_PEL\" ] || rm -f \"$LOG_PEL\""
+test = "tests/test_testy_pelne.py::test_po_przebiegu_nie_zostaja_pliki_tymczasowe_z_logami_testow"
+
+# Plik `LOG_PEL` nie jest usuwany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$LOG_PEL\" ] || rm -f \"$LOG_PEL\""
+zamien = "[ -z \"$LOG_PEL\" ] || :"
+test = "tests/test_testy_pelne.py::test_po_przebiegu_nie_zostaja_pliki_tymczasowe_z_logami_testow"
+
+# Strazik `-z` odwrocony: plik `LOG_BAZA` nie jest usuwany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$LOG_BAZA\" ] || rm -f \"$LOG_BAZA\""
+zamien = "[ -n \"$LOG_BAZA\" ] || rm -f \"$LOG_BAZA\""
+test = "tests/test_testy_pelne.py::test_po_przebiegu_nie_zostaja_pliki_tymczasowe_z_logami_testow"
+
+# Plik `LOG_BAZA` nie jest usuwany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$LOG_BAZA\" ] || rm -f \"$LOG_BAZA\""
+zamien = "[ -z \"$LOG_BAZA\" ] || :"
+test = "tests/test_testy_pelne.py::test_po_przebiegu_nie_zostaja_pliki_tymczasowe_z_logami_testow"
+
+# Strazik `-z` odwrocony: plik `LOG_E2E` nie jest usuwany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$LOG_E2E\" ] || rm -f \"$LOG_E2E\""
+zamien = "[ -n \"$LOG_E2E\" ] || rm -f \"$LOG_E2E\""
+test = "tests/test_testy_pelne.py::test_po_przebiegu_nie_zostaja_pliki_tymczasowe_z_logami_testow"
+
+# Plik `LOG_E2E` nie jest usuwany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$LOG_E2E\" ] || rm -f \"$LOG_E2E\""
+zamien = "[ -z \"$LOG_E2E\" ] || :"
+test = "tests/test_testy_pelne.py::test_po_przebiegu_nie_zostaja_pliki_tymczasowe_z_logami_testow"
+
+# Strazik odwrocony: przejecie przerwanego przejmowania nie jest zwalniane.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" 2>/dev/null || true"
+zamien = "[ -n \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" 2>/dev/null || true"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_w_trakcie_przejmowania_zwalnia_blokade_przejecia[katalog_przejecia_istnieje]"
+
+# Przejecie nie jest zwalniane w trapie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" 2>/dev/null || true"
+zamien = "[ -z \"$PRZEJECIE_KAT\" ] || :"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_w_trakcie_przejmowania_zwalnia_blokade_przejecia[katalog_przejecia_istnieje]"
+
+# Brak `|| true`: nieudane `rmdir` przerywa sprzatanie i zmienia kod 143 na 1.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" 2>/dev/null || true"
+zamien = "[ -z \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" 2>/dev/null"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_w_trakcie_przejmowania_zwalnia_blokade_przejecia[katalog_przejecia_zniknal]"
+
+# Blad `rmdir` w trapie idzie na stderr.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -z \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" 2>/dev/null || true"
+zamien = "[ -z \"$PRZEJECIE_KAT\" ] || rmdir \"$PRZEJECIE_KAT.przejecie\" || true"
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_w_trakcie_przejmowania_zwalnia_blokade_przejecia[katalog_przejecia_zniknal]"
+
+# Baza przebiegu nie jest usuwana (a przy jawnym URL byloby usuwane puste).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ -n \"$BAZA_PRZEBIEGU\" ]; then\n    usun_baze_z_workerami"
+zamien = "if [ -z \"$BAZA_PRZEBIEGU\" ]; then\n    usun_baze_z_workerami"
+test = "tests/test_testy_pelne.py::test_baza_przebiegu_jest_tworzona_przed_testami_i_usunieta_po_zielonym_przebiegu"
+
+# Brak komunikatu o nieudanym usunieciu bazy.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      || echo \"BLAD: nie udalo sie usunac bazy przebiegu"
+zamien = "      || : \"BLAD: nie udalo sie usunac bazy przebiegu"
+test = "tests/test_testy_pelne.py::test_nieudane_usuniecie_bazy_przebiegu_jest_zglaszane_ale_nie_zmienia_kodu_wyjscia[zielony_przebieg_zostaje_zielony]"
+
+# Komunikat idzie na stdout.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(usun ja recznie: DROP DATABASE \\\"$BAZA_PRZEBIEGU\\\")\" >&2"
+zamien = "(usun ja recznie: DROP DATABASE \\\"$BAZA_PRZEBIEGU\\\")\""
+test = "tests/test_testy_pelne.py::test_nieudane_usuniecie_bazy_przebiegu_jest_zglaszane_ale_nie_zmienia_kodu_wyjscia[zielony_przebieg_zostaje_zielony]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(usun ja recznie: DROP DATABASE \\\"$BAZA_PRZEBIEGU\\\")"
+zamien = "(usun recznie: DROP DATABASE \\\"$BAZA_PRZEBIEGU\\\")"
+test = "tests/test_testy_pelne.py::test_nieudane_usuniecie_bazy_przebiegu_jest_zglaszane_ale_nie_zmienia_kodu_wyjscia[zielony_przebieg_zostaje_zielony]"
+
+# Zasob zajety w chwili bledu nie jest zwalniany w trapie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  zwolnij_wlasny \"$ZASOB\"\n  for kat in"
+zamien = "  :\n  for kat in"
+test = "tests/test_testy_pelne.py::test_po_nieudanym_starcie_bazy_blokada_i_zasob_sa_zwolnione"
+
+# Zwalniany tylko slot 1: slot 2 przerwanego przebiegu zostaje.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "for kat in \"${KATALOGI_SLOTOW[@]}\"; do\n    zwolnij_wlasny \"$kat\""
+zamien = "for kat in \"$BLOKADA\"; do\n    zwolnij_wlasny \"$kat\""
+test = "tests/test_testy_pelne.py::test_po_sigterm_baza_przebiegu_jest_usunieta_a_slot_innego_przebiegu_zostaje"
+
+# Brak sprzatania na koncu przebiegu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "trap sprzatnij EXIT"
+zamien = "trap : EXIT"
+test = "tests/test_testy_pelne.py::test_po_udanym_przebiegu_blokada_jest_zwolniona"
+
+# Kod wyjscia po SIGTERM.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "trap 'exit 143' TERM"
+zamien = "trap 'exit 142' TERM"
+test = "tests/test_testy_pelne.py::test_po_sigterm_baza_przebiegu_jest_usunieta_a_slot_innego_przebiegu_zostaje"
+
+# Brak inicjalizacji: `set -u` w trapie zmienia kod 75.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "LOG_PEL=\"\"\nLOG_BAZA=\"\""
+zamien = "LOG_BAZA=\"\""
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_konczy_sie_kodem_75"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "LOG_BAZA=\"\"\nLOG_E2E=\"\""
+zamien = "LOG_E2E=\"\""
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_konczy_sie_kodem_75"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "LOG_E2E=\"\"\nPRZEJECIE_KAT=\"\""
+zamien = "PRZEJECIE_KAT=\"\""
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_konczy_sie_kodem_75"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "PRZEJECIE_KAT=\"\"\nBAZA_PRZEBIEGU=\"\""
+zamien = "BAZA_PRZEBIEGU=\"\""
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_konczy_sie_kodem_75"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "PRZEJECIE_KAT=\"\"\nBAZA_PRZEBIEGU=\"\""
+zamien = "PRZEJECIE_KAT=\"\""
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_konczy_sie_kodem_75"
+
+# Przebieg, ktory nie utworzyl bazy, usuwa baze o cudzej nazwie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "BAZA_PRZEBIEGU=\"\"\n\n# Zwalnia"
+zamien = "BAZA_PRZEBIEGU=\"x\"\n\n# Zwalnia"
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_konczy_przebieg_zanim_ruszy_baza"
+
+# Wlasciciel z poprzedniego slotu dziedziczony przez slot bez pliku pid.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "katalog_martwy() {\n  WLASCICIEL=\"\"\n"
+zamien = "katalog_martwy() {\n"
+test = "tests/test_testy_pelne.py::test_slot_bez_pidu_po_slocie_z_zajetym_przejeciem_nie_dziedziczy_cudzego_wlasciciela"
+
+# PID nigdy nie czytany: blokada martwego procesu nie jest przejmowana.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ -f \"$1/pid\" ]; then\n    WLASCICIEL="
+zamien = "if [ -d \"$1/pid\" ]; then\n    WLASCICIEL="
+test = "tests/test_testy_pelne.py::test_slot_martwego_procesu_jest_przejety_gdy_slot_1_trzyma_zywy_przebieg"
+
+# Biale znaki inne niz spacja zostaja w PID.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "tr -d '[:space:]' < \"$1/pid\""
+zamien = "tr -d ' ' < \"$1/pid\""
+test = "tests/test_testy_pelne.py::test_pid_wlasciciela_z_bialymi_znakami_jest_rozpoznany_jako_zywy_proces"
+
+# Brak pidu uznany za martwego wlasciciela.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -n \"$WLASCICIEL\" ] || return 1"
+zamien = "[ -n \"$WLASCICIEL\" ] || return 0"
+test = "tests/test_testy_pelne.py::test_blokada_bez_pliku_pid_jest_traktowana_jak_zajeta_nie_martwa"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "*[!0-9]*) return 0 ;;"
+zamien = "*[!0-9]*) return 1 ;;"
+test = "tests/test_testy_pelne.py::test_pid_nieliczbowy_w_pliku_blokady_oznacza_blokade_martwego_procesu"
+
+# Zywy wlasciciel uznany za martwego: blokada przejmowana.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if ps -p \"$WLASCICIEL\" >/dev/null 2>&1; then\n    return 1"
+zamien = "if ps -p \"$WLASCICIEL\" >/dev/null 2>&1; then\n    return 0"
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_podaje_pid_wlasciciela_i_sciezke"
+
+# Martwy wlasciciel nigdy nie jest wykrywany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    return 1\n  fi\n  return 0\n}"
+zamien = "    return 1\n  fi\n  return 1\n}"
+test = "tests/test_testy_pelne.py::test_slot_martwego_procesu_jest_przejety_gdy_slot_1_trzyma_zywy_przebieg"
+
+# Nieudane `mkdir` zajetego slotu wypisuje blad powloki.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if mkdir \"$kat\" 2>/dev/null; then"
+zamien = "if mkdir \"$kat\"; then"
+test = "tests/test_testy_pelne.py::test_przejecie_blokady_przez_inny_przebieg_zatrzymuje_przejecie_i_konczy_sie_na_limicie"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "echo \"$$\" > \"$kat/pid\""
+zamien = "echo \"$PPID\" > \"$kat/pid\""
+test = "tests/test_testy_pelne.py::test_w_czasie_przebiegu_blokada_nalezy_do_pid_skryptu"
+
+# Zdobyty slot raportowany jako zajety.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    fi\n    return 0\n  fi\n  if katalog_martwy \"$kat\"; then"
+zamien = "    fi\n    return 1\n  fi\n  if katalog_martwy \"$kat\"; then"
+test = "tests/test_testy_pelne.py::test_domyslnie_sa_dwa_sloty_drugi_przebieg_bierze_slot_2_i_nie_czeka[nieustawione]"
+
+# Blokada zywego procesu przejmowana, martwego nie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if katalog_martwy \"$kat\"; then\n    if mkdir"
+zamien = "if ! katalog_martwy \"$kat\"; then\n    if mkdir"
+test = "tests/test_testy_pelne.py::test_blokada_martwego_procesu_jest_przejeta_bez_czekania_do_limitu"
+
+# Nieudane `mkdir` przejecia wypisuje blad powloki.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if mkdir \"$kat.przejecie\" 2>/dev/null; then"
+zamien = "if mkdir \"$kat.przejecie\"; then"
+test = "tests/test_testy_pelne.py::test_przejecie_blokady_przez_inny_przebieg_zatrzymuje_przejecie_i_konczy_sie_na_limicie"
+
+# Trap nie wie, ze trzyma przejecie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      PRZEJECIE_KAT=\"$kat\""
+zamien = "      PRZEJECIE_KAT=\"\""
+test = "tests/test_testy_pelne.py::test_przebieg_przerwany_w_trakcie_przejmowania_zwalnia_blokade_przejecia[katalog_przejecia_istnieje]"
+
+# Brak ponownego sprawdzenia pod przejeciem: usuwana blokada zywego wlasciciela.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      if katalog_martwy \"$kat\"; then\n        echo \"Przejmuje"
+zamien = "      if true; then\n        echo \"Przejmuje"
+test = "tests/test_testy_pelne.py::test_blokada_przejeta_przez_inny_przebieg_miedzy_sprawdzeniami_nie_jest_usuwana"
+
+# Komunikat o przejeciu idzie na stdout.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "$WLASCICIEL: $kat\" >&2"
+zamien = "$WLASCICIEL: $kat\""
+test = "tests/test_testy_pelne.py::test_slot_martwego_procesu_jest_przejety_gdy_slot_1_trzyma_zywy_przebieg"
+
+# Usuniecie martwej blokady zawsze uznane za nieudane (galaz bledu nawet gdy `rm` sie udal).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "        if ! rm -rf \"$kat\"; then"
+zamien = "        if true; then"
+test = "tests/test_testy_pelne.py::test_slot_martwego_procesu_jest_przejety_gdy_slot_1_trzyma_zywy_przebieg"
+
+# Przejecie nie jest zwalniane po przejeciu blokady.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "rmdir \"$kat.przejecie\" 2>/dev/null || true\n      PRZEJECIE_KAT=\"\""
+zamien = ":\n      PRZEJECIE_KAT=\"\""
+test = "tests/test_testy_pelne.py::test_po_przejeciu_blokady_martwego_procesu_katalog_przejecia_jest_zwolniony"
+
+# Blad `rmdir` zwolnionego juz przejecia wypisywany na stderr.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "rmdir \"$kat.przejecie\" 2>/dev/null || true\n      PRZEJECIE_KAT=\"\""
+zamien = "rmdir \"$kat.przejecie\" || true\n      PRZEJECIE_KAT=\"\""
+test = "tests/test_testy_pelne.py::test_katalog_przejecia_ktory_zniknal_w_trakcie_przejmowania_nie_wypisuje_bledu_rmdir"
+
+# Zwolnione przejecie zostaje zapamietane: trap usuwa potem przejecie, ktorego nie trzyma.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "\n      PRZEJECIE_KAT=\"\"\n      # Ponawiamy"
+zamien = "\n      # Ponawiamy"
+test = "tests/test_testy_pelne.py::test_zwolnione_przejecie_nie_jest_pamietane_wiec_wyjscie_nie_usuwa_cudzego_przejecia"
+
+# Po przejeciu nie ma natychmiastowej ponowki.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$usunieta\" -eq 1 ] && return 3"
+zamien = "[ \"$usunieta\" -eq 1 ] && return 1"
+test = "tests/test_testy_pelne.py::test_slot_martwego_procesu_jest_przejety_gdy_slot_1_trzyma_zywy_przebieg"
+
+# Przejety slot uznany za zdobyty bez zapisu pid.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$usunieta\" -eq 1 ] && return 3"
+zamien = "[ \"$usunieta\" -eq 1 ] && return 0"
+test = "tests/test_testy_pelne.py::test_martwy_slot_1_jest_przejety_i_zajety_zanim_przebieg_siegnie_po_slot_2"
+
+# Zajete przejecie raportowane jak zajety slot.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    fi\n    return 2\n  fi"
+zamien = "    fi\n    return 1\n  fi"
+test = "tests/test_testy_pelne.py::test_przejecie_blokady_przez_inny_przebieg_zatrzymuje_przejecie_i_konczy_sie_na_limicie"
+
+# Zajety slot uznany za zdobyty.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    return 2\n  fi\n  return 1\n}"
+zamien = "    return 2\n  fi\n  return 0\n}"
+test = "tests/test_testy_pelne.py::test_przy_jednym_slocie_drugi_przebieg_czeka_i_po_limicie_konczy_sie_kodem_75"
+
+# Komunikat wymienia tylko ostatni slot.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "lista=\"${lista:+$lista, }$kat\""
+zamien = "lista=\"$kat\""
+test = "tests/test_testy_pelne.py::test_przy_dwoch_zajetych_slotach_przebieg_konczy_sie_kodem_75_z_pidami_obu_wlascicieli"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "lista=\"${lista:+$lista, }$kat\""
+zamien = "lista=\"${lista:+$lista,}$kat\""
+test = "tests/test_testy_pelne.py::test_przy_dwoch_zajetych_slotach_przebieg_konczy_sie_kodem_75_z_pidami_obu_wlascicieli"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "zajete=\"${zajete:+$zajete, }${WLASCICIEL:-?}\""
+zamien = "zajete=\"${zajete:+$zajete,}${WLASCICIEL:-?}\""
+test = "tests/test_testy_pelne.py::test_przy_dwoch_zajetych_slotach_przebieg_konczy_sie_kodem_75_z_pidami_obu_wlascicieli"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "zajete=\"${zajete:+$zajete, }${WLASCICIEL:-?}\""
+zamien = "zajete=\"${zajete:+$zajete, }${WLASCICIEL:-x}\""
+test = "tests/test_testy_pelne.py::test_blokada_bez_pliku_pid_po_limicie_mowi_ze_pid_jest_nieznany"
+
+# Komunikat wskazuje ostatnie zajete przejecie zamiast pierwszego.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -n \"$przejecie_zajete\" ] || przejecie_zajete=\"$kat\""
+zamien = "przejecie_zajete=\"$kat\""
+test = "tests/test_testy_pelne.py::test_przy_kilku_slotach_z_zajetym_przejeciem_komunikat_wskazuje_pierwszy_z_nich"
+
+# Zajete przejecie nigdy nie jest zapamietane.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ -n \"$przejecie_zajete\" ] || przejecie_zajete=\"$kat\""
+zamien = "[ -z \"$przejecie_zajete\" ] || przejecie_zajete=\"$kat\""
+test = "tests/test_testy_pelne.py::test_przejecie_blokady_przez_inny_przebieg_zatrzymuje_przejecie_i_konczy_sie_na_limicie"
+
+# Brak natychmiastowej ponowki po przejeciu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "3) ponow=1; break ;;"
+zamien = "3) ponow=0; break ;;"
+test = "tests/test_testy_pelne.py::test_martwy_slot_1_jest_przejety_i_zajety_zanim_przebieg_siegnie_po_slot_2"
+
+# Po przejeciu petla idzie dalej do slotu 2.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "3) ponow=1; break ;;"
+zamien = "3) ponow=1 ;;"
+test = "tests/test_testy_pelne.py::test_martwy_slot_1_jest_przejety_i_zajety_zanim_przebieg_siegnie_po_slot_2"
+
+# Zajete przejecie liczone jak zajety slot.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "        2) [ -n"
+zamien = "        4) [ -n"
+test = "tests/test_testy_pelne.py::test_przejecie_blokady_przez_inny_przebieg_zatrzymuje_przejecie_i_konczy_sie_na_limicie"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$ponow\" -eq 0 ] || continue"
+zamien = "[ \"$ponow\" -eq 0 ] || :"
+test = "tests/test_testy_pelne.py::test_martwy_slot_1_jest_przejety_i_zajety_zanim_przebieg_siegnie_po_slot_2"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "echo \"Blokada $opis zdobyta: $kat (PID $$)\" >&2"
+zamien = "echo \"Blokada $opis zdobyta: $kat (PID $$)\""
+test = "tests/test_testy_pelne.py::test_zdobycie_blokady_jest_zgloszone_na_stderr"
+
+# Zdobyta blokada konczy skrypt (set -e) zamiast zwrocic 0.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "          return 0\n          ;;"
+zamien = "          return 1\n          ;;"
+test = "tests/test_testy_pelne.py::test_w_czasie_przebiegu_blokada_nalezy_do_pid_skryptu"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ \"$CZEKANO\" -ge \"$LIMIT\" ]; then"
+zamien = "if [ \"$CZEKANO\" -gt \"$LIMIT\" ]; then"
+test = "tests/test_testy_pelne.py::test_limit_zero_z_zywym_wlascicielem_nie_czeka_ani_sekundy_i_nie_zapowiada_czekania"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      exit 75"
+zamien = "      exit 74"
+test = "tests/test_testy_pelne.py::test_zajeta_blokada_po_limicie_konczy_sie_kodem_75"
+
+# Czekanie nigdy nie jest zapowiedziane.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ \"$zglaszano\" -eq 0 ]; then"
+zamien = "if [ \"$zglaszano\" -eq 1 ]; then"
+test = "tests/test_testy_pelne.py::test_oczekujacy_przebieg_pisze_o_czekaniu_tylko_raz"
+
+# Czekanie zapowiadane w kazdej sekundzie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      zglaszano=1"
+zamien = "      zglaszano=0"
+test = "tests/test_testy_pelne.py::test_oczekujacy_przebieg_pisze_o_czekaniu_tylko_raz"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(trzyma PID ${zajete:-?}, limit $LIMIT s)\" >&2"
+zamien = "(trzyma PID ${zajete:-?}, limit $LIMIT s)\""
+test = "tests/test_testy_pelne.py::test_oczekujacy_przebieg_pisze_o_czekaniu_tylko_raz"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    sleep 1\n    CZEKANO"
+zamien = "    sleep 2\n    CZEKANO"
+test = "tests/test_testy_pelne.py::test_limit_dwa_z_zywym_wlascicielem_czeka_dokladnie_dwie_sekundy"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "CZEKANO=$((CZEKANO + 1))"
+zamien = "CZEKANO=$((CZEKANO + 2))"
+test = "tests/test_testy_pelne.py::test_limit_dwa_z_zywym_wlascicielem_czeka_dokladnie_dwie_sekundy"
+
+# Licznik czekania zaczyna od 1.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "CZEKANO=0\nzdobadz_blokade() {"
+zamien = "CZEKANO=1\nzdobadz_blokade() {"
+test = "tests/test_testy_pelne.py::test_limit_dwa_z_zywym_wlascicielem_czeka_dokladnie_dwie_sekundy"
+
+# Opis blokady traktowany jak katalog.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  shift\n  lista=\"\""
+zamien = "  :\n  lista=\"\""
+test = "tests/test_testy_pelne.py::test_zdobycie_blokady_jest_zgloszone_na_stderr"
+
+# Semafor tylko z jednym slotem.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "zdobadz_blokade \"pelnego przebiegu\" \"${KATALOGI_SLOTOW[@]}\""
+zamien = "zdobadz_blokade \"pelnego przebiegu\" \"$BLOKADA\""
+test = "tests/test_testy_pelne.py::test_domyslnie_sa_dwa_sloty_drugi_przebieg_bierze_slot_2_i_nie_czeka[nieustawione]"
+
+# Wspolny zasob bez krotkiej blokady.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "zdobadz_blokade \"wspolnego zasobu\" \"$ZASOB\""
+zamien = ":"
+test = "tests/test_testy_pelne.py::test_wspolny_zasob_jest_trzymany_tylko_wokol_operacji_na_serwerze_i_przegladarce"
+
+# Zasob trzymany do konca przebiegu (build i testy pod blokada).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "zwolnij_wlasny \"$ZASOB\"\n\n# Jak w CI"
+zamien = ":\n\n# Jak w CI"
+test = "tests/test_testy_pelne.py::test_wspolny_zasob_jest_trzymany_tylko_wokol_operacji_na_serwerze_i_przegladarce"
+
+# Instalacja przegladarki (wspolny cache) poza blokada.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "\"$PY\" -m playwright install chromium\n\n# Koniec operacji na wspolnym zasobie: build frontu i testy ida poza krotka blokada.\nzwolnij_wlasny \"$ZASOB\""
+zamien = "# Koniec operacji na wspolnym zasobie: build frontu i testy ida poza krotka blokada.\nzwolnij_wlasny \"$ZASOB\"\n\"$PY\" -m playwright install chromium"
+test = "tests/test_testy_pelne.py::test_wspolny_zasob_jest_trzymany_tylko_wokol_operacji_na_serwerze_i_przegladarce"
+
+# Build frontu pod blokada zasobu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "zwolnij_wlasny \"$ZASOB\"\n\n# Jak w CI (npm ci); pomijamy tylko gdy node_modules juz jest, zeby powtorki byly szybkie.\n(\n  cd web\n  [ -d node_modules ] || npm ci\n  npm run build\n)"
+zamien = "# Jak w CI (npm ci); pomijamy tylko gdy node_modules juz jest, zeby powtorki byly szybkie.\n(\n  cd web\n  [ -d node_modules ] || npm ci\n  npm run build\n)\nzwolnij_wlasny \"$ZASOB\""
+test = "tests/test_testy_pelne.py::test_wspolny_zasob_jest_trzymany_tylko_wokol_operacji_na_serwerze_i_przegladarce"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "JAWNY_URL_BAZY=\"${COCKPIT_TEST_DATABASE_URL:-}\""
+zamien = "JAWNY_URL_BAZY=\"\""
+test = "tests/test_testy_pelne.py::test_jawny_url_bazy_ma_pierwszenstwo_a_skrypt_nie_tworzy_ani_nie_usuwa_baz"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if [ -z \"$JAWNY_URL_BAZY\" ]; then"
+zamien = "if [ -n \"$JAWNY_URL_BAZY\" ]; then"
+test = "tests/test_testy_pelne.py::test_jawny_url_bazy_ma_pierwszenstwo_a_skrypt_nie_tworzy_ani_nie_usuwa_baz"
+
+# Skrot to liczba bajtow zamiast sumy kontrolnej.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "cut -d' ' -f1"
+zamien = "cut -d' ' -f2"
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+# Komunikat bez cudzyslowow wokol skrotu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "('$SKROT')\""
+zamien = "($SKROT)\""
+test = "tests/test_testy_pelne.py::test_skrot_sciezki_pusty_albo_nieliczbowy_to_blad_bez_tworzenia_bazy_i_testow[pusty]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "PREFIKS_BAZ=\"cockpit_test_${SKROT}_\""
+zamien = "PREFIKS_BAZ=\"cockpit_test_${SKROT}\""
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+# Sprzatanie nie znajduje baz z sufiksem PID.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "LIKE '${PREFIKS_BAZ}%'"
+zamien = "LIKE '${PREFIKS_BAZ}'"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "reszta=\"${stara#\"$PREFIKS_BAZ\"}\""
+zamien = "reszta=\"$stara\""
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Najkrotszy suffiks zamiast najdluzszego: `<PID>_gw0_x` nie jest rozpoznany.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "pid_bazy=\"${reszta%%_*}\""
+zamien = "pid_bazy=\"${reszta%_*}\""
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Baza ze znakiem spoza [a-z0-9_] trafia do polecenia usuniecia.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    case \"$stara\" in\n      ''|*[!a-z0-9_]*) continue ;;"
+zamien = "    case \"$stara\" in\n      '') continue ;;"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Pusty PID z nazwy bazy (`<prefiks>_`) uznany za martwy.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    case \"$pid_bazy\" in\n      ''|*[!0-9]*) continue ;;"
+zamien = "    case \"$pid_bazy\" in\n      *[!0-9]*) continue ;;"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Sufiks nieliczbowy uznany za PID martwego procesu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    case \"$pid_bazy\" in\n      ''|*[!0-9]*) continue ;;"
+zamien = "    case \"$pid_bazy\" in\n      '') continue ;;"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Baza `<prefiks><PID>` bez `_gw` nie jest sprzatana.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$reszta\" = \"$pid_bazy\" ] || case"
+zamien = "case"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Sufiks `<PID>_inne` traktowany jak baza workera.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "\"${pid_bazy}_gw\"*) ;;"
+zamien = "\"${pid_bazy}\"*) ;;"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "*) continue ;; esac"
+zamien = "*) ;; esac"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+# Baza zywego przebiegu usuwana.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "if ps -p \"$pid_bazy\" >/dev/null 2>&1; then\n      continue"
+zamien = "if ps -p \"$pid_bazy\" >/dev/null 2>&1; then\n      :"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "$pid_bazy: $stara\" >&2"
+zamien = "$pid_bazy: $stara\""
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db \"DROP DATABASE IF EXISTS \\\"$stara\\\" WITH (FORCE)\" >/dev/null"
+zamien = "psql_db \"DROP DATABASE IF EXISTS \\\"$stara\\\" WITH (FORCE)\""
+test = "tests/test_testy_pelne.py::test_polecenia_sql_skryptu_nie_wypisuja_znacznikow_polecen_na_stdout"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db \"DROP DATABASE IF EXISTS \\\"$stara\\\" WITH (FORCE)\" >/dev/null"
+zamien = ":"
+test = "tests/test_testy_pelne.py::test_sprzatanie_usuwa_bazy_martwych_przebiegow_tego_worktree_i_tylko_je"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "BAZA_PRZEBIEGU=\"${PREFIKS_BAZ}$$\""
+zamien = "BAZA_PRZEBIEGU=\"${PREFIKS_BAZ}$PPID\""
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+# Baza po martwym przebiegu o tym samym PID nie jest usuwana przed CREATE.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "usun_baze_z_workerami \"$BAZA_PRZEBIEGU\" >/dev/null"
+zamien = ":"
+test = "tests/test_testy_pelne.py::test_baza_po_martwym_przebiegu_o_tym_samym_pid_jest_usunieta_przed_utworzeniem_nowej"
+
+# Baza przebiegu nie jest tworzona.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db \"CREATE DATABASE \\\"$BAZA_PRZEBIEGU\\\" OWNER cockpit\" >/dev/null"
+zamien = ":"
+test = "tests/test_testy_pelne.py::test_baza_przebiegu_jest_tworzona_przed_testami_i_usunieta_po_zielonym_przebiegu"
+
+# Baza przebiegu bez wlasciciela `cockpit`.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db \"CREATE DATABASE \\\"$BAZA_PRZEBIEGU\\\" OWNER cockpit\" >/dev/null"
+zamien = "psql_db \"CREATE DATABASE \\\"$BAZA_PRZEBIEGU\\\"\" >/dev/null"
+test = "tests/test_testy_pelne.py::test_baza_przebiegu_jest_tworzona_przed_testami_i_usunieta_po_zielonym_przebiegu"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db \"CREATE DATABASE \\\"$BAZA_PRZEBIEGU\\\" OWNER cockpit\" >/dev/null"
+zamien = "psql_db \"CREATE DATABASE \\\"$BAZA_PRZEBIEGU\\\" OWNER cockpit\""
+test = "tests/test_testy_pelne.py::test_polecenia_sql_skryptu_nie_wypisuja_znacznikow_polecen_na_stdout"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "psql_db \"CREATE DATABASE cockpit OWNER cockpit\" >/dev/null"
+zamien = "psql_db \"CREATE DATABASE cockpit OWNER cockpit\""
+test = "tests/test_testy_pelne.py::test_polecenia_sql_skryptu_nie_wypisuja_znacznikow_polecen_na_stdout"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(usuwana na koniec przebiegu)\" >&2"
+zamien = "(usuwana na koniec przebiegu)\""
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+# Adres bazy nie jest eksportowany do pytesta.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "export COCKPIT_TEST_DATABASE_URL=\"postgresql+asyncpg://"
+zamien = "COCKPIT_TEST_DATABASE_URL=\"postgresql+asyncpg://"
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "postgresql+asyncpg://cockpit:cockpit@localhost:$PORT/$BAZA_PRZEBIEGU"
+zamien = "postgresql://cockpit:cockpit@localhost:$PORT/$BAZA_PRZEBIEGU"
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "cockpit:cockpit@localhost:$PORT/$BAZA_PRZEBIEGU"
+zamien = "cockpit:cockpit@127.0.0.1:$PORT/$BAZA_PRZEBIEGU"
+test = "tests/test_testy_pelne.py::test_nazwa_bazy_przebiegu_to_skrot_cksum_sciezki_korzenia_i_pid_skryptu"
+
+# Stały port zamiast wolnego z systemu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "s.bind((\"127.0.0.1\", 0))"
+zamien = "s.bind((\"127.0.0.1\", 8799))"
+test = "tests/test_testy_pelne.py::test_port_demo_trafia_do_wszystkich_przebiegow_pytest_jako_wolny_port"
+
+# Wypisany adres zamiast portu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "print(s.getsockname()[1])"
+zamien = "print(s.getsockname()[0])"
+test = "tests/test_testy_pelne.py::test_port_demo_trafia_do_wszystkich_przebiegow_pytest_jako_wolny_port"
+
+# Biale znaki wokol portu nie sa usuwane.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "s.close()\n' | tr -d '[:space:]')\""
+zamien = "s.close()\n' )\""
+test = "tests/test_testy_pelne.py::test_wolny_port_demo_z_bialymi_znakami_wokol_liczby_jest_czyszczony_przed_eksportem"
+
+# Pusty wynik nie jest bledem.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  ''|*[!0-9]*) blad \"brak wolnego portu demo"
+zamien = "  *[!0-9]*) blad \"brak wolnego portu demo"
+test = "tests/test_testy_pelne.py::test_brak_wolnego_portu_demo_to_blad_przed_testami_a_baza_przebiegu_jest_usunieta[pusty]"
+
+# Wynik nieliczbowy nie jest bledem.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "  ''|*[!0-9]*) blad \"brak wolnego portu demo"
+zamien = "  ''|*[!0-9]x*) blad \"brak wolnego portu demo"
+test = "tests/test_testy_pelne.py::test_brak_wolnego_portu_demo_to_blad_przed_testami_a_baza_przebiegu_jest_usunieta[nieliczbowy]"
+
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(wynik: '$PORT_DEMO')\""
+zamien = "(wynik: $PORT_DEMO)\""
+test = "tests/test_testy_pelne.py::test_brak_wolnego_portu_demo_to_blad_przed_testami_a_baza_przebiegu_jest_usunieta[pusty]"
+
+# Port nie jest eksportowany do pytesta.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "export COCKPIT_DEMO_PORT=\"$PORT_DEMO\""
+zamien = "COCKPIT_DEMO_PORT=\"$PORT_DEMO\""
+test = "tests/test_testy_pelne.py::test_port_demo_trafia_do_wszystkich_przebiegow_pytest_jako_wolny_port"
+
+# Domyslny port inny niz 8799.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"\") or \"8799\""
+zamien = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"\") or \"8798\""
+test = "tests/test_demo_szkielet.py::test_port_przelotu_bez_zmiennej_albo_z_pusta_zmienna_to_8799[nieustawiona]"
+
+# Nieustawiona zmienna daje zly port zamiast domyslnego.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"\") or \"8799\""
+zamien = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"x\") or \"8799\""
+test = "tests/test_demo_szkielet.py::test_port_przelotu_bez_zmiennej_albo_z_pusta_zmienna_to_8799[nieustawiona]"
+
+# Pusta zmienna nie znaczy wartosci domyslnej.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"\") or \"8799\""
+zamien = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"\")"
+test = "tests/test_demo_szkielet.py::test_port_przelotu_bez_zmiennej_albo_z_pusta_zmienna_to_8799[pusta]"
+
+# Zmienna czytana pod inna nazwa.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "os.environ.get(\"COCKPIT_DEMO_PORT\", \"\")"
+zamien = "os.environ.get(\"COCKPIT_DEMO_PORTX\", \"\")"
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_konczy_sie_kodem_1_z_komunikatem_o_porcie[0]"
+
+# Cyfry spoza ASCII (isdigit prawdziwe) przechodza.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "surowy.isascii() and surowy.isdigit()"
+zamien = "surowy.isdigit()"
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji[cyfry_arabskie]"
+
+# Napis nieliczbowy daje ValueError zamiast bledu dziedziny.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "surowy.isdigit() and 1 <="
+zamien = "1 <="
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji[litery]"
+
+# Port 0 dozwolony.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "1 <= int(surowy) <= 65535"
+zamien = "0 <= int(surowy) <= 65535"
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji[zero]"
+
+# Port 1 odrzucony.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "1 <= int(surowy) <= 65535"
+zamien = "1 < int(surowy) <= 65535"
+test = "tests/test_demo_szkielet.py::test_port_przelotu_z_zakresu_jest_zwracany_jako_liczba[1]"
+
+# Port 65535 odrzucony.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "1 <= int(surowy) <= 65535"
+zamien = "1 <= int(surowy) < 65535"
+test = "tests/test_demo_szkielet.py::test_port_przelotu_z_zakresu_jest_zwracany_jako_liczba[65535]"
+
+# Port 65536 dozwolony.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "1 <= int(surowy) <= 65535"
+zamien = "1 <= int(surowy) <= 65536"
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji[65536]"
+
+# Odwrocony warunek: poprawny port odrzucany.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "if not (surowy.isascii()"
+zamien = "if (surowy.isascii()"
+test = "tests/test_demo_szkielet.py::test_port_przelotu_z_zakresu_jest_zwracany_jako_liczba[80]"
+
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "\"COCKPIT_DEMO_PORT musi byc liczba calkowita 1..65535 \""
+zamien = "\"COCKPIT_DEMO_PORT musi byc liczba calkowita 1..65534 \""
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji[zero]"
+
+# Komunikat bez cudzyslowow wokol wartosci.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "(jest: '{surowy}')"
+zamien = "(jest: {surowy})"
+test = "tests/test_demo_szkielet.py::test_zly_port_przelotu_to_wyjscie_z_komunikatem_a_nie_wyjatek_konwersji[zero]"
+
+# Port zwracany jako napis.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "return int(surowy)"
+zamien = "return surowy"
+test = "tests/test_demo_szkielet.py::test_port_przelotu_z_zakresu_jest_zwracany_jako_liczba[80]"
+
+# Port stala zamiast z COCKPIT_DEMO_PORT.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "PORT = port_demo()"
+zamien = "PORT = 8799"
+test = "tests/test_demo_szkielet.py::test_adres_serwera_i_port_uvicorna_przelotu_pochodza_z_portu_demo"
+
+# Adres klienta ze stalym portem.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "BASE = f\"http://127.0.0.1:{PORT}\""
+zamien = "BASE = \"http://127.0.0.1:8799\""
+test = "tests/test_demo_szkielet.py::test_adres_serwera_i_port_uvicorna_przelotu_pochodza_z_portu_demo"
+
+# Uvicorn na stalym porcie.
+[[mutant]]
+plik = "tools/demo_szkielet.py"
+szukaj = "port=PORT,"
+zamien = "port=8799,"
+test = "tests/test_demo_szkielet.py::test_adres_serwera_i_port_uvicorna_przelotu_pochodza_z_portu_demo"
+
+# Trapy ustawione dopiero po starcie bramek (okno, w ktorym sygnal zostawia sieroty).
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 143' TERM\ntrap 'przerwij 130' INT\n\n\"$TESTY\" < /dev/null > \"$KAT/testy.log\" 2>&1 &\nPID_TESTY=$!"
+zamien = "\"$TESTY\" < /dev/null > \"$KAT/testy.log\" 2>&1 &\nPID_TESTY=$!\ntrap 'przerwij 143' TERM\ntrap 'przerwij 130' INT\n"
+test = "tests/test_bramki_lokalne.py::test_trapy_przerwania_sa_w_pliku_przed_startem_obu_bramek"
+
+# set -m dopiero po trapach (przerwanie tuz po trapach startuje straznika bez wlasnej grupy).
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "set -m\ntrap 'przerwij 143' TERM\ntrap 'przerwij 130' INT\n"
+zamien = "trap 'przerwij 143' TERM\ntrap 'przerwij 130' INT\nset -m\n"
+test = "tests/test_bramki_lokalne.py::test_trapy_przerwania_sa_w_pliku_przed_startem_obu_bramek"
+
+# Brak trapu TERM: skrypt ginie od sygnalu, a bramki zostaja sierotami.
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 143' TERM"
+zamien = ":"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigterm]"
+
+# Brak trapu INT.
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 130' INT"
+zamien = ":"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_oba_procesy_i_ich_dzieci_i_konczy_sie_kodem_sygnalu[obie_bramki_koncza_od_razu-sigint]"
+
+# === HAR-236 poprawka po review: blokada (bledy), strazik przerwania, fixture bazy workera ===
+
+# Usuniecie martwej blokady konczy sie dopiero po fakcie: `usunieta` ustawione na 0 zamiast 1,
+# wiec po faktycznym usunieciu skrypt czeka sekunde zamiast ponowic od razu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "        usunieta=1\n      fi"
+zamien = "        usunieta=0\n      fi"
+test = "tests/test_testy_pelne.py::test_slot_martwego_procesu_jest_przejety_gdy_slot_1_trzyma_zywy_przebieg"
+
+# `usunieta` startuje od 1: kod 3 (ponow od razu) takze bez usuniecia.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "local kat=\"$1\" usunieta=0"
+zamien = "local kat=\"$1\" usunieta=1"
+test = "tests/test_testy_pelne.py::test_blokada_przejeta_przez_inny_przebieg_miedzy_sprawdzeniami_nie_jest_usuwana"
+
+# Kod 3 bez warunku `usunieta`: ponowienie takze, gdy wlasciciel zmienil sie pod przejeciem.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      [ \"$usunieta\" -eq 1 ] && return 3\n"
+zamien = "      return 3\n"
+test = "tests/test_testy_pelne.py::test_blokada_przejeta_przez_inny_przebieg_miedzy_sprawdzeniami_nie_jest_usuwana"
+
+# Warunek kodu 3 odwrocony.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "[ \"$usunieta\" -eq 1 ] && return 3"
+zamien = "[ \"$usunieta\" -eq 0 ] && return 3"
+test = "tests/test_testy_pelne.py::test_blokada_przejeta_przez_inny_przebieg_miedzy_sprawdzeniami_nie_jest_usuwana"
+
+# Nieudane usuniecie martwej blokady bez `blad`: przebieg dalej ponawia i konczy sie kodem 75.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "          blad \"nie da sie usunac martwej blokady $kat (sprawdz prawa do katalogu i usun go recznie)\""
+zamien = "          :"
+test = "tests/test_testy_pelne.py::test_po_nieudanym_usunieciu_martwej_blokady_cudze_przejecie_odtworzone_po_zwolnieniu_zostaje"
+
+# Komunikat o nieusuwalnej martwej blokadzie: pelna tresc.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(sprawdz prawa do katalogu i usun go recznie)\""
+zamien = "(sprawdz prawa do katalogu)\""
+test = "tests/test_testy_pelne.py::test_po_nieudanym_usunieciu_martwej_blokady_cudze_przejecie_odtworzone_po_zwolnieniu_zostaje"
+
+# Galaz bledu nie zwalnia katalogu przejecia.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "          rmdir \"$kat.przejecie\" 2>/dev/null || true\n          PRZEJECIE_KAT=\"\"\n          blad"
+zamien = "          :\n          PRZEJECIE_KAT=\"\"\n          blad"
+test = "tests/test_testy_pelne.py::test_po_nieudanym_usunieciu_martwej_blokady_cudze_przejecie_odtworzone_po_zwolnieniu_zostaje"
+
+# Galaz bledu zostawia zwolnione przejecie w pamieci trapu: trap usuwa cudze przejecie.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "          PRZEJECIE_KAT=\"\"\n          blad"
+zamien = "          :\n          blad"
+test = "tests/test_testy_pelne.py::test_po_nieudanym_usunieciu_martwej_blokady_cudze_przejecie_odtworzone_po_zwolnieniu_zostaje"
+
+# Katalog przejecia po bledzie usuniecia zostaje na dysku (prawdziwe `rm` odmawia).
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "          rmdir \"$kat.przejecie\" 2>/dev/null || true\n          PRZEJECIE_KAT=\"\"\n          blad"
+zamien = "          :\n          PRZEJECIE_KAT=\"\"\n          blad"
+test = "tests/test_testy_pelne.py::test_martwa_blokada_ktorej_nie_da_sie_usunac_to_kod_1_z_komunikatem_a_nie_petla_bez_konca"
+
+# Nieudany zapis PID po `mkdir` nieobsluzony: slot uznany za zdobyty bez PID.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    if ! echo \"$$\" > \"$kat/pid\"; then"
+zamien = "    if false; then"
+test = "tests/test_testy_pelne.py::test_blokada_w_ktorej_nie_da_sie_zapisac_pid_to_kod_1_z_komunikatem_i_zwolniony_katalog"
+
+# Nieudany zapis PID: katalog bez PID zostaje po przebiegu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      rmdir \"$kat\" 2>/dev/null || true\n      blad \"nie da sie zapisac PID"
+zamien = "      :\n      blad \"nie da sie zapisac PID"
+test = "tests/test_testy_pelne.py::test_blokada_w_ktorej_nie_da_sie_zapisac_pid_to_kod_1_z_komunikatem_i_zwolniony_katalog"
+
+# Komunikat o nieudanym zapisie PID bez sciezki blokady.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "blad \"nie da sie zapisac PID w blokadzie $kat\""
+zamien = "blad \"nie da sie zapisac PID\""
+test = "tests/test_testy_pelne.py::test_blokada_w_ktorej_nie_da_sie_zapisac_pid_to_kod_1_z_komunikatem_i_zwolniony_katalog"
+
+# Blad `rmdir` po nieudanym zapisie PID wypisywany na stderr.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "      rmdir \"$kat\" 2>/dev/null || true\n      blad \"nie da sie zapisac PID"
+zamien = "      rmdir \"$kat\" || true\n      blad \"nie da sie zapisac PID"
+test = "tests/test_testy_pelne.py::test_blad_rmdir_po_nieudanym_zapisie_pid_nie_trafia_na_stderr_i_nie_zmienia_komunikatu"
+
+# Nieudane zwolnienie wlasnej blokady w trapie bez obslugi: `set -e` zmienia kod wyjscia.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "    rm -rf \"$kat\" || echo \"BLAD: nie udalo sie zwolnic wlasnej blokady $kat (usun ja recznie)\" >&2"
+zamien = "    rm -rf \"$kat\""
+test = "tests/test_testy_pelne.py::test_nieudane_zwolnienie_wlasnej_blokady_na_koncu_przebiegu_jest_zgloszone_a_kod_zostaje_0"
+
+# Nieudane zwolnienie wlasnej blokady po cichu.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "|| echo \"BLAD: nie udalo sie zwolnic wlasnej blokady $kat (usun ja recznie)\" >&2"
+zamien = "|| true"
+test = "tests/test_testy_pelne.py::test_nieudane_zwolnienie_wlasnej_blokady_na_koncu_przebiegu_jest_zgloszone_a_kod_zostaje_0"
+
+# Komunikat o nieudanym zwolnieniu idzie na stdout.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "(usun ja recznie)\" >&2"
+zamien = "(usun ja recznie)\""
+test = "tests/test_testy_pelne.py::test_nieudane_zwolnienie_wlasnej_blokady_na_koncu_przebiegu_jest_zgloszone_a_kod_zostaje_0"
+
+# Komunikat o nieudanym zwolnieniu: pelna tresc.
+[[mutant]]
+plik = "tools/testy_pelne.sh"
+szukaj = "nie udalo sie zwolnic wlasnej blokady $kat"
+zamien = "nie udalo sie zwolnic blokady $kat"
+test = "tests/test_testy_pelne.py::test_nieudane_zwolnienie_wlasnej_blokady_na_koncu_przebiegu_jest_zgloszone_a_kod_zostaje_0"
+
+# Straznik dobijania przezywa skrypt (do 10 s) i zostawia `sleep 10`: grupa straznika nie jest zabijana.
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  kill -KILL -- \"-$straznik\" 2>/dev/null || true"
+zamien = "  :"
+test = "tests/test_bramki_lokalne.py::test_po_przerwaniu_wnuki_ignorujace_sigterm_i_straznik_dobijania_nie_zyja_juz_po_wyjsciu_skryptu"
+
+# PID straznika zastapiony PID-em testow: zabijana i czekana jest zla grupa.
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  local straznik=$!"
+zamien = "  local straznik=$PID_TESTY"
+test = "tests/test_bramki_lokalne.py::test_po_przerwaniu_wnuki_ignorujace_sigterm_i_straznik_dobijania_nie_zyja_juz_po_wyjsciu_skryptu"
+
+# Fixture bazy workera: adres bazy do usuniecia i utworzenia, komendy i ich kolejnosc.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    wejscie = getattr(request.config, \"workerinput\", None)"
+zamien = "    wejscie = request.config.workerinput"
+test = "tests/test_rownolegly_przebieg.py::test_bez_xdist_albo_bez_postgresql_fixture_zwraca_oryginalny_adres_i_niczego_nie_tworzy[bez_xdist_adres_postgresql]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "if wejscie is None or not url.startswith(\"postgresql\"):"
+zamien = "if wejscie is None and not url.startswith(\"postgresql\"):"
+test = "tests/test_rownolegly_przebieg.py::test_bez_xdist_albo_bez_postgresql_fixture_zwraca_oryginalny_adres_i_niczego_nie_tworzy[worker_i_sqlite]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "if wejscie is None or not url.startswith(\"postgresql\"):"
+zamien = "if wejscie is None:"
+test = "tests/test_rownolegly_przebieg.py::test_bez_xdist_albo_bez_postgresql_fixture_zwraca_oryginalny_adres_i_niczego_nie_tworzy[worker_i_sqlite]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "if wejscie is None or not url.startswith(\"postgresql\"):"
+zamien = "if not url.startswith(\"postgresql\"):"
+test = "tests/test_rownolegly_przebieg.py::test_bez_xdist_albo_bez_postgresql_fixture_zwraca_oryginalny_adres_i_niczego_nie_tworzy[bez_xdist_adres_postgresql]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    nazwa = make_url(url_workera).database"
+zamien = "    nazwa = make_url(url).database"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "DROP DATABASE IF EXISTS {_cytuj_identyfikator(nazwa)} WITH (FORCE)"
+zamien = "DROP DATABASE {_cytuj_identyfikator(nazwa)} WITH (FORCE)"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "DROP DATABASE IF EXISTS {_cytuj_identyfikator(nazwa)} WITH (FORCE)"
+zamien = "DROP DATABASE IF EXISTS {_cytuj_identyfikator(nazwa)}"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    _polecenie_na_serwerze(url, usun)\n    _polecenie_na_serwerze(url, f\"CREATE"
+zamien = "    pass\n    _polecenie_na_serwerze(url, f\"CREATE"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    _polecenie_na_serwerze(url, usun)\n    _polecenie_na_serwerze(url, f\"CREATE"
+zamien = "    _polecenie_na_serwerze(url_workera, usun)\n    _polecenie_na_serwerze(url, f\"CREATE"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    _polecenie_na_serwerze(url, f\"CREATE DATABASE {_cytuj_identyfikator(nazwa)}\")"
+zamien = "    pass"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    _polecenie_na_serwerze(url, f\"CREATE DATABASE {_cytuj_identyfikator(nazwa)}\")"
+zamien = "    _polecenie_na_serwerze(url_workera, f\"CREATE DATABASE {_cytuj_identyfikator(nazwa)}\")"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    os.environ[ZMIENNA_URL_BAZY] = url_workera"
+zamien = "    pass"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    os.environ[ZMIENNA_URL_BAZY] = url_workera"
+zamien = "    os.environ[ZMIENNA_URL_BAZY] = url"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+# Po sesji adres bazy nie wraca do oryginalnego.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        os.environ[ZMIENNA_URL_BAZY] = url\n        _polecenie_na_serwerze(url, usun)"
+zamien = "        _polecenie_na_serwerze(url, usun)"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+# Przywrocenie adresu po usunieciu bazy: blad serwera zostawia adres workera.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        os.environ[ZMIENNA_URL_BAZY] = url\n        _polecenie_na_serwerze(url, usun)"
+zamien = "        _polecenie_na_serwerze(url, usun)\n        os.environ[ZMIENNA_URL_BAZY] = url"
+test = "tests/test_rownolegly_przebieg.py::test_blad_usuwania_bazy_workera_po_sesji_nie_zostawia_adresu_workera_w_srodowisku"
+
+# Brak usuniecia bazy workera po sesji.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        os.environ[ZMIENNA_URL_BAZY] = url\n        _polecenie_na_serwerze(url, usun)"
+zamien = "        os.environ[ZMIENNA_URL_BAZY] = url\n        pass"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+# Usuniecie po sesji idzie na bazie workera (nie da sie jej usunac przez polaczenie z nia).
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "        os.environ[ZMIENNA_URL_BAZY] = url\n        _polecenie_na_serwerze(url, usun)"
+zamien = "        os.environ[ZMIENNA_URL_BAZY] = url\n        _polecenie_na_serwerze(url_workera, usun)"
+test = "tests/test_rownolegly_przebieg.py::test_worker_xdist_tworzy_swieza_baze_na_serwerze_z_oryginalnego_adresu_i_usuwa_ja_po_sesji"
+
+# Sprzatanie poza `finally`: przerwana sesja nie usuwa bazy ani nie przywraca adresu.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    try:\n        yield url_workera\n    finally:\n        os.environ[ZMIENNA_URL_BAZY] = url\n        _polecenie_na_serwerze(url, usun)"
+zamien = "    yield url_workera\n    os.environ[ZMIENNA_URL_BAZY] = url\n    _polecenie_na_serwerze(url, usun)"
+test = "tests/test_rownolegly_przebieg.py::test_przerwana_sesja_workera_i_tak_usuwa_baze_workera_i_przywraca_adres"
+
+# Ujecie nazwy w cudzyslowy.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    return '\"' + nazwa.replace('\"', '\"\"') + '\"'"
+zamien = "    return nazwa.replace('\"', '\"\"')"
+test = "tests/test_rownolegly_przebieg.py::test_nazwa_bazy_w_poleceniu_sql_jest_ujeta_w_cudzyslowy_z_podwojonymi_cudzyslowami[zwykla_nazwa]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    return '\"' + nazwa.replace('\"', '\"\"') + '\"'"
+zamien = "    return '\"' + nazwa.replace('\"', '\"\"')"
+test = "tests/test_rownolegly_przebieg.py::test_nazwa_bazy_w_poleceniu_sql_jest_ujeta_w_cudzyslowy_z_podwojonymi_cudzyslowami[zwykla_nazwa]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    return '\"' + nazwa.replace('\"', '\"\"') + '\"'"
+zamien = "    return '\"' + nazwa + '\"'"
+test = "tests/test_rownolegly_przebieg.py::test_nazwa_bazy_w_poleceniu_sql_jest_ujeta_w_cudzyslowy_z_podwojonymi_cudzyslowami[cudzyslow_jest_podwojony]"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "    return '\"' + nazwa.replace('\"', '\"\"') + '\"'"
+zamien = "    return '\"' + nazwa.replace('\"', '') + '\"'"
+test = "tests/test_rownolegly_przebieg.py::test_nazwa_bazy_w_poleceniu_sql_jest_ujeta_w_cudzyslowy_z_podwojonymi_cudzyslowami[cudzyslow_jest_podwojony]"
+
+# Polecenie na serwerze: poza transakcja, wykonane polecenie, zamkniecie silnika, propagacja bledu.
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "create_async_engine(url, isolation_level=\"AUTOCOMMIT\")"
+zamien = "create_async_engine(url)"
+test = "tests/test_rownolegly_przebieg.py::test_polecenie_na_serwerze_idzie_poza_transakcja_przez_podany_adres_i_zamyka_silnik"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "isolation_level=\"AUTOCOMMIT\""
+zamien = "isolation_level=\"READ COMMITTED\""
+test = "tests/test_rownolegly_przebieg.py::test_polecenie_na_serwerze_idzie_poza_transakcja_przez_podany_adres_i_zamyka_silnik"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "await conn.execute(text(polecenie))"
+zamien = "await conn.execute(text(\"SELECT 1\"))"
+test = "tests/test_rownolegly_przebieg.py::test_polecenie_na_serwerze_idzie_poza_transakcja_przez_podany_adres_i_zamyka_silnik"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "await conn.execute(text(polecenie))\n        finally:\n            await engine.dispose()"
+zamien = "await conn.execute(text(polecenie))\n        finally:\n            pass"
+test = "tests/test_rownolegly_przebieg.py::test_polecenie_na_serwerze_ktore_pada_zamyka_silnik_i_przepuszcza_blad"
+
+[[mutant]]
+plik = "tests/e2e/conftest.py"
+szukaj = "pula.submit(lambda: asyncio.run(_wykonaj())).result()"
+zamien = "pula.submit(lambda: asyncio.run(_wykonaj()))"
+test = "tests/test_rownolegly_przebieg.py::test_polecenie_na_serwerze_ktore_pada_zamyka_silnik_i_przepuszcza_blad"
+
+[[rownowazny]]
+plik = "tools/mutanty_zmian.py"
+linia_tekst = "ROZDZIELACZ_LINII = re.compile(r\"[\\r\\n]\")"
+uzasadnienie = "Okno niedokonczonej linii (`okno`) sluzy wylacznie do ograniczenia jego dlugosci; fragmenty znacznikow (`Running stats` itd.) nie zawieraja ani `\\r`, ani `\\n`, wiec zaden fragment nie moze sie dopasowac ponad separatorem. Wersje z `[\\n]`, `[\\r]` i bez podzialu daja dla kazdego strumienia ten sam wynik dopasowania (rozni je tylko dlugosc okna), wiec zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = "tools/bramki_lokalne.sh"
+linia_tekst = "    [ -z \"$pid\" ] || kill -TERM -- \"-$pid\" 2>/dev/null || true"
+uzasadnienie = "Przy pustym `$pid` wersja bez strazika wola `kill -TERM -- \"-\"`, co konczy sie bledem tlumionym przez `2>/dev/null || true`: ten sam kod wyjscia, ten sam stdout i stderr, zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = "tests/e2e/conftest.py"
+linia_tekst = "    assert url_workera != url"
+uzasadnienie = "Fixture `baza_workera` woluje `url_bazy_workera` tylko dla adresu `postgresql...` i niepustego identyfikatora workera, a wtedy funkcja zawsze dopisuje do nazwy bazy `_<workerid>` (wiersze tabeli), wiec asercja jest zawsze prawdziwa; zadne wejscie nie odroznia wersji bez niej."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "      ''|*[!a-z0-9_]*) continue ;;"
+uzasadnienie = "Alternatywa `''|` jest nieosiagalna w petli sprzatania martwych baz: pusta linia listy (pusta lista) trafia do `case \"$pid_bazy\"`, ktory ma wlasna alternatywe `''|` (wiersz tabeli) i robi `continue`; wersja bez `''|` w pierwszym `case` daje dla pustej `$stara` ten sam skutek (pusty `$reszta`, pusty `$pid_bazy`, `continue`). Czlon `*[!a-z0-9_]*` ma wiersz w tabeli."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "  fi\n  return 0\n}\n\npsql_db()"
+uzasadnienie = "Koncowe `return 0` w `zwolnij_wlasny` jest zbedne: funkcja konczy sie `if` bez `else`, ktory zwraca 0, gdy warunek jest falszywy, a gdy prawdziwy zwraca status listy `rm ... || echo ...`, czyli status `echo` (0). Zadne wejscie nie odroznia wersji bez `return 0`."
+
+[[rownowazny]]
+plik = "tools/bramki_lokalne.sh"
+linia_tekst = "  wait \"$straznik\" 2>/dev/null"
+uzasadnienie = "Po `kill -KILL -- \"-$straznik\"` cala grupa strazika (subshell i jego `sleep 10`) dostala SIGKILL, a `wait` tylko zbiera status zabitego dziecka tuz przed `exit`: kod wyjscia, stdout i stderr sa te same, a zadne wejscie nie odroznia wersji poza mikrosekundami umierania procesu (nie obserwowalnymi: test sprawdza stan po wyjsciu z zapasem 3 s). Zabicie strazika ma wiersz tabeli."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "    zwolnij_wlasny \"$kat\"\n  done\n  return 0"
+uzasadnienie = "Koncowe `return 0` w `sprzatnij` jest zbedne: ostatnia komenda to petla `for` wolajaca `zwolnij_wlasny` (zawsze 0, lista slotow ma co najmniej jeden element), a status funkcji trapu EXIT nie zmienia kodu wyjscia skryptu; zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "    WLASCICIEL=\"$(tr -d '[:space:]' < \"$1/pid\" 2>/dev/null || true)\""
+uzasadnienie = "`katalog_martwy` jest wolana wylacznie w warunku `if` (`sprobuj_katalog`), gdzie `set -e` jest wylaczone, wiec `|| true` nie zmienia przebiegu (nieudane `tr` i tak daje pusty `WLASCICIEL` i `return 1`). `2>/dev/null` tez nie ma skutku: komunikat o nieudanym przekierowaniu `< plik` (nieczytelny pid) wypisuje powloka przed zastosowaniem `2>/dev/null`, a `tr` z poprawnymi argumentami nic nie pisze na stderr; zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "      rmdir \"$kat\" 2>/dev/null || true"
+uzasadnienie = "Brak `|| true` przy `rmdir` po nieudanym zapisie PID nie zmienia przebiegu: `sprobuj_katalog` jest wolana jako `sprobuj_katalog \"$kat\" || rc=$?`, wiec `set -e` jest w niej wylaczone, a nastepna instrukcja (`blad`) wykonuje sie w obu wersjach. Wersja bez `2>/dev/null` ma wiersz tabeli (blad rmdir)."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "      rmdir \"$kat.przejecie\" 2>/dev/null || true"
+uzasadnienie = "Brak `|| true` w `sprobuj_katalog` nie zmienia przebiegu: funkcja jest wolana jako `sprobuj_katalog \"$kat\" || rc=$?`, wiec `set -e` jest w niej wylaczone, a nastepne instrukcje (`PRZEJECIE_KAT=\"\"`, `return 3`) wykonuja sie w obu wersjach. Wersja bez `2>/dev/null` ma wiersz tabeli (komunikat rmdir)."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "s.close()\n' | tr"
+uzasadnienie = "Zamkniecie gniazda w jednolinijkowcu wyboru portu jest zbedne: proces `$PY` konczy sie tuz po `print`, a system zwalnia gniazdo przy zakonczeniu procesu, wiec port jest wolny dla pytesta w obu wersjach; zadne wejscie nie odroznia wersji."
+
+[[rownowazny]]
+plik = "tools/testy_pelne.sh"
+linia_tekst = "usun_baze_z_workerami \"$BAZA_PRZEBIEGU\" >/dev/null"
+uzasadnienie = "Przekierowanie `>/dev/null` na wywolaniu funkcji jest zbedne: funkcja nic nie pisze na stdout (listy baz zbiera przez `$(...)`, a kazde `DROP` ma wlasne `>/dev/null`; komunikaty bledow ida na stderr), wiec zadne wejscie nie odroznia wersji bez przekierowania."
+
+# Trap INT przed set -m (ta sama wada wyscigowa dla SIGINT co dla TERM).
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "set -m\ntrap 'przerwij 143' TERM\ntrap 'przerwij 130' INT\n\n"
+zamien = "trap 'przerwij 130' INT\nset -m\ntrap 'przerwij 143' TERM\n\n"
+test = "tests/test_bramki_lokalne.py::test_trapy_przerwania_sa_w_pliku_przed_startem_obu_bramek"
+
+# HAR-236, decyzja strażnika (opcja A): test-strażnik wykluczeń testów z mutmuta.
+
+# (a) pusta lista
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "    if not argumenty:\n"
+zamien = "    if False:\n"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_pusta_lista_wykluczen_to_blad_a_nie_brak_problemow"
+
+# argument inny niz --ignore
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "if not argument.startswith(PREFIKS):"
+zamien = "if False:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_argument_inny_niz_ignore_to_blad"
+
+# (a) plik nie istnieje
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "if not plik.is_file():"
+zamien = "if False:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczenie_nieistniejacego_pliku_to_blad"
+
+# (b) import zrodla
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "        if importy:\n"
+zamien = "        if False:\n"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_na_poziomie_modulu]"
+
+# (b) import wewnatrz funkcji (caly AST)
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "    for wezel in ast.walk(drzewo):"
+zamien = "    for wezel in ast.iter_child_nodes(drzewo):"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_wewnatrz_funkcji]"
+
+# (b) from-import
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "            wynik.add(wezel.module.split(\".\")[0])"
+zamien = "            pass"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[from_import]"
+
+# (b) pakiet z kropka
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "wynik |= {alias.name.split(\".\")[0] for alias in wezel.names}"
+zamien = "wynik |= {alias.name for alias in wezel.names}"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_na_poziomie_modulu]"
+
+# (b) import wzgledny pomijany
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "wezel.level == 0 and "
+zamien = ""
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_import_wzgledny_i_inne_pakiety_nie_sa_importem_kodu_zrodlowego"
+
+# (b) element zbioru cockpit
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "PAKIETY_ZRODLA = {\"cockpit\", \"runner\"}"
+zamien = "PAKIETY_ZRODLA = {\"runner\"}"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_na_poziomie_modulu]"
+
+# (b) element zbioru runner
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "PAKIETY_ZRODLA = {\"cockpit\", \"runner\"}"
+zamien = "PAKIETY_ZRODLA = {\"cockpit\"}"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[from_import]"
+
+# (c) conftest tylko gdy importuje zrodlo
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "if _importy(drzewo_conftest) & PAKIETY_ZRODLA:"
+zamien = "if True:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_fixture_z_conftestu_bez_importu_zrodla_nie_jest_bledem"
+
+# (c) fixture z conftestu
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "for fixture in sorted(_fixtury(drzewo_conftest) & uzyte):"
+zamien = "for fixture in []:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_uzywajacy_fixture_z_conftestu_importujacego_zrodlo_to_blad"
+
+# (c) rozpoznanie fixture
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "and any(\"fixture\" in ast.unparse(d) for d in f.decorator_list)"
+zamien = "and False"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_uzywajacy_fixture_z_conftestu_importujacego_zrodlo_to_blad"
+
+# (c) tylko uzyte fixture
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "_fixtury(drzewo_conftest) & uzyte"
+zamien = "_fixtury(drzewo_conftest)"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_czysty_plik_bez_importu_zrodla_i_bez_skazonej_fixture_jest_poprawnym_wykluczeniem"
+
+# (c) conftest katalogow nadrzednych
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "        for katalog in plik.parents:"
+zamien = "        for katalog in [plik.parent]:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_conftest_z_katalogu_nadrzednego_tez_jest_sprawdzany"
+
+# (c) zatrzymanie na korzeniu
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "            if katalog == korzen:\n                break"
+zamien = "            pass"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_conftest_powyzej_korzenia_repozytorium_nie_jest_sprawdzany"
