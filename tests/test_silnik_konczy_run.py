@@ -35,6 +35,8 @@ from test_krok_diff import (
     swiat_z_diffem,
     zmien_drzewo,
 )
+from test_petla_naprawcza import NIEUDANY, AgentNaprawczy, swiat_naprawy, swiat_z_bramka
+from test_petla_naprawcza import wznow as wznow_petli
 from test_silnik_runu import RUN_ID, K, Szpieg, jedno, rodzaje, swiat, uruchom
 
 KORZEN = Path(__file__).resolve().parent.parent
@@ -51,11 +53,13 @@ SCENARIUSZ_TRYB = {
     "dom": "wykonaj_run",
     "zakres": "wykonaj_run",
     "kontrola": "wykonaj_run",
+    "petla": "wykonaj_run",
     "wznowienie": "wznow_run",
     "odrzucenie": "wznow_run",
     "wznowienie_profil": "wznow_run",
     "wznowienie_dom": "wznow_run",
     "wznowienie_druga_bramka": "wznow_run",
+    "wznowienie_petla": "wznow_run",
 }
 
 # granica -> scenariusze, w ktorych ja wstrzykujemy (kazdy tryb, w ktorym jest osiagalna)
@@ -102,6 +106,8 @@ WSTRZYKNIETE = {
     "_zapisz_decyzje": ("wznowienie",),
     "_zapisz_atomowo": ("wznowienie",),
     "worktree.is_dir": ("wznowienie",),
+    "_obsluz_porazke": ("petla", "wznowienie_petla"),
+    "_zapisz_raport_porazki": ("petla", "wznowienie_petla"),
 }
 
 
@@ -115,10 +121,12 @@ CZYSTE = {
         "wbudowana funkcja albo metoda kolekcji na danych w pamieci; nie dotyka dysku ani sieci",
         "dict", "float", "frozenset", "int", "isinstance", "list", "next", "print", "set", "str",
         "'\\n'.join", "cp.kroki.items", "plan.do_pominiecia.items", "stany.items",
-        "startowane.add", "odwiedzeni.add", "stos.extend", "stos.pop", "w_toku.pop",
+        "odwiedzeni.add", "stos.extend", "stos.pop", "w_toku.pop",
         "wejscia.append", "polecenie.get", "tresc.encode", "os.environ.get", "time.monotonic",
         "datetime.now", "datetime.now(timezone.utc).isoformat", "json.dumps", "replace",
         "NAZWA_WORKFLOW.fullmatch",
+        "startowane.get", "bramki.add", "deque", "type", "raport.as_posix",
+        "('\\n'.join(linie) + '\\n').encode",
     ),
     **_grupa(
         "konstruktor albo wyjatek dziedziny z samych pol, bez walidacji i bez I/O",
@@ -130,6 +138,12 @@ CZYSTE = {
         "czysta funkcja pomocnicza silnika: formatowanie napisu, sciezki albo zdarzenia z danych",
         "_bledy", "_linia", "_sciezka_decyzji", "_sciezka_decyzji(id_kroku).as_posix",
         "_tekst_bledu", "_zdarzenie", "ma_bledy",
+        "_sciezka_raportu", "_blad_identyfikatora",
+    ),
+    **_grupa(
+        "czysta funkcja grafu na danych w pamieci; `ValueError` (cel poza sciezka) tlumaczy "
+        "`_obsluz_porazke` na tekst porazki bez ponowienia (test_petla_naprawcza)",
+        "kroki_do_powtorzenia",
     ),
     **_grupa(
         "wyszukanie w slowniku wykonawcow; blad wykonawcy pokrywa wpis `wykonawca`",
@@ -151,8 +165,31 @@ _OBSLUGA_BLEDU = (
     "sama sciezka obslugi bledu wywolanej granicy: wyjatek z niej nie ma wyzszej granicy, "
     "ktora by go zamienila na zdarzenia"
 )
+_TLUMACZONA_NA_PORAZKE_KROKU = (
+    "`OSError` z `stat` tlumaczy `_krok` na `PorazkaKroku` z nazwa typu (test_petla_naprawcza: "
+    "test_nieczytelny_raport_poprzedniej_proby...); inny wyjatek to wyjatek zadania kroku "
+    "(BLEDY_GRANICY), ta sama sciezka co wstrzykniety `_krok`"
+)
+_TLUMACZONA_NA_LINIE_OGONA = (
+    "kazdy blad pliku dowodu tlumaczy `_ogon_dowodu` na linie `ogon niedostepny (typ)`, nie "
+    "wyjatek (test_petla_naprawcza: test_nieczytelny_plik_dowodu_daje_linie_ogon_niedostepny...)"
+)
+_ZAPIS_RAPORTU = (
+    "`OSError` tlumaczy `_zapisz_raport_porazki` na opis bledu (test_petla_naprawcza: "
+    "test_blad_zapisu_raportu_porazki...); inny wyjatek leci ta sama sciezka co wstrzykniety "
+    "`_zapisz_raport_porazki`"
+)
 # (granica, funkcja wejsciowa) -> uzasadnienie
 NIEWSTRZYKIWALNE = {
+    ("(p.worktree.sciezka / raport).stat", "wykonaj_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
+    ("(p.worktree.sciezka / raport).stat", "wznow_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
+    ("_ogon_dowodu", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("_ogon_dowodu", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("plik.read_text", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("plik.read_text", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("json.loads", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("json.loads", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("_zapisz_atomowo", "wykonaj_run"): _ZAPIS_RAPORTU,
     ("emit", "wykonaj_run"): "bledy `emit` (np. BrakMiejsca) opisuje docstring modulu: decyduje o nich wolajacy",
     ("emit", "wznow_run"): "bledy `emit` (np. BrakMiejsca) opisuje docstring modulu: decyduje o nich wolajacy",
     ("_blad_przed_startem", "wykonaj_run"): _OBSLUGA_BLEDU,
@@ -476,7 +513,7 @@ WYJATKI = [
 
 ASYNCHRONICZNE = {
     "_krok", "_krok_systemowy", "wykonaj_diff", "wykonaj_check", "_zapisz", "_pauza_testowa",
-    "_wykonaj_plan", "_przyjmij_decyzje",
+    "_wykonaj_plan", "_przyjmij_decyzje", "_obsluz_porazke",
 }
 
 
@@ -606,6 +643,16 @@ async def _przebieg(
         s = swiat(tmp_path, [K("autor")], tresc=WORKFLOW_Z_KONTROLA)
         naloz()
         return await _wykonaj(s, Szpieg())
+    if scenariusz == "petla":
+        s = swiat_naprawy(tmp_path)
+        naloz()
+        return await _wykonaj(s, AgentNaprawczy(padaja={NIEUDANY: 99}))
+    if scenariusz == "wznowienie_petla":
+        s = swiat_z_bramka(tmp_path)
+        petla = AgentNaprawczy(padaja={NIEUDANY: 99})
+        assert (await uruchom(s, petla))[-1]["kind"] == "step_waiting"
+        naloz()
+        return await wznow_petli(s, petla)
     # wznowienie: pierwszy przebieg bez atrap, atrapa dopiero przed `wznow_run`
     tresc = WORKFLOW_DWIE_BRAMKI if scenariusz == "wznowienie_druga_bramka" else WORKFLOW_Z_BRAMKA
     s = _swiat_z_bramka(tmp_path, tresc)
