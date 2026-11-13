@@ -99,7 +99,7 @@ async def ja(
 ) -> Profil:
     profil = await uslugi.profil(s, kontekst)
     csrf = await sesje.odnow_csrf(s, identyfikator)
-    return Profil(email=profil.email, zespol=profil.zespol, rola=profil.rola.value, csrf=csrf)
+    return Profil(email=profil.email, zespol=profil.zespol, rola=profil.rola, csrf=csrf)
 
 
 @router.post("/wyloguj", status_code=204, response_model=None,

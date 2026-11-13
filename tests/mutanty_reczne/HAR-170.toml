@@ -895,7 +895,7 @@ test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_zmierzony_koszt_zer
 [[mutant]]
 plik = "web/src/OdbiorDowody.tsx"
 szukaj = 'setBladOdczytu(`${KOMUNIKAT_ODCZYT_DOWODOW} ${powod}`);'
-zamien = 'setBladOdczytu(`${powod}`);'
+zamien = 'setBladOdczytu(`${powod}`); void KOMUNIKAT_ODCZYT_DOWODOW;'
 test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
 
 [[mutant]]
@@ -923,7 +923,7 @@ test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodo
 [[mutant]]
 plik = "web/src/OdbiorDowody.tsx"
 szukaj = '      setDowody(dane);'
-zamien = '      setDowody(null);'
+zamien = '      setDowody(null); void dane;'
 test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_ekran_bez_zadnych_danych_pokazuje_komunikaty_braku_i_nie_rysuje_pustych_list"
 
 
@@ -1043,7 +1043,7 @@ test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dopoki_serwer_nie_o
 [[mutant]]
 plik = "web/src/OdbiorDowody.tsx"
 szukaj = 'if (ladowanie && dowody === null) return'
-zamien = 'if (dowody === null) return'
+zamien = 'if ((ladowanie || !ladowanie) && dowody === null) return'
 test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_blad_odczytu_dowodow_pokazuje_komunikat_z_detail_a_ponowienie_pokazuje_wczytywanie_i_ekran"
 
 [[mutant]]
@@ -1233,7 +1233,7 @@ test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_pod
 [[mutant]]
 plik = "web/src/OdbiorDowody.tsx"
 szukaj = 'style={d.source === "agent" ? { color: KOLOR_SZARY } : undefined}'
-zamien = 'style={undefined}'
+zamien = 'style={void KOLOR_SZARY}'
 test = "tests/e2e/test_odbior_dowody_w_przegladarce.py::test_dowod_agenta_ma_podpis_deklaracja_agenta_i_szary_kolor_a_dowod_silnika_podpis_dowod_silnika"
 
 [[mutant]]

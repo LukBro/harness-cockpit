@@ -739,6 +739,9 @@ async def test_realne_polecenie_agenta_ma_settings_a_plik_hookow_kroku_lezy_poza
     zapisane = json.loads(sciezka.read_text(encoding="utf-8"))
     grupy = [g for g in zapisane["hooks"]["PreToolUse"] if g.get("matcher") == MATCHER_STRAZY]
     assert len(grupy) == 1
-    polecenie_strazy = shlex.split(grupy[0]["hooks"][0]["command"])
+    # HAR-219: po straży idzie gałąź awarii (`; kod=$?; ...`); rozbieramy tylko część uruchamiającą straż
+    czesc_strazy, znacznik, _ = grupy[0]["hooks"][0]["command"].partition("; kod=$?")
+    assert znacznik == "; kod=$?"
+    polecenie_strazy = shlex.split(czesc_strazy)
     assert polecenie_strazy[polecenie_strazy.index("--rola") + 1] == rola.value
     assert polecenie_strazy[polecenie_strazy.index("--worktree") + 1] == str(worktree)

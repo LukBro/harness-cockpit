@@ -1292,6 +1292,20 @@ def _polecenie_strazy(ustawienia: dict) -> str:
     return grupa["hooks"][0]["command"]
 
 
+ZNACZNIK_GALEZI = "; kod=$?"
+GALAZ_AWARII = (
+    '; kod=$?; if [ "$kod" -ne 0 ]; then echo "straż roli: awaria straży (kod $kod)" >&2; '
+    "exit 2; fi"
+)
+
+
+def _czesc_uruchamiajaca_straz(polecenie: str) -> str:
+    """Polecenie straży bez gałęzi awarii: interpreter, `-I`, skrypt, rola i worktree."""
+    czesc, znacznik, _ = polecenie.partition(ZNACZNIK_GALEZI)
+    assert znacznik == ZNACZNIK_GALEZI, polecenie
+    return czesc
+
+
 def _bez_strazy(ustawienia: dict) -> dict:
     hooki = dict(ustawienia["hooks"])
     hooki["PreToolUse"] = [
@@ -1357,7 +1371,7 @@ def test_polecenie_strazy_to_interpreter_runnera_w_trybie_izolowanym_skrypt_rola
     worktree = tmp_path / "wt"
     ustawienia = ustawienia_hookow(tmp_path / "x.ndjson", rola=rola, worktree=worktree)
 
-    argv = shlex.split(_polecenie_strazy(ustawienia))
+    argv = shlex.split(_czesc_uruchamiajaca_straz(_polecenie_strazy(ustawienia)))
 
     assert len(argv) == 7
     assert argv[0] == sys.executable
@@ -1374,7 +1388,9 @@ def test_polecenie_strazy_cytuje_worktree_z_biala_spacja_i_znakami_powloki(tmp_p
         tmp_path / "x.ndjson", rola=Rola.executor, worktree=worktree
     )
 
-    assert shlex.split(_polecenie_strazy(ustawienia))[-1] == str(worktree)
+    polecenie = _polecenie_strazy(ustawienia)
+
+    assert shlex.split(_czesc_uruchamiajaca_straz(polecenie))[-1] == str(worktree)
 
 
 def test_polecenie_strazy_nie_niesie_sciezki_pliku_hookow_ani_zdejmuje_kodu_wyjscia(tmp_path):
@@ -1419,6 +1435,55 @@ def test_rola_ze_wzgledna_sciezka_pliku_hookow_jest_bledem_pliku_hookow(tmp_path
     assert str(wyjatek.value) == "sciezka pliku hookow musi byc bezwzgledna"
 
 
+@pytest.mark.parametrize("rola", ROLE)
+def test_polecenie_strazy_konczy_sie_galezia_ktora_przy_kodzie_niezerowym_blokuje_narzedzie(
+    tmp_path, rola
+):
+    ustawienia = ustawienia_hookow(tmp_path / "x.ndjson", rola=rola, worktree=tmp_path / "wt")
+
+    polecenie = _polecenie_strazy(ustawienia)
+
+    assert polecenie.endswith(GALAZ_AWARII)
+    assert polecenie.count(GALAZ_AWARII) == 1
+
+
+def test_polecenie_strazy_nie_zdejmuje_kodu_wyjscia_i_nie_podstawia_polecenia(tmp_path):
+    ustawienia = ustawienia_hookow(
+        tmp_path / "x.ndjson", rola=Rola.reviewer, worktree=tmp_path / "wt"
+    )
+
+    polecenie = _polecenie_strazy(ustawienia)
+
+    assert "|| true" not in polecenie
+    assert "$(" not in polecenie
+    assert "`" not in polecenie
+
+
+def test_ustawienia_hookow_uzywaja_pomocnika_polecenie_strazy_dla_roli_i_worktree(tmp_path):
+    worktree = tmp_path / "wt"
+
+    ustawienia = ustawienia_hookow(tmp_path / "x.ndjson", rola=Rola.gatherer, worktree=worktree)
+
+    assert _polecenie_strazy(ustawienia) == hooks._polecenie_strazy(Rola.gatherer, worktree)
+
+
+def test_polecenie_strazy_cytuje_podany_interpreter_ze_spacja_jako_jeden_argument(tmp_path):
+    polecenie = hooks._polecenie_strazy(
+        Rola.executor, tmp_path / "wt", wykonywalny="/opt/moj python/bin/python"
+    )
+
+    argv = shlex.split(_czesc_uruchamiajaca_straz(polecenie))
+    assert argv[0] == "/opt/moj python/bin/python"
+    assert argv[1] == "-I"
+    assert len(argv) == 7
+
+
+def test_polecenie_strazy_domyslnie_uzywa_interpretera_biezacego_procesu(tmp_path):
+    polecenie = hooks._polecenie_strazy(Rola.executor, tmp_path / "wt")
+
+    assert shlex.split(_czesc_uruchamiajaca_straz(polecenie))[0] == sys.executable
+
+
 def test_polecenie_strazy_z_ustawien_uruchomione_w_powloce_odmawia_zakazanej_komendy(tmp_path):
     # komenda z ustawien jest jedyna rzecza, ktora Claude Code dostaje: sh -c musi ja wykonac
     ustawienia = ustawienia_hookow(
@@ -1434,6 +1499,38 @@ def test_polecenie_strazy_z_ustawien_uruchomione_w_powloce_odmawia_zakazanej_kom
 
     assert wynik.returncode == 0
     assert json.loads(wynik.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# --- HAR-219: sekret w komendzie zdarzenia ToolDenied -------------------------------------
+
+
+def _ev_odmowy_z_komenda(komenda: str, rola: str = "executor") -> dict:
+    return {
+        "event": "ToolDenied",
+        "ts": 1.0,
+        "session_id": "s",
+        "tool": "Bash",
+        "extra": {"command": komenda, "role": rola},
+    }
+
+
+def test_tekst_odmowy_maskuje_wartosc_zmiennej_sekretu_w_komendzie():
+    wysylka = hooks.do_wysylki(_ev_odmowy_z_komenda("GH_TOKEN=sekret12345 git status"), RUN, KROK_A)
+
+    assert wysylka["text"] == "Bash: GH_TOKEN=*** git status [role=executor]"
+    assert "sekret12345" not in json.dumps(wysylka)
+
+
+def test_tekst_odmowy_maskuje_wartosc_opcji_token_w_komendzie():
+    wysylka = hooks.do_wysylki(_ev_odmowy_z_komenda("deploy --token=sekret12345"), RUN, KROK_A)
+
+    assert wysylka["text"] == "Bash: deploy --token=*** [role=executor]"
+
+
+def test_tekst_odmowy_komendy_bez_sekretu_zostaje_dokladnie_taki_jak_komenda():
+    wysylka = hooks.do_wysylki(_ev_odmowy_z_komenda("git status --short"), RUN, KROK_A)
+
+    assert wysylka["text"] == "Bash: git status --short [role=executor]"
 
 
 # --- plik ustawień kroku ------------------------------------------------------------------

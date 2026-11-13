@@ -58,6 +58,24 @@ def _przodkowie(start: str, needs: Mapping[str, list[str]]) -> set[str]:
     return odwiedzeni
 
 
+def kroki_do_powtorzenia(workflow: Workflow, cel: str, krok: str) -> list[str]:
+    """Kroki petli naprawczej: sciezka `needs` od `cel` do nieudanego `krok` (HAR-109, D28).
+
+    Zwraca kroki z `{krok} + przodkowie(krok)`, ktore sa `cel` albo maja `cel` wsrod przodkow,
+    w kolejnosci `workflow.kroki`. `cel` musi byc przodkiem `krok` (nie nim samym); inaczej
+    `ValueError`."""
+    needs = {k.id: list(k.needs) for k in workflow.kroki}
+    if krok not in needs:
+        raise ValueError(f"nieznany krok: {krok}")
+    if cel not in _przodkowie(krok, needs):
+        raise ValueError(f"cel {cel} nie jest przodkiem kroku {krok}")
+    zakres = _przodkowie(krok, needs) | {krok}
+    return [
+        id_kroku for id_kroku in needs
+        if id_kroku in zakres and (id_kroku == cel or cel in _przodkowie(id_kroku, needs))
+    ]
+
+
 @dataclass(frozen=True)
 class _Kontrakt:
     """Artefakty i capabilities kroku: ze skilla albo z opisu kroku systemowego."""

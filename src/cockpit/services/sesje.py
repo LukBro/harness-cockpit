@@ -14,7 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Membership, Sesja, User
-from cockpit.services.dostep import Kontekst
+from cockpit.services.dostep import Kontekst, rola_czlonka
 from cockpit.services.errors import BrakDostepu, StanNiemozliwy
 from cockpit.settings import settings
 
@@ -75,13 +75,7 @@ async def rozstrzygnij(s: AsyncSession, identyfikator: str) -> Kontekst:
     sesja = await _aktywna(s, identyfikator)
     user_id = sesja.user_id
     tenant_id = sesja.tenant_id
-    rola = (
-        await s.execute(
-            select(Membership.rola).where(
-                Membership.user_id == user_id, Membership.tenant_id == tenant_id
-            )
-        )
-    ).scalar_one_or_none()
+    rola = await rola_czlonka(s, user_id, tenant_id)
     if rola is None:
         raise BrakDostepu(KOMUNIKAT_SESJI)
     sesja.ostatnio_at = teraz()

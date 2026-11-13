@@ -1,0 +1,1254 @@
+# Tabela recznych mutantow HAR-240: tools/testy.py, tools/po_merge_main.sh, tools/liczby_raportu.py,
+# tools/oddaj_pr.sh. Skrypty z tools/ leza poza zasiegiem mutmuta (kod 3 z tools/mutanty_zmian.py nie
+# obejmuje tools/), a skrypty powloki nie sa mutowane wcale, wiec kazda galaz ma tu wiersz:
+# element | mutacja | test, ktory po mutacji oblewa.
+#
+# Bez wierszy (mutacja rownowazna, zadne wejscie nie odroznia wersji):
+# - `KROK_SPRAWDZANIA`, `CZEKANIE_PO_TERM`, `LIMIT_DOMYSLNY` jako takie: zmiana wartosci zmienia tylko czas,
+#   nie wynik (LIMIT_DOMYSLNY ma wiersze ponizej, bo pomoc i przebieg go pokazuja);
+# - `break` po dopasowaniu wzorca w `oddaj_pr.sh`: zaden wzorzec z listy nie jest prefiksem innego, wiec jedna
+#   sciezka nie trafia w dwa wzorce;
+# - `if koniec < 0:` -> `if False:` w `_wczytaj_zdarzenia`: przy braku znaku nowej linii `rfind` daje -1, wycinek
+#   `dane[:0]` jest pusty, a zwrocone przesuniecie `przesuniecie + (-1) + 1` rowna sie wejsciowemu;
+# - `dane[: koniec + 1]` -> `dane[:koniec]` w `_wczytaj_zdarzenia`: `splitlines()` zwraca te same linie z koncowym
+#   znakiem nowej linii i bez niego.
+
+# Czytanie zdarzen od zapamietanego przesuniecia.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "_wczytaj_zdarzenia(plik_zdarzen, przesuniecie, stan)"
+zamien = "_wczytaj_zdarzenia(plik_zdarzen, 0, stan)"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Wyjatek RecursionError przy parsowaniu.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad:"
+zamien = "except (SyntaxError, ValueError, MemoryError) as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zlosliwy_plik_testowy_to_blad_dziedziny_a_nie_traceback"
+
+# Wyjatek MemoryError przy parsowaniu.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad:"
+zamien = "except (SyntaxError, ValueError, RecursionError) as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zlosliwy_plik_testowy_to_blad_dziedziny_a_nie_traceback"
+
+# Tabela w zlym kodowaniu.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:"
+zamien = "except (OSError, tomllib.TOMLDecodeError) as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabela_ticketu_w_zlym_kodowaniu_to_blad_tabeli_a_nie_ogolny_blad_pliku"
+
+# Przekroczony czas gita.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (OSError, subprocess.TimeoutExpired) as blad:"
+zamien = "except OSError as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_przekroczony_czas_gita_to_blad_dziedziny"
+
+# Wtyczka: znacznik startu.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "_zapisz(\"S\", nodeid)"
+zamien = "_zapisz(\"X\", nodeid)"
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej"
+
+# Wtyczka: znacznik konca.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "_zapisz(\"K\", nodeid)"
+zamien = "_zapisz(\"X\", nodeid)"
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej"
+
+# Wtyczka: dopisywanie.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "open(sciezka, \"a\", encoding=\"utf-8\")"
+zamien = "open(sciezka, \"w\", encoding=\"utf-8\")"
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej"
+
+# Wtyczka: bez zmiennej nic nie robi.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "    if not sciezka:\n        return"
+zamien = "    if False:\n        return"
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_pusta_zmienna_to_brak_pliku_zdarzen"
+
+# Wtyczka: format linii.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "plik.write(f\"{znak} {nodeid}\\n\")"
+zamien = "plik.write(f\"{znak}{nodeid}\\n\")"
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej"
+
+# Wtyczka: start zapisywany przez hook logstart.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "def pytest_runtest_logstart("
+zamien = "def pytest_runtest_logstart_x("
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej"
+
+# Wtyczka: koniec zapisywany przez hook logfinish.
+[[mutant]]
+plik = "tools/_testy_zdarzenia.py"
+szukaj = "def pytest_runtest_logfinish("
+zamien = "def pytest_runtest_logfinish_x("
+test = "tests/test_narzedzia_sesji.py::test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej"
+
+# Czekanie na czytnik ma limit (potomek w osobnej sesji).
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "        czytnik.join(CZEKANIE_PO_TERM)\n        if proc.returncode < 0:"
+zamien = "        czytnik.join()\n        if proc.returncode < 0:"
+test = "tests/test_narzedzia_sesji.py::test_potomek_w_osobnej_sesji_trzymajacy_potok_nie_blokuje_skryptu_ponad_limit_czekania"
+
+# Czytnik startuje pod try (pytest sprzatany).
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "        try:\n            czytnik.start()"
+zamien = "        czytnik.start()\n        try:"
+test = "tests/test_narzedzia_sesji.py::test_blad_przy_uruchamianiu_czytnika_zabija_juz_wystartowany_pytest"
+
+# Skrocona nazwa opcji nie jest rozpoznawana.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "allow_abbrev=False,"
+zamien = "allow_abbrev=True,"
+test = "tests/test_narzedzia_sesji.py::test_skrocona_nazwa_opcji_limitu_nie_jest_rozpoznawana_i_idzie_do_pytesta"
+
+# Koniec testu bez startu.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "self.w_toku.pop(nodeid, None)"
+zamien = "self.w_toku.pop(nodeid)"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_zdarzen_koniec_testu_bez_startu_nie_jest_bledem"
+
+# Kody pytesta inne niz 1 to brak dowodu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "elif [ \"$kod_testow\" -eq 1 ]; then"
+zamien = "elif [ \"$kod_testow\" -eq 2 ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_czerwony_test_daje_blad_etapu_testy_kod_1"
+
+# Przeniesienie pliku to usuniecie i dodanie.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "\"--no-renames\", \"--name-status\""
+zamien = "\"--name-status\""
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_przeniesiony_plik_testowy_to_usuniety_i_nowy_a_nie_rename"
+
+# Pliki ignorowane nie licza sie.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "\"--others\", \"--exclude-standard\""
+zamien = "\"--others\""
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_plik_ignorowany_przez_gitignore_nie_liczy_sie"
+
+# Plik w bazie: wynik ls-tree.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "return bool(_git([\"ls-tree\""
+zamien = "return not bool(_git([\"ls-tree\""
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Plik w bazie: blad gita propagowany.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "return bool(_git([\"ls-tree\", \"--name-only\", \"-z\", punkt, \"--\", plik], korzen))"
+zamien = "return True"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_blad_gita_przy_sprawdzaniu_pliku_w_bazie_to_blad_a_nie_nowe_testy"
+
+# Nazwa autora commita sprawdzana.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ \"$nazwa_autora\" != \"$OCZEKIWANA_NAZWA\" ] || "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_commitu_z_inna_nazwa_przy_poprawnym_adresie_odmawia"
+
+# Nazwa committera commita sprawdzana.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = " || [ \"$nazwa_committera\" != \"$OCZEKIWANA_NAZWA\" ]"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_commitu_z_inna_nazwa_przy_poprawnym_adresie_odmawia"
+
+# Commity tylko z galezi (baza..HEAD).
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "git log --format='@@AUTORZY%x09%ae%x09%ce%x09%an%x09%cn%n%B' \"$BAZA..HEAD\""
+zamien = "git log --format='@@AUTORZY%x09%ae%x09%ce%x09%an%x09%cn%n%B' \"$BAZA...HEAD\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zmiany_na_bazie_po_rozwidleniu_nie_wchodza_do_oceny_galezi"
+
+# Diff od punktu rozwidlenia (baza...HEAD).
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--name-only \"$BAZA...HEAD\""
+zamien = "--name-only \"$BAZA..HEAD\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zmiany_na_bazie_po_rozwidleniu_nie_wchodza_do_oceny_galezi"
+
+# Przeniesienie sciezki wrazliwej widoczne.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--no-ext-diff --no-renames --name-only"
+zamien = "--no-ext-diff --name-only"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_przeniesiona_sciezka_wrazliwa_jest_wykryta_po_starej_nazwie"
+
+# Tylko linie z autorami commitow.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "grep '^@@AUTORZY'"
+zamien = "cat"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_wspolautor_w_srodku_linii_a_nie_na_jej_poczatku_nie_blokuje"
+
+# Zabicie grupy przed czekaniem na czytnik.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "        _zabij_grupe(proc, signal.SIGKILL)\n        czytnik.join(CZEKANIE_PO_TERM)\n        if proc.returncode < 0:"
+zamien = "        czytnik.join(CZEKANIE_PO_TERM)\n        if proc.returncode < 0:"
+test = "tests/test_narzedzia_sesji.py::test_potomek_ktory_przezyl_pytesta_nie_zawiesza_skryptu_i_jest_zabity"
+
+# OSError przy plikach pomocniczych.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    except OSError as blad:\n        # Katalog"
+zamien = "    except KeyError as blad:\n        # Katalog"
+test = "tests/test_narzedzia_sesji.py::test_blad_pliku_przy_uruchomieniu_to_blad_narzedzia_kod_2_a_nie_traceback"
+
+# OSError przy Popen.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "        except OSError as blad:\n            raise BladNarzedzia(f\"nie udalo"
+zamien = "        except KeyError as blad:\n            raise BladNarzedzia(f\"nie udalo"
+test = "tests/test_narzedzia_sesji.py::test_nieuruchamialny_pytest_to_blad_dziedziny_z_komunikatem"
+
+# Stary PYTHONPATH zachowany.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "os.pathsep.join([narzedzia, *([stare] if stare else [])])"
+zamien = "os.pathsep.join([narzedzia])"
+test = "tests/test_narzedzia_sesji.py::test_srodowisko_pytesta_zachowuje_stary_pythonpath_za_katalogiem_narzedzi"
+
+# Pusty stary PYTHONPATH pomijany.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "([stare] if stare else [])"
+zamien = "([stare] if stare is not None else [])"
+test = "tests/test_narzedzia_sesji.py::test_srodowisko_pytesta_bez_starego_pythonpath_ma_tylko_katalog_narzedzi"
+
+# Koniec testu odswieza postep.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "                self.w_toku.pop(nodeid, None)\n            self.ostatni_postep = time.monotonic()"
+zamien = "                self.w_toku.pop(nodeid, None)"
+test = "tests/test_narzedzia_sesji.py::test_przebieg_z_postepem_dluzszy_niz_limit_nie_jest_przerywany"
+
+# Nieznany status zmiany.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "elif status[:1] in (\"A\", \"M\", \"T\"):"
+zamien = "elif True:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_nieznany_status_zmiany_to_blad_dziedziny_a_nie_pominiecie"
+
+# Pusty merge-base.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if not punkt:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_merge_base_bez_commita_to_blad_dziedziny"
+
+# Nieparzysta liczba pol diffu.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if len(pola) % 2 != 0:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_nieparzysta_liczba_pol_diffu_to_blad_dziedziny"
+
+# Autor commita sprawdzany.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ \"$autor\" != \"$OCZEKIWANY_EMAIL\" ] || "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_commitu_innego_autora_odmawia_mimo_poprawnego_git_config"
+
+# Committer commita sprawdzany.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = " || [ \"$committer\" != \"$OCZEKIWANY_EMAIL\" ]"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_commitu_innego_committera_odmawia_mimo_poprawnego_git_config"
+
+# Pusty znacznik pomijany.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ -n \"$_znacznik\" ] || continue"
+zamien = "true"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_galezi_bez_nowych_commitow_nie_odmawia_z_powodu_autorow"
+
+# Nazwy nie-ASCII bez cudzyslowow.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "git -c core.quotePath=false diff"
+zamien = "git diff"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_sciezka_wrazliwa_z_nie_ascii_w_nazwie_tez_daje_merge_reczny"
+
+# Domyslny limit w pomocy.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "LIMIT_DOMYSLNY = 1200.0"
+zamien = "LIMIT_DOMYSLNY = 120.0"
+test = "tests/test_narzedzia_sesji.py::test_pomoc_podaje_domyslny_limit_bez_postepu_1200_sekund"
+
+# Domyslny limit faktycznie uzyty.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "default=LIMIT_DOMYSLNY,"
+zamien = "default=1.0,"
+test = "tests/test_narzedzia_sesji.py::test_bez_jawnego_limitu_test_trwajacy_kilka_sekund_bez_wyjscia_nie_jest_zawieszeniem"
+
+# Limit nieskonczony odrzucony.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not wartosc > 0 or wartosc == float(\"inf\"):"
+zamien = "if not wartosc > 0:"
+test = "tests/test_narzedzia_sesji.py::test_limit_bez_postepu_ktory_nie_jest_skonczona_liczba_dodatnia_jest_odrzucony"
+
+# Zero i NaN odrzucone.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not wartosc > 0 or"
+zamien = "if wartosc < 0 or"
+test = "tests/test_narzedzia_sesji.py::test_limit_bez_postepu_ktory_nie_jest_skonczona_liczba_dodatnia_jest_odrzucony"
+
+# Tlumaczenie ValueError z float().
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "except ValueError:"
+zamien = "except TypeError:"
+test = "tests/test_narzedzia_sesji.py::test_limit_bez_postepu_ktory_nie_jest_skonczona_liczba_dodatnia_jest_odrzucony"
+
+# Start testu dodaje do listy w toku.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if znak == \"S\":"
+zamien = "if znak != \"S\":"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Koniec testu zdejmuje z listy.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if znak in (\"S\", \"K\") and nodeid:"
+zamien = "if znak in (\"S\",) and nodeid:"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Pusty node id pomijany.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if znak in (\"S\", \"K\") and nodeid:"
+zamien = "if znak in (\"S\", \"K\"):"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_zdarzen_pomija_linie_z_nieznanym_znakiem_i_bez_node_id"
+
+# Nieznany znak zdarzenia pomijany.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if znak in (\"S\", \"K\") and nodeid:"
+zamien = "if nodeid:"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_zdarzen_pomija_linie_z_nieznanym_znakiem_i_bez_node_id"
+
+# Koniec testu zdejmuje (jednostkowo).
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if znak in (\"S\", \"K\") and nodeid:"
+zamien = "if znak in (\"S\",) and nodeid:"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_zdarzen_koniec_testu_zdejmuje_go_z_listy_w_toku"
+
+# Brak konca linii: nic nie czytamy.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if koniec < 0:"
+zamien = "if koniec <= 0:"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_zdarzen_sam_znak_nowej_linii_jest_przeczytana_linia"
+
+# Przesuniecie za ostatnia kompletna linia.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "return przesuniecie + koniec + 1"
+zamien = "return przesuniecie + koniec"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_zdarzen_pomija_niedokonczona_linie_i_nie_przesuwa_sie_za_nia"
+
+# Kod zawieszenia.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "return KOD_ZAWIESZENIA"
+zamien = "return 0"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Wartosc kodu zawieszenia.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "KOD_ZAWIESZENIA = 2"
+zamien = "KOD_ZAWIESZENIA = 3"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Wartosc kodu bledu narzedzia.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "KOD_BLEDU = 2"
+zamien = "KOD_BLEDU = 3"
+test = "tests/test_narzedzia_sesji.py::test_pytest_zabity_sygnalem_to_blad_narzedzia_a_nie_zielony_wynik"
+
+# Pytest zabity sygnalem to blad.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if proc.returncode < 0:"
+zamien = "if proc.returncode < -100:"
+test = "tests/test_narzedzia_sesji.py::test_pytest_zabity_sygnalem_to_blad_narzedzia_a_nie_zielony_wynik"
+
+# Kod pytesta przekazany dalej.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "return proc.returncode"
+zamien = "return 0"
+test = "tests/test_narzedzia_sesji.py::test_czerwony_test_zwraca_kod_pytesta_1_a_nie_kod_zawieszenia"
+
+# Brak testu w toku.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not w_toku:"
+zamien = "if w_toku:"
+test = "tests/test_narzedzia_sesji.py::test_zawieszenie_przy_zbieraniu_testow_mowi_ze_zaden_test_nie_byl_w_toku"
+
+# Komunikat braku testu w toku.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "\"zawieszenie: brak testu w toku"
+zamien = "\"zawieszenie brak testu w toku"
+test = "tests/test_narzedzia_sesji.py::test_zawieszenie_przy_zbieraniu_testow_mowi_ze_zaden_test_nie_byl_w_toku"
+
+# Linia zawieszenia z node id.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "print(f\"zawieszenie: {nodeid}\", flush=True)"
+zamien = "print(f\"zawieszenie {nodeid}\", flush=True)"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Limit w komunikacie bez zer.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "przez {limit:g} s"
+zamien = "przez {limit} s"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Wyjscie pytesta przekazywane na zywo.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "sys.stdout.buffer.write(surowa)"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_ten_sam_plik_bez_zawieszenia_zwraca_kod_pytesta_0"
+
+# Wyjscie pytesta liczy sie jako postep.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "        stan.postep()\n"
+zamien = "        pass\n"
+test = "tests/test_narzedzia_sesji.py::test_przebieg_z_samym_wyjsciem_testu_i_bez_nowych_testow_nie_jest_zawieszeniem"
+
+# SIGTERM do skryptu sprzata grupe.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    except BaseException:\n            _zakoncz_grupe(proc)\n            raise"
+zamien = "    except BaseException:\n            raise"
+test = "tests/test_narzedzia_sesji.py::test_sigterm_do_skryptu_zabija_grupe_pytesta_i_konczy_kodem_143"
+
+# Obsluga SIGTERM: kod 143.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "raise SystemExit(143)"
+zamien = "raise SystemExit(1)"
+test = "tests/test_narzedzia_sesji.py::test_sigterm_do_skryptu_zabija_grupe_pytesta_i_konczy_kodem_143"
+
+# Obsluga SIGTERM zainstalowana.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "signal.signal(signal.SIGTERM, _na_term)"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_sigterm_do_skryptu_zabija_grupe_pytesta_i_konczy_kodem_143"
+
+# Brak SIGKILL po SIGTERM.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    _zabij_grupe(proc, signal.SIGKILL)\n    proc.wait()"
+zamien = "    proc.wait()"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_ignorujacy_sigterm_jest_dobijany_sigkillem_a_przebieg_konczy_sie_kodem_2"
+
+# Czekanie po SIGTERM ograniczone.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    except subprocess.TimeoutExpired:\n        pass"
+zamien = "    except subprocess.TimeoutExpired:\n        raise"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_ignorujacy_sigterm_jest_dobijany_sigkillem_a_przebieg_konczy_sie_kodem_2"
+
+# ProcessLookupError przy sprzataniu.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    except ProcessLookupError:\n        pass"
+zamien = "    except KeyError:\n        pass"
+test = "tests/test_narzedzia_sesji.py::test_ten_sam_plik_bez_zawieszenia_zwraca_kod_pytesta_0"
+
+# Wtyczka zdarzen ladowana.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "\"-p\", WTYCZKA, "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Zmienna z plikiem zdarzen ustawiona.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "srodowisko[ZMIENNA_ZDARZEN] = str(plik_zdarzen)"
+zamien = "srodowisko[\"INNA\"] = str(plik_zdarzen)"
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Katalog narzedzi w PYTHONPATH.
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "narzedzia = str(Path(__file__).resolve().parent)"
+zamien = "narzedzia = \"/nie/ma\""
+test = "tests/test_narzedzia_sesji.py::test_wiszacy_test_konczy_przebieg_kodem_2_w_limicie_i_podaje_swoj_node_id"
+
+# Wynik git grep: trafienie.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod_grep\" -eq 0 ]; then"
+zamien = "if [ \"$kod_grep\" -eq 5 ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_znacznik_konfliktu_w_sledzonym_pliku_daje_blad_etapu_konflikt"
+
+# Wynik git grep: blad narzedzia.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "elif [ \"$kod_grep\" -ne 1 ]; then"
+zamien = "elif false; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_poza_repozytorium_git_etap_konflikt_zglasza_blad_narzedzia_kod_2"
+
+# Kod etapu konflikt przy trafieniu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "echo \"$trafienia\" >&2\n  zglos konflikt 1"
+zamien = "echo \"$trafienia\" >&2\n  zglos konflikt 0"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_znacznik_konfliktu_w_sledzonym_pliku_daje_blad_etapu_konflikt"
+
+# Kod etapu konflikt przy bledzie grep.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "kodem $kod_grep: $trafienia\" >&2\n  zglos konflikt 2"
+zamien = "kodem $kod_grep: $trafienia\" >&2\n  zglos konflikt 1"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_poza_repozytorium_git_etap_konflikt_zglasza_blad_narzedzia_kod_2"
+
+# Blad odczytu indeksu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod_indeksu\" -ne 0 ]; then"
+zamien = "if false; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_blad_odczytu_indeksu_to_blad_narzedzia_a_nie_brak_konfliktu"
+
+# Kod etapu konflikt przy bledzie indeksu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "kodem $kod_indeksu: $niescalone\" >&2\n    zglos konflikt 2"
+zamien = "kodem $kod_indeksu: $niescalone\" >&2\n    zglos konflikt 1"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_blad_odczytu_indeksu_to_blad_narzedzia_a_nie_brak_konfliktu"
+
+# Wpis niescalony w indeksie.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "elif [ -n \"$niescalone\" ]; then"
+zamien = "elif false; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wpis_niescalony_w_indeksie_bez_znacznikow_tez_jest_konfliktem"
+
+# Kod etapu konflikt przy niescalonym wpisie.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "echo \"$niescalone\" >&2\n    zglos konflikt 1"
+zamien = "echo \"$niescalone\" >&2\n    zglos konflikt 0"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wpis_niescalony_w_indeksie_bez_znacznikow_tez_jest_konfliktem"
+
+# Znacznik koncowy w wzorcu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "|>{7}"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_po_merge_znacznik_konfliktu_w_sledzonym_pliku_daje_blad_etapu_konflikt"
+
+# Znacznik poczatkowy w wzorcu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "<{7}|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_po_merge_znacznik_konfliktu_w_sledzonym_pliku_daje_blad_etapu_konflikt"
+
+# Dlugosc znacznika poczatkowego.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "<{7}|"
+zamien = "<{6}|"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_tekst_podobny_do_znacznika_konfliktu_nie_jest_konfliktem"
+
+# Dlugosc znacznika koncowego.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "|>{7}"
+zamien = "|>{6}"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_tekst_podobny_do_znacznika_konfliktu_nie_jest_konfliktem"
+
+# Kotwica poczatku linii.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "'^(<{7}"
+zamien = "'(<{7}"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_tekst_podobny_do_znacznika_konfliktu_nie_jest_konfliktem"
+
+# Znacznik bez tekstu na koncu linii.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "( |$)'"
+zamien = "( )'"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_znacznik_konfliktu_w_sledzonym_pliku_daje_blad_etapu_konflikt"
+
+# Spacja po znaczniku wymagana.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "( |$)'"
+zamien = "()'"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_tekst_podobny_do_znacznika_konfliktu_nie_jest_konfliktem"
+
+# Blad samego alembica.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod_alembic\" -ne 0 ]; then"
+zamien = "if false; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_alembic_ktory_sam_pada_to_blad_narzedzia_kod_2"
+
+# Kod etapu alembic przy bledzie narzedzia.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "zglos alembic 2"
+zamien = "zglos alembic 1"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_alembic_ktory_sam_pada_to_blad_narzedzia_kod_2"
+
+# Kod etapu alembic przy zlej liczbie glow.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "zglos alembic 1"
+zamien = "zglos alembic 0"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wiecej_niz_jedna_glowa_alembica_daje_blad_etapu_alembic"
+
+# Dokladnie jedna glowa (wiecej).
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$liczba_glow\" -eq 1 ]; then"
+zamien = "if [ \"$liczba_glow\" -ge 1 ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wiecej_niz_jedna_glowa_alembica_daje_blad_etapu_alembic"
+
+# Dokladnie jedna glowa (zero).
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$liczba_glow\" -eq 1 ]; then"
+zamien = "if [ \"$liczba_glow\" -le 1 ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_brak_migracji_to_brak_glowy_i_blad_etapu_alembic"
+
+# Etap mutanty zielony tylko przy kodzie 0.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod_mutantow\" -eq 0 ]; then"
+zamien = "if [ \"$kod_mutantow\" -ne 0 ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wszystko_poprawne_daje_ok_kod_0_i_uruchamia_testy_na_czterech_workerach"
+
+# Kod etapu mutanty.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "zglos mutanty 2"
+zamien = "zglos mutanty 1"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wiersz_tabeli_nietrafiajacy_w_kod_daje_blad_etapu_mutanty_kod_2"
+
+# Etap testy zielony tylko przy kodzie 0.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod_testow\" -eq 0 ]; then"
+zamien = "if [ \"$kod_testow\" -ne 0 ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wszystko_poprawne_daje_ok_kod_0_i_uruchamia_testy_na_czterech_workerach"
+
+# Kod etapu testy przy zawieszeniu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "zglos testy 2"
+zamien = "zglos testy 1"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_zawieszony_test_daje_blad_etapu_testy_kod_2"
+
+# Kod etapu testy przy czerwonym tescie.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "zglos testy 1"
+zamien = "zglos testy 0"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_czerwony_test_daje_blad_etapu_testy_kod_1"
+
+# Wyzszy kod wygrywa.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod\" -gt \"$KOD\" ]; then"
+zamien = "if [ \"$kod\" -lt \"$KOD\" ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_czerwony_test_daje_blad_etapu_testy_kod_1"
+
+# Pierwszy etap o najwyzszym kodzie.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "if [ \"$kod\" -gt \"$KOD\" ]; then"
+zamien = "if [ \"$kod\" -ge \"$KOD\" ]; then"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_przy_dwoch_bledach_o_tym_samym_kodzie_nazywa_pierwszy_etap"
+
+# Kod wyjscia skryptu.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "exit \"$KOD\""
+zamien = "exit 0"
+test = "tests/test_narzedzia_sesji.py::test_po_merge_czerwony_test_daje_blad_etapu_testy_kod_1"
+
+# Nazwa etapu w ostatniej linii.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "echo \"PO-MERGE: blad $ETAP\""
+zamien = "echo \"PO-MERGE: blad\""
+test = "tests/test_narzedzia_sesji.py::test_po_merge_czerwony_test_daje_blad_etapu_testy_kod_1"
+
+# Domyslne argumenty testow.
+[[mutant]]
+plik = "tools/po_merge_main.sh"
+szukaj = "ARGS_TESTOW=\"${PO_MERGE_TESTY_ARGS:--q -n 4}\""
+zamien = "ARGS_TESTOW=\"${PO_MERGE_TESTY_ARGS:--q}\""
+test = "tests/test_narzedzia_sesji.py::test_po_merge_wszystko_poprawne_daje_ok_kod_0_i_uruchamia_testy_na_czterech_workerach"
+
+# Klucz ticketu: cyfry wymagane.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "KLUCZ_TICKETU = re.compile(r\"HAR-[0-9]+\")"
+zamien = "KLUCZ_TICKETU = re.compile(r\"HAR-[0-9]*\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zly_klucz_ticketu_to_blad_kod_2"
+
+# Klucz z galezi: search.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "KLUCZ_TICKETU.search(galaz)"
+zamien = "KLUCZ_TICKETU.fullmatch(galaz)"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_podaja_wiersze_tabeli_ticketu_dokladnie_3_mutanty_i_1_rownowazny"
+
+# Brak klucza w galezi.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if trafienie is None:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_galaz_bez_klucza_ticketu_wymaga_jawnego_argumentu"
+
+# Klucz jawny: fullmatch.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "KLUCZ_TICKETU.fullmatch(ticket)"
+zamien = "KLUCZ_TICKETU.search(ticket)"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zly_klucz_ticketu_to_blad_kod_2"
+
+# Blad gita: kod niezerowy.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if wynik.returncode != 0:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_nieznana_baza_to_blad_kod_2_bez_liczb"
+
+# Blad uruchomienia gita (OSError).
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (OSError, subprocess.TimeoutExpired) as blad:"
+zamien = "except subprocess.TimeoutExpired as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_brak_gita_w_srodowisku_to_blad_kod_2_a_nie_pusty_diff"
+
+# Status D to usuniecie.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if status == \"D\":"
+zamien = "if status == \"X\":"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabele_innych_ticketow_maja_dopisek_wymaga_stop_a_wlasna_nie"
+
+# Status T to zmiana.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "elif status[:1] in (\"A\", \"M\", \"T\"):"
+zamien = "elif status[:1] in (\"A\", \"M\"):"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zamiana_pliku_na_dowiazanie_symboliczne_to_zmiana_pliku"
+
+# Domyslna lista wierszy tabeli.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "dane.get(nazwa, [])"
+zamien = "dane.get(nazwa, [0])"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_biora_ticket_z_nazwy_galezi_a_jawny_argument_go_nadpisuje"
+
+# Wiersze tabeli musza byc lista.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if not isinstance(wartosc, list):"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabela_w_ktorej_mutant_nie_jest_lista_to_blad_kod_2"
+
+# Tylko klasy Test*.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "wezel.name.startswith(\"Test\")"
+zamien = "wezel.name.startswith(\"\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Tylko funkcje test*.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "wezel.name.startswith(\"test\")"
+zamien = "wezel.name.startswith(\"\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Testy asynchroniczne.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "ast.FunctionDef | ast.AsyncFunctionDef"
+zamien = "ast.FunctionDef"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Plik testowy pod tests/.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "sciezka.startswith(\"tests/\")"
+zamien = "sciezka.startswith(\"\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zmiana_pliku_nietestowego_i_testu_poza_tests_nie_liczy_sie_jako_test"
+
+# Plik testowy z prefiksem test_.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "nazwa.startswith(\"test_\")"
+zamien = "nazwa.startswith(\"\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zmiana_pliku_nietestowego_i_testu_poza_tests_nie_liczy_sie_jako_test"
+
+# Plik testowy z rozszerzeniem .py.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "nazwa.endswith(\".py\")"
+zamien = "nazwa.endswith(\"\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_zmiana_pliku_nietestowego_i_testu_poza_tests_nie_liczy_sie_jako_test"
+
+# Nowe testy: roznica zbiorow.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "nowe |= teraz - przedtem"
+zamien = "nowe |= teraz"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Usuniete testy: roznica zbiorow.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "znikniete |= przedtem - teraz"
+zamien = "znikniete |= przedtem"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Usuniete pliki testowe.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "    for plik in usuniete:\n        if _jest_plikiem_testowym(plik):"
+zamien = "    for plik in []:\n        if _jest_plikiem_testowym(plik):"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni"
+
+# Cudze tabele: tylko .toml.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "and s.endswith(\".toml\") and s != wlasna"
+zamien = "and s != wlasna"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabele_innych_ticketow_maja_dopisek_wymaga_stop_a_wlasna_nie"
+
+# Cudze tabele: bez wlasnej.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = ".toml\") and s != wlasna"
+zamien = ".toml\")"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabele_innych_ticketow_maja_dopisek_wymaga_stop_a_wlasna_nie"
+
+# Cudze tabele: tylko z katalogu tabel.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if s.startswith(f\"{KATALOG_TABEL}/\") and "
+zamien = "if "
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabele_innych_ticketow_maja_dopisek_wymaga_stop_a_wlasna_nie"
+
+# Cudze tabele: takze usuniete.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "for s in [*zmienione, *usuniete]\n        if s.startswith"
+zamien = "for s in [*zmienione]\n        if s.startswith"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_tabele_innych_ticketow_maja_dopisek_wymaga_stop_a_wlasna_nie"
+
+# Lista plikow: separatory przecinek i bialy znak.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "r\"[,\\s]+\""
+zamien = "r\"[,]+\""
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_pliki_spoza_listy_pliki_dotykane_maja_dopisek_wymaga_stop"
+
+# Pusta lista plikow.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if not wzorce:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_pusta_lista_plikow_to_blad_kod_2"
+
+# Wpis konczacy sie ukosnikiem to katalog.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if wzorzec.endswith(\"/\"):"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_pliki_spoza_listy_pliki_dotykane_maja_dopisek_wymaga_stop"
+
+# Wzorzec z gwiazdka.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "elif sciezka == wzorzec or fnmatch.fnmatchcase(sciezka, wzorzec):"
+zamien = "elif sciezka == wzorzec:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_pliki_spoza_listy_pliki_dotykane_maja_dopisek_wymaga_stop"
+
+# Pliki spoza listy: bez wlasnej tabeli.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if s != wlasna and not _dozwolony(s, wzorce)"
+zamien = "if not _dozwolony(s, wzorce)"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_wlasna_tabela_ticketu_jest_dozwolona_bez_wpisu_na_liscie"
+
+# Pliki spoza listy: takze usuniete.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "return sorted(s for s in [*zmienione, *usuniete] if s != wlasna"
+zamien = "return sorted(s for s in [*zmienione] if s != wlasna"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_pliki_spoza_listy_pliki_dotykane_maja_dopisek_wymaga_stop"
+
+# Ticket jawny wygrywa z galezia.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if argumenty.ticket is not None else ticket_z_galezi"
+zamien = "if False else ticket_z_galezi"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_biora_ticket_z_nazwy_galezi_a_jawny_argument_go_nadpisuje"
+
+# Bez --pliki brak sekcji.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "if argumenty.pliki is not None else None"
+zamien = "if True else None"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_bez_listy_plikow_nie_wypisuja_sekcji_spoza_przydzialu"
+
+# Sekcja spoza listy tylko z --pliki.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "    if wzorce is not None:"
+zamien = "    if True:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_bez_listy_plikow_nie_wypisuja_sekcji_spoza_przydzialu"
+
+# Blad odczytu pliku: OSError.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (OSError, UnicodeDecodeError) as blad:"
+zamien = "except UnicodeDecodeError as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_plik_testowy_ktorego_nie_da_sie_odczytac_to_blad_kod_2"
+
+# Blad odczytu pliku: UnicodeDecodeError.
+[[mutant]]
+plik = "tools/liczby_raportu.py"
+szukaj = "except (OSError, UnicodeDecodeError) as blad:"
+zamien = "except OSError as blad:"
+test = "tests/test_narzedzia_sesji.py::test_liczby_raportu_plik_testowy_w_zlym_kodowaniu_to_blad_kod_2"
+
+# Adres autora: stala.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "OCZEKIWANY_EMAIL=\"lukaszbrowar@gmail.com\""
+zamien = "OCZEKIWANY_EMAIL=\"ktos@example.com\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_poprawnej_pracy_wypycha_galaz_i_tworzy_pr_z_trescia_z_pliku"
+
+# Adres autora: sprawdzenie.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ \"$EMAIL\" = \"$OCZEKIWANY_EMAIL\" ] ||"
+zamien = "true ||"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_ze_zlym_adresem_autora_odmawia_i_nic_nie_wypycha"
+
+# Nazwa autora: stala.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "OCZEKIWANA_NAZWA=\"LukBro\""
+zamien = "OCZEKIWANA_NAZWA=\"Ktos\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_poprawnej_pracy_wypycha_galaz_i_tworzy_pr_z_trescia_z_pliku"
+
+# Nazwa autora: sprawdzenie.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ \"$NAZWA\" = \"$OCZEKIWANA_NAZWA\" ] ||"
+zamien = "true ||"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_ze_zla_nazwa_autora_odmawia_i_nic_nie_wypycha"
+
+# Detached HEAD.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ -n \"$GALAZ\" ] || odmowa"
+zamien = "true || odmowa"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_z_odlaczonym_head_odmawia_i_nic_nie_wypycha"
+
+# Galaz main.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "main|master)"
+zamien = "master)"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_z_galezi_main_odmawia_i_nic_nie_wypycha"
+
+# Galaz master.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "main|master)"
+zamien = "main)"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_z_galezi_master_odmawia_i_nic_nie_wypycha"
+
+# Wspolautor: bez rozrozniania wielkosci liter.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "grep -qi '^co-authored-by:'"
+zamien = "grep -q '^co-authored-by:'"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_commitu_ze_wspolautorem_odmawia_i_nic_nie_wypycha"
+
+# Wspolautor: tylko na poczatku linii.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "'^co-authored-by:'"
+zamien = "'co-authored-by:'"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_wspolautor_w_srodku_linii_a_nie_na_jej_poczatku_nie_blokuje"
+
+# Wspolautor: komenda git log.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "|| blad \"git log $BAZA..HEAD zakonczyl sie bledem: $TRESCI_COMMITOW\""
+zamien = "|| true"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_nieznana_baza_to_blad_narzedzia_kod_2_a_nie_brak_wspolautora"
+
+# Czyste drzewo: git status.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "|| blad \"git status zakonczyl sie bledem: $STATUS\""
+zamien = "|| true"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_awaria_gita_przy_sprawdzeniu_to_kod_2_i_nic_nie_wypycha"
+
+# Czyste drzewo: pliki nieSledzone w katalogach.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--untracked-files=all"
+zamien = "--untracked-files=normal"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_brudny_plik_z_listy_dozwolonych_nie_blokuje_ale_inny_brudny_plik_tak"
+
+# Czyste drzewo: sciezka po dwoch znakach statusu.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "sciezka=\"${wiersz:3}\""
+zamien = "sciezka=\"${wiersz:2}\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_brudny_plik_z_listy_dozwolonych_nie_blokuje_ale_inny_brudny_plik_tak"
+
+# Czyste drzewo: plik dozwolony.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "if [ \"$sciezka\" = \"$d\" ]; then"
+zamien = "if [ \"$sciezka\" != \"$d\" ]; then"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_brudny_plik_z_listy_dozwolonych_nie_blokuje_ale_inny_brudny_plik_tak"
+
+# Czyste drzewo: odmowa przy brudnych.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ -z \"$BRUDNE\" ] || odmowa"
+zamien = "true || odmowa"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_przy_brudnym_drzewie_odmawia_i_nic_nie_wypycha"
+
+# Sciezki wrazliwe: git diff.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "|| blad \"git diff $BAZA...HEAD zakonczyl sie bledem: $ZMIANY\""
+zamien = "|| true"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_awaria_gita_przy_sprawdzeniu_to_kod_2_i_nic_nie_wypycha"
+
+# Sciezka wrazliwa: .github/.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\".github/\" "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: pyproject.toml.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\"pyproject.toml\" "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: alembic/versions/.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\"alembic/versions/\" "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: CLAUDE.md.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\"CLAUDE.md\" "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: .claude/settings.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\".claude/settings\" "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: .claude/hooks/.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\".claude/hooks/\" "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: src/runner/secrets.py.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = " \"src/runner/secrets.py\""
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Sciezka wrazliwa: prefiks, nie rownosc.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "\"$wzorzec\"*)"
+zamien = "\"$wzorzec\")"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny"
+
+# Merge reczny tylko przy sciezce wrazliwej.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "if [ -n \"$WRAZLIWE\" ]; then"
+zamien = "if true; then"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_poprawnej_pracy_wypycha_galaz_i_tworzy_pr_z_trescia_z_pliku"
+
+# Merge reczny: wszystkie sciezki.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "WRAZLIWE=\"$WRAZLIWE $sciezka\"; break ;;"
+zamien = "WRAZLIWE=\"$sciezka\"; break ;;"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_przy_wielu_sciezkach_wrazliwych_wypisuje_wszystkie"
+
+# Push: blad to kod 2.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "|| blad \"git push -u origin $GALAZ nie powiodl sie\""
+zamien = "|| true"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_nieudany_push_to_kod_2_i_gh_nie_jest_wolany"
+
+# PR: blad to kod 2.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "|| blad \"gh pr create nie powiodl sie (galaz $GALAZ jest juz wypchnieta)\""
+zamien = "|| true"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_nieudane_gh_pr_create_to_kod_2_po_wypchnieciu_galezi"
+
+# PR: galaz docelowa bez origin/.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--base \"${BAZA#origin/}\""
+zamien = "--base \"$BAZA\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_poprawnej_pracy_wypycha_galaz_i_tworzy_pr_z_trescia_z_pliku"
+
+# PR: galaz docelowa z --baza.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--base \"${BAZA#origin/}\""
+zamien = "--base main"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_baza_inna_niz_origin_main_wyznacza_galaz_docelowa_pr"
+
+# Tresc PR z pliku.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ -s \"$TRESC\" ] || blad"
+zamien = "true || blad"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_z_pustym_plikiem_tresci_to_blad_kod_2"
+
+# Brak --tytul.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ -n \"$TYTUL\" ] || blad \"brak --tytul\""
+zamien = "true || blad \"brak --tytul\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# Brak --tresc.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ -n \"$TRESC\" ] || blad \"brak --tresc\""
+zamien = "true || blad \"brak --tresc\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# --tytul bez wartosci.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--tytul) [ \"$#\" -ge 2 ] || blad \"--tytul wymaga wartosci\""
+zamien = "--tytul) true || blad \"--tytul wymaga wartosci\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# --tresc bez wartosci.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "--tresc) [ \"$#\" -ge 2 ] || blad \"--tresc wymaga wartosci\""
+zamien = "--tresc) true || blad \"--tresc wymaga wartosci\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# --baza bez wartosci.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ \"$#\" -ge 2 ] || blad \"--baza wymaga wartosci\""
+zamien = "true || blad \"--baza wymaga wartosci\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# --dozwolone bez wartosci.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "[ \"$#\" -ge 2 ] || blad \"--dozwolone wymaga wartosci\""
+zamien = "true || blad \"--dozwolone wymaga wartosci\""
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# Nieznany argument.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "*) blad \"nieznany argument: $1\" ;;"
+zamien = "*) shift ;;"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# Kod odmowy.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "echo \"ODDAJ-PR: odmowa $*\"\n  exit 1"
+zamien = "echo \"ODDAJ-PR: odmowa $*\"\n  exit 0"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_ze_zlym_adresem_autora_odmawia_i_nic_nie_wypycha"
+
+# Kod bledu narzedzia.
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = "echo \"BLAD: $*\" >&2\n  exit 2"
+zamien = "echo \"BLAD: $*\" >&2\n  exit 1"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_zle_uzycie_to_blad_kod_2_i_nic_nie_wypycha"
+
+# Element ValueError w krotce wyjatkow `ast.parse`: sprawdzone na Pythonie 3.14.6 z venv projektu - bajt zerowy
+# i znaki spoza zakresu daja tam SyntaxError, a zaden ze znanych wejsc nie daje ValueError. Na Pythonie 3.11
+# (najnizsza wspierana wersja) bajt zerowy w zrodle rzuca ValueError, wiec element zostaje; tej wersji tu nie ma.
+[[rownowazny]]
+plik = "tools/liczby_raportu.py"
+linia_tekst = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad:"
+uzasadnienie = "ValueError z ast.parse wystepuje tylko na Pythonie 3.11 (bajt zerowy); na 3.14.6 testow zaden plik go nie wyzwala"

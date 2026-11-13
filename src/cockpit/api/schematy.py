@@ -353,3 +353,36 @@ class DecyzjaOdbioruIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decyzja: Literal["accept", "send_back"]
     uzasadnienie: str | None = Field(default=None, max_length=LIMIT_UZASADNIENIA)
+
+
+class SkrotTicketu(BaseModel):
+    id: str
+    tytul: str
+    stan: str
+
+
+class KomentarzTicketu(BaseModel):
+    author: str
+    body: str
+    at: datetime | None
+
+
+class TicketJsonOdp(BaseModel):
+    """Kształt `ticket.json` (HAR-41) odwzorowany bez importu z runnera."""
+    source: str
+    id: str
+    url: str | None
+    title: str
+    description: str
+    acceptance_criteria: list[str]
+    status: str | None
+    priority: str | None
+    labels: list[str]
+    comments: list[KomentarzTicketu]
+    fetched_at: datetime
+    raw: dict[str, Any]
+
+
+class TicketPobrany(BaseModel):
+    ticket: TicketJsonOdp
+    ostrzezenia: list[str]

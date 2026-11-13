@@ -894,6 +894,37 @@
         "title": "KatalogOdswiezony",
         "type": "object"
       },
+      "KomentarzTicketu": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "author",
+          "body",
+          "at"
+        ],
+        "title": "KomentarzTicketu",
+        "type": "object"
+      },
       "KrokRunu": {
         "properties": {
           "agent_id": {
@@ -1809,6 +1840,150 @@
           "brief"
         ],
         "title": "SkillSzczegoly",
+        "type": "object"
+      },
+      "SkrotTicketu": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "stan": {
+            "title": "Stan",
+            "type": "string"
+          },
+          "tytul": {
+            "title": "Tytul",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tytul",
+          "stan"
+        ],
+        "title": "SkrotTicketu",
+        "type": "object"
+      },
+      "TicketJsonOdp": {
+        "description": "Kształt `ticket.json` (HAR-41) odwzorowany bez importu z runnera.",
+        "properties": {
+          "acceptance_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Acceptance Criteria",
+            "type": "array"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/KomentarzTicketu"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "raw": {
+            "additionalProperties": true,
+            "title": "Raw",
+            "type": "object"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "source",
+          "id",
+          "url",
+          "title",
+          "description",
+          "acceptance_criteria",
+          "status",
+          "priority",
+          "labels",
+          "comments",
+          "fetched_at",
+          "raw"
+        ],
+        "title": "TicketJsonOdp",
+        "type": "object"
+      },
+      "TicketPobrany": {
+        "properties": {
+          "ostrzezenia": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ostrzezenia",
+            "type": "array"
+          },
+          "ticket": {
+            "$ref": "#/components/schemas/TicketJsonOdp"
+          }
+        },
+        "required": [
+          "ticket",
+          "ostrzezenia"
+        ],
+        "title": "TicketPobrany",
         "type": "object"
       },
       "TokenCsrf": {
@@ -4403,6 +4578,216 @@
           }
         },
         "summary": "Szczegoly Skilla"
+      }
+    },
+    "/api/tickety": {
+      "get": {
+        "operationId": "lista_ticketow_api_tickety_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projekt",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "title": "Projekt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filtr",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filtr"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkrotTicketu"
+                  },
+                  "title": "Response Lista Ticketow Api Tickety Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Lista Ticketow"
+      }
+    },
+    "/api/tickety/{id_ticketu}": {
+      "get": {
+        "operationId": "pobierz_ticket_api_tickety__id_ticketu__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id_ticketu",
+            "required": true,
+            "schema": {
+              "title": "Id Ticketu",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projekt",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "title": "Projekt",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketPobrany"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Pobierz Ticket"
       }
     }
   }
