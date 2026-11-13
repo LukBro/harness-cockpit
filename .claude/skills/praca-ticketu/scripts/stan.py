@@ -190,7 +190,10 @@ def main(a):
             blad(2, f"plik bramek nieczytelny ({a[2]}): {e}")
         # ten sam kształt, którego wymaga bramka_testow.py - zły plik odrzucony przy zapisie, nie przy bramce
         if not isinstance(bramki, list) or not bramki or not all(
-                isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]
+                isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)
+                and "/" not in b["nazwa"]                   # nazwa trafia do ścieżki logu bramki
+                and isinstance(b.get("argv"), list) and b["argv"]
+                and all(isinstance(x, str) for x in b["argv"])     # subprocess.run przyjmuje tylko napisy
                 for b in bramki):
             blad(2, "bramki muszą być niepustą listą {nazwa, argv}")
         zapisz(os.path.join(os.path.dirname(p), "bramki.json"), bramki)

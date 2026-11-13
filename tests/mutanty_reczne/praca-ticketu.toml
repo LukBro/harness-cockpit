@@ -578,30 +578,6 @@ test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_traf
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/stan.py"
-szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
-zamien = 'b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
-test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki3]"
-
-[[mutant]]
-plik = ".claude/skills/praca-ticketu/scripts/stan.py"
-szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
-zamien = 'isinstance(b, dict) and isinstance(b.get("argv"), list) and b["argv"]'
-test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki4]"
-
-[[mutant]]
-plik = ".claude/skills/praca-ticketu/scripts/stan.py"
-szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
-zamien = 'isinstance(b, dict) and b.get("nazwa") and b["argv"]'
-test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki6]"
-
-[[mutant]]
-plik = ".claude/skills/praca-ticketu/scripts/stan.py"
-szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
-zamien = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list)'
-test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki7]"
-
-[[mutant]]
-plik = ".claude/skills/praca-ticketu/scripts/stan.py"
 szukaj = "or not bramki or not all("
 zamien = "or not bramki or not any("
 test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki8]"
@@ -629,3 +605,45 @@ plik = ".claude/skills/praca-ticketu/scripts/stan.py"
 szukaj = "if len(a) != 3:\n            blad(64, \"bramki <KEY>"
 zamien = "if len(a) < 3:\n            blad(64, \"bramki <KEY>"
 test = "tests/test_skill_praca_ticketu.py::test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia[nadmiarowy_argument]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)'
+zamien = 'b.get("nazwa") and isinstance(b["nazwa"], str)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki3]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)'
+zamien = 'isinstance(b, dict) and isinstance(b["nazwa"], str)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki4]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)'
+zamien = 'isinstance(b, dict) and b.get("nazwa")'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki9]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and "/" not in b["nazwa"]'
+zamien = 'and True'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki10]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'and b["argv"]'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki6]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'and isinstance(b.get("argv"), list)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki7]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and all(isinstance(x, str) for x in b["argv"])'
+zamien = 'and True'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki11]"

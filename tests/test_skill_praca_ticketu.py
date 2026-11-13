@@ -987,6 +987,9 @@ def test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow(ep):
     [{"nazwa": "lint", "argv": "ruff check"}],    # argv nie jest listą
     [{"nazwa": "lint", "argv": []}],              # pusta argv
     [BRAMKA_OK, {"nazwa": "testy"}],              # jedna zła bramka psuje całą listę
+    [{"nazwa": 5, "argv": ["ruff"]}],             # nazwa nie jest napisem
+    [{"nazwa": "a/b", "argv": ["ruff"]}],         # nazwa z separatorem: log poza katalogiem stanu
+    [{"nazwa": "lint", "argv": ["ruff", 1]}],     # element argv nie jest napisem
 ])
 def test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu(ep, bramki):
     w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps(bramki)))
