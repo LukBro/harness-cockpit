@@ -800,18 +800,6 @@ test = 'tests/test_polecenie_agenta.py::test_niepoprawny_limit_tur_kroku_jest_od
 
 [[mutant]]
 plik = 'src/runner/silnik.py'
-szukaj = 'except (BrakModelu, ValueError) as e:'
-zamien = 'except BrakModelu as e:'
-test = 'tests/test_pomiar_kroku.py::test_niepoprawne_polecenie_agenta_konczy_krok_porazka_z_komunikatem_a_run_idzie_dalej'
-
-[[mutant]]
-plik = 'src/runner/silnik.py'
-szukaj = 'except (BrakModelu, ValueError) as e:'
-zamien = 'except ValueError as e:'
-test = 'tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej'
-
-[[mutant]]
-plik = 'src/runner/silnik.py'
 szukaj = '''    except BLEDY_GRANICY as e:      # `BladProfiluBackendu` jest błędem dziedziny
         await _blad_przed_startem('''
 zamien = '''    except KeyError as e:      # `BladProfiluBackendu` jest błędem dziedziny

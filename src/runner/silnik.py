@@ -53,7 +53,6 @@ from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Krok, Problem, Workflow, ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
 from runner.agent import (
-    BrakModelu,
     ProfilBackendu,
     SpecKroku,
     polecenie_agenta,
@@ -305,10 +304,9 @@ async def _krok(
         prompt = zbuduj_prompt(spec)
     except ValueError as e:
         raise PorazkaKroku(str(e)) from e
-    try:
-        argv = polecenie_agenta(spec, profil)
-    except (BrakModelu, ValueError) as e:      # brak modelu tieru, zly budzet albo limit tur
-        raise PorazkaKroku(str(e)) from e
+    # brak modelu tieru (BrakModelu), zly budzet albo limit tur (ValueError) konczy krok
+    # w petli zadan (`except BLEDY_GRANICY`) z tym samym tekstem - osobny except bylby martwy
+    argv = polecenie_agenta(spec, profil)
     dodatkowe: dict[str, object] = {}
     if PLIK_NOTATKI in skill.produces:
         producent = _krok_producenta(p, id_kroku, PLIK_LINII)

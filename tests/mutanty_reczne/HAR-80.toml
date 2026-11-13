@@ -194,13 +194,6 @@ szukaj = "zbuduj_prompt(spec)\n    except ValueError as e:"
 zamien = "zbuduj_prompt(spec)\n    except KeyError as e:"
 test = "tests/test_silnik_runu.py::test_znak_sterujacy_w_komendzie_capability_konczy_krok_bledem_bez_uruchomienia_agenta"
 
-# Brak modelu w profilu (BrakModelu) konczy krok porazka.
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'except (BrakModelu, ValueError) as e:'
-zamien = 'except (KeyError, ValueError) as e:'
-test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej"
-
 # --- stan kroku w toku (linia z `# pragma: no mutate`) ---
 
 # Krok zaplanowany ponownie startowalby drugi raz, gdy inny krok sie konczy.
