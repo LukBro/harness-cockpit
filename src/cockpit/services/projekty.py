@@ -17,6 +17,7 @@ from cockpit.db.models import Project, Runner
 
 from . import zapytania_runnera
 from .errors import NieZnaleziono, RunnerOffline, StanNiemozliwy
+from .projekt import PLIK_PROJEKTU, zmien_capabilities
 from .runs import runner_online
 from .zapytania_runnera import Wyslij
 
@@ -113,6 +114,58 @@ async def sciezka_projektu(s: AsyncSession, tenant_id: str, project_id: str) -> 
     if sciezka is None:
         raise NieZnaleziono("projekt nieznany")
     return sciezka
+
+
+async def projekt_zespolu(s: AsyncSession, tenant_id: str, project_id: str) -> Project:
+    """Projekt zespolu (HAR-180); obcy albo nieznany to NieZnaleziono. Wynik zostaje w serwisach."""
+    projekt = (await s.execute(
+        select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if projekt is None:
+        raise NieZnaleziono("projekt nieznany")
+    return projekt
+
+
+def sciezka_pliku_projektu(projekt: Project, wzgledna: str) -> str:
+    """Sciezka pliku w repozytorium projektu na maszynie runnera; `~/...` zostaje bez zmian
+    (plik z katalogu domowego uzytkownika, rozwijany przez runnera)."""
+    return wzgledna if wzgledna.startswith("~/") else f"{projekt.path}/{wzgledna}"
+
+
+async def czytaj_plik_projektu(
+    s: AsyncSession, tenant_id: str, projekt: Project, wzgledna: str,
+    polaczone: frozenset[str], wyslij: Wyslij,
+) -> str:
+    """Tresc pliku odczytana WYLACZNIE przez runnera tego projektu (HAR-180): offline to
+    RunnerOffline, odmowa runnera to PlikPozaZakresem albo StanNiemozliwy, zly ksztalt odpowiedzi
+    to StanNiemozliwy - nigdy zastepstwo innym runnerem."""
+    _, wynik = await zapytania_runnera.zapytaj_runnera_online(
+        s, tenant_id, "read_file", {"sciezka": sciezka_pliku_projektu(projekt, wzgledna)},
+        polaczone, wyslij, runner_id=projekt.runner_id)
+    if not isinstance(wynik, dict) or not isinstance(wynik.get("tresc"), str):
+        raise _zly_ksztalt("pole tresc nie jest napisem")
+    return wynik["tresc"]
+
+
+async def zmien_projekt(
+    s: AsyncSession, tenant_id: str, project_id: str, capabilities: dict[str, str | None],
+    polaczone: frozenset[str], wyslij: Wyslij,
+) -> dict:
+    """Zapisuje capabilities w `.cockpit/project.yaml` projektu przez jego runnera (HAR-180).
+
+    Odczyt, zmiana w miejscu (ruamel round-trip) i zapis; zapis tylko po udanym odczycie
+    i walidacji pliku. Odczyt i zapis to dwa osobne zapytania do runnera bez blokady: rownolegle
+    zmiany tego samego pliku (dwa PATCH, edycja w edytorze) moga sie nadpisac -
+    wygrywa ostatni zapis."""
+    projekt = await projekt_zespolu(s, tenant_id, project_id)
+    wzgledna = PLIK_PROJEKTU.as_posix()
+    tekst = await czytaj_plik_projektu(s, tenant_id, projekt, wzgledna, polaczone, wyslij)
+    nowy, po_zmianie = zmien_capabilities(tekst, capabilities)
+    await zapytania_runnera.zapytaj_runnera_online(
+        s, tenant_id, "write_file",
+        {"sciezka": sciezka_pliku_projektu(projekt, wzgledna), "tresc": nowy},
+        polaczone, wyslij, runner_id=projekt.runner_id)
+    return {"project_id": projekt.id, "capabilities": po_zmianie}
 
 
 async def projekty_zespolu(s: AsyncSession, tenant_id: str) -> list[dict]:

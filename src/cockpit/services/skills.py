@@ -92,23 +92,37 @@ class Rejestr(BaseModel):
     pominiete: list[Pominiety] = []
 
 
-def _podziel(tekst: str, plik: Path) -> tuple[str, str]:
+def _podziel(tekst: str, plik: object) -> tuple[str, str]:
     """Zwraca (frontmatter, brief). Brief to wszystko po linii zamykajacej, bajt w bajt.
 
     Konwencja: brief NIE zawiera konca linii zamykajacego delimitera; zaczyna sie
     od pierwszego znaku nastepnej linii. split() z python-frontmatter zjada biale
     znaki za delimiterem (\\s*), wiec briefu nie bierzemy z niego - tylko frontmatter.
     """
+    frontmatter, _, brief = _podziel_na_linie(tekst, plik)
+    return frontmatter, brief
+
+
+def _podziel_na_linie(tekst: str, plik: object) -> tuple[str, str, str]:
+    """(frontmatter z split(), frontmatter dokladnie jak w tekscie, brief); wspolne dla `_podziel`
+    i `podziel_skill`. Drugi element to linie miedzy granicami z oryginalnymi koncami linii."""
     handler = YAMLHandler()
     if not handler.detect(tekst):
         raise BlednySkill(f"brak frontmattera w {plik}")
     linie = tekst.splitlines(keepends=True)
     for i in range(1, len(linie)):
-        if _GRANICA.match(linie[i].rstrip("\r\n")):
+        if _GRANICA.match(linie[i]):
             # zamkniecie potwierdzone - dopiero teraz split() nie rzuci ValueError
             fm, _ = handler.split(tekst)
-            return fm, "".join(linie[i + 1 :])
+            return fm, "".join(linie[1:i]), "".join(linie[i + 1 :])
     raise BlednySkill(f"niezamkniety frontmatter w {plik}")
+
+
+def podziel_skill(tekst: str, katalog: str) -> tuple[str, str]:
+    """(frontmatter, brief) calego SKILL.md bajt w bajt (HAR-180): frontmatter to tekst miedzy
+    liniami granicznymi bez nich, brief to wszystko po zamykajacej. BlednySkill bez frontmattera."""
+    _, frontmatter, brief = _podziel_na_linie(tekst, f"'{katalog}'")
+    return frontmatter, brief
 
 
 def _rozbierz(plik: Path) -> tuple[bytes, CommentedMap, str]:
@@ -208,30 +222,24 @@ def _kontrakt_werdyktu(surowy: Any) -> KontraktWerdyktu | str:
     return KontraktWerdyktu(pass_=przechodzi, fail=oblewa, line=int(linia), prefix=str(prefiks))
 
 
-def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
-    # pliki zrodel konwencyjnych pochodza z innych narzedzi: nieparsowalny plik
-    # to dla nas "nie nasz skill", nie blad calego rejestru
-    try:
-        surowy, mapa, brief = _rozbierz(plik)
-    except BlednySkill as e:
-        if scisle:
-            raise
-        return Pominiety(plik=plik, powod=f"{e} - to nie skill kokpitu")
-
-    katalog = plik.parent
-    dane = _pola_skilla(mapa, katalog.name, scisle=scisle, opis=plik)
+def _zbuduj_skill(
+    mapa: CommentedMap, brief: str, katalog: Path, *, scisle: bool, opis: object,
+) -> Skill | None:
+    """Wspolne reguly skilla dla pliku i tekstu (HAR-180). None: zrodlo niescisle, brak `role`.
+    `opis` trafia do komunikatow: sciezka pliku albo nazwa katalogu."""
+    dane = _pola_skilla(mapa, katalog.name, scisle=scisle, opis=opis)
     if dane is None:
-        return Pominiety(plik=plik, powod="brak pola role - to nie skill kokpitu")
+        return None
     # HAR-175: surowa mapa frontmattera (nie `dane` z _POLA, ktore gubi write/model/tier/command);
     # klucze niebedace napisami (`1: x`, `true: x`) nie sa kluczami definicji
     naruszenia = waliduj_definicje({k: v for k, v in mapa.items() if isinstance(k, str)})
     if naruszenia:
-        raise BlednySkill(f"{plik}: " + "; ".join(str(n) for n in naruszenia))
+        raise BlednySkill(f"{opis}: " + "; ".join(str(n) for n in naruszenia))
     verdict = None
     if KLUCZ_WERDYKTU in mapa:
         wynik = _kontrakt_werdyktu(mapa[KLUCZ_WERDYKTU])
         if isinstance(wynik, str):
-            raise BlednySkill(f"niepoprawny verdict w {plik}: {wynik}")
+            raise BlednySkill(f"niepoprawny verdict w {opis}: {wynik}")
         verdict = wynik
     try:
         skill = Skill(
@@ -244,7 +252,7 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
             katalog=katalog,
         )
     except (ValidationError, TypeError) as e:
-        raise BlednySkill(f"niepoprawny skill w {plik}: {e}") from e
+        raise BlednySkill(f"niepoprawny skill w {opis}: {e}") from e
     # rola bez zapisu oddaje artefakt jako wynik agenta (HAR-160): wynik jest jeden
     if not profil_roli(skill.role).zapis and len(skill.produces) > 1:
         raise BlednySkill(
@@ -252,11 +260,42 @@ def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
             f"produces ma {len(skill.produces)}: {', '.join(skill.produces)}"
         )
     if skill.verdict is not None and not skill.produces:
-        raise BlednySkill(f"niepoprawny verdict w {plik}: verdict wymaga produces")
-    skill._surowy = surowy
+        raise BlednySkill(f"niepoprawny verdict w {opis}: verdict wymaga produces")
     skill._mapa = mapa
     skill._migawka = skill._stan()
     return skill
+
+
+def _wczytaj(plik: Path, *, scisle: bool) -> Skill | Pominiety:
+    # pliki zrodel konwencyjnych pochodza z innych narzedzi: nieparsowalny plik
+    # to dla nas "nie nasz skill", nie blad calego rejestru
+    try:
+        surowy, mapa, brief = _rozbierz(plik)
+    except BlednySkill as e:
+        if scisle:
+            raise
+        return Pominiety(plik=plik, powod=f"{e} - to nie skill kokpitu")
+    skill = _zbuduj_skill(mapa, brief, plik.parent, scisle=scisle, opis=plik)
+    if skill is None:
+        return Pominiety(plik=plik, powod="brak pola role - to nie skill kokpitu")
+    skill._surowy = surowy
+    return skill
+
+
+def skill_z_tekstu(tekst: str, katalog: str, *, scisle: bool) -> Skill | None:
+    """Skill z calego tekstu SKILL.md, bez dysku (HAR-180), tymi samymi regulami co z pliku.
+
+    None: zrodlo niescisle, a brak `role` albo tekst nieparsowalny - nie skill kokpitu.
+    Reszta bledow to BlednySkill; komunikaty wskazuja nazwe katalogu."""
+    opis = f"'{katalog}'"
+    try:
+        frontmatter, brief = _podziel(tekst, opis)
+        mapa = _mapa_frontmattera(frontmatter, opis)
+    except BlednySkill:
+        if scisle:
+            raise
+        return None
+    return _zbuduj_skill(mapa, brief, Path(katalog), scisle=scisle, opis=opis)
 
 
 def wczytaj_skill(plik: Path) -> Skill:

@@ -1,0 +1,1045 @@
+# Tabela recznych mutantow HAR-180: elementy, ktorych mutmut nie mutuje albo mutuje niepelnie --
+# trasy z dekoratorami (app.py), stale i pola modeli (schematy.py), kolumny modelu (models.py),
+# migracja 0015, krotka `except` i konfiguracja parsera (projekt.py), wpis mapy kodow bledow
+# (bledy.py), tylda w zakresie runnera (zakres.py), warunki zapytania skilli oraz plik
+# `web/openapi.json`. Kazde `szukaj` wystepuje w pliku dokladnie raz.
+#
+# Testy migracji (tests/test_migracje.py) wymagaja PostgreSQL (COCKPIT_TEST_DATABASE_URL);
+# bez niego sa pomijane, a pominiecie nie jest zabiciem mutanta.
+#
+# Elementy bez wiersza (rownowazne -- zadne wejscie nie odroznia wersji):
+#   - `@classmethod` pod `@field_validator("capabilities")` w ZmianaProjektu: pydantic v2 owija
+#     funkcje w classmethod sam, wiec usuniecie dekoratora daje ten sam walidator;
+#   - `sa.JSON(none_as_null=True)` -> `sa.JSON()` w migracji 0015: flaga dziala po stronie Pythona
+#     przy zapisie, DDL kolumny jest identyczny; flaga modelu ma wiersze nizej (models.py);
+#   - `revision: str = "0015"` w migracji: nazwa pliku i `down_revision` wyznaczaja graf, a testy
+#     migracji adresuja rewizje przez `head` i `0014`;
+#   - `dostep.wymagaj(k, Uprawnienie.podglad)` w trasach GET skilli: kazda rola zespolu ma
+#     `podglad`, wiec zadne wejscie z sesja nie odroznia wersji bez wywolania (wiersze dla zmiany
+#     uprawnienia na inne sa nizej).
+
+# =====================================================================================
+# src/cockpit/api/app.py: PATCH /api/projects/{project_id}
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.patch("/api/projects/{project_id}", response_model=CapabilitiesProjektu,'
+zamien = '@app.patch("/api/projects/{project_id}", response_model=ListaSkilli,'
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def zmien_projekt("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def zmien_projekt("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project_id: Annotated[str, SciezkaUrl(max_length=36)],"
+zamien = "project_id: Annotated[str, SciezkaUrl(max_length=37)],"
+test = "tests/test_kontrakt_api.py::test_identyfikator_projektu_w_sciezce_zmiany_ma_limit_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project_id: Annotated[str, SciezkaUrl(max_length=36)],"
+zamien = "project_id: Annotated[str, SciezkaUrl(max_length=35)],"
+test = "tests/test_projekty_zmiana.py::test_identyfikator_projektu_dluzszy_niz_36_znakow_to_422_a_dokladnie_36_to_404"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: ZmianaProjektu,\n    k: Kontekst = Depends(kontekst_sesji),"
+zamien = "    body: ZmianaProjektu,\n    k: Kontekst = Depends(get_session),"
+test = "tests/test_projekty_zmiana.py::test_bez_sesji_zmiana_capabilities_daje_401_a_runner_nie_jest_pytany"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    # capabilities to komendy"
+zamien = "    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    # capabilities to komendy"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem runnera"
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)   # przed zapytaniem runnera"
+test = "tests/test_projekty_zmiana.py::test_obserwator_nie_zmieni_capabilities_a_runner_nie_jest_nawet_pytany"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem runnera"
+zamien = "pass   # przed zapytaniem runnera"
+test = "tests/test_projekty_zmiana.py::test_obserwator_nie_zmieni_capabilities_a_runner_nie_jest_nawet_pytany"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project_id, {}, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project_id, body.capabilities, frozenset(), bus.zapytaj)"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), None)"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, '', project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+# =====================================================================================
+# src/cockpit/api/app.py: GET /api/skills
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/skills", response_model=ListaSkilli,'
+zamien = '@app.get("/api/skills", response_model=SkillSzczegoly,'
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 404, 422))\nasync def lista_skilli("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 422))\nasync def lista_skilli("
+test = "tests/test_kontrakt_api.py::test_lista_skilli_czyta_tylko_cache_wiec_nie_obiecuje_403_ani_409"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def lista_skilli(\n    project: str = Query(max_length=36),"
+zamien = "async def lista_skilli(\n    project: str = Query(max_length=37),"
+test = "tests/test_skille_api.py::test_lista_skilli_wymaga_parametru_projektu_o_dlugosci_do_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def lista_skilli(\n    project: str = Query(max_length=36),"
+zamien = "async def lista_skilli(\n    project: str = Query(default='', max_length=36),"
+test = "tests/test_skille_api.py::test_lista_skilli_wymaga_parametru_projektu_o_dlugosci_do_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.rejestr_projektu("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.rejestr_projektu("
+test = "tests/test_dostep_http.py::test_bez_sesji_odczyt_skilli_projektu_dostaje_401_takze_na_localhoscie"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.rejestr_projektu("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.rejestr_projektu("
+test = "tests/test_skille_api.py::test_lista_skilli_projektu_ma_dla_kazdego_id_nazwe_role_consumes_produces_i_zakres"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.rejestr_projektu("
+zamien = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.rejestr_projektu("
+test = "tests/test_skille_api.py::test_obserwator_zespolu_widzi_liste_skilli"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return await skille_api.rejestr_projektu(s, k.tenant_id, project)"
+zamien = "return await skille_api.rejestr_projektu(s, '', project)"
+test = "tests/test_skille_api.py::test_lista_skilli_projektu_ma_dla_kazdego_id_nazwe_role_consumes_produces_i_zakres"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return await skille_api.rejestr_projektu(s, k.tenant_id, project)"
+zamien = "return await skille_api.rejestr_projektu(s, k.tenant_id, '')"
+test = "tests/test_skille_api.py::test_lista_skilli_projektu_ma_dla_kazdego_id_nazwe_role_consumes_produces_i_zakres"
+
+# =====================================================================================
+# src/cockpit/api/app.py: GET /api/skills/{skill_id}
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/skills/{skill_id}", response_model=SkillSzczegoly,'
+zamien = '@app.get("/api/skills/{skill_id}", response_model=ListaSkilli,'
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def szczegoly_skilla("
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 422))\nasync def szczegoly_skilla("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    skill_id: str,\n    project: str = Query(max_length=36),"
+zamien = "    skill_id: str,\n    project: str = Query(max_length=37),"
+test = "tests/test_kontrakt_api.py::test_filtr_projektu_skilli_jest_wymagany_i_ma_limit_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    skill_id: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),"
+zamien = "    skill_id: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),"
+test = "tests/test_dostep_http.py::test_bez_sesji_odczyt_skilli_projektu_dostaje_401_takze_na_localhoscie"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.skill_projektu("
+zamien = "    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.skill_projektu("
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.skill_projektu("
+zamien = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.skill_projektu("
+test = "tests/test_skille_api.py::test_obserwator_zespolu_widzi_szczegoly_skilla"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, '', project, skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, '', skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, '', bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, skill_id, frozenset(), bus.zapytaj)"
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), None)"
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+# =====================================================================================
+# src/cockpit/api/bledy.py
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/api/bledy.py"
+szukaj = "    BlednyProjekt: 422,"
+zamien = "    BlednyProjekt: 400,"
+test = "tests/test_projekty_zmiana.py::test_plik_projektu_niebedacy_mapa_to_422_i_plik_zostaje_bez_zmian"
+
+# =====================================================================================
+# src/cockpit/api/schematy.py: stale, ograniczenia i pola modeli
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "MAX_NAZWA_CAPABILITY = 100"
+zamien = "MAX_NAZWA_CAPABILITY = 101"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "MAX_NAZWA_CAPABILITY = 100"
+zamien = "MAX_NAZWA_CAPABILITY = 99"
+test = "tests/test_projekty_zmiana.py::test_nazwa_capability_dlugosci_limitu_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "MAX_KOMENDA_CAPABILITY = 1000"
+zamien = "MAX_KOMENDA_CAPABILITY = 1001"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "MAX_KOMENDA_CAPABILITY = 1000"
+zamien = "MAX_KOMENDA_CAPABILITY = 999"
+test = "tests/test_projekty_zmiana.py::test_komenda_capability_dlugosci_limitu_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Annotated[str, StringConstraints(min_length=1, max_length=MAX_NAZWA_CAPABILITY)],"
+zamien = "Annotated[str, StringConstraints(min_length=0, max_length=MAX_NAZWA_CAPABILITY)],"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Annotated[str, StringConstraints(min_length=1, max_length=MAX_NAZWA_CAPABILITY)],"
+zamien = "Annotated[str, StringConstraints(min_length=1, max_length=MAX_KOMENDA_CAPABILITY)],"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Annotated[str, StringConstraints(max_length=MAX_KOMENDA_CAPABILITY)] | None,"
+zamien = "Annotated[str, StringConstraints(max_length=MAX_NAZWA_CAPABILITY)] | None,"
+test = "tests/test_projekty_zmiana.py::test_komenda_capability_dlugosci_limitu_jest_przyjeta"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Annotated[str, StringConstraints(max_length=MAX_KOMENDA_CAPABILITY)] | None,"
+zamien = "Annotated[str, StringConstraints(max_length=MAX_KOMENDA_CAPABILITY)],"
+test = "tests/test_projekty_zmiana.py::test_pusta_komenda_usuwa_capability_z_pliku_a_pozostale_zostaja_z_komentarzami"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "tickets` to 422).\"\"\"\n\n    model_config = ConfigDict(extra=\"forbid\")"
+zamien = "tickets` to 422).\"\"\"\n\n    model_config = ConfigDict(extra=\"ignore\")"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '@field_validator("capabilities")'
+zamien = '@field_validator("capabilities", mode="before")'
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "if komenda and not komenda.strip():"
+zamien = "if komenda and komenda.strip():"
+test = "tests/test_projekty_zmiana.py::test_komenda_z_samych_bialych_znakow_jest_odrzucona_z_komunikatem_o_tej_capability"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "if komenda and not komenda.strip():"
+zamien = "if not komenda.strip():"
+test = "tests/test_projekty_zmiana.py::test_pusta_komenda_usuwa_capability_z_pliku_a_pozostale_zostaja_z_komentarzami"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "if komenda and not komenda.strip():"
+zamien = "if komenda or not komenda.strip():"
+test = "tests/test_projekty_zmiana.py::test_pusta_komenda_usuwa_capability_z_pliku_a_pozostale_zostaja_z_komentarzami"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''raise ValueError(f"komenda capability {nazwa} sklada sie z samych bialych znakow")'''
+zamien = '''raise ValueError(f"komenda capability {nazwa} jest pusta")'''
+test = "tests/test_projekty_zmiana.py::test_komenda_z_samych_bialych_znakow_jest_odrzucona_z_komunikatem_o_tej_capability"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "        return capabilities\n"
+zamien = "        return {}\n"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+# ---- ZakresSkilla: kazda wartosc osobno ----------------------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'ZakresSkilla = Literal["globalny", "lokalny", "nadpisany"]'
+zamien = 'ZakresSkilla = Literal["globalnyx", "lokalny", "nadpisany"]'
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'ZakresSkilla = Literal["globalny", "lokalny", "nadpisany"]'
+zamien = 'ZakresSkilla = Literal["globalny", "lokalnyx", "nadpisany"]'
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = 'ZakresSkilla = Literal["globalny", "lokalny", "nadpisany"]'
+zamien = 'ZakresSkilla = Literal["globalny", "lokalny", "nadpisanyx"]'
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+# ---- pola CapabilitiesProjektu, ListaSkilli, SkillNaLiscie, SkillSzczegoly (nazwy pol = klucze JSON)
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class CapabilitiesProjektu(BaseModel):\n    project_id: str"
+zamien = "class CapabilitiesProjektu(BaseModel):\n    project_id_: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    capabilities: dict[str, str]   # pelna mapa"
+zamien = "    capabilities_: dict[str, str]   # pelna mapa"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    odswiezono_at: str | None   # null, gdy katalog"
+zamien = "    odswiezono_at_: str | None   # null, gdy katalog"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    odswiezono_at: str | None   # null, gdy katalog"
+zamien = "    odswiezono_at: str   # null, gdy katalog"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    skille: list[SkillNaLiscie]"
+zamien = "    skille_: list[SkillNaLiscie]"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    skille: list[SkillNaLiscie]"
+zamien = "    skille: list[SkillSzczegoly]"
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class SkillNaLiscie(BaseModel):\n    id: str"
+zamien = "class SkillNaLiscie(BaseModel):\n    id_: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    id: str\n    name: str\n    role: str | None   # null przy problemie"
+zamien = "    id: str\n    name_: str\n    role: str | None   # null przy problemie"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    role: str | None   # null przy problemie"
+zamien = "    role_: str | None   # null przy problemie"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    role: str | None   # null przy problemie"
+zamien = "    role: str   # null przy problemie"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    consumes: list[str] | None   # null przy problemie: brak pomiaru, nie pusta lista"
+zamien = "    consumes_: list[str] | None   # null przy problemie: brak pomiaru, nie pusta lista"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    produces: list[str] | None\n    zakres: ZakresSkilla\n    problem: str | None"
+zamien = "    produces_: list[str] | None\n    zakres: ZakresSkilla\n    problem: str | None"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    zakres: ZakresSkilla\n    problem: str | None"
+zamien = "    zakres_: ZakresSkilla\n    problem: str | None"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    problem: str | None   # komunikat"
+zamien = "    problem_: str | None   # komunikat"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    problem: str | None   # komunikat"
+zamien = "    problem: str   # komunikat"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class SkillSzczegoly(BaseModel):\n    id: str"
+zamien = "class SkillSzczegoly(BaseModel):\n    id_: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    id: str\n    name: str\n    role: str\n    consumes: list[str]"
+zamien = "    id: str\n    name_: str\n    role: str\n    consumes: list[str]"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    name: str\n    role: str\n    consumes: list[str]"
+zamien = "    name: str\n    role_: str\n    consumes: list[str]"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    role: str\n    consumes: list[str]\n    produces: list[str]\n    zakres: ZakresSkilla\n    sciezka: str"
+zamien = "    role: str\n    consumes_: list[str]\n    produces: list[str]\n    zakres: ZakresSkilla\n    sciezka: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    role: str\n    consumes: list[str]\n    produces: list[str]\n    zakres: ZakresSkilla\n    sciezka: str"
+zamien = "    role: str\n    consumes: list[str]\n    produces_: list[str]\n    zakres: ZakresSkilla\n    sciezka: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    zakres: ZakresSkilla\n    sciezka: str"
+zamien = "    zakres_: ZakresSkilla\n    sciezka: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    sciezka: str\n    frontmatter: str"
+zamien = "    sciezka_: str\n    frontmatter: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    frontmatter: str   # tekst"
+zamien = "    frontmatter_: str   # tekst"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    brief: str         # wszystko"
+zamien = "    brief_: str         # wszystko"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+# =====================================================================================
+# src/cockpit/db/models.py: kolumny consumes, produces, zakres, problem
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "        JSON(none_as_null=True), nullable=True, default=None)\n    produces:"
+zamien = "        JSON(), nullable=True, default=None)\n    produces:"
+test = "tests/test_katalog_definicji.py::test_brak_list_zakresu_i_problemu_jest_w_bazie_brakiem_a_nie_json_null"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "        JSON(none_as_null=True), nullable=True, default=None)\n    zakres:"
+zamien = "        JSON(), nullable=True, default=None)\n    zakres:"
+test = "tests/test_katalog_definicji.py::test_brak_list_zakresu_i_problemu_jest_w_bazie_brakiem_a_nie_json_null"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "    consumes: Mapped[list[str] | None] = mapped_column(\n        JSON(none_as_null=True), nullable=True,"
+zamien = "    consumes: Mapped[list[str] | None] = mapped_column(\n        JSON(none_as_null=True), nullable=False,"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "    produces: Mapped[list[str] | None] = mapped_column(\n        JSON(none_as_null=True), nullable=True,"
+zamien = "    produces: Mapped[list[str] | None] = mapped_column(\n        JSON(none_as_null=True), nullable=False,"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(String(20), nullable=True, default=None)"
+zamien = "mapped_column(String(20), nullable=False, default=None)"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(Text, nullable=True, default=None)"
+zamien = "mapped_column(Text, nullable=False, default=None)"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "        JSON(none_as_null=True), nullable=True, default=None)\n    produces:"
+zamien = "        JSON(none_as_null=True), nullable=True, default=[])\n    produces:"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "        JSON(none_as_null=True), nullable=True, default=None)\n    zakres:"
+zamien = "        JSON(none_as_null=True), nullable=True, default=[])\n    zakres:"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(String(20), nullable=True, default=None)"
+zamien = "mapped_column(String(20), nullable=True, default='lokalny')"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(Text, nullable=True, default=None)"
+zamien = "mapped_column(Text, nullable=True, default='')"
+test = "tests/test_katalog_definicji.py::test_workflow_nie_ma_consumes_produces_zakresu_ani_problemu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(String(20), nullable=True, default=None)"
+zamien = "mapped_column(String(5), nullable=True, default=None)"
+test = "tests/test_katalog_definicji.py::test_kolumna_zakresu_miesci_najdluzszy_zakres_a_problem_jest_tekstem_bez_limitu"
+
+[[mutant]]
+plik = "src/cockpit/db/models.py"
+szukaj = "mapped_column(Text, nullable=True, default=None)"
+zamien = "mapped_column(String(20), nullable=True, default=None)"
+test = "tests/test_katalog_definicji.py::test_kolumna_zakresu_miesci_najdluzszy_zakres_a_problem_jest_tekstem_bez_limitu"
+
+# =====================================================================================
+# alembic/versions/0015_definicje_rejestru.py (testy wymagaja PostgreSQL)
+# =====================================================================================
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'down_revision: Union[str, None] = "0014"'
+zamien = 'down_revision: Union[str, None] = "0013"'
+test = "tests/test_migracje.py::test_migracja_skilli_dodaje_do_definicji_cztery_kolumny_dopuszczajace_brak_wartosci"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.add_column("definicja", sa.Column("consumes", sa.JSON(none_as_null=True), nullable=True))'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_migracja_skilli_dodaje_do_definicji_cztery_kolumny_dopuszczajace_brak_wartosci"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.add_column("definicja", sa.Column("produces", sa.JSON(none_as_null=True), nullable=True))'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_migracja_skilli_dodaje_do_definicji_cztery_kolumny_dopuszczajace_brak_wartosci"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.add_column("definicja", sa.Column("zakres", sa.String(length=20), nullable=True))'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_migracja_skilli_dodaje_do_definicji_cztery_kolumny_dopuszczajace_brak_wartosci"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.add_column("definicja", sa.Column("problem", sa.Text(), nullable=True))'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_migracja_skilli_dodaje_do_definicji_cztery_kolumny_dopuszczajace_brak_wartosci"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'sa.Column("consumes", sa.JSON(none_as_null=True), nullable=True)'
+zamien = 'sa.Column("consumes", sa.JSON(none_as_null=True), nullable=False)'
+test = "tests/test_migracje.py::test_definicja_sprzed_migracji_ma_po_niej_brak_wartosci_a_nie_pusta_liste_ani_zakres"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'sa.Column("produces", sa.JSON(none_as_null=True), nullable=True)'
+zamien = 'sa.Column("produces", sa.JSON(none_as_null=True), nullable=False)'
+test = "tests/test_migracje.py::test_definicja_sprzed_migracji_ma_po_niej_brak_wartosci_a_nie_pusta_liste_ani_zakres"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'sa.Column("zakres", sa.String(length=20), nullable=True)'
+zamien = 'sa.Column("zakres", sa.String(length=20), nullable=False)'
+test = "tests/test_migracje.py::test_definicja_sprzed_migracji_ma_po_niej_brak_wartosci_a_nie_pusta_liste_ani_zakres"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'sa.Column("problem", sa.Text(), nullable=True)'
+zamien = 'sa.Column("problem", sa.Text(), nullable=False)'
+test = "tests/test_migracje.py::test_definicja_sprzed_migracji_ma_po_niej_brak_wartosci_a_nie_pusta_liste_ani_zakres"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'sa.Column("zakres", sa.String(length=20), nullable=True)'
+zamien = 'sa.Column("zakres", sa.String(length=5), nullable=True)'
+test = "tests/test_migracje.py::test_definicja_zapisana_przez_model_zachowuje_listy_zakres_i_dlugi_problem"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = 'sa.Column("problem", sa.Text(), nullable=True)'
+zamien = 'sa.Column("problem", sa.String(length=100), nullable=True)'
+test = "tests/test_migracje.py::test_definicja_zapisana_przez_model_zachowuje_listy_zakres_i_dlugi_problem"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.drop_column("definicja", "problem")'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_cofniecie_migracji_skilli_usuwa_cztery_kolumny_i_zostawia_reszte_definicji"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.drop_column("definicja", "zakres")'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_cofniecie_migracji_skilli_usuwa_cztery_kolumny_i_zostawia_reszte_definicji"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.drop_column("definicja", "produces")'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_cofniecie_migracji_skilli_usuwa_cztery_kolumny_i_zostawia_reszte_definicji"
+
+[[mutant]]
+plik = "alembic/versions/0015_definicje_rejestru.py"
+szukaj = '    op.drop_column("definicja", "consumes")'
+zamien = "    pass"
+test = "tests/test_migracje.py::test_cofniecie_migracji_skilli_usuwa_cztery_kolumny_i_zostawia_reszte_definicji"
+
+# =====================================================================================
+# src/cockpit/services/projekt.py: krotka except i konfiguracja zapisu YAML
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "class BlednyProjekt(BladDziedziny):"
+zamien = "class BlednyProjekt(Exception):"
+test = "tests/test_projekty_zmiana.py::test_plik_projektu_niebedacy_mapa_to_422_i_plik_zostaje_bez_zmian"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "except (ValueError, TypeError, OverflowError):"
+zamien = "except (TypeError, OverflowError):"
+test = "tests/test_projekty_zmiana.py::test_plik_z_wartoscia_ktorej_parser_nie_zbuduje_to_422_z_pelnym_komunikatem_i_bez_zapisu[niepoprawna_data]"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "except (ValueError, TypeError, OverflowError):"
+zamien = "except (ValueError, OverflowError):"
+test = "tests/test_projekty_zmiana.py::test_plik_z_wartoscia_ktorej_parser_nie_zbuduje_to_422_z_pelnym_komunikatem_i_bez_zapisu[klucz_zlozony]"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "except (ValueError, TypeError, OverflowError):"
+zamien = "except (ValueError, TypeError):"
+test = "tests/test_projekty_zmiana.py::test_plik_z_wartoscia_ktorej_parser_nie_zbuduje_to_422_z_pelnym_komunikatem_i_bez_zapisu[data_poza_zakresem]"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    except RecursionError:\n        raise BlednyProjekt(_ZA_GLEBOKO) from None"
+zamien = "    except ZeroDivisionError:\n        raise BlednyProjekt(_ZA_GLEBOKO) from None"
+test = "tests/test_projekty_zmiana.py::test_plik_zagniezdzony_ponad_stos_parsera_to_422_z_pelnym_komunikatem_i_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    except DuplicateKeyError as exc:\n        raise BlednyProjekt(f\"zduplikowany klucz"
+zamien = "    except KeyError as exc:\n        raise BlednyProjekt(f\"zduplikowany klucz"
+test = "tests/test_projekty_zmiana.py::test_zduplikowany_klucz_w_pliku_to_422_z_komunikatem_dziedziny_i_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    except YAMLError as exc:\n        raise BlednyProjekt(f\"niepoprawny YAML"
+zamien = "    except KeyError as exc:\n        raise BlednyProjekt(f\"niepoprawny YAML"
+test = "tests/test_projekty_zmiana.py::test_niepoprawny_yaml_w_pliku_to_422_z_komunikatem_dziedziny_i_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    y.width = 4096"
+zamien = "    y.width = 80"
+test = "tests/test_projekty_zmiana.py::test_dluga_komenda_capability_zostaje_w_jednej_linii_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    y.preserve_quotes = True\n    y.indent(sequence=4, offset=2)\n    y.width = 4096"
+zamien = "    y.preserve_quotes = False\n    y.indent(sequence=4, offset=2)\n    y.width = 4096"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_nie_zmienia_pozostalych_sekcji_pliku_ani_ich_formatowania"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    y.indent(sequence=4, offset=2)\n    y.width = 4096"
+zamien = "    y.indent(mapping=4, sequence=4, offset=2)\n    y.width = 4096"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_nie_zmienia_pozostalych_sekcji_pliku_ani_ich_formatowania"
+
+[[mutant]]
+plik = "src/cockpit/services/projekt.py"
+szukaj = "    y.indent(sequence=4, offset=2)\n    y.width = 4096"
+zamien = "    y.indent(sequence=4, offset=0)\n    y.width = 4096"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_nie_zmienia_pozostalych_sekcji_pliku_ani_ich_formatowania"
+
+# =====================================================================================
+# src/cockpit/services/projekty.py: sciezka pliku projektu i ksztalt odpowiedzi runnera
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = 'return wzgledna if wzgledna.startswith("~/") else f"{projekt.path}/{wzgledna}"'
+zamien = 'return wzgledna if not wzgledna.startswith("~/") else f"{projekt.path}/{wzgledna}"'
+test = "tests/test_skille_api.py::test_skille_domowy_i_repo_jednego_projektu_sa_czytane_kazdy_ze_swoja_sciezka"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = 'return wzgledna if wzgledna.startswith("~/") else f"{projekt.path}/{wzgledna}"'
+zamien = 'return f"{projekt.path}/{wzgledna}"'
+test = "tests/test_skille_api.py::test_skille_domowy_i_repo_jednego_projektu_sa_czytane_kazdy_ze_swoja_sciezka"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = 'return wzgledna if wzgledna.startswith("~/") else f"{projekt.path}/{wzgledna}"'
+zamien = "return wzgledna"
+test = "tests/test_skille_api.py::test_skille_domowy_i_repo_jednego_projektu_sa_czytane_kazdy_ze_swoja_sciezka"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "if not isinstance(wynik, dict) or not isinstance(wynik.get(\"tresc\"), str):"
+zamien = "if not isinstance(wynik.get(\"tresc\"), str):"
+test = "tests/test_projekty_zmiana.py::test_odpowiedz_odczytu_niebedaca_slownikiem_to_409_z_pelnym_komunikatem_a_nie_500"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = '        raise _zly_ksztalt("pole tresc nie jest napisem")'
+zamien = '        raise _zly_ksztalt("pole tresc nie jest napisem XX")'
+test = "tests/test_projekty_zmiana.py::test_slownik_z_trescia_niebedaca_napisem_to_409_z_pelnym_komunikatem"
+
+# =====================================================================================
+# src/cockpit/services/skille_api.py: warunki zapytania, zrodlo scisle, plik bez roli
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "Definicja.tenant_id == projekt.tenant_id,"
+zamien = "Definicja.tenant_id == Definicja.tenant_id,"
+test = "tests/test_skille_api.py::test_wiersz_innego_zespolu_o_tym_samym_runnerze_i_projekcie_nie_jest_na_liscie_skilli"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "Definicja.tenant_id == projekt.tenant_id,"
+zamien = "Definicja.tenant_id == Definicja.tenant_id,"
+test = "tests/test_skille_api.py::test_wiersz_innego_zespolu_o_tym_samym_runnerze_i_projekcie_to_w_szczegolach_404"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "Definicja.runner_id == projekt.runner_id,"
+zamien = "Definicja.runner_id == Definicja.runner_id,"
+test = "tests/test_skille_api.py::test_lista_skilli_projektu_nie_zawiera_wpisow_innego_runnera_tego_samego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "Definicja.projekt == projekt.path,"
+zamien = "Definicja.projekt == Definicja.projekt,"
+test = "tests/test_skille_api.py::test_lista_skilli_projektu_nie_zawiera_wpisow_innego_projektu_tego_samego_runnera"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = 'Definicja.rodzaj == "skill",'
+zamien = "Definicja.rodzaj == Definicja.rodzaj,"
+test = "tests/test_skille_api.py::test_wiersz_workflow_z_zakresem_nie_jest_skillem_ani_na_liscie_ani_w_szczegolach"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "Definicja.zakres.is_not(None))"
+zamien = "Definicja.zakres.is_(None))"
+test = "tests/test_skille_api.py::test_wiersz_sprzed_migracji_bez_zakresu_nie_jest_na_liscie_skilli_projektu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "Definicja.zakres.is_not(None))"
+zamien = "Definicja.id.is_not(None))"
+test = "tests/test_skille_api.py::test_wiersz_sprzed_migracji_bez_zakresu_to_w_szczegolach_404_bez_pytania_runnera"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_zapytanie_skilli(projekt).where(Definicja.klucz == skill_id))"
+zamien = "_zapytanie_skilli(projekt).where(Definicja.klucz == Definicja.klucz))"
+test = "tests/test_skille_api.py::test_nieznany_skill_daje_404_a_runner_nie_jest_pytany"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = 'wzgledna = sciezka.removeprefix("~/")'
+zamien = "wzgledna = sciezka"
+test = "tests/test_skille_api.py::test_skill_zrodla_kokpitu_ktory_po_odswiezeniu_stracil_id_i_nazwe_to_422_a_nie_skill[dom]"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "any(scisle and wzgledna.startswith("
+zamien = "any(not scisle and wzgledna.startswith("
+test = "tests/test_skille_api.py::test_skill_zrodla_kokpitu_ktory_po_odswiezeniu_stracil_id_i_nazwe_to_422_a_nie_skill[korzen]"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "any(scisle and wzgledna.startswith("
+zamien = "any(wzgledna.startswith("
+test = "tests/test_skille_api.py::test_skill_zrodla_konwencyjnego_z_sama_rola_dostaje_id_i_nazwe_z_katalogu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if skill is None:\n        raise BlednySkill("
+zamien = "    if skill is not None:\n        raise BlednySkill("
+test = "tests/test_skille_api.py::test_plik_zrodla_konwencyjnego_ktory_po_odswiezeniu_przestal_byc_skillem_to_422"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = '"brak frontmattera albo pola role")'
+zamien = '"brak frontmattera albo pola role XX")'
+test = "tests/test_skille_api.py::test_plik_zrodla_konwencyjnego_ktory_po_odswiezeniu_przestal_byc_skillem_to_422"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "najstarszy = min("
+zamien = "najstarszy = max("
+test = "tests/test_skille_api.py::test_data_odswiezenia_listy_to_najstarsza_z_dat_wierszy_projektu"
+
+# =====================================================================================
+# src/cockpit/services/katalog.py: zbior wierszy bez problemow i frontmatter None
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/services/katalog.py"
+szukaj = "Definicja.problem.is_(None))"
+zamien = "Definicja.problem.is_not(None))"
+test = "tests/test_katalog_definicji.py::test_skille_z_problemem_nie_sa_definicjami_w_odczycie_katalogu_ani_w_odpowiedzi_odswiezenia"
+
+# =====================================================================================
+# src/runner/zakres.py: wiodaca tylda
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path(tekst)'
+zamien = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~") else Path(tekst)'
+test = "tests/test_zakres_sciezek.py::test_inna_forma_niz_wiodaca_tylda_z_ukosnikiem_jest_nadal_odmowiona_jako_wzgledna"
+
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path(tekst)'
+zamien = 'zadana = Path.home() / tekst[1:] if tekst.startswith("~/") else Path(tekst)'
+test = "tests/test_zakres_sciezek.py::test_tylda_ze_ukosnikiem_jest_rozwijana_do_katalogu_domowego_uzytkownika"
+
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path(tekst)'
+zamien = 'zadana = Path.cwd() / tekst[2:] if tekst.startswith("~/") else Path(tekst)'
+test = "tests/test_zakres_sciezek.py::test_tylda_nie_wskazuje_katalogu_roboczego_procesu"
+
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path(tekst)'
+zamien = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path.home() / tekst'
+test = "tests/test_zakres_sciezek.py::test_inna_forma_niz_wiodaca_tylda_z_ukosnikiem_jest_nadal_odmowiona_jako_wzgledna"
+
+[[mutant]]
+plik = "src/runner/zakres.py"
+szukaj = 'zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path(tekst)'
+zamien = 'zadana = Path(tekst)'
+test = "tests/test_zakres_sciezek.py::test_tylda_ze_ukosnikiem_jest_rozwijana_do_katalogu_domowego_uzytkownika"
+
+# =====================================================================================
+# web/openapi.json: plik generowany; kontrakt porownuje go z aplikacja
+# =====================================================================================
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '"/api/skills": {'
+zamien = '"/api/skillsy": {'
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '"/api/skills/{skill_id}": {'
+zamien = '"/api/skills/{skill_idx}": {'
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '"/api/projects/{project_id}": {'
+zamien = '"/api/projects/{project_idx}": {'
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''"propertyNames": {
+              "maxLength": 100,'''
+zamien = '''"propertyNames": {
+              "maxLength": 101,'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# =====================================================================================
+# Runda 3: linie kodu 3 (wywolanie serwisu w trasie, deklaracje modeli i walidator)
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    return await projekty.zmien_projekt(\n"
+zamien = "    await projekty.zmien_projekt(\n"
+test = "tests/test_projekty_zmiana.py::test_odpowiedz_na_zmiane_niesie_projekt_i_pelna_mape_capabilities_z_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class ZmianaProjektu(BaseModel):"
+zamien = "class ZmianaProjektu(Projekt):"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    capabilities: dict[\n        Annotated"
+zamien = "    capabilities: dict | dict[\n        Annotated"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    ]\n\n    @field_validator"
+zamien = "    ] = {}\n\n    @field_validator"
+test = "tests/test_projekty_zmiana.py::test_zle_cialo_zmiany_to_422_bez_pytania_runnera_i_bez_zmiany_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "        cls, capabilities: dict[str, str | None],\n"
+zamien = "        cls, capabilities_: dict[str, str | None],\n"
+test = "tests/test_projekty_zmiana.py::test_zmiana_capability_z_ui_zapisuje_project_yaml_w_repo_przez_runnera_projektu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "        for nazwa, komenda in capabilities.items():"
+zamien = "        for nazwa, komenda in {}.items():"
+test = "tests/test_projekty_zmiana.py::test_komenda_z_samych_bialych_znakow_jest_odrzucona_z_komunikatem_o_tej_capability"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class ListaSkilli(BaseModel):"
+zamien = "class ListaSkilli(SkillNaLiscie):"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/services/katalog.py"
+szukaj = "            if not scisle:\n                return None\n            raise BlednySkill("
+zamien = "            if scisle:\n                return None\n            raise BlednySkill("
+test = "tests/test_katalog_definicji.py::test_skill_scisly_bez_frontmattera_od_runnera_ma_problem_o_braku_frontmattera"
+
+[[mutant]]
+plik = "src/cockpit/services/katalog.py"
+szukaj = "raise BlednySkill(f\"brak frontmattera w '{skill['katalog']}'\")"
+zamien = "raise BlednySkill(f\"XXbrak frontmattera w '{skill['katalog']}'XX\")"
+test = "tests/test_katalog_definicji.py::test_skill_scisly_bez_frontmattera_od_runnera_ma_problem_o_braku_frontmattera"
+
+[[mutant]]
+plik = "src/cockpit/services/katalog.py"
+szukaj = "            if not scisle:\n                return None\n            raise BlednySkill("
+zamien = "            if False:\n                return None\n            raise BlednySkill("
+test = "tests/test_katalog_definicji.py::test_skill_niescisly_bez_frontmattera_od_runnera_nie_ma_wiersza_i_jest_pominiety"
+
+# ---- mutanty mutmuta, ktorych zadne wejscie nie odroznia (runda 3) -------------------------
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "frontmatter, brief = podziel_skill(tresc, wiersz.klucz)  # pragma: no mutate"
+zamien = "frontmatter, brief = '', ''  # pragma: no mutate"
+test = "tests/test_skille_api.py::test_szczegoly_skilla_oddaja_frontmatter_i_brief_bajt_w_bajt"
+
+[[rownowazny]]
+plik = "src/cockpit/services/skille_api.py"
+linia_tekst = "frontmatter, brief = podziel_skill(tresc, wiersz.klucz)"
+uzasadnienie = "Drugi argument `podziel_skill` (nazwa katalogu) trafia wylacznie do komunikatu bledu, a w tym miejscu podzial nie moze rzucic: `skill_z_tekstu` wykonal go juz na tym samym tekscie i zwrocil skill (przy bledzie rzuca BlednySkill albo daje None, co obsluguje wczesniejsza gałąź), wiec komunikat nie powstaje dla zadnego wejscia."
+
+[[rownowazny]]
+plik = "src/cockpit/api/schematy.py"
+linia_tekst = "    @classmethod"
+uzasadnienie = "Usuniecie `@classmethod` pod `@field_validator(\"capabilities\")`: pydantic v2 sam owija dekorowana funkcje w classmethod, wiec walidator dziala identycznie dla kazdego wejscia."
+
+[[rownowazny]]
+plik = "src/cockpit/api/schematy.py"
+linia_tekst = "    def _komenda_nie_jest_samymi_bialymi_znakami("
+uzasadnienie = "Nazwa metody walidatora nie ma znaczenia: pydantic rejestruje dekorowana funkcje po dekoratorze (pole `capabilities`), nie po nazwie, a nic w kodzie nie odwoluje sie do niej po nazwie, wiec zadne wejscie nie odroznia innej nazwy."
+
+[[rownowazny]]
+plik = "src/cockpit/api/schematy.py"
+linia_tekst = ") -> dict[str, str | None]:"
+uzasadnienie = "Adnotacja zwracanego typu walidatora jest tylko podpowiedzia dla czlowieka i mypy: pydantic jej nie czyta ani nie egzekwuje w czasie dzialania, wiec zadne wejscie nie odroznia innej adnotacji (zwracana wartosc ma wiersz [[mutant]] `return {}`)."
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    consumes: list[str] | None   # null przy problemie: brak pomiaru, nie pusta lista"
+zamien = "    consumes: list[str]   # null przy problemie: brak pomiaru, nie pusta lista"
+test = "tests/test_skille_api.py::test_skill_z_bledem_jest_na_liscie_jako_problem_a_pozostale_skille_dalej_sa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "\"consumes\": w.consumes,"
+zamien = "\"consumes\": w.consumes or [],"
+test = "tests/test_skille_api.py::test_skill_z_bledem_jest_na_liscie_jako_problem_a_pozostale_skille_dalej_sa"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    produces: list[str] | None\n    zakres: ZakresSkilla\n    problem: str | None"
+zamien = "    produces: list[str]\n    zakres: ZakresSkilla\n    problem: str | None"
+test = "tests/test_skille_api.py::test_skill_z_bledem_jest_na_liscie_jako_problem_a_pozostale_skille_dalej_sa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "\"produces\": w.produces,"
+zamien = "\"produces\": w.produces or [],"
+test = "tests/test_skille_api.py::test_skill_z_bledem_jest_na_liscie_jako_problem_a_pozostale_skille_dalej_sa"

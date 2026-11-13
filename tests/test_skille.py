@@ -17,6 +17,7 @@ from cockpit.services.skills import (
     Rejestr,
     Skill,
     materializuj,
+    podziel_skill,
     rozstrzygnij_rejestr,
     wczytaj_skill,
     zapisz_skill,
@@ -1417,3 +1418,247 @@ def test_klucz_niebedacy_napisem_w_skillu_konwencyjnym_z_rola_nie_daje_surowego_
     )
 
     assert set(rozstrzygnij_rejestr(repo, dom).skille) == {"wlasny"}
+
+
+# --- HAR-180: parsowanie z tekstu stosuje te same reguly co parsowanie z pliku ----------------
+
+
+def _skill_z_tekstu(tekst: str, katalog: str, *, scisle: bool = True):
+    from cockpit.services.skills import skill_z_tekstu
+
+    return skill_z_tekstu(tekst, katalog, scisle=scisle)
+
+
+def _plik_z_tekstem(zrodlo: Path, katalog: str, tekst: str) -> Path:
+    plik = zrodlo / katalog / "SKILL.md"
+    plik.parent.mkdir(parents=True, exist_ok=True)
+    plik.write_bytes(tekst.encode("utf-8"))
+    return plik
+
+
+def _pola(skill: Skill) -> dict:
+    return skill.model_dump(exclude={"katalog"})
+
+
+TEKST_PELNY = (
+    "---\n"
+    "id: pelny\n"
+    "name: Pelny skill\n"
+    "role: reviewer\n"
+    "consumes: [diff.md, plan.md]\n"
+    "produces: [raport.md]\n"
+    "needs: [lint]\n"
+    "verdict:\n"
+    "  pass: [ZGODNY]\n"
+    "  fail: [BLAD]\n"
+    "---\n"
+    "Brief z CRLF\r\n  i spacjami na koncu   \r\n\r\nbez konca linii"
+)
+
+
+def test_skill_z_tekstu_ma_te_same_pola_co_ten_sam_skill_wczytany_z_pliku(tmp_path: Path):
+    plik = _plik_z_tekstem(tmp_path / "skills", "pelny", TEKST_PELNY)
+
+    z_tekstu = _skill_z_tekstu(TEKST_PELNY, "pelny")
+
+    assert _pola(z_tekstu) == _pola(wczytaj_skill(plik))
+    assert z_tekstu.role is Rola.reviewer
+    assert z_tekstu.consumes == ["diff.md", "plan.md"]
+    assert z_tekstu.produces == ["raport.md"]
+    assert z_tekstu.needs == ["lint"]
+    assert z_tekstu.verdict == wczytaj_skill(plik).verdict
+    assert z_tekstu.verdict is not None
+
+
+def test_skill_z_tekstu_oddaje_brief_bajt_w_bajt_wlacznie_z_dalsza_granica_i_bez_konca_linii():
+    tekst = "---\nid: x\nname: X\nrole: author\n---\r\nPierwsza  \r\n---\r\nPo granicy ✓   "
+
+    skill = _skill_z_tekstu(tekst, "x")
+
+    assert skill.brief == "Pierwsza  \r\n---\r\nPo granicy ✓   "
+
+
+def test_skill_z_tekstu_niesie_nazwe_katalogu_jako_katalog_skilla():
+    skill = _skill_z_tekstu("---\nid: x\nname: X\nrole: author\n---\nB\n", "x")
+
+    assert skill.katalog.name == "x"
+
+
+# Przypadki niezalezne od kodu: kazdy musi byc odrzucony tak samo z pliku i z tekstu.
+TEKSTY_ODRZUCANE = {
+    "rola_bez_zapisu_z_dwoma_artefaktami_recenzent": (
+        "---\nid: x\nname: X\nrole: reviewer\nproduces: [a.md, b.md]\n---\nB\n"),
+    "rola_bez_zapisu_z_dwoma_artefaktami_zbierajacy": (
+        "---\nid: x\nname: X\nrole: gatherer\nproduces: [a.md, b.md]\n---\nB\n"),
+    "nieznana_rola": "---\nid: x\nname: X\nrole: czarodziej\n---\nB\n",
+    "brak_nazwy": "---\nid: x\nrole: author\n---\nB\n",
+    "brak_roli": "---\nid: x\nname: X\n---\nB\n",
+    "id_rozne_od_katalogu": "---\nid: inny\nname: X\nrole: author\n---\nB\n",
+    "verdict_bez_produces": (
+        "---\nid: x\nname: X\nrole: author\nverdict:\n  pass: [OK]\n---\nB\n"),
+    "verdict_nie_jest_mapa": (
+        "---\nid: x\nname: X\nrole: author\nproduces: [a.md]\nverdict: tak\n---\nB\n"),
+    "naruszenie_niezmiennika_role_binding": (
+        "---\nid: x\nname: X\nrole: reviewer\nwrite: true\n---\nB\n"),
+    "brak_frontmattera": "Sam brief bez frontmattera\n",
+    "niezamkniety_frontmatter": "---\nid: x\nname: X\nrole: author\nBrief\n",
+    "zly_yaml": "---\nid: x\nname: [niezamkniete\nrole: author\n---\nB\n",
+    "frontmatter_nie_jest_mapa": "---\n- id\n- name\n---\nB\n",
+}
+
+
+@pytest.mark.parametrize("tekst", TEKSTY_ODRZUCANE.values(), ids=TEKSTY_ODRZUCANE.keys())
+def test_tekst_odrzucany_przy_wczytaniu_z_pliku_jest_odrzucany_tak_samo_przy_parsowaniu_z_tekstu(
+    tmp_path: Path, tekst: str
+):
+    plik = _plik_z_tekstem(tmp_path / "skills", "x", tekst)
+    with pytest.raises(BlednySkill) as z_pliku:
+        wczytaj_skill(plik)
+
+    with pytest.raises(BlednySkill) as z_tekstu:
+        _skill_z_tekstu(tekst, "x")
+
+    assert type(z_pliku.value) is BlednySkill
+    assert type(z_tekstu.value) is BlednySkill
+
+
+TEKSTY_PRZYJMOWANE = {
+    "autor_z_dwoma_artefaktami": (
+        "---\nid: x\nname: X\nrole: author\nproduces: [a.md, b.md]\n---\nB\n"),
+    "wykonawca_z_dwoma_artefaktami": (
+        "---\nid: x\nname: X\nrole: executor\nproduces: [a.md, b.md]\n---\nB\n"),
+    "recenzent_z_jednym_artefaktem": (
+        "---\nid: x\nname: X\nrole: reviewer\nproduces: [a.md]\n---\nB\n"),
+    "zbierajacy_bez_artefaktow": "---\nid: x\nname: X\nrole: gatherer\n---\nB\n",
+    "pusty_brief": "---\nid: x\nname: X\nrole: author\n---\n",
+}
+
+
+@pytest.mark.parametrize("tekst", TEKSTY_PRZYJMOWANE.values(), ids=TEKSTY_PRZYJMOWANE.keys())
+def test_tekst_przyjmowany_przy_wczytaniu_z_pliku_daje_te_same_pola_przy_parsowaniu_z_tekstu(
+    tmp_path: Path, tekst: str
+):
+    plik = _plik_z_tekstem(tmp_path / "skills", "x", tekst)
+
+    assert _pola(_skill_z_tekstu(tekst, "x")) == _pola(wczytaj_skill(plik))
+
+
+@pytest.mark.parametrize("rola", ["reviewer", "gatherer"])
+def test_komunikat_roli_bez_zapisu_z_dwoma_artefaktami_jest_ten_sam_z_pliku_i_z_tekstu(
+    tmp_path: Path, rola: str
+):
+    tekst = f"---\nid: dwa\nname: Dwa\nrole: {rola}\nproduces: [a.md, b.md]\n---\nB\n"
+    plik = _plik_z_tekstem(tmp_path / "skills", "dwa", tekst)
+    with pytest.raises(BlednySkill) as z_pliku:
+        wczytaj_skill(plik)
+
+    with pytest.raises(BlednySkill) as z_tekstu:
+        _skill_z_tekstu(tekst, "dwa")
+
+    oczekiwany = f"skill dwa: rola {rola} oddaje jeden artefakt, produces ma 2: a.md, b.md"
+    assert str(z_pliku.value) == oczekiwany
+    assert str(z_tekstu.value) == oczekiwany
+
+
+def test_komunikat_nieznanej_roli_z_tekstu_wskazuje_katalog_a_nie_sciezke_pliku():
+    tekst = "---\nid: zly\nname: Zly\nrole: czarodziej\n---\nB\n"
+
+    with pytest.raises(BlednySkill) as blad:
+        _skill_z_tekstu(tekst, "zly")
+
+    assert str(blad.value) == (
+        "nieznana rola 'czarodziej' w 'zly' (dozwolone: author, reviewer, executor, gatherer)")
+
+
+def test_komunikat_id_roznego_od_katalogu_z_tekstu_wskazuje_katalog_a_nie_sciezke_pliku():
+    tekst = "---\nid: inny\nname: X\nrole: author\n---\nB\n"
+
+    with pytest.raises(BlednySkill) as blad:
+        _skill_z_tekstu(tekst, "zly")
+
+    assert str(blad.value) == "id 'inny' rozni sie od nazwy katalogu 'zly' w 'zly'"
+
+
+def test_zrodlo_niescisle_bez_roli_to_nie_skill_kokpitu_a_nie_blad():
+    assert _skill_z_tekstu("---\nname: Cudzy\n---\nB\n", "cudzy", scisle=False) is None
+
+
+def test_zrodlo_niescisle_z_rola_dostaje_id_i_nazwe_z_nazwy_katalogu():
+    skill = _skill_z_tekstu("---\nrole: executor\n---\nB\n", "konwencja", scisle=False)
+
+    assert (skill.id, skill.name, skill.role) == ("konwencja", "konwencja", Rola.executor)
+
+
+def test_zrodlo_niescisle_z_nieparsowalnym_tekstem_to_nie_skill_kokpitu_a_nie_blad():
+    assert _skill_z_tekstu("Sam brief bez frontmattera\n", "cudzy", scisle=False) is None
+
+
+def test_zrodlo_niescisle_z_rola_ale_naruszeniem_reguly_to_nadal_blad_skilla():
+    tekst = "---\nrole: reviewer\nproduces: [a.md, b.md]\n---\nB\n"
+
+    with pytest.raises(BlednySkill):
+        _skill_z_tekstu(tekst, "konwencja", scisle=False)
+
+
+def test_zrodlo_scisle_z_nieparsowalnym_tekstem_to_blad_skilla_a_nie_brak_skilla():
+    with pytest.raises(BlednySkill):
+        _skill_z_tekstu("Sam brief bez frontmattera\n", "x", scisle=True)
+
+
+def test_komunikat_niepoprawnego_yaml_z_tekstu_wskazuje_katalog_a_nie_sciezke_pliku():
+    with pytest.raises(BlednySkill) as blad:
+        _skill_z_tekstu("---\nid: x\nname: [niezamkniete\nrole: author\n---\nB\n", "x")
+
+    assert str(blad.value).startswith("niepoprawny frontmatter w 'x': ")
+
+
+def test_komunikat_frontmattera_ktory_nie_jest_mapa_z_tekstu_wskazuje_katalog():
+    with pytest.raises(BlednySkill) as blad:
+        _skill_z_tekstu("---\n- id\n- name\n---\nB\n", "x")
+
+    assert str(blad.value) == "frontmatter w 'x' nie jest mapa"
+
+
+def test_komunikat_braku_frontmattera_w_podziale_skilla_wskazuje_katalog():
+    with pytest.raises(BlednySkill) as blad:
+        podziel_skill("Sam brief bez frontmattera\n", "goly")
+
+    assert str(blad.value) == "brak frontmattera w 'goly'"
+
+
+def test_komunikat_niezamknietego_frontmattera_w_podziale_skilla_wskazuje_katalog():
+    with pytest.raises(BlednySkill) as blad:
+        podziel_skill("---\nid: x\nBrief\n", "otwarty")
+
+    assert str(blad.value) == "niezamkniety frontmatter w 'otwarty'"
+
+
+def test_linia_z_myslnikami_i_dopiskiem_nie_zamyka_frontmattera():
+    # `---X` to nie granica: obciecie dopisku przed dopasowaniem zamknęloby blok
+    with pytest.raises(BlednySkill) as blad:
+        podziel_skill("---\nid: x\n---X\nBrief\n", "dopisek")
+
+    assert str(blad.value) == "niezamkniety frontmatter w 'dopisek'"
+
+
+def test_podzial_skilla_oddaje_frontmatter_i_brief_bajt_w_bajt_z_granica_z_koncowymi_spacjami():
+    frontmatter, brief = podziel_skill("---\nid: x\n---  \r\nBrief\n---\n", "x")
+
+    assert (frontmatter, brief) == ("id: x\n", "Brief\n---\n")
+
+
+@pytest.mark.parametrize(
+    ("tekst", "komunikat"),
+    [
+        ("Sam brief bez frontmattera\n", "brak frontmattera w 'moj-skill'"),
+        ("---\nid: x\nname: X\nrole: author\nBrief\n", "niezamkniety frontmatter w 'moj-skill'"),
+    ],
+    ids=["brak_frontmattera", "niezamkniety_frontmatter"],
+)
+def test_skill_z_tekstu_scisle_bez_poprawnego_frontmattera_wskazuje_katalog_w_komunikacie(
+    tekst: str, komunikat: str
+):
+    with pytest.raises(BlednySkill) as e:
+        _skill_z_tekstu(tekst, "moj-skill", scisle=True)
+
+    assert str(e.value) == komunikat

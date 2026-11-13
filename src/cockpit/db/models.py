@@ -269,3 +269,12 @@ class Definicja(Base):
     rola: Mapped[str | None] = mapped_column(String(20), default=None)   # tylko skill
     sciezka: Mapped[str] = mapped_column(String(1024))
     odswiezono_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # HAR-180, tylko skill; brak wartosci to NULL, nigdy [] ani "" (measured_or_null).
+    # Workflow ma wszystkie cztery NULL. `problem` to komunikat BlednySkill: skill zepsuty
+    # ma wiersz (bez roli i list), zeby lista dzialala takze offline.
+    consumes: Mapped[list[str] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, default=None)
+    produces: Mapped[list[str] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True, default=None)
+    zakres: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+    problem: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)

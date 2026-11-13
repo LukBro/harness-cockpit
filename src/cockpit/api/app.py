@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Query, Request, Response
+from fastapi import Path as SciezkaUrl
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +31,8 @@ from sse_starlette.sse import EventSourceResponse
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import (
-    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje, tickety,
+    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
+    skille_api, tickety,
 )
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
@@ -40,6 +42,7 @@ from cockpit.settings import settings
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
+    CapabilitiesProjektu,
     DecyzjaIn,
     DecyzjaOdbioru,
     DecyzjaOdbioruIn,
@@ -50,6 +53,7 @@ from .schematy import (
     KatalogOdswiezony,
     KrokRunu,
     ListaPlikow,
+    ListaSkilli,
     PlikOdczytany,
     PlikZapisany,
     PokrycieRunu,
@@ -59,6 +63,7 @@ from .schematy import (
     RunNaLiscie,
     RunSzczegoly,
     RunUtworzony,
+    SkillSzczegoly,
     SkrotTicketu,
     TicketPobrany,
     Zacommitowano,
@@ -66,6 +71,7 @@ from .schematy import (
     ZdarzenieRunu,
     Zdrowie,
     Zintegrowano,
+    ZmianaProjektu,
     odpowiedzi_bledow,
 )
 from .zaleznosci import (
@@ -630,6 +636,44 @@ async def podlacz_projekt(
     dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)   # przed zapytaniem runnera
     return await projekty.podlacz_projekt(
         s, k.tenant_id, body.runner_id, body.path, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.patch("/api/projects/{project_id}", response_model=CapabilitiesProjektu,
+           responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def zmien_projekt(
+    project_id: Annotated[str, SciezkaUrl(max_length=36)],
+    body: ZmianaProjektu,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    # capabilities to komendy w .cockpit/project.yaml, obok skilli i workflow: edycja definicji
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem runnera
+    return await projekty.zmien_projekt(
+        s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.get("/api/skills", response_model=ListaSkilli,
+         responses=odpowiedzi_bledow(401, 404, 422))
+async def lista_skilli(
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await skille_api.rejestr_projektu(s, k.tenant_id, project)
+
+
+@app.get("/api/skills/{skill_id}", response_model=SkillSzczegoly,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def szczegoly_skilla(
+    skill_id: str,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await skille_api.skill_projektu(
+        s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)
 
 
 @app.get("/api/tickety", response_model=list[SkrotTicketu],
