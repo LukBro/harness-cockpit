@@ -541,3 +541,79 @@ plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
 szukaj = '"status": opis if kod != 2 else "BRAK"'
 zamien = '"status": opis'
 test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zerze_ocenianych_agentow_to_brak_werdyktu"
+
+# =============================================================================
+# stan.py bramki (HAR-169: zapis bramki.json z sesji w worktree)
+# =============================================================================
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'blad(64, "bramki <KEY> <plik>")'
+zamien = 'pass'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_bez_pliku_to_blad_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[None]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (OSError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[[{nazwa: lint}]]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "if not isinstance(bramki, list) or not bramki or not all("
+zamien = "if not bramki or not all("
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[5]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "if not isinstance(bramki, list) or not bramki or not all("
+zamien = "if not isinstance(bramki, list) or not all("
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki2]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki3]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'isinstance(b, dict) and isinstance(b.get("argv"), list) and b["argv"]'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki4]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'isinstance(b, dict) and b.get("nazwa") and b["argv"]'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki6]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki7]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "or not bramki or not all("
+zamien = "or not bramki or not any("
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki8]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'zapisz(os.path.join(os.path.dirname(p), "bramki.json"), bramki)'
+zamien = 'zapisz(os.path.join(os.path.dirname(p), "bramki.json.tmp"), bramki)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "print(f\"BRAMKI: zapisane={len(bramki)}\")\n        return 0"
+zamien = "print(f\"BRAMKI: zapisane={len(bramki)}\")\n        return 1"
+test = "tests/test_skill_praca_ticketu.py::test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow"

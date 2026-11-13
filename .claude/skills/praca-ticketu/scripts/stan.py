@@ -12,6 +12,8 @@ Komendy:
                                            NEEDS WORK, niedostarczona praca); limit 3
   stan.py czas <KEY>                       liczy minuty TM: (koniec - start_tm) - (koniec_zespolu - start_zespolu),
                                            minimum 1; brak znacznika -> wall-clock z adnotacją
+  stan.py bramki <KEY> <plik>              kopiuje listę bramek {nazwa, argv} z pliku JSON do bramki.json
+                                           katalogu stanu (sesja w worktree nie zapisze tam narzędziem pliku)
   stan.py hook                             stan ochrony hooka z markerów ~/.cache/monolynx/hook-active (60 min)
 
 Kody wyjścia:
@@ -177,6 +179,22 @@ def main(a):
             print(f"CZAS-TM: minuty={minuty} metoda=formula")
         else:
             print(f"CZAS-TM: minuty={max(1, round(wall / 60))} metoda=wall-clock")
+        return 0
+    if cmd == "bramki":
+        if len(a) != 3:
+            blad(64, "bramki <KEY> <plik>")
+        try:
+            with open(a[2], encoding="utf-8") as f:
+                bramki = json.load(f)
+        except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError
+            blad(2, f"plik bramek nieczytelny ({a[2]}): {e}")
+        # ten sam kształt, którego wymaga bramka_testow.py - zły plik odrzucony przy zapisie, nie przy bramce
+        if not isinstance(bramki, list) or not bramki or not all(
+                isinstance(b, dict) and b.get("nazwa") and isinstance(b.get("argv"), list) and b["argv"]
+                for b in bramki):
+            blad(2, "bramki muszą być niepustą listą {nazwa, argv}")
+        zapisz(os.path.join(os.path.dirname(p), "bramki.json"), bramki)
+        print(f"BRAMKI: zapisane={len(bramki)}")
         return 0
     blad(64, f"nieznana komenda {cmd}")
 

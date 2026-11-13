@@ -964,3 +964,50 @@ def test_prompt_krytyka_powstaje_po_zielonych_bramkach(ep):
     assert w.kod == 0
     assert w.linie == [str(plik), f"PROMPT-KRYTYKA: kod=0 plik={plik}"]
     assert str(RUBRYKA) in plik.read_text(encoding="utf-8")
+
+
+# stan.py bramki: sesja w worktree nie zapisze bramki.json narzędziem pliku (HAR-169)
+
+
+def test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow(ep):
+    ep.stan_bazowy()
+    w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps([BRAMKA_OK])))
+    assert (w.kod, w.ostatnia) == (0, "BRAMKI: zapisane=1")
+    assert json.loads((ep.kat / "bramki.json").read_text(encoding="utf-8")) == [BRAMKA_OK]
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+
+
+@pytest.mark.parametrize("bramki", [
+    {"nazwa": "lint", "argv": ["ruff"]},          # nie lista
+    5,                                            # nie lista ani obiekt: bez sprawdzenia typu TypeError
+    [],                                           # pusta lista
+    ["lint"],                                     # element nie jest obiektem
+    [{"argv": ["ruff"]}],                         # brak nazwy
+    [{"nazwa": "", "argv": ["ruff"]}],            # pusta nazwa
+    [{"nazwa": "lint", "argv": "ruff check"}],    # argv nie jest listą
+    [{"nazwa": "lint", "argv": []}],              # pusta argv
+    [BRAMKA_OK, {"nazwa": "testy"}],              # jedna zła bramka psuje całą listę
+])
+def test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu(ep, bramki):
+    w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps(bramki)))
+    assert w.kod == 2
+    assert w.stderr.strip() == "stan: bramki muszą być niepustą listą {nazwa, argv}"
+    assert not (ep.kat / "bramki.json").exists()
+
+
+@pytest.mark.parametrize("tresc", [None, "[{nazwa: lint}]", b"\xff\xfe"])
+def test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu(ep, tresc):
+    p = ep.pliki / "b.json"
+    if isinstance(tresc, bytes):
+        p.write_bytes(tresc)
+    elif tresc is not None:
+        p.write_text(tresc, encoding="utf-8")
+    w = ep.skrypt("stan.py", "bramki", KEY, str(p))
+    assert w.kod == 2
+    assert w.stderr.startswith(f"stan: plik bramek nieczytelny ({p}): ")
+    assert not (ep.kat / "bramki.json").exists()
+
+
+def test_bramki_bez_pliku_to_blad_uzycia(ep):
+    w = ep.skrypt("stan.py", "bramki", KEY)
+    assert (w.kod, w.stderr.strip()) == (64, "stan: bramki <KEY> <plik>")
