@@ -550,19 +550,19 @@ test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zerze_ocenianych_ag
 plik = ".claude/skills/praca-ticketu/scripts/stan.py"
 szukaj = 'blad(64, "bramki <KEY> <plik>")'
 zamien = 'pass'
-test = "tests/test_skill_praca_ticketu.py::test_bramki_bez_pliku_to_blad_uzycia"
+test = "tests/test_skill_praca_ticketu.py::test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia[bez_pliku]"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/stan.py"
-szukaj = "except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
-zamien = "except (ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
-test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[None]"
+szukaj = "except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[brak_pliku]"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/stan.py"
-szukaj = "except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
-zamien = "except (OSError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
-test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[[{nazwa: lint}]]"
+szukaj = "except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (OSError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[zly_json]"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/stan.py"
@@ -617,3 +617,15 @@ plik = ".claude/skills/praca-ticketu/scripts/stan.py"
 szukaj = "print(f\"BRAMKI: zapisane={len(bramki)}\")\n        return 0"
 zamien = "print(f\"BRAMKI: zapisane={len(bramki)}\")\n        return 1"
 test = "tests/test_skill_praca_ticketu.py::test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[glebokie_zagniezdzenie]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "if len(a) != 3:\n            blad(64, \"bramki <KEY>"
+zamien = "if len(a) < 3:\n            blad(64, \"bramki <KEY>"
+test = "tests/test_skill_praca_ticketu.py::test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia[nadmiarowy_argument]"

@@ -995,7 +995,8 @@ def test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu(ep, bramki):
     assert not (ep.kat / "bramki.json").exists()
 
 
-@pytest.mark.parametrize("tresc", [None, "[{nazwa: lint}]", b"\xff\xfe"])
+@pytest.mark.parametrize("tresc", [None, "[{nazwa: lint}]", b"\xff\xfe", "[" * 200_000],
+                         ids=["brak_pliku", "zly_json", "zle_utf8", "glebokie_zagniezdzenie"])
 def test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu(ep, tresc):
     p = ep.pliki / "b.json"
     if isinstance(tresc, bytes):
@@ -1008,6 +1009,9 @@ def test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu(ep, tresc):
     assert not (ep.kat / "bramki.json").exists()
 
 
-def test_bramki_bez_pliku_to_blad_uzycia(ep):
-    w = ep.skrypt("stan.py", "bramki", KEY)
+@pytest.mark.parametrize("nadmiar", [False, True], ids=["bez_pliku", "nadmiarowy_argument"])
+def test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia(ep, nadmiar):
+    a = [ep.plik("b.json", json.dumps([BRAMKA_OK])), "nadmiar"] if nadmiar else []
+    w = ep.skrypt("stan.py", "bramki", KEY, *a)
     assert (w.kod, w.stderr.strip()) == (64, "stan: bramki <KEY> <plik>")
+    assert not (ep.kat / "bramki.json").exists()

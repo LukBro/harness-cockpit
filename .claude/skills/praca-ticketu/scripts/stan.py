@@ -186,7 +186,7 @@ def main(a):
         try:
             with open(a[2], encoding="utf-8") as f:
                 bramki = json.load(f)
-        except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError
+        except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError
             blad(2, f"plik bramek nieczytelny ({a[2]}): {e}")
         # ten sam kształt, którego wymaga bramka_testow.py - zły plik odrzucony przy zapisie, nie przy bramce
         if not isinstance(bramki, list) or not bramki or not all(
