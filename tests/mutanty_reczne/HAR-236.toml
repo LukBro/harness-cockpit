@@ -3036,3 +3036,117 @@ plik = "tools/bramki_lokalne.sh"
 szukaj = "set -m\ntrap 'przerwij 143' TERM\ntrap 'przerwij 130' INT\n\n"
 zamien = "trap 'przerwij 130' INT\nset -m\ntrap 'przerwij 143' TERM\n\n"
 test = "tests/test_bramki_lokalne.py::test_trapy_przerwania_sa_w_pliku_przed_startem_obu_bramek"
+
+# HAR-236, decyzja strażnika (opcja A): test-strażnik wykluczeń testów z mutmuta.
+
+# (a) pusta lista
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "    if not argumenty:\n"
+zamien = "    if False:\n"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_pusta_lista_wykluczen_to_blad_a_nie_brak_problemow"
+
+# argument inny niz --ignore
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "if not argument.startswith(PREFIKS):"
+zamien = "if False:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_argument_inny_niz_ignore_to_blad"
+
+# (a) plik nie istnieje
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "if not plik.is_file():"
+zamien = "if False:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczenie_nieistniejacego_pliku_to_blad"
+
+# (b) import zrodla
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "        if importy:\n"
+zamien = "        if False:\n"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_na_poziomie_modulu]"
+
+# (b) import wewnatrz funkcji (caly AST)
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "    for wezel in ast.walk(drzewo):"
+zamien = "    for wezel in ast.iter_child_nodes(drzewo):"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_wewnatrz_funkcji]"
+
+# (b) from-import
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "            wynik.add(wezel.module.split(\".\")[0])"
+zamien = "            pass"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[from_import]"
+
+# (b) pakiet z kropka
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "wynik |= {alias.name.split(\".\")[0] for alias in wezel.names}"
+zamien = "wynik |= {alias.name for alias in wezel.names}"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_na_poziomie_modulu]"
+
+# (b) import wzgledny pomijany
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "wezel.level == 0 and "
+zamien = ""
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_import_wzgledny_i_inne_pakiety_nie_sa_importem_kodu_zrodlowego"
+
+# (b) element zbioru cockpit
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "PAKIETY_ZRODLA = {\"cockpit\", \"runner\"}"
+zamien = "PAKIETY_ZRODLA = {\"runner\"}"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[import_na_poziomie_modulu]"
+
+# (b) element zbioru runner
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "PAKIETY_ZRODLA = {\"cockpit\", \"runner\"}"
+zamien = "PAKIETY_ZRODLA = {\"cockpit\"}"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_importujacy_kod_zrodlowy_to_blad[from_import]"
+
+# (c) conftest tylko gdy importuje zrodlo
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "if _importy(drzewo_conftest) & PAKIETY_ZRODLA:"
+zamien = "if True:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_fixture_z_conftestu_bez_importu_zrodla_nie_jest_bledem"
+
+# (c) fixture z conftestu
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "for fixture in sorted(_fixtury(drzewo_conftest) & uzyte):"
+zamien = "for fixture in []:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_uzywajacy_fixture_z_conftestu_importujacego_zrodlo_to_blad"
+
+# (c) rozpoznanie fixture
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "and any(\"fixture\" in ast.unparse(d) for d in f.decorator_list)"
+zamien = "and False"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_wykluczony_plik_uzywajacy_fixture_z_conftestu_importujacego_zrodlo_to_blad"
+
+# (c) tylko uzyte fixture
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "_fixtury(drzewo_conftest) & uzyte"
+zamien = "_fixtury(drzewo_conftest)"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_czysty_plik_bez_importu_zrodla_i_bez_skazonej_fixture_jest_poprawnym_wykluczeniem"
+
+# (c) conftest katalogow nadrzednych
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "        for katalog in plik.parents:"
+zamien = "        for katalog in [plik.parent]:"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_conftest_z_katalogu_nadrzednego_tez_jest_sprawdzany"
+
+# (c) zatrzymanie na korzeniu
+[[mutant]]
+plik = "tests/test_testy_wykluczone_z_mutmuta.py"
+szukaj = "            if katalog == korzen:\n                break"
+zamien = "            pass"
+test = "tests/test_testy_wykluczone_z_mutmuta.py::test_conftest_powyzej_korzenia_repozytorium_nie_jest_sprawdzany"

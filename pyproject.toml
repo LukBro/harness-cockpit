@@ -109,3 +109,17 @@ also_copy = [
   # bez niego faza statystyk mutmuta pada (mutation-main po merge #142).
   ".gitignore",
 ]
+# HAR-236: pliki bez powiazania z funkcja z src/ w statystykach mutmuta nie zabija zadnego mutanta,
+# a zajmowaly ok. 70% fazy statystyk; pilnuje test_testy_wykluczone_z_mutmuta_*.
+pytest_add_cli_args_test_selection = [
+  "--ignore=tests/test_silnik_bez_zapisu_gita.py",
+  "--ignore=tests/test_mutanty_reczne.py",
+  "--ignore=tests/test_testy_pelne.py",
+  "--ignore=tests/test_bramki_lokalne.py",
+  "--ignore=tests/test_workflow_mutacje.py",
+  "--ignore=tests/test_wymagana_baza.py",
+  "--ignore=tests/test_mutanty_zmian.py",
+  "--ignore=tests/test_workflow_straz_sciezek.py",
+  "--ignore=tests/test_demo_szkielet.py",
+  "--ignore=tests/test_procesy_testowe.py",
+]
