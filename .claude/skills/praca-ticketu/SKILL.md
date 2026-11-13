@@ -104,7 +104,9 @@ Po raporcie: `stan.py znacznik <KEY> koniec_researchera` i `log_time` Researcher
 znacznikami). Brak agenta `Explore` -> uproszczoną analizę robisz sam w tym samym formacie raportu
 i opisujesz ją w `log_time` jako "Uproszczona analiza ticketu (bez Researchera)".
 
-Z sekcji "Bramki" raportu zapisz `bramki.json` w katalogu stanu (narzędziem zapisu pliku). To jedyne
+Sekcję "Bramki" raportu zapisz jako JSON w katalogu tymczasowym sesji (nie w worktree: zmieniłby skrót
+diffu), potem `stan.py bramki <KEY> <plik>` przepisuje ją do `bramki.json` w katalogu stanu. Narzędzie
+zapisu pliku tam nie sięga: sesja w worktree ma zapis tylko w swoim drzewie (HAR-169). To jedyne
 miejsce, w którym komendy lintu i testów przechodzą z wiki do wykonania. Sekcja pusta albo brak strony
 `toolchain` -> decyzja człowieka (powód `brak strony toolchain`), bo bez komend nie ma bramki testów.
 
