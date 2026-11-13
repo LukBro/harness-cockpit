@@ -19,9 +19,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -461,18 +462,34 @@ async def decyzja_odbioru(
     return DecyzjaOdbioru(**odbior_dowody.decyzja_z_zdarzenia(zapisane))
 
 
-@app.get("/api/runs/{run_id}/stream", response_model=None,
+def _ramka_runu(ev: dict[str, Any]) -> dict[str, str]:
+    return {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
+
+
+def _po_seq(naglowek: str | None) -> int | None:
+    # isascii: isdecimal() przyjmuje tez cyfry spoza ASCII, a int() je zjada
+    if naglowek is None or not (naglowek.isascii() and naglowek.isdecimal()):
+        return None
+    n = int(naglowek)
+    return n if n <= 2**31 - 1 else None
+
+
+@app.get("/api/runs/{run_id}/events", response_model=None,
          responses=odpowiedzi_bledow(401, 404, 422))
 async def run_stream(
     run_id: str,
     request: Request,
     k: Kontekst = Depends(kontekst_sesji_strumienia),
     identyfikator: str = Depends(identyfikator_sesji),
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> EventSourceResponse:
+    po_seq = _po_seq(last_event_id)
     # cudzy lub nieznany run to 404 przed otwarciem strumienia; sesja bazy
     # tylko na to sprawdzenie, zamknieta przed zwroceniem strumienia (HAR-147)
     async with db_session.SessionLocal() as s:
-        await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+        run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+    # wyluskane przed zamknieciem sesji; do historii wystarcza id i tenant_id
+    run_ref = SimpleNamespace(id=run.id, tenant_id=run.tenant_id)
 
     async def gen():
         q = None
@@ -480,6 +497,15 @@ async def run_stream(
             # Subskrypcja w try, bo niewystartowany generator nie wykona finally.
             q = bus.subscribe_run(run_id)
             # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
+            # a duplikat odcina `ostatnio`. Sesja zamknieta przed czekaniem na kolejke.
+            # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
+            ostatnio = po_seq
+            async with db_session.SessionLocal() as s3:
+                historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
+            for h in historia:
+                ostatnio = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
             ostatnia = time.monotonic()
             while True:
                 if await request.is_disconnected():
@@ -514,7 +540,13 @@ async def run_stream(
                     ostatnia = time.monotonic()
                 if ev is None:
                     continue
-                yield {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
+                # shortcut: jedna liczba ostatnio - zdarzenia poza kolejnoscia seq (6 przed 5 przy
+                # dwoch rownoleglych ingest) gubia mniejszy numer; zbior wyslanych seq, gdy pojawi sie
+                # wiecej niz jeden piszacy runner
+                if ostatnio is not None and ev["seq"] <= ostatnio:
+                    continue
+                ostatnio = ev["seq"]
+                yield _ramka_runu(ev)
         finally:
             if q is not None:
                 bus.unsubscribe_run(run_id, q)

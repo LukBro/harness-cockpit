@@ -514,12 +514,11 @@ async def zapisz_zdarzenie(
     )
 
 
-async def zdarzenia_runu(s: AsyncSession, run: Run) -> list[Event]:
-    return list(
-        (
-            await s.execute(select(Event).where(Event.run_id == run.id).order_by(Event.seq))
-        ).scalars().all()
-    )
+async def zdarzenia_runu(s: AsyncSession, run: Run, po_seq: int | None = None) -> list[Event]:
+    zapytanie = select(Event).where(Event.run_id == run.id, Event.tenant_id == run.tenant_id)
+    if po_seq is not None:
+        zapytanie = zapytanie.where(Event.seq > po_seq)
+    return list((await s.execute(zapytanie.order_by(Event.seq))).scalars().all())
 
 
 _STATUSY_TRWAJACE = (RunStatus.running, RunStatus.waiting)

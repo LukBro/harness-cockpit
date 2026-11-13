@@ -1,0 +1,206 @@
+# Tabela recznych mutantow HAR-106: wznowienie strumienia runu od Last-Event-ID bez duplikatow.
+# run_stream.gen() jest funkcja zagniezdzona w trasie z dekoratorem - mutmut jej nie mutuje;
+# reszta to stale/elementy wyrazen i front (web/src/WidokRunu.tsx).
+
+# --- run_stream: gen() ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "ostatnio = po_seq"
+zamien = "ostatnio = None"
+test = "tests/test_strumien_runu.py::test_wznowiony_strumien_bez_nowych_zdarzen_w_bazie_nie_oddaje_duplikatu_numeru_klienta"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "                ostatnio = h.seq\n"
+zamien = "                pass\n"
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'ev["seq"] <= ostatnio'
+zamien = 'ev["seq"] < ostatnio'
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'if ostatnio is not None and ev["seq"]'
+zamien = 'if ev["seq"]'
+test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "                ostatnio = ev[\"seq\"]\n"
+zamien = "                pass\n"
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
+
+# Historia przed subskrypcja: zdarzenie z okna miedzy odczytem a subskrypcja ginie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """            q = bus.subscribe_run(run_id)
+            # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
+            # a duplikat odcina `ostatnio`. Sesja zamknieta przed czekaniem na kolejke.
+            # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
+            ostatnio = po_seq
+            async with db_session.SessionLocal() as s3:
+                historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
+            for h in historia:
+                ostatnio = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+            ostatnia = time.monotonic()
+"""
+zamien = """            ostatnio = po_seq
+            async with db_session.SessionLocal() as s3:
+                historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
+            for h in historia:
+                ostatnio = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+            q = bus.subscribe_run(run_id)
+            ostatnia = time.monotonic()
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenie_z_okna_miedzy_odczytem_historii_a_szyna_dociera_raz_i_bez_duplikatow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "SimpleNamespace(id=run.id, tenant_id=run.tenant_id)"
+zamien = "SimpleNamespace(id=None, tenant_id=run.tenant_id)"
+test = "tests/test_strumien_runu.py::test_strumien_runu_bez_naglowka_oddaje_cala_historie_z_id_rownym_seq"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "SimpleNamespace(id=run.id, tenant_id=run.tenant_id)"
+zamien = "SimpleNamespace(id=run.id, tenant_id=None)"
+test = "tests/test_strumien_runu.py::test_strumien_runu_bez_naglowka_oddaje_cala_historie_z_id_rownym_seq"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "po_seq = _po_seq(last_event_id)"
+zamien = "po_seq = None"
+test = "tests/test_strumien_runu.py::test_wznowiony_strumien_runu_nie_powtarza_zdarzen_ktore_klient_juz_ma"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'alias="Last-Event-ID"'
+zamien = 'alias="X-Last-Event-ID"'
+test = "tests/test_strumien_runu.py::test_wznowiony_strumien_runu_nie_powtarza_zdarzen_ktore_klient_juz_ma"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "{run_id}/events"
+zamien = "{run_id}/stream"
+test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "zdarzenia_runu(s3, run_ref, po_seq)"
+zamien = "zdarzenia_runu(s3, run_ref, None)"
+test = "tests/test_strumien_runu.py::test_wznowiony_strumien_runu_nie_powtarza_zdarzen_ktore_klient_juz_ma"
+
+# --- _po_seq ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "naglowek is None or "
+zamien = ""
+test = "tests/test_strumien_runu.py::test_strumien_runu_bez_naglowka_oddaje_cala_historie_z_id_rownym_seq"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "naglowek.isascii() and "
+zamien = ""
+test = "tests/test_strumien_runu.py::test_niepoprawny_naglowek_wznowienia_wolany_wprost_to_cala_historia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "naglowek.isdecimal()"
+zamien = "True"
+test = "tests/test_strumien_runu.py::test_niepoprawny_naglowek_wznowienia_to_cala_historia_a_nie_blad"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "n <= 2**31 - 1"
+zamien = "n <= 2**32"
+test = "tests/test_strumien_runu.py::test_naglowek_wiekszy_od_int32_o_jeden_oddaje_cala_historie"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "n <= 2**31 - 1"
+zamien = "n < 2**31 - 1"
+test = "tests/test_strumien_runu.py::test_naglowek_wznowienia_rowny_najwiekszej_liczbie_int32_jest_przyjety_a_wiekszy_odrzucony"
+
+# --- _ramka_runu ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'str(ev["seq"])'
+zamien = 'str(ev["seq"] + 1)'
+test = "tests/test_strumien_runu.py::test_strumien_runu_bez_naglowka_oddaje_cala_historie_z_id_rownym_seq"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '"event": "run"'
+zamien = '"event": "xrun"'
+test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"
+
+# --- zdarzenia_runu ---
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "select(Event).where(Event.run_id == run.id, Event.tenant_id == run.tenant_id)"
+zamien = "select(Event).where(Event.run_id == run.id)"
+test = "tests/test_strumien_runu.py::test_strumien_runu_nie_oddaje_zdarzen_innego_zespolu_o_tym_samym_run_id"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "Event.seq > po_seq"
+zamien = "Event.seq >= po_seq"
+test = "tests/test_strumien_runu.py::test_odczyt_historii_po_numerze_zero_zwraca_wszystko_a_po_numerze_tylko_nowsze"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "if po_seq is not None:"
+zamien = "if po_seq:"
+test = "tests/test_strumien_runu.py::test_odczyt_historii_po_numerze_zero_pomija_zdarzenie_o_numerze_zero"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = "zapytanie.order_by(Event.seq)"
+zamien = "zapytanie"
+test = "tests/test_strumien_runu.py::test_historia_strumienia_runu_idzie_rosnaco_po_seq_niezaleznie_od_kolejnosci_zapisu"
+
+# --- front ---
+
+[[mutant]]
+plik = "web/src/WidokRunu.tsx"
+szukaj = "encodeURIComponent(runId)}/events`"
+zamien = "encodeURIComponent(runId)}/stream`"
+test = "tests/e2e/test_logowanie_w_przegladarce.py::test_wygasla_sesja_przy_otwartym_widoku_runu_pokazuje_komunikat_logowania_i_nie_ponawia_strumienia"
+
+# --- run_stream: linie kodu 3 (dekorator trasy) ---
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """        run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+    # wyluskane przed zamknieciem sesji"""
+zamien = """        run = await uslugi.run_dla_najemcy(s, run_id, run_id)
+    # wyluskane przed zamknieciem sesji"""
+test = "tests/test_strumien_runu.py::test_strumien_runu_bez_naglowka_oddaje_cala_historie_z_id_rownym_seq"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                if ostatnio is not None and ev["seq"] <= ostatnio:
+                    continue
+"""
+zamien = """                if ostatnio is not None and ev["seq"] <= ostatnio:
+                    pass
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                yield _ramka_runu(ev)
+"""
+zamien = """                continue
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"

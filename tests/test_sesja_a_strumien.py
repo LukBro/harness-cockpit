@@ -157,7 +157,7 @@ async def _wyloguj_wszedzie(swiat, user) -> None:
 
 
 def _sciezka(swiat) -> str:
-    return f"/api/runs/{swiat.run}/stream"
+    return f"/api/runs/{swiat.run}/events"
 
 
 # --- sesja uniewazniona przy otwartym strumieniu ------------------------------------------------
