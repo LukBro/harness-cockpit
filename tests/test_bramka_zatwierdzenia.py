@@ -133,7 +133,7 @@ async def test_step_waiting_niesie_run_krok_agenta_i_informacje_na_co_czeka(tmp_
 
     assert jedno(zdarzenia, "step_waiting", "a") == {
         "kind": "step_waiting", "run_id": RUN_ID, "step_id": "a", "agent_id": "a",
-        "text": TEKST_CZEKANIA,
+        "text": TEKST_CZEKANIA, "attempt": 1,
     }
 
 

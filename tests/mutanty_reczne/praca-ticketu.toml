@@ -1,0 +1,649 @@
+# Tabela recznych mutantow PR #176 (skill praca-ticketu): bramki w .claude/skills/praca-ticketu/scripts
+# sa poza `source_paths` mutmuta. Wiersz: gałąź kodu wyjścia != 0 (albo element, od którego zależy
+# wynik bramki) | mutacja | test w tests/test_skill_praca_ticketu.py, który po mutacji oblewa.
+
+# =============================================================================
+# bramka_commita.py
+# =============================================================================
+
+# Brak argumentów: bez `not a` leci IndexError (traceback, kod 1 zamiast 64).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'if not a or a[0].startswith("-"):'
+zamien = 'if a[0].startswith("-"):'
+test = "tests/test_skill_praca_ticketu.py::test_bramka_commita_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+# Opcja zamiast klucza ticketu: bez warunku "--bez-wspolautora" byłby kluczem (kod 2 zamiast 64).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'if not a or a[0].startswith("-"):'
+zamien = 'if not a:'
+test = "tests/test_skill_praca_ticketu.py::test_bramka_commita_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "nieznany argument {a[i]}\", file=sys.stderr)\n            return 64"
+zamien = "nieznany argument {a[i]}\", file=sys.stderr)\n            return 0"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_commita_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "if \"--komunikat\" not in opcje:\n        return 64"
+zamien = "if \"--komunikat\" not in opcje:\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_commita_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "print(\"COMMIT-GATE: kod=2\")\n        return 2"
+zamien = "print(\"COMMIT-GATE: kod=2\")\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_commita_bez_pliku_komunikatu_to_brak_dowodu"
+
+# Bramka zamknięcia kod 1 (zmiana po ocenie) blokuje commit.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "if r.returncode != 0:\n        braki.append(f\"bramka_zamkniecia kod"
+zamien = "if r.returncode not in (0, 1):\n        braki.append(f\"bramka_zamkniecia kod"
+test = "tests/test_skill_praca_ticketu.py::test_commit_po_zmianie_kodu_bez_ponownej_oceny_nie_przechodzi_bramki"
+
+# Bramka zamknięcia kod 5 (decyzja człowieka) blokuje auto-commit.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "if r.returncode != 0:\n        braki.append(f\"bramka_zamkniecia kod"
+zamien = "if r.returncode == 1:\n        braki.append(f\"bramka_zamkniecia kod"
+test = "tests/test_skill_praca_ticketu.py::test_commit_przy_zamknieciu_na_decyzje_czlowieka_nie_przechodzi_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'dozwolone = set(st.get("pliki_tm") or [])'
+zamien = "dozwolone = set()"
+test = "tests/test_skill_praca_ticketu.py::test_plik_team_managera_w_indeksie_przechodzi_bramke"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "dozwolone |= set(pl)"
+zamien = "dozwolone |= set()"
+test = "tests/test_skill_praca_ticketu.py::test_commit_zgodny_z_regulami_przechodzi_bramke"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'braki.append("indeks pusty")'
+zamien = "pass"
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_pustym_indeksem_nie_przechodzi_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "if x in przed:"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_plikiem_sprzed_startu_nie_przechodzi_bramki_nawet_gdy_jest_w_przydziale"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "elif x not in dozwolone:"
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_plikiem_spoza_przydzialu_nie_przechodzi_bramki"
+
+# Pierwsza linia bez klucza ticketu.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "if not msg.strip().splitlines() or not msg.strip().splitlines()[0].startswith(key):"
+zamien = "if not msg.strip().splitlines():"
+test = "tests/test_skill_praca_ticketu.py::test_komunikat_bez_klucza_ticketu_w_pierwszej_linii_nie_przechodzi_bramki"
+
+# Pusty komunikat: bez strażnika IndexError (traceback zamiast linii BRAK).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "if not msg.strip().splitlines() or not msg.strip().splitlines()[0].startswith(key):"
+zamien = "if not msg.strip().splitlines()[0].startswith(key):"
+test = "tests/test_skill_praca_ticketu.py::test_komunikat_bez_klucza_ticketu_w_pierwszej_linii_nie_przechodzi_bramki"
+
+# Linia współautora w środku komunikatu (flaga m).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = '(?im)^co-authored-by:'
+zamien = '(?i)^co-authored-by:'
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_linia_wspolautora_nie_przechodzi_bramki"
+
+# Wielkość liter (flaga i).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = '(?im)^co-authored-by:'
+zamien = '(?m)^co-authored-by:'
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_linia_wspolautora_nie_przechodzi_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'if opcje.get("bez") and re.search('
+zamien = 'if re.search('
+test = "tests/test_skill_praca_ticketu.py::test_linia_wspolautora_bez_opcji_zakazu_nie_blokuje_commita"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'braki.append("komunikat zawiera Co-Authored-By (zakazane przez projekt)")'
+zamien = "pass"
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_linia_wspolautora_nie_przechodzi_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'if "--autor-email" in opcje and email != opcje["--autor-email"]:'
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_commit_przy_innym_user_email_niz_wymagany_nie_przechodzi_bramki"
+
+# Brak user.email to pusty adres (kod 1), nie brak dowodu (kod 2).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "except RuntimeError:\n            email = \"\""
+zamien = "except OSError:\n            email = \"\""
+test = "tests/test_skill_praca_ticketu.py::test_commit_bez_ustawionego_user_email_nie_przechodzi_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = 'if branch == st.get("baza"):'
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_commit_na_branchu_bazowym_nie_przechodzi_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_commita.py"
+szukaj = "kod = 1 if braki else 0"
+zamien = "kod = 0"
+test = "tests/test_skill_praca_ticketu.py::test_commit_z_plikiem_spoza_przydzialu_nie_przechodzi_bramki"
+
+# =============================================================================
+# bramka_zamkniecia.py
+# =============================================================================
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "if len(a) != 1:"
+zamien = "if len(a) > 1:"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_zamkniecia_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "if len(a) != 1:"
+zamien = "if len(a) < 1:"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_zamkniecia_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "print(\"ZAMKNIECIE: kod=2 skrot=-\")\n        return 2"
+zamien = "print(\"ZAMKNIECIE: kod=2 skrot=-\")\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_bez_stanu_epizodu_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "if not wymagane:"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_bez_zadnej_bramki_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'braki.append(f"bramka {n}: nie uruchomiona")'
+zamien = "pass"
+test = "tests/test_skill_praca_ticketu.py::test_nieuruchomiona_bramka_blokuje_zamkniecie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif b.get("skrot_diffu") != teraz:'
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_gdy_skrot_bramki_rozni_sie_od_biezacego_diffu_nie_przechodzi"
+
+# Bramka `reczne` potwierdzona dla bieżącego diffu przechodzi.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif b.get("wynik") == "reczne" and st.get("reczne_potwierdzone") == teraz:'
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_do_recznego_sprawdzenia_potwierdzona_dla_biezacego_diffu_pozwala_zamknac"
+
+# Potwierdzenie ręczne musi dotyczyć bieżącego diffu.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif b.get("wynik") == "reczne" and st.get("reczne_potwierdzone") == teraz:'
+zamien = 'elif b.get("wynik") == "reczne":'
+test = "tests/test_skill_praca_ticketu.py::test_potwierdzenie_reczne_dla_innego_diffu_nie_otwiera_zamkniecia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif b.get("wynik") != "zielony":'
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_niezielona_bez_potwierdzenia_blokuje_zamkniecie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'braki.append("krytyk: brak werdyktu")'
+zamien = "pass"
+test = "tests/test_skill_praca_ticketu.py::test_brak_werdyktu_krytyka_blokuje_zamkniecie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif w.get("kod") != 0:'
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_ostatni_werdykt_needs_work_blokuje_zamkniecie"
+
+# Werdykt BRAK przy zerze ocenianych agentów (werdykt.py kod 2) blokuje zamknięcie.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif w.get("kod") != 0:'
+zamien = 'elif w.get("kod") == 1:'
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_po_werdykcie_bez_ocenianych_agentow_nie_przechodzi"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif w.get("skrot_diffu") != teraz:'
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_gdy_skrot_werdyktu_rozni_sie_od_biezacego_diffu_nie_przechodzi"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "if not isinstance(kryteria, list):"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_brak_listy_kryteriow_blokuje_zamkniecie"
+
+# Pusta lista kryteriów to ticket bez kryteriów, nie brak listy.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "if not isinstance(kryteria, list):"
+zamien = "if not kryteria:"
+test = "tests/test_skill_praca_ticketu.py::test_ticket_bez_kryteriow_z_pusta_lista_pozwala_zamknac"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'if not isinstance(k, dict) or not isinstance(k.get("zrobione"), bool):'
+zamien = "if not isinstance(k, dict):"
+test = "tests/test_skill_praca_ticketu.py::test_kryterium_bez_decyzji_blokuje_zamkniecie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'if not isinstance(k, dict) or not isinstance(k.get("zrobione"), bool):'
+zamien = 'if not isinstance(k.get("zrobione"), bool):'
+test = "tests/test_skill_praca_ticketu.py::test_kryterium_bez_decyzji_blokuje_zamkniecie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif k["zrobione"] and not str(k.get("dowod") or "").strip():'
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_kryterium_zrobione_bez_dowodu_blokuje_zamkniecie"
+
+# Dowód z samych spacji to brak dowodu.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'elif k["zrobione"] and not str(k.get("dowod") or "").strip():'
+zamien = 'elif k["zrobione"] and not str(k.get("dowod") or ""):'
+test = "tests/test_skill_praca_ticketu.py::test_kryterium_zrobione_bez_dowodu_blokuje_zamkniecie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'if braki and str(st.get("zamkniecie_wyjatek") or "").strip():'
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_wyjatek_czlowieka_przy_niespelnionych_warunkach_daje_zamkniecie_bez_auto_commita"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'if braki and str(st.get("zamkniecie_wyjatek") or "").strip():'
+zamien = 'if str(st.get("zamkniecie_wyjatek") or "").strip():'
+test = "tests/test_skill_praca_ticketu.py::test_wyjatek_czlowieka_przy_spelnionych_warunkach_nie_zmienia_wyniku"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = 'if braki and str(st.get("zamkniecie_wyjatek") or "").strip():'
+zamien = 'if braki and str(st.get("zamkniecie_wyjatek") or ""):'
+test = "tests/test_skill_praca_ticketu.py::test_pusty_wyjatek_czlowieka_nie_otwiera_zamkniecia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_zamkniecia.py"
+szukaj = "kod = 1 if braki else 0"
+zamien = "kod = 0"
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_gdy_skrot_bramki_rozni_sie_od_biezacego_diffu_nie_przechodzi"
+
+# =============================================================================
+# bramka_testow.py
+# =============================================================================
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "print(\"bramka_testow: brak KEY\", file=sys.stderr)\n        return 64"
+zamien = "print(\"bramka_testow: brak KEY\", file=sys.stderr)\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_testow_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "elif len(a) != 1:"
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_testow_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "brak stanu albo bramki.json: {e}\", file=sys.stderr)\n        print(\"BRAMKI: kod=2\")\n        return 2"
+zamien = "brak stanu albo bramki.json: {e}\", file=sys.stderr)\n        print(\"BRAMKI: kod=2\")\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_testow_bez_stanu_epizodu_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "niepustą listą {nazwa, argv}\", file=sys.stderr)\n        return 64"
+zamien = "niepustą listą {nazwa, argv}\", file=sys.stderr)\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_niepoprawna_lista_bramek_to_blad_konfiguracji"
+
+# Pusta lista bramek: bez `not bramki` all() na pustej liście przepuszcza (kod 0 zamiast 64).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "if not isinstance(bramki, list) or not bramki or not all("
+zamien = "if not isinstance(bramki, list) or not all("
+test = "tests/test_skill_praca_ticketu.py::test_niepoprawna_lista_bramek_to_blad_konfiguracji"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "        if not bramki:\n            print(\"BRAMKI: kod=2\")\n            return 2"
+zamien = "        if not bramki:\n            print(\"BRAMKI: kod=2\")\n            return 0"
+test = "tests/test_skill_praca_ticketu.py::test_opcja_tylko_bez_istniejacej_bramki_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "print(f\"bramka_testow: {e}\", file=sys.stderr)\n        print(\"BRAMKI: kod=2\")\n        return 2"
+zamien = "print(f\"bramka_testow: {e}\", file=sys.stderr)\n        print(\"BRAMKI: kod=2\")\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_bramka_testow_z_nieznanym_baseline_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'mapa = {"0": "zielony", "1": "czerwony"}'
+zamien = 'mapa = {"0": "zielony"}'
+test = "tests/test_skill_praca_ticketu.py::test_czerwona_bramka_daje_kod_poprawki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'wynik = mapa.get(str(kod), "brak-dowodu")'
+zamien = 'wynik = mapa.get(str(kod), "zielony")'
+test = "tests/test_skill_praca_ticketu.py::test_kod_wyjscia_spoza_mapy_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'kod, wynik = "timeout", "brak-dowodu"'
+zamien = 'kod, wynik = "timeout", "zielony"'
+test = "tests/test_skill_praca_ticketu.py::test_przekroczony_limit_czasu_bramki_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'kod, wynik = "start", "brak-dowodu"'
+zamien = 'kod, wynik = "start", "zielony"'
+test = "tests/test_skill_praca_ticketu.py::test_niewystartowana_komenda_bramki_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "if wynik not in (\"zielony\", \"czerwony\", \"reczne\"):\n            wynik = \"brak-dowodu\""
+zamien = "if False:\n            wynik = \"brak-dowodu\""
+test = "tests/test_skill_praca_ticketu.py::test_kod_zmapowany_na_nieznany_wynik_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "if po != przed:"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_zmiana_diffu_w_trakcie_przebiegu_to_brak_dowodu"
+
+# Git niesprawny po przebiegu: bez obsługi RuntimeError traceback (kod 1) zamiast brak-dowodu.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = "except (RuntimeError, OSError, subprocess.TimeoutExpired):\n        po = None"
+zamien = "except (OSError, subprocess.TimeoutExpired):\n        po = None"
+test = "tests/test_skill_praca_ticketu.py::test_git_niesprawny_po_przebiegu_to_brak_dowodu"
+
+# Priorytet 2 > 1 > 3 > 0.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'kod = 2 if "brak-dowodu" in wyniki else 1 if "czerwony" in wyniki else 3 if "reczne" in wyniki else 0'
+zamien = 'kod = 1 if "czerwony" in wyniki else 2 if "brak-dowodu" in wyniki else 3 if "reczne" in wyniki else 0'
+test = "tests/test_skill_praca_ticketu.py::test_kod_wyjscia_bramek_ma_priorytet_brak_dowodu_czerwony_reczne"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'kod = 2 if "brak-dowodu" in wyniki else 1 if "czerwony" in wyniki else 3 if "reczne" in wyniki else 0'
+zamien = 'kod = 2 if "brak-dowodu" in wyniki else 3 if "reczne" in wyniki else 1 if "czerwony" in wyniki else 0'
+test = "tests/test_skill_praca_ticketu.py::test_kod_wyjscia_bramek_ma_priorytet_brak_dowodu_czerwony_reczne"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'kod = 2 if "brak-dowodu" in wyniki else 1 if "czerwony" in wyniki else 3 if "reczne" in wyniki else 0'
+zamien = 'kod = 2 if "brak-dowodu" in wyniki else 1 if "czerwony" in wyniki else 0'
+test = "tests/test_skill_praca_ticketu.py::test_kod_zmapowany_na_reczne_daje_kod_recznego_sprawdzenia"
+
+# =============================================================================
+# werdykt.py
+# =============================================================================
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if len(a) < 3:"
+zamien = "if len(a) < 2:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "elif len(a) not in (3,):"
+zamien = "elif False:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "print(\"WERDYKT: kod=2 status=BRAK minimum=-\")\n        return 2"
+zamien = "print(\"WERDYKT: kod=2 status=BRAK minimum=-\")\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
+
+# Każdy typ w krotce `except` stanu: bez niego traceback (kod 1) zamiast kodu 2.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+zamien = "except (ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+zamien = "except (OSError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+zamien = "except (OSError, ValueError, TypeError, RuntimeError, AttributeError) as e:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+zamien = "except (OSError, ValueError, KeyError, RuntimeError, AttributeError) as e:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+zamien = "except (OSError, ValueError, KeyError, TypeError, RuntimeError) as e:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "    else:\n        return 64"
+zamien = "    else:\n        return 0"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zlym_wywolaniu_konczy_sie_bledem_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = 'return 2, {}, [], "brak bloku **Code Review**"'
+zamien = 'return 0, {}, [], "APPROVED"'
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_bez_bloku_code_review_to_brak_werdyktu"
+
+# PR #176 (falszywie-zielone): zero ocenianych agentów to brak werdyktu, nie APPROVED.
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "    if not agenci:\n"
+zamien = "    if False:\n"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zerze_ocenianych_agentow_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "    if not agenci:\n"
+zamien = "    if False:\n"
+test = "tests/test_skill_praca_ticketu.py::test_zamkniecie_po_werdykcie_bez_ocenianych_agentow_nie_przechodzi"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = '"brak ocenianych agentów (pusty przydzial w stan.json)"'
+zamien = '"XXbrak ocenianych agentów (pusty przydzial w stan.json)XX"'
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zerze_ocenianych_agentow_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "    if brak:\n"
+zamien = "    if False:\n"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_bez_oceny_ktoregos_agenta_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "ponizej = [a for a in agenci if oceny[a] < prog]"
+zamien = "ponizej = [a for a in agenci if oceny[a] < 0]"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_ponizej_progu_to_needs_work_z_regula"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if all(blokady_tylko.get(a) for a in ponizej):"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_ponizej_progu_tylko_przez_blokady_zewnetrzne_to_blokada"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if all(blokady_tylko.get(a) for a in ponizej):"
+zamien = "if any(blokady_tylko.get(a) for a in ponizej):"
+test = "tests/test_skill_praca_ticketu.py::test_blokada_zewnetrzna_jednego_agenta_nie_zwalnia_drugiego_z_poprawki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = 'blokady_tylko[akt] = bool(odj) and all("BLOKADA-ZEWN" in o for o in odj)'
+zamien = 'blokady_tylko[akt] = bool(odj) and any("BLOKADA-ZEWN" in o for o in odj)'
+test = "tests/test_skill_praca_ticketu.py::test_blokada_zewnetrzna_obok_zwyklego_odjecia_to_needs_work"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = 'blokady_tylko[akt] = bool(odj) and all("BLOKADA-ZEWN" in o for o in odj)'
+zamien = 'blokady_tylko[akt] = all("BLOKADA-ZEWN" in o for o in odj)'
+test = "tests/test_skill_praca_ticketu.py::test_ocena_ponizej_progu_bez_wskazanego_odjecia_to_needs_work"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if przeniesione and tekst:"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_przenosi_brakujaca_ocene_z_poprzedniej_rundy"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "prog = int(a[4])"
+zamien = "prog = 82"
+test = "tests/test_skill_praca_ticketu.py::test_prog_z_opcji_zmienia_rozstrzygniecie"
+
+# Werdykt kod 2 zapisany w stanie ze statusem BRAK (bramka zamknięcia czyta ostatni werdykt).
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = '"status": opis if kod != 2 else "BRAK"'
+zamien = '"status": opis'
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_zerze_ocenianych_agentow_to_brak_werdyktu"
+
+# =============================================================================
+# stan.py bramki (HAR-169: zapis bramki.json z sesji w worktree)
+# =============================================================================
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'blad(64, "bramki <KEY> <plik>")'
+zamien = 'pass'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia[bez_pliku]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[brak_pliku]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (OSError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[zly_json]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "if not isinstance(bramki, list) or not bramki or not all("
+zamien = "if not bramki or not all("
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[5]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "if not isinstance(bramki, list) or not bramki or not all("
+zamien = "if not isinstance(bramki, list) or not all("
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki2]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "or not bramki or not all("
+zamien = "or not bramki or not any("
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki8]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'zapisz(os.path.join(os.path.dirname(p), "bramki.json"), bramki)'
+zamien = 'zapisz(os.path.join(os.path.dirname(p), "bramki.json.tmp"), bramki)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "print(f\"BRAMKI: zapisane={len(bramki)}\")\n        return 0"
+zamien = "print(f\"BRAMKI: zapisane={len(bramki)}\")\n        return 1"
+test = "tests/test_skill_praca_ticketu.py::test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "except (OSError, ValueError, RecursionError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+zamien = "except (OSError, ValueError) as e:  # UnicodeDecodeError dziedziczy po ValueError\n            blad(2, f\"plik bramek"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu[glebokie_zagniezdzenie]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = "if len(a) != 3:\n            blad(64, \"bramki <KEY>"
+zamien = "if len(a) < 3:\n            blad(64, \"bramki <KEY>"
+test = "tests/test_skill_praca_ticketu.py::test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia[nadmiarowy_argument]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)'
+zamien = 'b.get("nazwa") and isinstance(b["nazwa"], str)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki3]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)'
+zamien = 'isinstance(b, dict) and isinstance(b["nazwa"], str)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki4]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'isinstance(b, dict) and b.get("nazwa") and isinstance(b["nazwa"], str)'
+zamien = 'isinstance(b, dict) and b.get("nazwa")'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki9]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and "/" not in b["nazwa"]'
+zamien = 'and True'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki10]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'and b["argv"]'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki6]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and isinstance(b.get("argv"), list) and b["argv"]'
+zamien = 'and isinstance(b.get("argv"), list)'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki7]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'and all(isinstance(x, str) for x in b["argv"])'
+zamien = 'and True'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki11]"

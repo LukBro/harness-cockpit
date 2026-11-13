@@ -40,7 +40,18 @@
       "Bash(gh run view:*)",
       "Edit(.claude/agent-memory/**)",
       "Write(.claude/agent-memory/**)",
-      "mcp__monolynx"
+      "mcp__monolynx",
+      "Bash(claude agents)",
+      "Bash(claude agents *)",
+      "Bash(tmux capture-pane *)",
+      "mcp__monolynx-direct__get_ticket",
+      "mcp__monolynx-direct__list_tickets",
+      "mcp__monolynx-direct__list_sprints",
+      "mcp__monolynx-direct__list_pipelines",
+      "mcp__monolynx-direct__list_comments",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(bash tools/oddaj_pr.sh *)"
     ],
     "ask": [
       "Bash(git commit --amend:*)",
@@ -84,6 +95,15 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/straz.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/pytania_w_tle.py\""
           }
         ]
       }

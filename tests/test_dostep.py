@@ -27,6 +27,7 @@ from cockpit.services.dostep import (
     wymagaj,
     zmien_role,
 )
+from cockpit.services import dostep
 from cockpit.services.errors import BladDziedziny, NieZnaleziono, StanNiemozliwy, Zabronione
 
 URL = os.environ.get("COCKPIT_TEST_DATABASE_URL", "")
@@ -753,3 +754,73 @@ async def test_usuniecie_tego_samego_wlasciciela_dwa_razy_drugie_dostaje_nieznan
     assert await _liczba_wlascicieli(maker_pg, t) == 1
     assert await _rola_w_bazie(maker_pg, t, o1) is None
     assert await _rola_w_bazie(maker_pg, t, o2) == OWNER
+
+
+# --- rola czlonka, rola tekstem, dodanie wlasciciela (HAR-187) ---------------------------------
+
+
+async def _rola_czlonka(maker, user_id: str, tenant_id: str) -> RolaWZespole | None:
+    async with maker() as s:
+        return await dostep.rola_czlonka(s, user_id, tenant_id)
+
+
+async def test_rola_czlonka_zwraca_role_z_bazy_dla_czlonka_zespolu(maker):
+    t = await _zespol(maker, "A")
+    admin = await _czlonek(maker, t, ADMIN, "a@przyklad.pl")
+    viewer = await _czlonek(maker, t, VIEWER, "v@przyklad.pl")
+    assert await _rola_czlonka(maker, admin, t) == ADMIN
+    assert await _rola_czlonka(maker, viewer, t) == VIEWER
+
+
+async def test_rola_czlonka_zespolu_a_nie_jest_widoczna_w_zespole_b(maker):
+    a = await _zespol(maker, "A")
+    b = await _zespol(maker, "B")
+    jan = await _czlonek(maker, a, ADMIN, "jan@przyklad.pl")
+    await _czlonek(maker, b, OWNER, "ewa@przyklad.pl")
+    assert await _rola_czlonka(maker, jan, b) is None
+
+
+async def test_rola_czlonka_to_rola_w_podanym_zespole_gdy_uzytkownik_jest_w_dwoch(maker):
+    a = await _zespol(maker, "A")
+    b = await _zespol(maker, "B")
+    jan = await _czlonek(maker, a, ADMIN, "jan@przyklad.pl")
+    async with maker() as s:
+        s.add(Membership(tenant_id=b, user_id=jan, rola=VIEWER))
+        await s.commit()
+    assert await _rola_czlonka(maker, jan, a) == ADMIN
+    assert await _rola_czlonka(maker, jan, b) == VIEWER
+
+
+async def test_rola_czlonka_nie_zwraca_roli_innego_uzytkownika_tego_samego_zespolu(maker):
+    a = await _zespol(maker, "A")
+    b = await _zespol(maker, "B")
+    await _czlonek(maker, a, OWNER, "jan@przyklad.pl")
+    obcy = await _czlonek(maker, b, MEMBER, "ewa@przyklad.pl")
+    assert await _rola_czlonka(maker, obcy, a) is None
+    assert await _rola_czlonka(maker, "nie-ma-takiego-uzytkownika", a) is None
+
+
+@pytest.mark.parametrize("rola", [OWNER, ADMIN, MEMBER, VIEWER], ids=lambda r: r.value)
+def test_rola_tekstem_to_nazwa_roli_z_kontekstu(rola):
+    assert dostep.rola_tekstem(_ctx("t", "u", rola)) == rola.value
+
+
+def test_rola_tekstem_viewera_to_viewer_a_nie_domyslny_owner():
+    assert dostep.rola_tekstem(_ctx("t", "u", VIEWER)) == "viewer"
+
+
+async def test_dodany_wlasciciel_ma_w_bazie_czlonkostwo_z_rola_owner_we_wlasciwym_zespole(maker):
+    a = await _zespol(maker, "A")
+    b = await _zespol(maker, "B")
+    async with maker() as s:
+        u = User(email="nowy@przyklad.pl", haslo_skrot="argon2-skrot")
+        s.add(u)
+        await s.flush()
+        assert dostep.dodaj_wlasciciela(s, a, u.id) is None
+        await s.commit()
+        user_id = u.id
+    assert await _rola_w_bazie(maker, a, user_id) == OWNER
+    assert await _rola_w_bazie(maker, b, user_id) is None
+    async with maker() as s:
+        wiersze = (await s.execute(select(Membership.tenant_id, Membership.user_id))).all()
+    assert [tuple(w) for w in wiersze] == [(a, user_id)]

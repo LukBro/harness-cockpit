@@ -483,6 +483,8 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("POST", "/api/katalog/odswiez"),
         ("GET", "/api/projects"),
         ("POST", "/api/projects"),
+        ("GET", "/api/tickety"),
+        ("GET", "/api/tickety/{id_ticketu:path}"),
         ("POST", "/api/konto/rejestracja"),
         ("POST", "/api/konto/logowanie"),
         ("GET", "/api/konto/ja"),

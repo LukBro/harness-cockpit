@@ -42,9 +42,6 @@ from collections.abc import Mapping
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle agent ma na SIGTERM, potem SIGKILL
 KOD_BLEDU_STARTU = 127
 KROK_PETLI_S = 0.05
-# Karencja liczona probami, nie porownaniem zegara: `<` i `<=` na czasie ciaglym sa
-# nieodroznialne, wiec mutant takiego porownania przezywalby kazdy test.
-PROBY_KARENCJI = round(CZAS_NA_ZAKONCZENIE_S / KROK_PETLI_S)
 ROZMIAR_ODCZYTU = 4096
 FD_WEJSCIA = 0  # potok od runnera: jego EOF oznacza smierc runnera
 # Runner dopisuje katalog kokpitu do PYTHONPATH straznika (zeby ten importowal kod
@@ -102,9 +99,14 @@ def _zakoncz_grupe(agent: subprocess.Popen) -> int:
     """SIGTERM do grupy, po karencji SIGKILL. Zwraca kod wyjscia agenta."""
     pgid = agent.pid  # start_new_session: pgid == pid lidera
     _wyslij_sygnal(pgid, signal.SIGTERM)
-    for _ in range(PROBY_KARENCJI):
+    # Termin na zegarze, nie liczba prob: pod obciazeniem kazdy sen trwa dluzej niz
+    # KROK_PETLI_S, wiec karencja liczona probami rosla w czasie zegarowym ponad limit runnera.
+    termin = time.monotonic() + CZAS_NA_ZAKONCZENIE_S
+    while True:
         agent.poll()  # odbiera lidera, inaczej zombie trzyma grupe przy zyciu
         if not _grupa_istnieje(pgid):
+            break
+        if time.monotonic() >= termin:
             break
         time.sleep(KROK_PETLI_S)
     # takze po smierci lidera: wnuki mogly przezyc SIGTERM
