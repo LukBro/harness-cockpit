@@ -745,3 +745,77 @@ async def test_realne_polecenie_agenta_ma_settings_a_plik_hookow_kroku_lezy_poza
     polecenie_strazy = shlex.split(czesc_strazy)
     assert polecenie_strazy[polecenie_strazy.index("--rola") + 1] == rola.value
     assert polecenie_strazy[polecenie_strazy.index("--worktree") + 1] == str(worktree)
+
+
+# --- sekcja `kontekst` (HAR-169) ----------------------------------------------------------------
+# Prompt wymienia sciezki manifestu w kolejnosci pierwszenstwa warstw; tresci plikow nie niesie.
+
+NAGLOWEK_KONTEKSTU = "kontekst (w kolejności pierwszeństwa):"
+PROMPT_DO_KOMEND = (
+    "przeczytaj .cockpit/_run/skills/pisanie/SKILL.md i wykonaj\n"
+    "\n"
+    "wejście:\n"
+    "- brak\n"
+    "\n"
+    "wyjście:\n"
+    "- brak\n"
+    "\n"
+    "komendy:\n"
+    "- brak"
+)
+
+
+def test_prompt_z_kontekstem_wymienia_sciezki_w_podanej_kolejnosci_po_sekcji_komend():
+    prompt = zbuduj_prompt(spec(skill_id="pisanie", kontekst=(
+        ".cockpit/project.yaml", "docs/CLAUDE.md", "CLAUDE.md",
+        ".cockpit/_run/skills/pisanie/SKILL.md", ".ai/lessons.md")))
+
+    zaczatek = (
+        f"{PROMPT_DO_KOMEND}\n"
+        "\n"
+        f"{NAGLOWEK_KONTEKSTU}\n"
+        "- .cockpit/project.yaml\n"
+        "- docs/CLAUDE.md\n"
+        "- CLAUDE.md\n"
+        "- .cockpit/_run/skills/pisanie/SKILL.md\n"
+        "- .ai/lessons.md\n"
+    )
+    assert prompt.startswith(zaczatek)
+    zdanie_reguly = prompt[len(zaczatek):]
+    assert zdanie_reguly.strip() != ""
+    assert "\n" not in zdanie_reguly.strip()      # jedno zdanie reguly
+
+
+def test_prompt_bez_kontekstu_nie_ma_sekcji_kontekstu_ani_zdania_reguly():
+    prompt = zbuduj_prompt(spec(skill_id="pisanie"))
+
+    assert prompt == PROMPT_DO_KOMEND
+    assert NAGLOWEK_KONTEKSTU not in prompt
+
+
+def test_prompt_niesie_sciezke_pliku_kontekstu_a_nie_jego_tresc(tmp_path):
+    plik = tmp_path / "CLAUDE.md"
+    plik.write_text("Unikalna tresc instrukcji korzenia 9152.", encoding="utf-8")
+
+    prompt = zbuduj_prompt(spec(kontekst=(str(plik),)))
+
+    assert f"- {plik}" in prompt
+    assert "Unikalna tresc instrukcji korzenia 9152." not in prompt
+
+
+def test_kontekst_domyslnie_jest_pusty_a_polecenie_agenta_go_nie_dotyczy():
+    zwykly = spec()
+
+    assert zwykly.kontekst == ()
+    assert polecenie_agenta(spec(kontekst=("CLAUDE.md",)), PROFIL) == polecenie_agenta(zwykly, PROFIL)
+
+
+@pytest.mark.parametrize("znak", ZNAKI_STERUJACE)
+def test_znak_sterujacy_w_sciezce_kontekstu_odrzuca_prompt_z_nazwa_pola(znak):
+    zla = f"a{znak}b"
+
+    with pytest.raises(ValueError) as wyjatek:
+        zbuduj_prompt(spec(kontekst=("CLAUDE.md", zla)))
+
+    assert type(wyjatek.value) is ValueError
+    assert str(wyjatek.value) == komunikat("kontekst[1]", zla)

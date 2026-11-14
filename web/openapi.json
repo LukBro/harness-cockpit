@@ -688,6 +688,21 @@
             ],
             "title": "Kroki Weryfikujace"
           },
+          "manifest": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WpisManifestuIn"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest"
+          },
           "num_turns": {
             "anyOf": [
               {
@@ -1843,6 +1858,74 @@
           "zaliczony"
         ],
         "title": "WerdyktKroku",
+        "type": "object"
+      },
+      "WpisManifestuIn": {
+        "additionalProperties": false,
+        "description": "Wpis manifestu kroku (HAR-169): sciezka i hash, nigdy tresc; brak pomiaru to None, nie zero.\nLimity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem).",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "rozmiar": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rozmiar"
+          },
+          "sciezka": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sciezka"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "warstwa": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Warstwa",
+            "type": "string"
+          }
+        },
+        "required": [
+          "warstwa"
+        ],
+        "title": "WpisManifestuIn",
         "type": "object"
       },
       "WpisPliku": {
