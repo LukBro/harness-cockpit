@@ -81,16 +81,20 @@ async def wykonaj_diff(worktree: Path, base_commit: str, katalog_kroku: Path) ->
     try:
         diff = await asyncio.to_thread(zbierz_diff, worktree, base_commit)
     except BladOdbioru as blad:
-        return WynikKroku("nieudany", str(blad), None)
+        return WynikKroku(status="nieudany", powod=str(blad), kod_wyjscia=None)
     if not diff.strip():
         return WynikKroku(
-            "nieudany", str(Naruszenie(Niezmiennik.evidence_required, BRAK_ZMIAN)), None)
+            status="nieudany",
+            powod=str(Naruszenie(Niezmiennik.evidence_required, BRAK_ZMIAN)),
+            kod_wyjscia=None)
     naruszenie = sprawdz_katalog_runu(katalog_kroku, worktree)
     if naruszenie is not None:
-        return WynikKroku("nieudany", str(naruszenie), None)
+        return WynikKroku(status="nieudany", powod=str(naruszenie), kod_wyjscia=None)
     linie = json.dumps(zmienione_linie(diff), **OPCJE_JSON)
     try:
         await asyncio.to_thread(_zapisz_artefakty, katalog_kroku, diff, linie)
     except OSError as blad:
-        return WynikKroku("nieudany", f"nie można zapisać artefaktów kroku diff: {blad}", None)
-    return WynikKroku("zakonczony", None, 0)
+        return WynikKroku(
+            status="nieudany", powod=f"nie można zapisać artefaktów kroku diff: {blad}",
+            kod_wyjscia=None)
+    return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)

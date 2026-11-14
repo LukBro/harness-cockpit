@@ -31,7 +31,7 @@ from playwright.sync_api import expect
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from procesy import grupa_istnieje, uruchom_proces_sync, zabij_grupe, zakoncz_proces_sync
+from procesy import grupa_istnieje, uruchom_proces_sync, zabij_grupe, zakoncz_proces_sync, uruchom_i_zbierz
 from runner.worktree import utworz_worktree
 
 pytestmark = [pytest.mark.e2e, pytest.mark.baza]
@@ -113,7 +113,7 @@ def _w_bazie(zapytanie: str, parametry: dict | None = None, *, zapis: bool = Fal
 
 
 def _git(repo: Path, *argumenty: str) -> str:
-    return subprocess.run(
+    return uruchom_i_zbierz(
         ["git", "-C", str(repo), *argumenty],
         check=True, capture_output=True, text=True, timeout=60,
     ).stdout

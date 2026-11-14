@@ -8,7 +8,9 @@ podmieniony na rejestrator.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
+import inspect
 import os
 import re
 import signal
@@ -830,3 +832,757 @@ def test_przerwanie_sigtermem_procesu_bez_ustalonej_grupy_tylko_go_odbiera(killp
 
     assert atrapa.returncode == 0
     assert killpg_zapisany.wywolania == []
+
+
+# --- straznik: procesy i czekanie w testach (HAR-242) ----------------------------------------
+# Regula `.claude/rules/testy-podprocesow.md`: proces w tescie startuje przez `procesy.py`,
+# podproces z kodem projektu ma `cwd` = korzen repo, kazde czekanie ma limit czasu. Skaner
+# idzie po AST (komentarz i napis nie sa wywolaniem). Granice skanera: argv podany przez
+# zmienna (nie literal) nie jest oceniany pod katem `tools/` i `-m runner`; `**opcje` w
+# wywolaniu uznajemy za mogace niesc `cwd`.
+
+POLECENIA_PODPROCESU = frozenset(
+    {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"})
+HELPERY_PODPROCESU = frozenset({"uruchom_proces", "uruchom_proces_sync", "uruchom_i_zbierz"})
+PODPROCES_POZA_HELPEREM = "podproces_poza_helperem"
+PODPROCES_BEZ_CWD = "podproces_projektu_bez_cwd"
+CZEKANIE_BEZ_LIMITU = "czekanie_bez_limitu"
+
+
+# Wyjatki od reguly "czekanie ma limit": (plik wzgledem tests/, funkcja) -> uzasadnienie. Dotycza
+# wylacznie funkcji ATRAP (serwer, strumien, brama), ktorych zadaniem jest czekac do zwolnienia
+# przez test albo do anulowania przez zatrzymywany kod pod testem; czekanie samego testu
+# (`czekaj`, `wait_for`) limit ma. Lista niezalezna od skanera: usuniecie wpisu oblewa
+# `test_testy_nie_czekaja_bez_limitu_poza_jawnymi_wyjatkami`, a wpis bez naruszenia -
+# `test_kazdy_wyjatek_od_czekania_bez_limitu_nadal_jest_potrzebny`.
+_ATRAPA_ZAWIESZA = "atrapa serwera zawiesza zadanie celowo; konczy je anulowanie przy stop() kodu pod testem"
+_ATRAPA_STRUMIENIA = "strumien atrapy czeka na kolejne dane albo koniec; konczy go sentinel albo anulowanie"
+_ATRAPA_BRAMY = "brama atrapy zwalniana przez test (`set()`); test, ktory ja otwiera, ma wlasny limit"
+WYJATKI_CZEKANIA: dict[tuple[str, str], str] = {
+    ("test_heartbeat_runnera.py", "handle_async_request"): _ATRAPA_ZAWIESZA,
+    ("test_heartbeat_runnera.py", "__aiter__"): _ATRAPA_STRUMIENIA,
+    ("test_heartbeat_runnera.py", "exec_z_bramka"): _ATRAPA_BRAMY,
+    ("test_heartbeat_runnera.py", "stop"): _ATRAPA_BRAMY,
+    ("test_polecenie_run_workflow.py", "__aiter__"): _ATRAPA_STRUMIENIA,
+    ("test_protokol_bez_argv.py", "__aiter__"): _ATRAPA_STRUMIENIA,
+    ("test_zapytania_runnera.py", "wolna"): _ATRAPA_ZAWIESZA,
+    ("transport_asgi.py", "__aiter__"): _ATRAPA_STRUMIENIA,
+    ("transport_asgi.py", "receive"): _ATRAPA_ZAWIESZA,
+    ("transport_asgi.py", "handle_async_request"): _ATRAPA_STRUMIENIA,
+}
+
+
+def _aliasy_importow(drzewo: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
+    """(alias modulu -> modul, nazwa lokalna -> `modul.nazwa`) dla `subprocess` i `asyncio`."""
+    moduly: dict[str, str] = {}
+    nazwy: dict[str, str] = {}
+    for w in ast.walk(drzewo):
+        if isinstance(w, ast.Import):
+            for a in w.names:
+                if a.name in ("subprocess", "asyncio"):
+                    moduly[a.asname or a.name] = a.name
+        elif isinstance(w, ast.ImportFrom) and w.module in ("subprocess", "asyncio"):
+            for a in w.names:
+                nazwy[a.asname or a.name] = f"{w.module}.{a.name}"
+    return moduly, nazwy
+
+
+def _pelna_nazwa(func: ast.expr, moduly: dict[str, str], nazwy: dict[str, str]) -> str:
+    """`subprocess.run` dla `subprocess.run`, `sp.run` (alias) i `run` (import z subprocess);
+    metoda cudzego obiektu to `?.<metoda>`; inne wyrazenie to pusty napis."""
+    if isinstance(func, ast.Name):
+        return nazwy.get(func.id, func.id)
+    if isinstance(func, ast.Attribute):
+        if isinstance(func.value, ast.Name) and func.value.id in moduly:
+            return f"{moduly[func.value.id]}.{func.attr}"
+        return f"?.{func.attr}"
+    return ""
+
+
+def _jest_podprocesem(pelna: str) -> bool:
+    modul, _, nazwa = pelna.partition(".")
+    return (modul == "subprocess" and nazwa in POLECENIA_PODPROCESU) or (
+        modul == "asyncio" and nazwa.startswith("create_subprocess_"))
+
+
+def _jest_helperem(pelna: str) -> bool:
+    return pelna.rpartition(".")[2] in HELPERY_PODPROCESU
+
+
+def _ma_slowo_kluczowe(w: ast.Call, nazwa: str) -> bool:
+    """Slowo kluczowe `nazwa=` z wartoscia inna niz `None` (`timeout=None` to brak limitu)."""
+    return any(k.arg == nazwa and not _jest_none(k.value) for k in w.keywords)
+
+
+def _jest_none(w: ast.AST) -> bool:
+    return isinstance(w, ast.Constant) and w.value is None
+
+
+def _ma_cwd(w: ast.Call) -> bool:
+    for k in w.keywords:
+        if k.arg is None:
+            return True
+        if k.arg == "cwd":
+            return not (isinstance(k.value, ast.Constant) and k.value.value is None)
+    return False
+
+
+def _tekst(w: ast.AST) -> str | None:
+    return w.value if isinstance(w, ast.Constant) and isinstance(w.value, str) else None
+
+
+def _kod_projektu_w_argv(w: ast.Call) -> bool:
+    """Literal `tools`/`tools/...` w argv albo `-m` tuz przed modulem `runner...`."""
+    wyrazenia = [*w.args, *(k.value for k in w.keywords if k.arg == "args")]
+    for wyrazenie in wyrazenia:
+        for n in ast.walk(wyrazenie):
+            t = _tekst(n)
+            if t is not None and (t == "tools" or t.startswith("tools/") or "/tools/" in t):
+                return True
+    ciagi = [w.args] + [
+        n.elts for wyrazenie in wyrazenia for n in ast.walk(wyrazenie)
+        if isinstance(n, (ast.List, ast.Tuple))]
+    for ciag in ciagi:
+        for a, b in zip(ciag, ciag[1:]):
+            if _tekst(a) == "-m" and (_tekst(b) or "").startswith("runner"):
+                return True
+    return False
+
+
+def _ma_limit_wait_for(w: ast.Call) -> bool:
+    drugi = w.args[1] if len(w.args) > 1 else next(
+        (k.value for k in w.keywords if k.arg == "timeout"), None)
+    return drugi is not None and not (isinstance(drugi, ast.Constant) and drugi.value is None)
+
+
+def _w_ograniczonym_czekaniu(w: ast.AST, rodzice: dict[ast.AST, ast.AST], moduly, nazwy) -> bool:
+    """Wywolanie jest argumentem `czekaj*`, `wait_for` z limitem, `asyncio.wait(timeout=)`
+    albo stoi w bloku `async with asyncio.timeout(...)`."""
+    obecny = w
+    while obecny in rodzice:
+        obecny = rodzice[obecny]
+        if isinstance(obecny, ast.Call):
+            nazwa = _pelna_nazwa(obecny.func, moduly, nazwy).rpartition(".")[2]
+            if nazwa.startswith("czekaj"):
+                return True
+            if nazwa == "wait_for" and _ma_limit_wait_for(obecny):
+                return True
+            if nazwa == "wait" and _ma_slowo_kluczowe(obecny, "timeout"):
+                return True
+        if isinstance(obecny, (ast.With, ast.AsyncWith)):
+            for pozycja in obecny.items:
+                if isinstance(pozycja.context_expr, ast.Call) and _pelna_nazwa(
+                    pozycja.context_expr.func, moduly, nazwy
+                ).rpartition(".")[2] in ("timeout", "timeout_at"):
+                    return True
+    return False
+
+
+def _jest_submit(w: ast.AST) -> bool:
+    return isinstance(w, ast.Call) and isinstance(w.func, ast.Attribute) and w.func.attr == "submit"
+
+
+def _nazwy_z_submit(drzewo: ast.AST) -> set[str]:
+    """Nazwy przypisane z wyniku `<pula>.submit(...)` (wynik to `concurrent.futures.Future`)."""
+    nazwy: set[str] = set()
+    for w in ast.walk(drzewo):
+        if isinstance(w, ast.Assign) and _jest_submit(w.value):
+            nazwy.update(t.id for t in w.targets if isinstance(t, ast.Name))
+    return nazwy
+
+
+def _wait_blokuje(w: ast.Call) -> bool:
+    """`.wait()` bez limitu: bez argumentow albo z `None`/`timeout=None`."""
+    if any(k.arg != "timeout" for k in w.keywords) or len(w.args) > 1:
+        return False
+    if w.args and not _jest_none(w.args[0]):
+        return False
+    return not _ma_slowo_kluczowe(w, "timeout")
+
+
+def _get_blokuje(w: ast.Call) -> bool:
+    """`.get()` kolejki bez limitu: bez argumentow, `True`, `block=True`, `timeout=None`.
+    `slownik.get('k')` i `get(False)` (nieblokujace) nie sa zgłaszane."""
+    if any(k.arg not in ("block", "timeout") for k in w.keywords):
+        return False
+    if _ma_slowo_kluczowe(w, "timeout"):
+        return False
+    if any(k.arg == "block" and isinstance(k.value, ast.Constant) and k.value.value is False
+           for k in w.keywords):
+        return False
+    if not w.args:
+        return True
+    pierwszy = w.args[0]
+    if not (isinstance(pierwszy, ast.Constant) and pierwszy.value is True):
+        return False
+    return len(w.args) < 2 or _jest_none(w.args[1])
+
+
+def _czeka_bez_limitu(w: ast.Call, pelna: str, z_submit: set[str]) -> bool:
+    nazwa = pelna.rpartition(".")[2]
+    if pelna.startswith("?.") and nazwa == "wait":
+        return _wait_blokuje(w)
+    if pelna.startswith("?.") and nazwa == "get":
+        return _get_blokuje(w)
+    if pelna == "asyncio.wait" and not _ma_slowo_kluczowe(w, "timeout"):
+        return True
+    if nazwa == "wait_for" and not pelna.startswith("?.") and not _ma_limit_wait_for(w):
+        return True
+    return (
+        pelna == "?.result" and not w.args and not w.keywords and isinstance(w.func, ast.Attribute)
+        and (_jest_submit(w.func.value)
+             or (isinstance(w.func.value, ast.Name) and w.func.value.id in z_submit))
+    )
+
+
+def _funkcja_obejmujaca(w: ast.AST, rodzice: dict[ast.AST, ast.AST]) -> str:
+    """Nazwa najblizszej funkcji obejmujacej wezel; pusty napis na poziomie modulu."""
+    while w in rodzice:
+        w = rodzice[w]
+        if isinstance(w, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return w.name
+    return ""
+
+
+def _naruszenia_surowe(zrodlo: str) -> list[tuple[int, str, str]]:
+    """(linia, kod, funkcja obejmujaca) bez zadnych wyjatkow."""
+    drzewo = ast.parse(zrodlo)
+    moduly, nazwy = _aliasy_importow(drzewo)
+    rodzice = {dziecko: w for w in ast.walk(drzewo) for dziecko in ast.iter_child_nodes(w)}
+    z_submit = _nazwy_z_submit(drzewo)
+    wynik: set[tuple[int, str, str]] = set()
+    for w in ast.walk(drzewo):
+        if not isinstance(w, ast.Call):
+            continue
+        pelna = _pelna_nazwa(w.func, moduly, nazwy)
+        funkcja = _funkcja_obejmujaca(w, rodzice)
+        if _jest_podprocesem(pelna):
+            wynik.add((w.lineno, PODPROCES_POZA_HELPEREM, funkcja))
+        if (_jest_podprocesem(pelna) or _jest_helperem(pelna)) and _kod_projektu_w_argv(w) \
+                and not _ma_cwd(w):
+            wynik.add((w.lineno, PODPROCES_BEZ_CWD, funkcja))
+        if _czeka_bez_limitu(w, pelna, z_submit) and not _w_ograniczonym_czekaniu(
+            w, rodzice, moduly, nazwy
+        ):
+            wynik.add((w.lineno, CZEKANIE_BEZ_LIMITU, funkcja))
+    return sorted(wynik)
+
+
+def znajdz_naruszenia_procesow(
+    zrodlo: str, nazwa_pliku: str, wyjatki: dict[tuple[str, str], str] = WYJATKI_CZEKANIA,
+) -> list[tuple[int, str]]:
+    """(linia, kod) naruszen reguly procesow w tescie. Pliki z `WYJATKI_STRAZNIKA` sa wolne;
+    czekanie bez limitu w funkcji z `wyjatki` (klucz: plik wzgledem tests/, funkcja) tez."""
+    if TESTY / nazwa_pliku in WYJATKI_STRAZNIKA:
+        return []
+    wzgledna = (TESTY / nazwa_pliku).relative_to(TESTY).as_posix()
+    return sorted({
+        (linia, kod) for linia, kod, funkcja in _naruszenia_surowe(zrodlo)
+        if not (kod == CZEKANIE_BEZ_LIMITU and (wzgledna, funkcja) in wyjatki)
+    })
+
+
+# --- straznik procesow: skaner na atrapach, kazdy element osobno --------------------------------
+
+
+def _naruszenia(zrodlo: str, nazwa: str = "test_atrapa.py", **opcje) -> list[tuple[int, str]]:
+    return znajdz_naruszenia_procesow(zrodlo, nazwa, **opcje)
+
+
+POZA = PODPROCES_POZA_HELPEREM
+BEZ_CWD = PODPROCES_BEZ_CWD
+BEZ_LIMITU = CZEKANIE_BEZ_LIMITU
+
+
+@pytest.mark.parametrize("polecenie", ["run", "Popen", "call", "check_call", "check_output",
+                                       "getoutput", "getstatusoutput"])
+def test_straznik_wykrywa_kazde_polecenie_modulu_subprocess_poza_helperem(polecenie):
+    assert _naruszenia(f"import subprocess\nsubprocess.{polecenie}(['ls'])\n") == [(2, POZA)]
+
+
+@pytest.mark.parametrize("polecenie", ["create_subprocess_exec", "create_subprocess_shell"])
+def test_straznik_wykrywa_kazde_create_subprocess_poza_helperem(polecenie):
+    assert _naruszenia(f"import asyncio\nasyncio.{polecenie}('ls')\n") == [(2, POZA)]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "import subprocess as sp\nsp.run(['ls'])\n",                          # alias modulu
+        "import asyncio as aio\naio.create_subprocess_exec('ls')\n",          # alias asyncio
+        "from subprocess import run\nrun(['ls'])\n",                          # import nazwy
+        "from subprocess import Popen as P\nP(['ls'])\n",                     # import z aliasem
+        "from asyncio import create_subprocess_exec\ncreate_subprocess_exec('ls')\n",
+    ],
+)
+def test_straznik_wykrywa_podproces_przez_alias_modulu_i_import_nazwy(zrodlo):
+    assert _naruszenia(zrodlo) == [(2, POZA)]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "import subprocess\nsubprocess.CompletedProcess(['ls'], 0)\n",        # typ wyniku
+        "import subprocess\nx = subprocess.PIPE\n",                           # odwolanie do stalej
+        "import subprocess\nx: subprocess.Popen\n",                           # adnotacja
+        "import subprocess\nraise subprocess.TimeoutExpired('ls', 1)\n",       # wyjatek
+        "import subprocess\nsubprocess.create_subprocess_exec('ls')\n",       # zly modul
+        "import asyncio\nasyncio.run(f())\n",                                 # run w asyncio
+        "import asyncio\nasyncio.Popen('ls')\n",                              # Popen nie z asyncio
+        "import asyncio\nasyncio.create_task(f())\n",                         # create_task
+        "import asyncio\nasyncio.sleep(1)\n",
+        "from procesy import uruchom_proces_sync\nuruchom_proces_sync(['ls'])\n",   # helper
+        "def run(x):\n    return x\nrun(1)\n",                                # lokalna `run`
+        "import other\nother.run(['ls'])\n",                                  # inny modul
+        "obiekt.run(['ls'])\n",                                               # metoda obiektu
+        "x = 'subprocess.run(1)'\n# subprocess.run(2)\n",                     # napis i komentarz
+    ],
+)
+def test_straznik_przepuszcza_typy_stale_helpery_i_inne_moduly(zrodlo):
+    assert _naruszenia(zrodlo) == []
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "uruchom_proces_sync([sys.executable, '-m', 'runner', 'x'])\n",       # `-m runner`
+        "uruchom_proces_sync([sys.executable, '-m', 'runner.__main__'])\n",   # modul runnera
+        "await uruchom_proces(sys.executable, '-m', 'runner', 'x')\n",        # argv pozycyjnie
+        "uruchom_proces_sync([sys.executable, 'tools/check_x.py'])\n",        # `tools/` na poczatku
+        "uruchom_proces_sync([sys.executable, '/r/tools/x.py'])\n",           # `/tools/` w srodku
+        "uruchom_proces_sync([sys.executable, str(K / 'tools' / 'x.py')])\n",   # skladnik `tools`
+        "procesy.uruchom_proces_sync(['python', 'tools/x.py'])\n",            # helper jako atrybut
+        "procesy.uruchom_proces('python', 'tools/x.py')\n",                   # wariant asynchroniczny
+        "uruchom_proces_sync(['python', 'tools/x.py'], cwd=None)\n",          # `cwd=None` to brak
+        "uruchom_proces_sync(args=['python', 'tools/x.py'])\n",               # argv jako `args=`
+    ],
+)
+def test_straznik_wykrywa_podproces_z_kodem_projektu_bez_cwd(zrodlo):
+    assert _naruszenia(zrodlo) == [(1, BEZ_CWD)]
+
+
+def test_straznik_wykrywa_polecenie_subprocess_z_kodem_projektu_dwoma_naruszeniami():
+    zrodlo = "import subprocess\nsubprocess.run(['python', 'tools/x.py'])\n"
+
+    assert _naruszenia(zrodlo) == [(2, POZA), (2, BEZ_CWD)]
+
+
+def test_straznik_wykrywa_create_subprocess_z_runnerem_bez_cwd():
+    zrodlo = "import asyncio\nasyncio.create_subprocess_exec('python', '-m', 'runner')\n"
+
+    assert _naruszenia(zrodlo) == [(2, POZA), (2, BEZ_CWD)]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "uruchom_proces_sync([sys.executable, '-m', 'runner'], cwd=KORZEN)\n",   # jest `cwd`
+        "uruchom_proces_sync([sys.executable, 'tools/x.py'], cwd=KORZEN)\n",
+        "uruchom_proces_sync([sys.executable, 'tools/x.py'], **opcje)\n",        # `**` moze nosic cwd
+        "uruchom_proces_sync([sys.executable, '-m', 'pytest'])\n",               # `-m` innego modulu
+        "uruchom_proces_sync([sys.executable, 'runner'])\n",                    # bez `-m`
+        "uruchom_proces_sync([sys.executable, '-m', 'x', 'runner'])\n",         # `-m` nie tuz przed
+        "uruchom_proces_sync([sys.executable, 'toolsbox/x.py'])\n",             # inny katalog
+        "uruchom_proces_sync([sys.executable, 'mytools/x.py'])\n",
+        "uruchom_proces_sync([sys.executable, '-c', 'pass'])\n",                # bez kodu projektu
+        "uruchom_proces_sync(argv)\n",                                          # argv ze zmiennej
+        "inna(['python', 'tools/x.py'])\n",                                     # nie podproces
+    ],
+)
+def test_straznik_przepuszcza_podproces_z_cwd_albo_bez_kodu_projektu(zrodlo):
+    assert _naruszenia(zrodlo) == []
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "proc.wait()\n",
+        "await asyncio.Event().wait()\n",
+        "await zdarzenie.wait()\n",
+        "kolejka.get()\n",
+        "await kolejka.get()\n",
+        "import asyncio\nasyncio.wait_for(f())\n",
+        "import asyncio\nasyncio.wait_for(f(), None)\n",
+        "import asyncio\nasyncio.wait_for(f(), timeout=None)\n",
+        "from asyncio import wait_for\nwait_for(f())\n",
+        "pula.submit(f).result()\n",
+        "przyszlosc = pula.submit(f)\nprzyszlosc.result()\n",
+    ],
+)
+def test_straznik_wykrywa_czekanie_bez_limitu(zrodlo):
+    wyniki = _naruszenia(zrodlo)
+
+    assert [kod for _, kod in wyniki] == [BEZ_LIMITU]
+    assert wyniki[0][0] == zrodlo.count("\n")       # ostatnia linia zrodla
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "proc.wait(timeout=5)\n",                      # limit slowem kluczowym
+        "proc.wait(5)\n",                              # limit pozycyjnie
+        "kolejka.get(timeout=3)\n",
+        "kolejka.get(False)\n",                        # nieblokujace
+        "slownik.get('k')\n",                          # dict.get
+        "import asyncio\nasyncio.wait_for(f(), 5)\n",
+        "import asyncio\nasyncio.wait_for(f(), timeout=5)\n",
+        "obiekt.wait_for(f())\n",                      # metoda obcego obiektu, nie asyncio
+        "pula.submit(f).result(timeout=5)\n",
+        "pula.submit(f).result(5)\n",
+        "zadanie.result()\n",                          # zadanie asyncio: nie blokuje
+        "przyszlosc = pula.map(f)\nprzyszlosc.result()\n",   # nie z `submit`
+        "pula.submit(f)\n",                            # sam `submit` nie czeka
+        "def result():\n    return 1\nresult()\n",      # zwykla funkcja o nazwie result
+        "wynik = result()\n",
+    ],
+)
+def test_straznik_przepuszcza_czekanie_z_limitem_i_wywolania_ktore_nie_czekaja(zrodlo):
+    assert _naruszenia(zrodlo) == []
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "await czekaj(proc.wait(), 5, 'koniec')\n",
+        "await czekaj_bez_anulowania(zdarzenie.wait(), 5, 'x')\n",
+        "await czekaj_na_warunek(lambda: kolejka.get(), 5, 'x')\n",
+        "await czekaj(asyncio.create_task(zdarzenie.wait()), 5, 'x')\n",    # zagniezdzone glebiej
+        "await czekaj(f(g(zdarzenie.wait())), 5, 'x')\n",
+        "import asyncio\nawait asyncio.wait_for(proc.wait(), 5)\n",
+        "import asyncio\nawait asyncio.wait_for(proc.wait(), timeout=5)\n",
+        "import asyncio\nawait asyncio.wait([zdarzenie.wait()], timeout=3)\n",
+        "import asyncio\nasync with asyncio.timeout(5):\n    await zdarzenie.wait()\n",
+        "import asyncio\nasync with asyncio.timeout_at(5):\n    await zdarzenie.wait()\n",
+        "from asyncio import timeout\nasync with timeout(5):\n    await zdarzenie.wait()\n",
+        "import asyncio\nwith asyncio.timeout(5):\n    zdarzenie.wait()\n",
+    ],
+)
+def test_straznik_przepuszcza_czekanie_bedace_argumentem_limitowanego_wywolania_albo_w_bloku_limitu(
+    zrodlo,
+):
+    assert _naruszenia(zrodlo) == []
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "foo(zdarzenie.wait())\n",                                   # zwykle wywolanie nie limituje
+        "import asyncio\nasyncio.wait([zdarzenie.wait()])\n",         # `asyncio.wait` bez timeout
+        "import asyncio\nasyncio.wait_for(zdarzenie.wait(), None)\n",  # `wait_for` bez limitu
+        "import asyncio\nasync with inny(5):\n    await zdarzenie.wait()\n",  # inny menedzer
+        "async with blokada:\n    await zdarzenie.wait()\n",           # menedzer bez wywolania
+        "await czaj(zdarzenie.wait(), 5)\n",                           # prefiks `czekaj`, nie `cz`
+    ],
+)
+def test_straznik_zglasza_czekanie_w_wywolaniu_ktore_nie_daje_limitu(zrodlo):
+    wyniki = _naruszenia(zrodlo)
+
+    assert BEZ_LIMITU in [kod for _, kod in wyniki]
+    assert wyniki[-1][0] == zrodlo.count("\n")
+
+
+def test_straznik_zglasza_wait_for_bez_limitu_razem_z_czekaniem_w_jego_argumencie():
+    zrodlo = "import asyncio\nawait asyncio.wait_for(\n    proc.wait(), None)\n"
+
+    assert _naruszenia(zrodlo) == [(2, BEZ_LIMITU), (3, BEZ_LIMITU)]
+
+
+def test_straznik_podaje_numer_linii_kazdego_naruszenia_w_kolejnosci():
+    zrodlo = (
+        "import subprocess\n"
+        "proc.wait()\n"
+        "subprocess.run(['ls'])\n"
+        "kolejka.get()\n"
+    )
+
+    assert _naruszenia(zrodlo) == [(2, BEZ_LIMITU), (3, POZA), (4, BEZ_LIMITU)]
+
+
+@pytest.mark.parametrize("nazwa", ["procesy.py", "test_procesy_testowe.py"])
+def test_straznik_procesow_pomija_helper_i_wlasny_plik(nazwa):
+    zrodlo = "import subprocess\nsubprocess.run(['ls'])\nproc.wait()\n"
+
+    assert _naruszenia(zrodlo, nazwa) == []
+
+
+def test_straznik_procesow_pomija_wyjatek_takze_gdy_nazwa_pliku_jest_bezwzgledna():
+    zrodlo = "import subprocess\nsubprocess.run(['ls'])\n"
+
+    assert _naruszenia(zrodlo, str(TESTY / "procesy.py")) == []
+
+
+@pytest.mark.parametrize("nazwa", ["test_inny.py", "e2e/procesy.py", "test_procesy_testowe2.py"])
+def test_straznik_procesow_nie_pomija_plikow_spoza_listy_wyjatkow(nazwa):
+    assert _naruszenia("import subprocess\nsubprocess.run(['ls'])\n", nazwa) == [(2, POZA)]
+
+
+ZRODLO_ATRAPY_Z_CZEKANIEM = (
+    "class Atrapa:\n"
+    "    async def zawies(self):\n"
+    "        await asyncio.Event().wait()\n"
+)
+
+
+def test_wyjatek_od_czekania_dziala_dla_pliku_i_funkcji_z_listy():
+    wyjatki = {("test_a.py", "zawies"): "atrapa"}
+
+    assert _naruszenia(ZRODLO_ATRAPY_Z_CZEKANIEM, "test_a.py", wyjatki=wyjatki) == []
+
+
+def test_wyjatek_od_czekania_nie_obejmuje_innej_funkcji_tego_samego_pliku():
+    wyjatki = {("test_a.py", "inna"): "atrapa"}
+
+    assert _naruszenia(ZRODLO_ATRAPY_Z_CZEKANIEM, "test_a.py", wyjatki=wyjatki) == [(3, BEZ_LIMITU)]
+
+
+def test_wyjatek_od_czekania_nie_obejmuje_tej_samej_funkcji_w_innym_pliku():
+    wyjatki = {("test_a.py", "zawies"): "atrapa"}
+
+    assert _naruszenia(ZRODLO_ATRAPY_Z_CZEKANIEM, "test_b.py", wyjatki=wyjatki) == [(3, BEZ_LIMITU)]
+
+
+def test_wyjatek_od_czekania_liczy_sie_wzgledem_katalogu_testow_takze_dla_sciezki_bezwzglednej():
+    wyjatki = {("e2e/test_a.py", "zawies"): "atrapa"}
+
+    assert _naruszenia(
+        ZRODLO_ATRAPY_Z_CZEKANIEM, str(TESTY / "e2e" / "test_a.py"), wyjatki=wyjatki) == []
+
+
+def test_wyjatek_od_czekania_nie_zwalnia_podprocesu_w_tej_samej_funkcji():
+    zrodlo = (
+        "import subprocess\n"
+        "def zawies():\n"
+        "    subprocess.run(['ls'])\n"
+        "    proc.wait()\n"
+    )
+
+    assert _naruszenia(zrodlo, "test_a.py", wyjatki={("test_a.py", "zawies"): "atrapa"}) == [
+        (3, POZA)]
+
+
+def test_wyjatek_od_czekania_wskazuje_najblizsza_funkcje_obejmujaca():
+    zrodlo = (
+        "def zewnetrzna():\n"
+        "    def wewnetrzna():\n"
+        "        proc.wait()\n"
+    )
+
+    assert _naruszenia(zrodlo, "test_a.py", wyjatki={("test_a.py", "wewnetrzna"): "x"}) == []
+    assert _naruszenia(zrodlo, "test_a.py", wyjatki={("test_a.py", "zewnetrzna"): "x"}) == [
+        (3, BEZ_LIMITU)]
+
+
+def test_czekanie_na_poziomie_modulu_nie_jest_zwolnione_wyjatkiem_dla_funkcji():
+    assert _naruszenia("proc.wait()\n", "test_a.py", wyjatki={("test_a.py", "f"): "x"}) == [
+        (1, BEZ_LIMITU)]
+
+
+def test_funkcja_asynchroniczna_i_zwykla_sa_funkcjami_obejmujacymi():
+    zwykla = "def f():\n    proc.wait()\n"
+    asynchroniczna = "async def f():\n    proc.wait()\n"
+    wyjatki = {("test_a.py", "f"): "x"}
+
+    assert _naruszenia(zwykla, "test_a.py", wyjatki=wyjatki) == []
+    assert _naruszenia(asynchroniczna, "test_a.py", wyjatki=wyjatki) == []
+
+
+# --- straznik procesow: prawdziwe pliki testow ---------------------------------------------------
+
+
+def _wszystkie_naruszenia_procesow() -> dict[str, list[tuple[int, str]]]:
+    wynik = {}
+    for plik in sorted(TESTY.rglob("*.py")):
+        if plik in WYJATKI_STRAZNIKA:
+            continue
+        naruszenia = znajdz_naruszenia_procesow(plik.read_text(encoding="utf-8"), str(plik))
+        if naruszenia:
+            wynik[plik.relative_to(TESTY).as_posix()] = naruszenia
+    return wynik
+
+
+def _tylko(kod: str) -> dict[str, list[int]]:
+    return {
+        plik: [linia for linia, k in naruszenia if k == kod]
+        for plik, naruszenia in _wszystkie_naruszenia_procesow().items()
+        if any(k == kod for _, k in naruszenia)
+    }
+
+
+def test_straznik_procesow_przeglada_wiecej_niz_piec_plikow_w_tym_podkatalog_e2e():
+    pliki = [p for p in TESTY.rglob("*.py") if p not in WYJATKI_STRAZNIKA]
+
+    assert len(pliki) > 5      # zero przejrzanych plikow to blad, nie czysto
+    assert TESTY / "conftest.py" in pliki
+    assert TESTY / "e2e" / "conftest.py" in pliki
+
+
+def test_testy_uruchamiaja_procesy_wylacznie_przez_helper_z_procesy_py():
+    assert _tylko(PODPROCES_POZA_HELPEREM) == {}, "uzyj tests/procesy.py zamiast subprocess"
+
+
+def test_testy_uruchamiaja_podprocesy_z_kodem_projektu_z_cwd():
+    assert _tylko(PODPROCES_BEZ_CWD) == {}, "podproces z tools/ albo -m runner ma cwd=KORZEN"
+
+
+def test_testy_nie_czekaja_bez_limitu_poza_jawnymi_wyjatkami():
+    assert _tylko(CZEKANIE_BEZ_LIMITU) == {}, "kazde czekanie w tescie ma limit czasu"
+
+
+def test_kazdy_wyjatek_od_czekania_bez_limitu_nadal_jest_potrzebny():
+    zbedne = []
+    for plik, funkcja in WYJATKI_CZEKANIA:
+        surowe = _naruszenia_surowe((TESTY / plik).read_text(encoding="utf-8"))
+        if (CZEKANIE_BEZ_LIMITU, funkcja) not in [(k, f) for _, k, f in surowe]:
+            zbedne.append((plik, funkcja))
+
+    assert zbedne == []
+    assert all(WYJATKI_CZEKANIA.values())
+
+
+# --- pomocnik `uruchom_i_zbierz` (zamiast subprocess.run) ----------------------------------------
+
+
+def _python(kod: str, *argumenty: str) -> list[str]:
+    return [sys.executable, "-c", kod, *argumenty]
+
+
+def test_uruchom_i_zbierz_zwraca_kod_wyjscia_i_oba_strumienie_gdy_zbiera_wyjscie():
+    wynik = procesy.uruchom_i_zbierz(
+        _python("import sys; print('a'); print('b', file=sys.stderr); sys.exit(3)"),
+        capture_output=True, text=True)
+
+    assert (wynik.returncode, wynik.stdout, wynik.stderr) == (3, "a\n", "b\n")
+    assert wynik.args == _python("import sys; print('a'); print('b', file=sys.stderr); sys.exit(3)")
+
+
+def test_uruchom_i_zbierz_bez_zbierania_wyjscia_nie_ma_stdout_ani_stderr_w_wyniku():
+    wynik = procesy.uruchom_i_zbierz(_python("pass"))
+
+    assert (wynik.returncode, wynik.stdout, wynik.stderr) == (0, None, None)
+
+
+def test_uruchom_i_zbierz_z_check_i_kodem_niezerowym_rzuca_blad_z_wyjsciem():
+    argv = _python("import sys; print('o'); print('e', file=sys.stderr); sys.exit(4)")
+
+    with pytest.raises(subprocess.CalledProcessError) as wyjatek:
+        procesy.uruchom_i_zbierz(argv, check=True, capture_output=True, text=True)
+
+    assert wyjatek.value.returncode == 4
+    assert wyjatek.value.cmd == argv
+    assert (wyjatek.value.stdout, wyjatek.value.stderr) == ("o\n", "e\n")
+
+
+def test_uruchom_i_zbierz_z_check_i_kodem_zero_zwraca_wynik():
+    assert procesy.uruchom_i_zbierz(_python("pass"), check=True).returncode == 0
+
+
+def test_uruchom_i_zbierz_bez_check_nie_rzuca_przy_kodzie_niezerowym():
+    assert procesy.uruchom_i_zbierz(_python("import sys; sys.exit(7)")).returncode == 7
+
+
+def test_uruchom_i_zbierz_przekazuje_wejscie_na_stdin():
+    wynik = procesy.uruchom_i_zbierz(
+        _python("import sys; print(sys.stdin.read().upper())"),
+        input="abc", capture_output=True, text=True)
+
+    assert wynik.stdout == "ABC\n"
+
+
+def test_uruchom_i_zbierz_przekazuje_cwd_i_srodowisko(tmp_path):
+    wynik = procesy.uruchom_i_zbierz(
+        _python("import os; print(os.getcwd()); print(os.environ['HAR242'])"),
+        cwd=tmp_path, env={**os.environ, "HAR242": "tak"}, capture_output=True, text=True)
+
+    assert wynik.stdout.split("\n")[:2] == [str(tmp_path.resolve()), "tak"]
+
+
+def test_uruchom_i_zbierz_uruchamia_proces_w_nowej_grupie_procesow():
+    wynik = procesy.uruchom_i_zbierz(
+        _python("import os; print(os.getpgid(0))"), capture_output=True, text=True)
+
+    assert int(wynik.stdout) != os.getpgid(0)
+
+
+def test_uruchom_i_zbierz_po_przekroczeniu_limitu_rzuca_blad_i_zabija_proces(tmp_path):
+    pidfile = tmp_path / "pid"
+    kod = "import os, sys, time; open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(60)"
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        procesy.uruchom_i_zbierz(_python(kod, str(pidfile)), timeout=3)
+
+    assert not czy_zyje(int(pidfile.read_text()))
+
+
+def test_uruchom_i_zbierz_ma_domyslny_skonczony_limit_czasu():
+    domyslny = inspect.signature(procesy.uruchom_i_zbierz).parameters["timeout"].default
+
+    assert domyslny == procesy.LIMIT_DOMYSLNY_S == 120.0
+
+
+# --- straznik procesow: limity jawnie wylaczone i helpery (iteracja poprawkowa HAR-242) -----------
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "uruchom_i_zbierz([sys.executable, 'tools/x.py'])\n",
+        "uruchom_i_zbierz([sys.executable, '-m', 'runner'], capture_output=True)\n",
+        "uruchom_i_zbierz([sys.executable, 'tools/x.py'], cwd=None)\n",
+    ],
+)
+def test_straznik_wykrywa_uruchom_i_zbierz_z_kodem_projektu_bez_cwd(zrodlo):
+    assert _naruszenia(zrodlo) == [(1, BEZ_CWD)]
+
+
+def test_straznik_przepuszcza_uruchom_i_zbierz_z_cwd_albo_bez_kodu_projektu():
+    assert _naruszenia("uruchom_i_zbierz([sys.executable, 'tools/x.py'], cwd=KORZEN)\n") == []
+    assert _naruszenia("uruchom_i_zbierz(['git', 'status'])\n") == []
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "proc.wait(timeout=None)\n",
+        "proc.wait(None)\n",
+        "kolejka.get(timeout=None)\n",
+        "kolejka.get(True)\n",
+        "kolejka.get(block=True)\n",
+        "kolejka.get(True, None)\n",
+        "kolejka.get(block=True, timeout=None)\n",
+        "import asyncio\nawait asyncio.wait(zadania)\n",
+        "import asyncio\nawait asyncio.wait(zadania, timeout=None)\n",
+        "import asyncio\nawait asyncio.wait(zadania, return_when=asyncio.FIRST_COMPLETED)\n",
+        "from asyncio import wait\nawait wait(zadania)\n",
+    ],
+)
+def test_straznik_wykrywa_czekanie_z_limitem_jawnie_wylaczonym_i_asyncio_wait_bez_timeout(zrodlo):
+    wyniki = _naruszenia(zrodlo)
+
+    assert [kod for _, kod in wyniki] == [BEZ_LIMITU]
+    assert wyniki[0][0] == zrodlo.count("\n")
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        "kolejka.get(block=False)\n",
+        "kolejka.get(True, 5)\n",
+        "kolejka.get(block=True, timeout=3)\n",
+        "kolejka.get(False, None)\n",
+        "slownik.get('k', 1)\n",
+        "slownik.get(default=1)\n",
+        "proc.wait(timeout=3)\n",
+        "proc.wait(3)\n",
+        "import asyncio\nawait asyncio.wait(zadania, timeout=3)\n",
+        "import asyncio\nawait czekaj(asyncio.wait(zadania), 5, 'x')\n",
+        "import asyncio\nawait asyncio.wait_for(asyncio.wait(zadania), 5)\n",
+    ],
+)
+def test_straznik_przepuszcza_czekanie_z_prawdziwym_limitem_i_wywolania_nie_blokujace(zrodlo):
+    assert _naruszenia(zrodlo) == []
+
+
+def test_straznik_zglasza_czekanie_w_asyncio_wait_z_timeout_none():
+    zrodlo = "import asyncio\nawait asyncio.wait([zdarzenie.wait()], timeout=None)\n"
+
+    assert _naruszenia(zrodlo) == [(2, BEZ_LIMITU)]

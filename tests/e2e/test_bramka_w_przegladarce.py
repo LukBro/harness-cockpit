@@ -44,7 +44,7 @@ def _w_bazie(zapytanie: str, parametry: dict | None = None, *, zapis: bool = Fal
             await engine.dispose()
 
     with ThreadPoolExecutor(max_workers=1) as pula:
-        return pula.submit(lambda: asyncio.run(_wykonaj())).result()
+        return pula.submit(lambda: asyncio.run(_wykonaj())).result(timeout=60)
 
 
 def _utworz_run_w_toku() -> str:

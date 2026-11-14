@@ -259,7 +259,7 @@ async def test_krok_diff_zapisuje_zmiana_diff_rowny_wynikowi_zbierania_diffu_run
 
     wynik = await wykonaj_diff(repo, sha, katalog)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     oczekiwany = zbierz_diff(repo, sha)
     assert oczekiwany.strip()
     assert (katalog / "zmiana.diff").read_bytes() == oczekiwany.encode("utf-8")
@@ -318,7 +318,7 @@ async def test_czysty_worktree_konczy_krok_diff_porazka_evidence_required_bez_pl
     wynik = await wykonaj_diff(repo, sha, katalog)
 
     assert wynik == WynikKroku(
-        "nieudany", "niezmiennik evidence_required: brak zmian do recenzji", None)
+        status="nieudany", powod="niezmiennik evidence_required: brak zmian do recenzji", kod_wyjscia=None)
     assert _pliki_pod(katalog) == []
 
 
@@ -334,7 +334,7 @@ async def test_diff_z_samych_bialych_znakow_jest_pusty_i_konczy_krok_porazka_bez
     wynik = await wykonaj_diff(tmp_path, "0" * 40, katalog)
 
     assert wynik == WynikKroku(
-        "nieudany", "niezmiennik evidence_required: brak zmian do recenzji", None)
+        status="nieudany", powod="niezmiennik evidence_required: brak zmian do recenzji", kod_wyjscia=None)
     assert _pliki_pod(katalog) == []
 
 
@@ -346,7 +346,7 @@ async def test_base_commit_ktory_nie_jest_sha_konczy_krok_diff_trescia_bledu_odb
 
     wynik = await wykonaj_diff(repo, "HEAD", katalog)
 
-    assert wynik == WynikKroku("nieudany", "base_commit nie jest SHA", None)
+    assert wynik == WynikKroku(status="nieudany", powod="base_commit nie jest SHA", kod_wyjscia=None)
     assert _pliki_pod(katalog) == []
 
 
@@ -357,7 +357,7 @@ async def test_katalog_bez_repozytorium_konczy_krok_diff_trescia_bledu_gita_bez_
 
     wynik = await wykonaj_diff(pusty, "a" * 40, katalog)
 
-    assert wynik == WynikKroku("nieudany", "git nie zebral diffu runu", None)
+    assert wynik == WynikKroku(status="nieudany", powod="git nie zebral diffu runu", kod_wyjscia=None)
     assert _pliki_pod(katalog) == []
 
 
@@ -370,9 +370,9 @@ async def test_katalog_kroku_w_repozytorium_konczy_krok_diff_naruszeniem_run_dir
     wynik = await wykonaj_diff(repo, sha, katalog)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"niezmiennik run_dir_outside_repo: katalog runu {katalog} lezy w repozytorium {repo}",
-        None,
+        status="nieudany",
+        powod=f"niezmiennik run_dir_outside_repo: katalog runu {katalog} lezy w repozytorium {repo}",
+        kod_wyjscia=None,
     )
     assert _pliki_pod(repo / "wyniki") == []
 

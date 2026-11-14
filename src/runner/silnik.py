@@ -53,8 +53,6 @@ from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Krok, Problem, Workflow, ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
 from runner.agent import (
-    BladProfiluBackendu,
-    BrakModelu,
     ProfilBackendu,
     SpecKroku,
     polecenie_agenta,
@@ -115,6 +113,16 @@ class PorazkaKroku(Exception):
     """Krok zbudowany przez silnik nie ruszyl (prompt, model); tekst to powod."""
 
 
+# Bledy granic wywolan, ktore zamieniamy na `step_failed` + `run_finished` (HAR-242);
+# `CancelledError` nie jest ich podklasa, wiec anulowanie leci dalej.
+BLEDY_GRANICY = (BladDziedziny, OSError, KeyError, ValueError)
+
+
+def _tekst_bledu(e: Exception) -> str:
+    """`str(KeyError('x'))` to samo `'x'` i nic nie mowi; reszta zostaje bez zmian."""
+    return f"brak klucza {e}" if isinstance(e, KeyError) else str(e)
+
+
 @dataclass(frozen=True)
 class Przygotowany:
     worktree: WorktreeRunu
@@ -167,7 +175,7 @@ def _przygotuj(
 ) -> Przygotowany:
     """Walidacja polecenia, worktree, rejestr, workflow, project.yaml, kopia, materializacja.
 
-    Blad wejscia (dysk, git, zakres, skill) staje sie `BladStartu`; nic nie powstaje na
+    Blad wejscia (dysk, git, zakres, skill) konczy run bledem startu; nic nie powstaje na
     dysku przed sprawdzeniem nazwy workflow i zakresu."""
     nazwa = polecenie.get("workflow")
     if (
@@ -193,7 +201,9 @@ def _przygotuj(
             raise BladStartu(_bledy(problemy_projektu))
         shutil.copyfile(plik, wt.katalog_runu / "workflow.yaml")
         materializuj({k.skill for k in workflow.kroki if k.skill is not None}, rejestr, wt.sciezka)
-    except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:
+    # BladDziedziny i OSError koncza run w `wykonaj_run` (`except BLEDY_GRANICY`) z tym samym
+    # tekstem - tu tylko ZlaKonfiguracjaZakresu, ktora nie jest bledem granicy
+    except ZlaKonfiguracjaZakresu as e:
         raise BladStartu(str(e)) from e
     return Przygotowany(wt, workflow, rejestr, projekt, repo)
 
@@ -292,14 +302,10 @@ async def _krok(
         komendy={n: p.projekt.capabilities[n] for n in skill.needs if n in p.projekt.capabilities},
         budget_usd=krok.budget_usd, max_turns=krok.max_turns,
     )
-    try:
-        prompt = zbuduj_prompt(spec)
-    except ValueError as e:
-        raise PorazkaKroku(str(e)) from e
-    try:
-        argv = polecenie_agenta(spec, profil)
-    except (BrakModelu, ValueError) as e:      # brak modelu tieru, zly budzet albo limit tur
-        raise PorazkaKroku(str(e)) from e
+    # zly prompt (ValueError), brak modelu tieru (BrakModelu), zly budzet albo limit tur konczy
+    # krok w petli zadan (`except BLEDY_GRANICY`) z tym samym tekstem - osobny except bylby martwy
+    prompt = zbuduj_prompt(spec)
+    argv = polecenie_agenta(spec, profil)
     dodatkowe: dict[str, object] = {}
     if PLIK_NOTATKI in skill.produces:
         producent = _krok_producenta(p, id_kroku, PLIK_LINII)
@@ -484,20 +490,26 @@ async def wykonaj_run(
         return
     try:
         profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()
-    except BladProfiluBackendu as e:
-        await _blad_przed_startem(emit, run_id, str(e))
+        dom = dom if dom is not None else Path.home()
+    except BLEDY_GRANICY as e:      # `BladProfiluBackendu` jest błędem dziedziny
+        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
         return
-    dom = dom if dom is not None else Path.home()
     try:
         p = await asyncio.to_thread(_przygotuj, polecenie, dom, root, zakres, run_id)
     except BladStartu as e:
         await _blad_przed_startem(emit, run_id, str(e))
         return
+    except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu
+        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
+        return
 
-    await _wykonaj_plan(
-        run_id, polecenie["workflow"],     # nazwa sprawdzona w `_przygotuj`
-        p, {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}, {}, frozenset(),
-        profil, uruchom_agenta, emit)
+    try:
+        await _wykonaj_plan(
+            run_id, polecenie["workflow"],     # nazwa sprawdzona w `_przygotuj`
+            p, {k.id: StanKroku.OCZEKUJE for k in p.workflow.kroki}, {}, frozenset(),
+            profil, uruchom_agenta, emit)
+    except BLEDY_GRANICY as e:
+        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
 
 
 async def _wykonaj_plan(
@@ -566,6 +578,8 @@ async def _wykonaj_plan(
                     wynik = zadanie.result()
                 except PorazkaKroku as e:
                     udany, powod, pomiar = False, str(e), PomiarKroku()
+                except BLEDY_GRANICY as e:      # wyjatek zadania kroku to koniec kroku, nie runu
+                    udany, powod, pomiar = False, _tekst_bledu(e), PomiarKroku()
                 else:
                     udany, powod, pomiar = wynik.status == "zakonczony", wynik.powod, wynik.pomiar
                     if udany and _produkuje_notatke(p, id_kroku):
@@ -734,14 +748,14 @@ async def wznow_run(
     root: Path | None = None,
 ) -> None:
     """Wznawia run zawieszony na bramce `step_id` decyzja czlowieka, wylacznie z checkpointu."""
-    dom = dom if dom is not None else Path.home()
     try:
+        dom = dom if dom is not None else Path.home()
         # przed decyzja: zly profil nie zjada oczekiwania, wiec po poprawce pliku da sie wznowic
         profil = profil if profil is not None else ProfilBackendu.z_konfiguracji()
         async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
             start = await _przyjmij_decyzje(run_id, step_id, decyzja, powod, dom, root, emit)
-    except (BladDziedziny, OSError) as e:      # BladCheckpointu, BladWznowienia, katalog runu
-        await _porazka_wznowienia(emit, run_id, step_id, str(e))
+    except BLEDY_GRANICY as e:      # BladCheckpointu, BladWznowienia, katalog runu, struktura
+        await _porazka_wznowienia(emit, run_id, step_id, _tekst_bledu(e))
         return
     if start is None:
         return
@@ -750,6 +764,9 @@ async def wznow_run(
         await emit(_zdarzenie(
             run_id, "step_failed", id_kroku, id_kroku, TEKST_PRZERWANIA,
             attempt=startowane[id_kroku]))
-    await _wykonaj_plan(
-        run_id, nazwa, p, stany, startowane, frozenset({step_id}), profil, uruchom_agenta,
-        emit)
+    try:
+        await _wykonaj_plan(
+            run_id, nazwa, p, stany, startowane, frozenset({step_id}), profil, uruchom_agenta,
+            emit)
+    except BLEDY_GRANICY as e:
+        await _porazka_wznowienia(emit, run_id, step_id, _tekst_bledu(e))

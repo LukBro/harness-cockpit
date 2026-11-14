@@ -7,121 +7,121 @@
 # --- EventIn: ograniczenia i wartosci domyslne pol pomiaru (Field nie jest mutowany przez mutmut) ---
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_in: int | None = Field(default=None, ge=1, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_in: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_648)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_646)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_in: int | None = Field(default=0, ge=0, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_out: int | None = Field(default=None, ge=1, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_out: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_648)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_646)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    tokens_out: int | None = Field(default=0, ge=0, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    num_turns: int | None = Field(default=None, ge=1, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    num_turns: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_648)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_646)'
 test = 'tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)'
 zamien = '    num_turns: int | None = Field(default=0, ge=0, le=2_147_483_647)'
 test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
 zamien = '    session_id: str | None = Field(default=None, min_length=0, max_length=100)'
 test = 'tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_odrzucony_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
 zamien = '    session_id: str | None = Field(default=None, min_length=2, max_length=100)'
 test = 'tests/test_pomiar_kroku.py::test_session_id_o_jednym_znaku_jest_przyjety_i_zapisany'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
 zamien = '    session_id: str | None = Field(default=None, min_length=1, max_length=101)'
 test = 'tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_odrzucony_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
 zamien = '    session_id: str | None = Field(default=None, min_length=1, max_length=99)'
 test = 'tests/test_pomiar_kroku.py::test_session_id_o_stu_znakach_jest_przyjety_i_zapisany'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = '    session_id: str | None = Field(default=None, min_length=1, max_length=100)'
 zamien = '    session_id: str | None = Field(default="", min_length=1, max_length=100)'
 test = 'tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero'
@@ -800,21 +800,9 @@ test = 'tests/test_polecenie_agenta.py::test_niepoprawny_limit_tur_kroku_jest_od
 
 [[mutant]]
 plik = 'src/runner/silnik.py'
-szukaj = 'except (BrakModelu, ValueError) as e:'
-zamien = 'except BrakModelu as e:'
-test = 'tests/test_pomiar_kroku.py::test_niepoprawne_polecenie_agenta_konczy_krok_porazka_z_komunikatem_a_run_idzie_dalej'
-
-[[mutant]]
-plik = 'src/runner/silnik.py'
-szukaj = 'except (BrakModelu, ValueError) as e:'
-zamien = 'except ValueError as e:'
-test = 'tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej'
-
-[[mutant]]
-plik = 'src/runner/silnik.py'
-szukaj = '''    except BladProfiluBackendu as e:
+szukaj = '''    except BLEDY_GRANICY as e:      # `BladProfiluBackendu` jest błędem dziedziny
         await _blad_przed_startem('''
-zamien = '''    except KeyError as e:
+zamien = '''    except KeyError as e:      # `BladProfiluBackendu` jest błędem dziedziny
         await _blad_przed_startem('''
 test = 'tests/test_profil_backendu.py::test_uszkodzony_plik_profilu_konczy_run_bledem_przed_startem_zadnego_kroku'
 
@@ -1182,25 +1170,25 @@ zamien = '''    else:
 test = 'tests/test_brak_sierot.py::test_katalog_zamiast_pliku_stdin_to_blad_startu_i_zwolniony_deskryptor'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
 zamien = 'cost_usd: float | None = Field(default=None, ge=-1, allow_inf_nan=False)'
 test = 'tests/test_pomiar_kroku.py::test_koszt_zdarzenia_ujemny_nieskonczony_albo_nie_liczba_jest_odrzucony_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
 zamien = 'cost_usd: float | None = Field(default=None, ge=1, allow_inf_nan=False)'
 test = 'tests/test_pomiar_kroku.py::test_koszt_zdarzenia_rowny_zero_jest_przyjety_i_zapisany_jako_zero_a_nie_null'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
 zamien = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=True)'
 test = 'tests/test_pomiar_kroku.py::test_koszt_zdarzenia_ujemny_nieskonczony_albo_nie_liczba_jest_odrzucony_i_nic_nie_zapisuje'
 
 [[mutant]]
-plik = 'src/cockpit/api/app.py'
+plik = "src/cockpit/api/schematy.py"
 szukaj = 'cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)'
 zamien = 'cost_usd: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)'
 # HAR-174 (TM): domyslna wartosc decyduje tylko, gdy pola brak w zdarzeniu (jawny null jej nie uzywa)

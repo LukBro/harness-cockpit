@@ -205,7 +205,7 @@ def powod_niezrozumialej(tresc: str) -> str:
 
 def test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera():
     assert dataclasses.astuple(PomiarKroku()) == (None, None, None, None, None)
-    assert WynikKroku("zakonczony", None, 0).pomiar == PomiarKroku()
+    assert WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0).pomiar == PomiarKroku()
     with pytest.raises(dataclasses.FrozenInstanceError):
         PomiarKroku().cost_usd = 1.0  # type: ignore[misc]
 
@@ -213,7 +213,7 @@ def test_pomiar_kroku_bez_zadnych_wartosci_nie_ma_zmierzonego_niczego_ani_zera()
 async def test_krok_z_wynikiem_agenta_zapisuje_koszt_tokeny_tury_i_sesje(katalog, katalog_runu):
     wynik, _ = await uruchom(spec(), atrapa(result()), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 @pytest.mark.parametrize("koszt", [
@@ -410,7 +410,7 @@ async def test_kod_wyjscia_agenta_rozny_od_zera_konczy_krok_porazka_z_kodem_i_po
 ):
     wynik, _ = await uruchom(spec(), atrapa(result(), kod=3), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3, pomiar=POMIAR_PELNY)
 
 
 async def test_kod_wyjscia_wygrywa_z_podtypem_bledu_agenta(katalog, katalog_runu):
@@ -426,7 +426,7 @@ async def test_kod_wyjscia_bez_zdarzenia_result_jest_porazka_z_kodem_a_nie_z_bra
 ):
     wynik, _ = await uruchom(spec(), atrapa(asystent(tekst("a")), kod=2), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 2", 2)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 2", kod_wyjscia=2)
 
 
 @pytest.mark.parametrize("wyjscie", [
@@ -442,9 +442,9 @@ async def test_brak_zdarzenia_result_przy_kodzie_zero_jest_brakiem_dowodu_a_nie_
     wynik, _ = await uruchom(spec(), atrapa(*wyjscie), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        str(Naruszenie(Niezmiennik.evidence_required, "brak zdarzenia result w wyjściu agenta")),
-        0)
+        status="nieudany",
+        powod=str(Naruszenie(Niezmiennik.evidence_required, "brak zdarzenia result w wyjściu agenta")),
+        kod_wyjscia=0)
     assert wynik.pomiar == PomiarKroku()
 
 
@@ -468,7 +468,7 @@ async def test_agent_zglaszajacy_blad_w_wyniku_konczy_krok_porazka_z_podtypem(
 async def test_wynik_bez_pola_is_error_z_podtypem_success_jest_sukcesem(katalog, katalog_runu):
     wynik, _ = await uruchom(spec(), atrapa(result(is_error=BRAK)), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 # =================================================================================================
@@ -552,7 +552,7 @@ async def test_puste_linie_miedzy_zdarzeniami_sa_pomijane_a_nie_niezrozumiale(
     wynik, _ = await uruchom(
         spec(), atrapa(linia(""), result(), linia("   "), linia("\t")), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 @pytest.mark.parametrize("zdarzenie", [
@@ -569,7 +569,7 @@ async def test_zdarzenia_innych_rodzajow_sa_pomijane_krok_udany_i_bez_wyjscia(
     wynik, zdarzenia = await uruchom(
         spec(), atrapa(linia(json.dumps(zdarzenie)), result()), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert zdarzenia == []
 
 
@@ -587,7 +587,7 @@ async def test_linia_dokladnie_o_dlugosci_limitu_jest_przyjeta(katalog, katalog_
     wynik, _ = await uruchom(
         spec(), atrapa(("pad", LIMIT_LINII), result()), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 # =================================================================================================
@@ -619,7 +619,7 @@ async def test_stderr_agenta_idzie_jako_output_i_nie_psuje_parsera_strumienia(
     wynik, zdarzenia = await uruchom(
         spec(), atrapa(("stderr", "ostrzezenie narzedzia\n"), result()), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert zdarzenia == [zdarzenie_output("ostrzezenie narzedzia")]
 
 
@@ -647,7 +647,7 @@ async def test_artefakt_recenzenta_to_tekst_wyniku_agenta_a_nie_surowe_ndjson(
         atrapa(asystent(tekst("rozmowa asystenta, nie artefakt")), result(result=plan)),
         katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == plan.encode("utf-8")
 
 
@@ -666,7 +666,7 @@ async def test_recenzent_bez_tekstu_wyniku_to_brak_dowodu_a_nie_pusty_artefakt(
         spec(Rola.reviewer, ["plan.md"]), atrapa(result(result=zly_wynik)),
         katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", EVIDENCE_PUSTY, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="nieudany", powod=EVIDENCE_PUSTY, kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert not (katalog_runu / KROK / "plan.md").exists()
 
 
@@ -680,7 +680,7 @@ async def test_limit_artefaktu_liczy_bajty_utf8_tekstu_wyniku_a_nie_znaki(
         katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", "wynik agenta przekracza 10 bajtów", 0, pomiar=POMIAR_PELNY)
+        status="nieudany", powod="wynik agenta przekracza 10 bajtów", kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert not (katalog_runu / KROK / "plan.md").exists()
 
 
@@ -717,7 +717,7 @@ async def test_autor_w_trybie_agenta_bez_zapisanego_artefaktu_nie_dostaje_go_z_t
         spec(Rola.author, ["plan.md"]), atrapa(result(result="tekst wyniku")),
         katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", "brak artefaktu plan.md", 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="nieudany", powod="brak artefaktu plan.md", kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 ZMIENIONE_LINIE_NOTATKI = [{"plik": "src/a.py", "linie": [[10, 12]]}]
@@ -750,7 +750,7 @@ async def test_notatka_zmiany_z_wyniku_agenta_konczy_krok_sukcesem_z_kotwicami_i
         katalog, katalog_runu, tmp_path)
 
     assert wynik == WynikKroku(
-        "zakonczony", None, 0, pomiar=POMIAR_PELNY, kotwice=("src/a.py:11",))
+        status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY, kotwice=("src/a.py:11",))
 
 
 async def test_porazka_kotwic_notatki_zmiany_niesie_pomiar_kroku_agenta(
@@ -760,10 +760,10 @@ async def test_porazka_kotwic_notatki_zmiany_niesie_pomiar_kroku_agenta(
         "- [src/a.py:90] scenariusz: Cos sie zepsuje.", katalog, katalog_runu, tmp_path)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        "niezmiennik evidence_required: kotwica src/a.py:90: linia poza zmienionymi liniami "
+        status="nieudany",
+        powod="niezmiennik evidence_required: kotwica src/a.py:90: linia poza zmienionymi liniami "
         "(tolerancja 3)",
-        0, pomiar=POMIAR_PELNY)
+        kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 KONTRAKT_WERDYKTU = KontraktWerdyktu(pass_=("zgodny",), fail=("rozjazd",))
@@ -784,14 +784,14 @@ async def test_zdany_werdykt_z_wyniku_agenta_konczy_krok_sukcesem_z_pomiarem(
 ):
     wynik = await uruchom_z_werdyktem("WERDYKT: zgodny\n\nBez rozjazdów.\n", katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY, werdykt="zgodny")
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY, werdykt="zgodny")
 
 
 async def test_werdykt_porazki_z_wyniku_agenta_niesie_pomiar_kroku(katalog, katalog_runu):
     wynik = await uruchom_z_werdyktem("WERDYKT: rozjazd\n\nPlik A.\n", katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", "werdykt: rozjazd", 0, pomiar=POMIAR_PELNY, werdykt="rozjazd")
+        status="nieudany", powod="werdykt: rozjazd", kod_wyjscia=0, pomiar=POMIAR_PELNY, werdykt="rozjazd")
 
 
 async def test_brak_linii_werdyktu_w_wyniku_agenta_to_brak_dowodu_z_pomiarem_kroku(
@@ -800,9 +800,9 @@ async def test_brak_linii_werdyktu_w_wyniku_agenta_to_brak_dowodu_z_pomiarem_kro
     wynik = await uruchom_z_werdyktem("Wszystko jest w porządku.\n", katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        "niezmiennik evidence_required: linia 1 w rozjazdy.md nie zaczyna się od WERDYKT:",
-        0, pomiar=POMIAR_PELNY)
+        status="nieudany",
+        powod="niezmiennik evidence_required: linia 1 w rozjazdy.md nie zaczyna się od WERDYKT:",
+        kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 # =================================================================================================
@@ -862,7 +862,7 @@ async def test_tryb_agenta_bez_katalogu_runu_to_porazka_i_agent_nie_rusza(tmp_pa
 
     wynik, _ = await uruchom(spec(), atrapa(result(), znacznik=znacznik), katalog, None)
 
-    assert wynik == WynikKroku("nieudany", "brak katalogu runu dla pliku promptu", None)
+    assert wynik == WynikKroku(status="nieudany", powod="brak katalogu runu dla pliku promptu", kod_wyjscia=None)
     assert not znacznik.exists()
 
 
@@ -876,7 +876,7 @@ async def test_niedozwolony_identyfikator_kroku_blokuje_zapis_promptu_i_start_ag
         spec(step_id=zly_krok), atrapa(result(), znacznik=znacznik), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", f"niedozwolony identyfikator kroku: {zly_krok!r}", None)
+        status="nieudany", powod=f"niedozwolony identyfikator kroku: {zly_krok!r}", kod_wyjscia=None)
     assert not znacznik.exists()
     assert [p for p in tmp_path.rglob("*.txt")] == []
 
@@ -962,7 +962,7 @@ async def test_krok_bez_promptu_zachowuje_surowe_wyjscie_bez_parsera_i_bez_pliku
         spec(), atrapa(linia("to nie json"), linia('{"type": "result"}'), zapis=zapis),
         katalog, katalog_runu, prompt=None)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert wynik.pomiar == PomiarKroku()
     assert [z["text"] for z in zdarzenia] == ["to nie json", '{"type": "result"}']
     assert not (katalog_runu / "prompty").exists()
@@ -1102,7 +1102,7 @@ async def test_koniec_kroku_niesie_zmierzony_koszt_tokeny_tury_i_sesje_ze_zrodle
     tmp_path,
 ):
     s = swiat_silnika(tmp_path, [K("a")])
-    agent = Szpieg(wyniki={"a": WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)})
+    agent = Szpieg(wyniki={"a": WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)})
 
     zdarzenia = await uruchom_run(s, agent)
 
@@ -1122,7 +1122,7 @@ async def test_koniec_kroku_bez_pomiaru_ma_koszt_null_ze_zrodlem_unavailable_a_n
 async def test_zmierzony_koszt_zero_jest_zrodlem_measured_a_nie_brakiem_pomiaru(tmp_path):
     s = swiat_silnika(tmp_path, [K("a")])
     pomiar = PomiarKroku(cost_usd=0.0)
-    agent = Szpieg(wyniki={"a": WynikKroku("zakonczony", None, 0, pomiar=pomiar)})
+    agent = Szpieg(wyniki={"a": WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=pomiar)})
 
     zdarzenia = await uruchom_run(s, agent)
 
@@ -1134,7 +1134,7 @@ async def test_zmierzony_koszt_zero_jest_zrodlem_measured_a_nie_brakiem_pomiaru(
 
 async def test_pomiar_jednego_kroku_nie_przecieka_do_zdarzenia_innego_kroku(tmp_path):
     s = swiat_silnika(tmp_path, [K("a"), K("b")])
-    agent = Szpieg(wyniki={"a": WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)})
+    agent = Szpieg(wyniki={"a": WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)})
 
     zdarzenia = await uruchom_run(s, agent)
 
@@ -1146,7 +1146,7 @@ async def test_porazka_kroku_niesie_pomiar_poniesiony_do_chwili_porazki(tmp_path
     s = swiat_silnika(tmp_path, [K("a")])
     pomiar = dataclasses.replace(POMIAR_PELNY, cost_usd=0.5)
     agent = Szpieg(wyniki={"a": WynikKroku(
-        "nieudany", "budżet kroku wyczerpany (error_max_budget_usd)", 1, pomiar=pomiar)})
+        status="nieudany", powod="budżet kroku wyczerpany (error_max_budget_usd)", kod_wyjscia=1, pomiar=pomiar)})
 
     zdarzenia = await uruchom_run(s, agent)
 
@@ -1159,7 +1159,7 @@ async def test_porazka_kroku_niesie_pomiar_poniesiony_do_chwili_porazki(tmp_path
 
 async def test_porazka_kroku_bez_pomiaru_ma_koszt_null_ze_zrodlem_unavailable(tmp_path):
     s = swiat_silnika(tmp_path, [K("a")])
-    agent = Szpieg(wyniki={"a": WynikKroku("nieudany", "kod wyjścia 1", 1)})
+    agent = Szpieg(wyniki={"a": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1)})
 
     zdarzenia = await uruchom_run(s, agent)
 
@@ -1900,7 +1900,7 @@ async def test_koszt_ponad_zakres_liczby_zmiennoprzecinkowej_jest_brakiem_pomiar
     wynik, _ = await uruchom(spec(), atrapa(linia(surowa)), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "zakonczony", None, 0, pomiar=dataclasses.replace(POMIAR_PELNY, cost_usd=None))
+        status="zakonczony", powod=None, kod_wyjscia=0, pomiar=dataclasses.replace(POMIAR_PELNY, cost_usd=None))
 
 
 async def test_wynik_recenzenta_z_samotnym_surogatem_zapisuje_artefakt_ze_znakiem_zastepczym(
@@ -1912,7 +1912,7 @@ async def test_wynik_recenzenta_z_samotnym_surogatem_zapisuje_artefakt_ze_znakie
     wynik, _ = await uruchom(
         spec(Rola.reviewer, ["plan.md"]), atrapa(linia(surowa)), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == b"a?b"
 
 
@@ -1937,10 +1937,10 @@ async def test_katalog_runu_bedacy_dowiazaniem_do_repozytorium_blokuje_zapis_pro
         spec(), atrapa(result(), znacznik=znacznik), katalog, dowiazanie)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"niezmiennik run_dir_outside_repo: katalog runu {dowiazanie / 'prompty'} "
+        status="nieudany",
+        powod=f"niezmiennik run_dir_outside_repo: katalog runu {dowiazanie / 'prompty'} "
         f"lezy w repozytorium {katalog}",
-        None)
+        kod_wyjscia=None)
     assert not znacznik.exists()
     assert list(katalog.rglob("*")) == []                # nic nie wpadlo do repozytorium
 
@@ -2045,7 +2045,7 @@ async def test_ostatnia_linia_wyjscia_agenta_bez_znaku_nowej_linii_jest_przetwor
     wynik, _ = await uruchom(
         spec(), atrapa(("bez_konca", json.dumps(pola_result()))), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 @pytest.mark.parametrize("kod", [0, 1])
@@ -2056,7 +2056,7 @@ async def test_niezrozumiala_linia_po_wyniku_agenta_niesie_kod_wyjscia_i_zebrany
         spec(), atrapa(result(), linia("smiec"), kod=kod), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", powod_niezrozumialej("smiec"), kod, pomiar=POMIAR_PELNY)
+        status="nieudany", powod=powod_niezrozumialej("smiec"), kod_wyjscia=kod, pomiar=POMIAR_PELNY)
 
 
 @pytest.mark.parametrize("kod", [0, 1])
@@ -2068,7 +2068,7 @@ async def test_wyczerpany_budzet_niesie_kod_wyjscia_i_pomiar_poniesiony_do_tej_p
         spec(), atrapa(result(subtype=podtyp, is_error=True), kod=kod), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", f"budżet kroku wyczerpany ({podtyp})", kod, pomiar=POMIAR_PELNY)
+        status="nieudany", powod=f"budżet kroku wyczerpany ({podtyp})", kod_wyjscia=kod, pomiar=POMIAR_PELNY)
 
 
 async def test_blad_zgloszony_przez_agenta_niesie_kod_zero_i_pomiar(katalog, katalog_runu):
@@ -2077,7 +2077,7 @@ async def test_blad_zgloszony_przez_agenta_niesie_kod_zero_i_pomiar(katalog, kat
         katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", "agent zakończył się błędem: error_during_execution", 0,
+        status="nieudany", powod="agent zakończył się błędem: error_during_execution", kod_wyjscia=0,
         pomiar=POMIAR_PELNY)
 
 
@@ -2093,7 +2093,7 @@ async def test_zapis_artefaktu_recenzenta_do_zajetego_katalogu_kroku_niesie_kod_
         spec(Rola.reviewer, ["plan.md"]), atrapa(result()), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", f"nie można zapisać artefaktu plan.md: {przyczyna.value}", 0,
+        status="nieudany", powod=f"nie można zapisać artefaktu plan.md: {przyczyna.value}", kod_wyjscia=0,
         pomiar=POMIAR_PELNY)
 
 
@@ -2111,7 +2111,7 @@ async def test_nieczytelny_artefakt_autora_niesie_kod_wyjscia_i_pomiar(katalog, 
         plik.chmod(0o600)
 
     assert wynik == WynikKroku(
-        "nieudany", f"nie można odczytać artefaktu plan.md: {przyczyna.value}", 0,
+        status="nieudany", powod=f"nie można odczytać artefaktu plan.md: {przyczyna.value}", kod_wyjscia=0,
         pomiar=POMIAR_PELNY)
 
 
@@ -2121,8 +2121,8 @@ async def test_pusty_artefakt_autora_niesie_kod_wyjscia_i_pomiar(katalog, katalo
         atrapa(("zapisz", "plan.md", ""), result()), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"niezmiennik evidence_required: plik dowodu jest pusty: {katalog / 'plan.md'}", 0,
+        status="nieudany",
+        powod=f"niezmiennik evidence_required: plik dowodu jest pusty: {katalog / 'plan.md'}", kod_wyjscia=0,
         pomiar=POMIAR_PELNY)
 
 
@@ -2134,7 +2134,7 @@ async def test_recenzent_ktory_zapisal_plik_w_repozytorium_niesie_naruszenie_kod
         atrapa(("zapisz", "nowy.txt", "x"), result()), katalog, katalog_runu)
 
     assert wynik == WynikKroku(
-        "nieudany", "niezmiennik reviewer_readonly: nowe: nowy.txt", 0, pomiar=POMIAR_PELNY)
+        status="nieudany", powod="niezmiennik reviewer_readonly: nowe: nowy.txt", kod_wyjscia=0, pomiar=POMIAR_PELNY)
 
 
 @NIE_ROOT
@@ -2153,8 +2153,8 @@ async def test_nieczytelny_plik_recenzenta_przy_sprawdzeniu_readonly_niesie_kod_
         plik.chmod(0o600)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"nie można sprawdzić niezmiennika reviewer_readonly: {przyczyna.value}", 0,
+        status="nieudany",
+        powod=f"nie można sprawdzić niezmiennika reviewer_readonly: {przyczyna.value}", kod_wyjscia=0,
         pomiar=POMIAR_PELNY)
 
 
@@ -2168,7 +2168,7 @@ async def test_tresc_asystenta_pomija_elementy_inne_niz_tekst_takze_gdy_niosa_po
     wynik, zdarzenia = await uruchom(
         spec(), atrapa(linia(json.dumps(wiadomosc)), result()), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, pomiar=POMIAR_PELNY)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, pomiar=POMIAR_PELNY)
     assert [z for z in zdarzenia if z["kind"] == "output"] == [zdarzenie_output("widoczne")]
 
 

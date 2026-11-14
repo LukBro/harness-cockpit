@@ -20,7 +20,9 @@ from types import MappingProxyType
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
+from cockpit.api.schematy import EventIn
 from runner import operacje, silnik
 from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
@@ -58,6 +60,21 @@ def argv_operacji(cmd: Mapping[str, Any]) -> tuple[str, ...] | None:
 class StrumienZamkniety(Exception):
     """Kokpit zamknal strumien polecen. Sygnal wewnetrzny: `listen()` laczy sie wtedy
     ponownie, proces runnera sie nie konczy."""
+
+
+class NiewaznePoleZdarzenia(ValueError):
+    """Zdarzenie lamie limity `EventIn` (HAR-242): kokpit odpowiedzialby 4xx i zdarzenie
+    przepadloby po wyslaniu. Nie trafia do bufora ani na siec, nie jest ponawiane."""
+
+
+def _sprawdz_zdarzenie(kw: Mapping[str, Any]) -> None:
+    """Ta sama walidacja co w kokpicie, przed buforem i POST; blad to `NiewaznePoleZdarzenia`."""
+    try:
+        EventIn.model_validate(kw)
+    except ValidationError as e:
+        opisy = "; ".join(
+            f"{'.'.join(str(c) for c in b['loc'])}: {b['msg']}" for b in e.errors())
+        raise NiewaznePoleZdarzenia(f"zdarzenie {kw.get('kind')}: {opisy}") from e
 
 
 class KokpitNiezgodny(Exception):
@@ -231,6 +248,7 @@ class Runner:
         w logu."""
         # event_id nadaje runner; ponowienie z tym samym nie tworzy duplikatu (HAR-39)
         kw.setdefault("event_id", str(uuid.uuid4()))
+        _sprawdz_zdarzenie(kw)
         self._bufor.dopisz(kw)
         wyniki: dict[str, bool] = {}
         await self.dosylaj(client, wyniki)
@@ -240,6 +258,7 @@ class Runner:
         """Jedna proba POST z pominieciem bufora: przy braku miejsca bufor sam nie zadziala,
         a ponowienie opoznialoby przerwanie runu. Nigdy token ani tresc odpowiedzi w logu."""
         kw.setdefault("event_id", str(uuid.uuid4()))
+        _sprawdz_zdarzenie(kw)
         try:
             r = await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
         except httpx.TransportError as e:

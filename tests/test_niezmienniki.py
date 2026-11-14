@@ -39,6 +39,7 @@ from cockpit.services.walidacja import (
     sprawdz_tylko_odczyt,
     waliduj_definicje,
 )
+from procesy import uruchom_i_zbierz
 
 
 def nazwy(naruszenia: list[Naruszenie]) -> list[Niezmiennik]:
@@ -725,7 +726,7 @@ def test_pominieta_kolejka_fifo_nie_ukrywa_zmian_w_sasiednich_plikach(tmp_path):
 
 
 def git(repo: Path, *argumenty: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return uruchom_i_zbierz(
         ["git", "-C", str(repo), *argumenty],
         check=True, capture_output=True, text=True,
     )

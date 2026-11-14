@@ -98,6 +98,8 @@ also_copy = [
   "alembic.ini",
   ".github/workflows/",
   ".claude/hooks/",
+  # test skilla praca-ticketu czyta skrypty i rubrykę z .claude/skills/
+  ".claude/skills/",
   "deploy/",
   ".cockpit/",
   "web/",

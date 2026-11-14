@@ -451,7 +451,7 @@ async def test_krok_zakonczony_kodem_3_ma_ten_sam_kod_i_te_same_linie_wyjscia(ka
         "krok z kodem 3",
     )
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3)
     assert [z["text"] for z in zdarzenia] == ["pierwsza", "druga", "trzecia"]
     assert {z["kind"] for z in zdarzenia} == {"output"}
     assert {z["step_id"] for z in zdarzenia} == {"krok-23"}
@@ -1555,7 +1555,7 @@ async def test_agent_pod_straznikiem_widzi_pythonpath_runnera_jak_bez_straznika(
     )
     bez_straznika = await _wyjscie_agenta_bez_straznika(dict(os.environ))
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert [z["text"] for z in zdarzenia] == [oczekiwane_wyjscie]
     assert bez_straznika == oczekiwane_wyjscie
 
@@ -1678,9 +1678,9 @@ async def test_nieistniejace_polecenie_kroku_daje_porazke_z_pelnym_komunikatem_i
     )
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"nie można uruchomić polecenia: [Errno 2] No such file or directory: {nazwa!r}",
-        None,
+        status="nieudany",
+        powod=f"nie można uruchomić polecenia: [Errno 2] No such file or directory: {nazwa!r}",
+        kod_wyjscia=None,
     )
 
 
@@ -1713,7 +1713,7 @@ async def test_blad_systemowy_przy_starcie_straznika_daje_porazke_i_nie_wycieka_
         wykonaj_krok(spec(), ["polecenie"], katalog_kroku, emit_pusty), 10, "krok z bledem startu"
     )
 
-    assert wynik == WynikKroku("nieudany", "nie można uruchomić polecenia: brak-har85", None)
+    assert wynik == WynikKroku(status="nieudany", powod="nie można uruchomić polecenia: brak-har85", kod_wyjscia=None)
     assert liczba_deskryptorow() == przed
 
 

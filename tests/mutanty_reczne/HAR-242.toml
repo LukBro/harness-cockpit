@@ -1,0 +1,1071 @@
+# Tabela recznych mutantow HAR-242: tools/check_granica.py (poza zasiegiem mutmuta), walidacja
+# zdarzen w src/runner/client.py, limity pol modeli wejscia, krok CI, BLEDY_GRANICY silnika
+# i `kw_only` w WynikKroku (stale i dekoratory leza poza funkcjami - kod 3).
+
+# --- WynikKroku: tylko argumenty nazwane ---
+
+[[mutant]]
+plik = "src/runner/krok.py"
+szukaj = "@dataclass(frozen=True, kw_only=True)"
+zamien = "@dataclass(frozen=True)"
+test = "tests/test_wykonanie_kroku.py::test_wynik_kroku_nie_przyjmuje_pol_pozycyjnie"
+
+# --- silnik: krotka bledow granic; kazdy typ ma wejscie, ktore lapie tylko on ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "(BladDziedziny, OSError, KeyError, ValueError)"
+zamien = "(OSError, KeyError, ValueError)"
+test = "tests/test_silnik_konczy_run.py::test_wyjatek_z_granicy_silnika_konczy_run_porazka_kroku_i_run_finished[nastepne-run-blad_dziedziny]"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "(BladDziedziny, OSError, KeyError, ValueError)"
+zamien = "(BladDziedziny, KeyError, ValueError)"
+test = "tests/test_silnik_konczy_run.py::test_wyjatek_z_granicy_silnika_konczy_run_porazka_kroku_i_run_finished[nastepne-run-blad_dysku]"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "(BladDziedziny, OSError, KeyError, ValueError)"
+zamien = "(BladDziedziny, OSError, ValueError)"
+test = "tests/test_silnik_konczy_run.py::test_wyjatek_z_granicy_silnika_konczy_run_porazka_kroku_i_run_finished[nastepne-run-brak_klucza]"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "(BladDziedziny, OSError, KeyError, ValueError)"
+zamien = "(BladDziedziny, OSError, KeyError)"
+test = "tests/test_silnik_konczy_run.py::test_wyjatek_z_granicy_silnika_konczy_run_porazka_kroku_i_run_finished[nastepne-run-zla_wartosc]"
+
+# --- krok CI ---
+
+[[mutant]]
+plik = ".github/workflows/ci.yml"
+szukaj = "        run: python tools/check_granica.py"
+zamien = "        run: python tools/check_lessons.py"
+test = "tests/test_granica.py::test_ci_uruchamia_sprawdzenie_granicy_wejscia"
+
+# --- limity pol modeli wejscia (src/cockpit/api/schematy.py, src/cockpit/api/app.py) ---
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "run_id: str = Field(max_length=36)"
+zamien = "run_id: str = Field(max_length=37)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[run_id-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "event_id: str = Field(min_length=1, max_length=36)"
+zamien = "event_id: str = Field(min_length=1, max_length=37)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[event_id-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "step_id: str = Field(min_length=1, max_length=100)"
+zamien = "step_id: str = Field(min_length=1, max_length=101)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "agent_id: str = Field(default=\"\", max_length=100)"
+zamien = "agent_id: str = Field(default=\"\", max_length=101)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[agent_id-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "agent_type: str = Field(default=\"\", max_length=100)"
+zamien = "agent_type: str = Field(default=\"\", max_length=101)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[agent_type-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "kind: str = Field(max_length=50)"
+zamien = "kind: str = Field(max_length=51)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[kind-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "cost_source: str = Field(default=\"unavailable\", max_length=20)"
+zamien = "cost_source: str = Field(default=\"unavailable\", max_length=21)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[cost_source-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "name: str = Field(max_length=200)"
+zamien = "name: str = Field(max_length=201)"
+test = "tests/test_granica.py::test_prawdziwe_modele_wejscia_maja_limity_zgodne_z_kolumnami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "version: str = Field(default=\"\", max_length=50)"
+zamien = "version: str = Field(default=\"\", max_length=51)"
+test = "tests/test_granica.py::test_prawdziwe_modele_wejscia_maja_limity_zgodne_z_kolumnami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflow: str = Field(default=\"szkielet\", max_length=200)"
+zamien = "workflow: str = Field(default=\"szkielet\", max_length=201)"
+test = "tests/test_granica.py::test_prawdziwe_modele_wejscia_maja_limity_zgodne_z_kolumnami"
+
+# --- runner: walidacja zdarzenia przed buforem i POST (src/runner/client.py) ---
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "class NiewaznePoleZdarzenia(ValueError):"
+zamien = "class NiewaznePoleZdarzenia(Exception):"
+test = "tests/test_granica.py::test_niewazne_pole_zdarzenia_jest_wartoscia_bledna_a_nie_bledem_sieci"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "EventIn.model_validate(kw)"
+zamien = "None"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "except ValidationError as e:"
+zamien = "except KeyError as e:"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "{opisy}\") from e"
+zamien = "{opisy}\") from None"
+test = "tests/test_granica.py::test_komunikat_niewaznego_pola_nazywa_rodzaj_zdarzenia_i_pole_z_przyczyna[send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "opisy = \"; \".join("
+zamien = "opisy = \", \".join("
+test = "tests/test_granica.py::test_komunikat_kilku_niewaznych_pol_laczy_je_srednikiem_w_kolejnosci_pol[send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "{'.'.join(str(c)"
+zamien = "{'/'.join(str(c)"
+test = "tests/test_granica.py::test_komunikat_bledu_elementu_listy_wskazuje_jego_indeks_kropka[send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "{kw.get('kind')}: {opisy}"
+zamien = "{kw.get('kind')} {opisy}"
+test = "tests/test_granica.py::test_komunikat_niewaznego_pola_nazywa_rodzaj_zdarzenia_i_pole_z_przyczyna[send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "{b['msg']}"
+zamien = "{b['type']}"
+test = "tests/test_granica.py::test_komunikat_niewaznego_pola_nazywa_rodzaj_zdarzenia_i_pole_z_przyczyna[send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "{kw.get('kind')}: {opisy}"
+zamien = "{kw['kind']}: {opisy}"
+test = "tests/test_granica.py::test_zdarzenie_bez_rodzaju_ma_w_komunikacie_none_a_nie_wyjatek_klucza[send_event]"
+
+# send_event: walidacja przed buforem (usuniecie i zamiana kolejnosci), po nadaniu event_id
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        _sprawdz_zdarzenie(kw)\n        self._bufor.dopisz(kw)"
+zamien = "        self._bufor.dopisz(kw)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        _sprawdz_zdarzenie(kw)\n        self._bufor.dopisz(kw)"
+zamien = "        self._bufor.dopisz(kw)\n        _sprawdz_zdarzenie(kw)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-send_event]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        kw.setdefault(\"event_id\", str(uuid.uuid4()))\n        _sprawdz_zdarzenie(kw)\n        self._bufor.dopisz(kw)"
+zamien = "        _sprawdz_zdarzenie(kw)\n        kw.setdefault(\"event_id\", str(uuid.uuid4()))\n        self._bufor.dopisz(kw)"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_dokladnie_na_limicie_jest_przyjete_i_wyslane[step_id-send_event]"
+
+# _wyslij_bezposrednio: walidacja przed POST i po nadaniu event_id
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        _sprawdz_zdarzenie(kw)\n        try:\n            r = await client.post("
+zamien = "        try:\n            r = await client.post("
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-_wyslij_bezposrednio]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        kw.setdefault(\"event_id\", str(uuid.uuid4()))\n        _sprawdz_zdarzenie(kw)\n        try:"
+zamien = "        _sprawdz_zdarzenie(kw)\n        kw.setdefault(\"event_id\", str(uuid.uuid4()))\n        try:"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_dokladnie_na_limicie_jest_przyjete_i_wyslane[step_id-_wyslij_bezposrednio]"
+
+# --- tools/check_granica.py ---
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "NAZWA_MODELU_ZDARZENIA = \"EventIn\""
+zamien = "NAZWA_MODELU_ZDARZENIA = \"EventInX\""
+test = "tests/test_granica.py::test_klient_runnera_z_repozytorium_waliduje_event_in"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "return min(limity) if limity else None"
+zamien = "return max(limity) if limity else None"
+test = "tests/test_granica.py::test_przy_dwoch_limitach_pola_liczy_sie_wezszy"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "min(limity) if limity else None"
+zamien = "min(limity)"
+test = "tests/test_granica.py::test_pole_bez_max_length_przy_kolumnie_string_36_jest_naruszeniem_z_nazwa_pola"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "getattr(m, \"max_length\", None) is not None"
+zamien = "getattr(m, \"max_length\", None) is None"
+test = "tests/test_granica.py::test_pole_z_max_length_rownym_dlugosci_kolumny_jest_czyste"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = " if getattr(m, \"max_length\", None) is not None]"
+zamien = "]"
+test = "tests/test_granica.py::test_pole_z_minimum_i_maksimum_dlugosci_jest_czyste"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "except (OSError, SyntaxError, ValueError)"
+zamien = "except (SyntaxError, ValueError)"
+test = "tests/test_granica.py::test_brakujacy_plik_klienta_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "except (OSError, SyntaxError, ValueError)"
+zamien = "except (OSError, ValueError)"
+test = "tests/test_granica.py::test_plik_klienta_ze_skladnia_python_nieparsowalna_to_blad_narzedzia"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "except (OSError, SyntaxError, ValueError)"
+zamien = "except (OSError, SyntaxError)"
+test = "tests/test_granica.py::test_plik_klienta_nie_w_utf8_to_blad_narzedzia"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "{e}\") from e"
+zamien = "{e}\") from None"
+test = "tests/test_granica.py::test_brakujacy_plik_klienta_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "return not any("
+zamien = "return any("
+test = "tests/test_granica.py::test_klient_runnera_uzywajacy_event_in_nie_jest_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "w.id == NAZWA_MODELU_ZDARZENIA"
+zamien = "w.id != NAZWA_MODELU_ZDARZENIA"
+test = "tests/test_granica.py::test_nazwa_inna_niz_event_in_nie_jest_walidacja_zdarzenia"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "isinstance(w, ast.Name) and w.id == NAZWA_MODELU_ZDARZENIA"
+zamien = "NAZWA_MODELU_ZDARZENIA in plik.read_text(encoding=\"utf-8\")"
+test = "tests/test_granica.py::test_samo_wspomnienie_event_in_w_komentarzu_i_napisie_nie_jest_walidacja"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "    if not pary:"
+zamien = "    if False:"
+test = "tests/test_granica.py::test_puste_pary_to_blad_narzedzia_a_nie_czysty_wynik"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "nazwa not in kolumny or "
+zamien = ""
+test = "tests/test_granica.py::test_pola_bez_kolumny_albo_z_kolumna_innego_typu_albo_bez_dlugosci_nie_sa_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = " or not isinstance(kolumny[nazwa].type, String)"
+zamien = ""
+test = "tests/test_granica.py::test_pola_bez_kolumny_albo_z_kolumna_innego_typu_albo_bez_dlugosci_nie_sa_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "if dlugosc is None:"
+zamien = "if False:"
+test = "tests/test_granica.py::test_pola_bez_kolumny_albo_z_kolumna_innego_typu_albo_bez_dlugosci_nie_sa_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "            pokryte = True"
+zamien = "            pokryte = False"
+test = "tests/test_granica.py::test_pole_z_max_length_rownym_dlugosci_kolumny_jest_czyste"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "        pokryte = False"
+zamien = "        pokryte = True"
+test = "tests/test_granica.py::test_modele_bez_zadnego_pola_odpowiadajacego_kolumnie_string_n_to_blad_narzedzia"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "sprawdzone += pokryte"
+zamien = "sprawdzone = pokryte"
+test = "tests/test_granica.py::test_model_pokryty_pierwszy_a_niepokryty_drugi_nie_jest_bledem_narzedzia"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "if limit is None:"
+zamien = "if limit is not None:"
+test = "tests/test_granica.py::test_pole_bez_max_length_przy_kolumnie_string_36_jest_naruszeniem_z_nazwa_pola"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "elif limit > dlugosc:"
+zamien = "elif limit >= dlugosc:"
+test = "tests/test_granica.py::test_pole_z_max_length_rownym_dlugosci_kolumny_jest_czyste"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "bez max_length\")"
+zamien = "bez max_length!\")"
+test = "tests/test_granica.py::test_pole_bez_max_length_przy_kolumnie_string_36_jest_naruszeniem_z_nazwa_pola"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "max_length={limit} > {dlugosc}"
+zamien = "max_length={limit} >= {dlugosc}"
+test = "tests/test_granica.py::test_pole_z_max_length_wiekszym_niz_kolumna_jest_naruszeniem_z_obiema_wartosciami"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "if sprawdzone == 0:"
+zamien = "if sprawdzone == 1:"
+test = "tests/test_granica.py::test_pole_z_max_length_rownym_dlugosci_kolumny_jest_czyste"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "żaden model nie miał pola"
+zamien = "zaden model nie mial pola"
+test = "tests/test_granica.py::test_modele_bez_zadnego_pola_odpowiadajacego_kolumnie_string_n_to_blad_narzedzia"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "brak par modeli do sprawdzenia"
+zamien = "brak par"
+test = "tests/test_granica.py::test_puste_pary_to_blad_narzedzia_a_nie_czysty_wynik"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "if _wysylka_bez_walidacji(klient):"
+zamien = "if not _wysylka_bez_walidacji(klient):"
+test = "tests/test_granica.py::test_klient_runnera_uzywajacy_event_in_nie_jest_naruszeniem"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "src/runner/client.py: wysyłka bez walidacji EventIn"
+zamien = "src/runner/client.py: wysylka bez walidacji EventIn"
+test = "tests/test_granica.py::test_klient_runnera_bez_event_in_to_naruszenie_wyslanej_bez_walidacji"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "(EventIn, Event), "
+zamien = ""
+test = "tests/test_granica.py::test_domyslne_pary_obejmuja_zdarzenie_rejestracje_runnera_i_utworzenie_runu"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = ", (RunnerRegister, Runner)"
+zamien = ""
+test = "tests/test_granica.py::test_domyslne_pary_obejmuja_zdarzenie_rejestracje_runnera_i_utworzenie_runu"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = ", (RunCreate, Run)"
+zamien = ""
+test = "tests/test_granica.py::test_domyslne_pary_obejmuja_zdarzenie_rejestracje_runnera_i_utworzenie_runu"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "except (ImportError, BladNarzedzia)"
+zamien = "except (BladNarzedzia,)"
+test = "tests/test_granica.py::test_main_przy_bledzie_importu_modeli_zwraca_dwa_a_nie_traceback"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "except (ImportError, BladNarzedzia)"
+zamien = "except (ImportError,)"
+test = "tests/test_granica.py::test_main_bez_par_zwraca_dwa_z_przyczyna_na_stderr"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "print(e, file=sys.stderr)"
+zamien = "print(e)"
+test = "tests/test_granica.py::test_main_bez_par_zwraca_dwa_z_przyczyna_na_stderr"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "        return 2"
+zamien = "        return 3"
+test = "tests/test_granica.py::test_main_bez_par_zwraca_dwa_z_przyczyna_na_stderr"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "    if naruszenia:"
+zamien = "    if not naruszenia:"
+test = "tests/test_granica.py::test_main_z_naruszeniami_zwraca_jeden_i_wypisuje_je_na_stdout"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "print(\"Granica wejścia bez limitów:\")"
+zamien = "print(\"Granica wejscia bez limitow:\")"
+test = "tests/test_granica.py::test_main_z_naruszeniami_zwraca_jeden_i_wypisuje_je_na_stdout"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "            print(x)"
+zamien = "            print(x, end=\" \")"
+test = "tests/test_granica.py::test_main_z_naruszeniami_zwraca_jeden_i_wypisuje_je_na_stdout"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "        return 1"
+zamien = "        return 2"
+test = "tests/test_granica.py::test_main_z_naruszeniami_zwraca_jeden_i_wypisuje_je_na_stdout"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "print(\"limity pól wejścia zgodne z kolumnami - w porządku\")"
+zamien = "print(\"limity pol wejscia zgodne z kolumnami - w porzadku\")"
+test = "tests/test_granica.py::test_main_na_czystych_parach_zwraca_zero_i_pisze_potwierdzenie"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "    return 0"
+zamien = "    return 1"
+test = "tests/test_granica.py::test_main_na_czystych_parach_zwraca_zero_i_pisze_potwierdzenie"
+
+[[mutant]]
+plik = "tools/check_granica.py"
+szukaj = "sys.exit(main(sys.argv[1:]))"
+zamien = "main(sys.argv[1:])"
+test = "tests/test_granica.py::test_narzedzie_uruchomione_jako_skrypt_konczy_sie_kodem_jeden_gdy_klient_nie_waliduje"
+
+# --- silnik: gałąź wyjątku zadania kroku w petli planu (koniec kroku, nie runu) ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "                except BLEDY_GRANICY as e:      # wyjatek zadania kroku to koniec kroku, nie runu\n                    udany, powod, pomiar = False, _tekst_bledu(e), PomiarKroku()\n"
+zamien = ""
+test = "tests/test_silnik_konczy_run.py::test_wyjatek_agenta_jednego_kroku_konczy_tylko_ten_krok_a_rownolegly_krok_sie_konczy[OSError]"
+
+# --- silnik: blad dziedziny i dysku z `_przygotuj` konczy run bledem startu (bez BladStartu) ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "    except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu\n        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))\n        return\n"
+zamien = ""
+test = "tests/test_silnik_runu.py::test_sciezka_poza_zakresem_runnera_konczy_run_bledem_bez_tworzenia_worktree"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "    except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu\n        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))\n        return\n"
+zamien = ""
+test = "tests/test_silnik_runu.py::test_blad_zapisu_kopii_workflow_konczy_run_bledem_przed_startem_krokow"
+
+# --- src/cockpit/api/schematy.py: wiersze przeniesione z tabel HAR-170/174/178/78 (lista kodu 3) ---
+
+# z HAR-170.toml, linie [23]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=1000)]], Field(max_length=1000)]"
+zamien = "Field(min_length=0, max_length=1000)]], Field(max_length=1000)]"
+test = "tests/test_odbior_dowody.py::test_kotwica_pusta_albo_dluzsza_niz_1000_znakow_jest_odrzucona"
+
+# z HAR-170.toml, linie [23]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=1000)]], Field(max_length=1000)]"
+zamien = "Field(min_length=1, max_length=1001)]], Field(max_length=1000)]"
+test = "tests/test_odbior_dowody.py::test_kotwica_pusta_albo_dluzsza_niz_1000_znakow_jest_odrzucona"
+
+# z HAR-170.toml, linie [23]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=1000)]], Field(max_length=1000)]"
+zamien = "Field(min_length=1, max_length=1000)]], Field(max_length=1001)]"
+test = "tests/test_odbior_dowody.py::test_tysiac_i_jedna_kotwica_jest_odrzucone"
+
+# z HAR-170.toml, linie [25]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=255)]], Field(max_length=100)]"
+zamien = "Field(min_length=0, max_length=255)]], Field(max_length=100)]"
+test = "tests/test_odbior_dowody.py::test_nazwa_artefaktu_pusta_albo_dluzsza_niz_255_znakow_jest_odrzucona"
+
+# z HAR-170.toml, linie [25]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=255)]], Field(max_length=100)]"
+zamien = "Field(min_length=1, max_length=256)]], Field(max_length=100)]"
+test = "tests/test_odbior_dowody.py::test_nazwa_artefaktu_pusta_albo_dluzsza_niz_255_znakow_jest_odrzucona"
+
+# z HAR-170.toml, linie [25]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=255)]], Field(max_length=100)]"
+zamien = "Field(min_length=1, max_length=255)]], Field(max_length=101)]"
+test = "tests/test_odbior_dowody.py::test_sto_jeden_artefaktow_jest_odrzucone"
+
+# z HAR-170.toml, linie [31]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "model_config = ConfigDict(extra=\"forbid\", strict=True)"
+zamien = "model_config = ConfigDict(extra=\"ignore\", strict=True)"
+test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
+
+# z HAR-170.toml, linie [31]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "model_config = ConfigDict(extra=\"forbid\", strict=True)"
+zamien = "model_config = ConfigDict(extra=\"forbid\", strict=False)"
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_ktory_nie_jest_calkowita_liczba_jest_odrzucony"
+
+# z HAR-170.toml, linie [33]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "capability: str = Field(max_length=200, min_length=1)"
+zamien = "capability: str = Field(max_length=201, min_length=1)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+# z HAR-170.toml, linie [33]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "capability: str = Field(max_length=200, min_length=1)"
+zamien = "capability: str = Field(max_length=200, min_length=0)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+# z HAR-170.toml, linie [35]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)"
+zamien = "exit_code: int | None = Field(ge=-2_147_483_649, le=2_147_483_647)"
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_poza_zakresem_int4_jest_odrzucony"
+
+# z HAR-170.toml, linie [35]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)"
+zamien = "exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_648)"
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_poza_zakresem_int4_jest_odrzucony"
+
+# z HAR-170.toml, linie [35]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)"
+zamien = "exit_code: int | None = Field(ge=-2_147_483_647, le=2_147_483_647)"
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_w_zakresie_int4_jest_przyjety"
+
+# z HAR-170.toml, linie [35]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)"
+zamien = "exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_646)"
+test = "tests/test_odbior_dowody.py::test_kod_wyjscia_w_zakresie_int4_jest_przyjety"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"[0-9a-f]{64}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[0-9a-f]{63}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[0-9a-f]{65}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[0-9a-fA-F]{64}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[0-9a-z]{64}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_o_zlym_ksztalcie_jest_odrzucona"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[a-f]{64}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
+
+# z HAR-170.toml, linie [36]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str = Field(pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str = Field(pattern=r\"^[0-9]{64}$\")"
+test = "tests/test_odbior_dowody.py::test_suma_sha256_z_cyframi_i_malymi_literami_szesnastkowymi_jest_przyjeta"
+
+# z HAR-170.toml, linie [37]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "started_at: str = Field(min_length=1, max_length=64)"
+zamien = "started_at: str = Field(min_length=1, max_length=65)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+# z HAR-170.toml, linie [37]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "started_at: str = Field(min_length=1, max_length=64)"
+zamien = "started_at: str = Field(min_length=0, max_length=64)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+# z HAR-170.toml, linie [38]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "finished_at: str = Field(min_length=1, max_length=64)"
+zamien = "finished_at: str = Field(min_length=1, max_length=65)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+# z HAR-170.toml, linie [38]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "finished_at: str = Field(min_length=1, max_length=64)"
+zamien = "finished_at: str = Field(min_length=0, max_length=64)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+# z HAR-170.toml, linie [39, 40]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "source: Literal[\"engine\", \"agent\"]\n    plik: str = Field("
+zamien = "source: Literal[\"engine\"]\n    plik: str = Field("
+test = "tests/test_odbior_dowody.py::test_zrodlo_dowodu_engine_i_agent_jest_przyjete"
+
+# z HAR-170.toml, linie [39, 40]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "source: Literal[\"engine\", \"agent\"]\n    plik: str = Field("
+zamien = "source: Literal[\"engine\", \"agent\", \"człowiek\"]\n    plik: str = Field("
+test = "tests/test_odbior_dowody.py::test_zrodlo_dowodu_spoza_engine_i_agent_jest_odrzucone"
+
+# z HAR-170.toml, linie [40]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "plik: str = Field(min_length=1, max_length=255)"
+zamien = "plik: str = Field(min_length=1, max_length=256)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_o_jeden_znak_za_dlugie_jest_odrzucone"
+
+# z HAR-170.toml, linie [40]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "plik: str = Field(min_length=1, max_length=255)"
+zamien = "plik: str = Field(min_length=0, max_length=255)"
+test = "tests/test_odbior_dowody.py::test_pole_dowodu_z_pustym_napisem_jest_odrzucone"
+
+# z HAR-170.toml, linie [69]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "dowod: DowodIn | None = None"
+zamien = "dowod: dict | None = None"
+test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
+
+# z HAR-170.toml, linie [69]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "dowod: DowodIn | None = None"
+zamien = "dowod: DowodIn | None"
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+# z HAR-170.toml, linie [70]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "verdict: str | None = Field(default=None, min_length=1, max_length=200)"
+zamien = "verdict: str | None = Field(default=None, min_length=0, max_length=200)"
+test = "tests/test_odbior_dowody.py::test_werdykt_pusty_za_dlugi_albo_nie_napis_jest_odrzucony"
+
+# z HAR-170.toml, linie [70]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "verdict: str | None = Field(default=None, min_length=1, max_length=200)"
+zamien = "verdict: str | None = Field(default=None, min_length=1, max_length=201)"
+test = "tests/test_odbior_dowody.py::test_werdykt_pusty_za_dlugi_albo_nie_napis_jest_odrzucony"
+
+# z HAR-170.toml, linie [70]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "verdict: str | None = Field(default=None, min_length=1, max_length=200)"
+zamien = "verdict: str | None = Field(min_length=1, max_length=200)"
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+# z HAR-170.toml, linie [71]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "kotwice: _ListaKotwic | None = None"
+zamien = "kotwice: _ListaKotwic | None"
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+# z HAR-170.toml, linie [72]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "artefakty: _ListaArtefaktow | None = None"
+zamien = "artefakty: _ListaArtefaktow | None"
+test = "tests/test_odbior_dowody.py::test_zdarzenie_bez_pol_dowodowych_ma_w_bazie_sql_null_a_nie_json_null_ani_pusty_slownik"
+
+# z HAR-170.toml, linie [71]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "kotwice: _ListaKotwic | None = None"
+zamien = "kotwice: list[str] | None = None"
+test = "tests/test_kontrakt_api.py::test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami"
+
+# z HAR-170.toml, linie [72]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "artefakty: _ListaArtefaktow | None = None"
+zamien = "artefakty: list[str] | None = None"
+test = "tests/test_kontrakt_api.py::test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami"
+
+# z HAR-170.toml, linie [22, 23]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "_ListaKotwic = Annotated[\n    list["
+zamien = "_ListaKotwic = Annotated[\n    set["
+test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
+
+# z HAR-170.toml, linie [24, 25]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "_ListaArtefaktow = Annotated[\n    list["
+zamien = "_ListaArtefaktow = Annotated[\n    set["
+test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
+
+# z HAR-170.toml, linie [28]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class DowodIn(BaseModel):"
+zamien = "class DowodIn(BaseModel, extra=\"ignore\"):"
+test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
+
+# z HAR-174.toml, linie [61]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_in: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana"
+
+# z HAR-174.toml, linie [61]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_in: int | None = Field(default=None, ge=-1, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [61]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_648)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [61]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_646)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana"
+
+# z HAR-174.toml, linie [61]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_in: int | None = Field(default=0, ge=0, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero"
+
+# z HAR-174.toml, linie [62]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_out: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana"
+
+# z HAR-174.toml, linie [62]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_out: int | None = Field(default=None, ge=-1, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [62]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_648)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [62]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_646)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana"
+
+# z HAR-174.toml, linie [62]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    tokens_out: int | None = Field(default=0, ge=0, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero"
+
+# z HAR-174.toml, linie [63]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    num_turns: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana"
+
+# z HAR-174.toml, linie [63]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    num_turns: int | None = Field(default=None, ge=-1, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [63]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_648)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_poza_zakresem_jest_odrzucona_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [63]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_646)"
+test = "tests/test_pomiar_kroku.py::test_liczba_pomiaru_na_granicach_zakresu_jest_przyjeta_i_zapisana"
+
+# z HAR-174.toml, linie [63]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "    num_turns: int | None = Field(default=0, ge=0, le=2_147_483_647)"
+test = "tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero"
+
+# z HAR-174.toml, linie [64]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    session_id: str | None = Field(default=None, min_length=1, max_length=100)"
+zamien = "    session_id: str | None = Field(default=None, min_length=0, max_length=100)"
+test = "tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_odrzucony_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [64]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    session_id: str | None = Field(default=None, min_length=1, max_length=100)"
+zamien = "    session_id: str | None = Field(default=None, min_length=2, max_length=100)"
+test = "tests/test_pomiar_kroku.py::test_session_id_o_jednym_znaku_jest_przyjety_i_zapisany"
+
+# z HAR-174.toml, linie [64]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    session_id: str | None = Field(default=None, min_length=1, max_length=100)"
+zamien = "    session_id: str | None = Field(default=None, min_length=1, max_length=101)"
+test = "tests/test_pomiar_kroku.py::test_session_id_pusty_za_dlugi_albo_nie_napis_jest_odrzucony_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [64]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    session_id: str | None = Field(default=None, min_length=1, max_length=100)"
+zamien = "    session_id: str | None = Field(default=None, min_length=1, max_length=99)"
+test = "tests/test_pomiar_kroku.py::test_session_id_o_stu_znakach_jest_przyjety_i_zapisany"
+
+# z HAR-174.toml, linie [64]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    session_id: str | None = Field(default=None, min_length=1, max_length=100)"
+zamien = "    session_id: str | None = Field(default=\"\", min_length=1, max_length=100)"
+test = "tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero"
+
+# z HAR-174.toml, linie [51]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)"
+zamien = "cost_usd: float | None = Field(default=None, ge=-1, allow_inf_nan=False)"
+test = "tests/test_pomiar_kroku.py::test_koszt_zdarzenia_ujemny_nieskonczony_albo_nie_liczba_jest_odrzucony_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [51]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)"
+zamien = "cost_usd: float | None = Field(default=None, ge=1, allow_inf_nan=False)"
+test = "tests/test_pomiar_kroku.py::test_koszt_zdarzenia_rowny_zero_jest_przyjety_i_zapisany_jako_zero_a_nie_null"
+
+# z HAR-174.toml, linie [51]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)"
+zamien = "cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=True)"
+test = "tests/test_pomiar_kroku.py::test_koszt_zdarzenia_ujemny_nieskonczony_albo_nie_liczba_jest_odrzucony_i_nic_nie_zapisuje"
+
+# z HAR-174.toml, linie [51]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)"
+zamien = "cost_usd: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)"
+test = "tests/test_pomiar_kroku.py::test_zdarzenie_konca_kroku_bez_pomiaru_zostawia_w_bazie_null_a_nie_zero"
+
+# z HAR-178.toml, linie [66]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "Field(min_length=1, max_length=200)"
+zamien = "Field(min_length=0, max_length=200)"
+test = "tests/test_pokrycie_runu.py::test_pusty_napis_w_liscie_krokow_weryfikujacych_jest_odrzucony"
+
+# z HAR-178.toml, linie [66]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "min_length=1, max_length=200)]]"
+zamien = "min_length=1, max_length=201)]]"
+test = "tests/test_pokrycie_runu.py::test_element_listy_krokow_weryfikujacych_dluzszy_niz_200_znakow_jest_odrzucony"
+
+# z HAR-178.toml, linie [66]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "min_length=1, max_length=200)]]"
+zamien = "min_length=1, max_length=199)]]"
+test = "tests/test_pokrycie_runu.py::test_element_listy_krokow_weryfikujacych_o_200_znakach_jest_przyjety"
+
+# z HAR-178.toml, linie [67]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "default=None, max_length=1000)"
+zamien = "default=None, max_length=1001)"
+test = "tests/test_pokrycie_runu.py::test_lista_krokow_weryfikujacych_dluzsza_niz_1000_elementow_jest_odrzucona"
+
+# z HAR-178.toml, linie [67]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "default=None, max_length=1000)"
+zamien = "default=None, max_length=999)"
+test = "tests/test_pokrycie_runu.py::test_lista_krokow_weryfikujacych_o_1000_elementach_jest_przyjeta"
+
+# z HAR-178.toml, linie [67]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "default=None, max_length=1000)"
+zamien = "default=[\"x\"], max_length=1000)"
+test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_ma_pokrycie_sprawdzone_w_kolumnach_runu"
+
+# z HAR-178.toml, linie [66]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "]] | None = Field("
+zamien = "]] = Field("
+test = "tests/test_pokrycie_runu.py::test_jawny_null_w_polu_krokow_weryfikujacych_jest_brakiem_klasyfikacji"
+
+# z HAR-78.toml, linie [59]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+test = "tests/test_stan_krokow.py::test_numer_proby_poza_zakresem_jest_odrzucony_i_nic_nie_zapisuje"
+
+# z HAR-78.toml, linie [59]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=2, le=2_147_483_647)"
+test = "tests/test_stan_krokow.py::test_numer_proby_pierwszy_jest_przyjety"
+
+# z HAR-78.toml, linie [59]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_648)"
+test = "tests/test_stan_krokow.py::test_numer_proby_poza_zakresem_jest_odrzucony_i_nic_nie_zapisuje"
+
+# z HAR-78.toml, linie [59]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_646)"
+test = "tests/test_stan_krokow.py::test_numer_proby_rowny_najwiekszej_liczbie_calkowitej_bazy_jest_przyjety"
+
+# z HAR-78.toml, linie [59]
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+zamien = "attempt: int | None = Field(default=1, ge=1, le=2_147_483_647)"
+test = "tests/test_stan_krokow.py::test_zdarzenie_bez_numeru_proby_zapisuje_brak_proby_a_nie_pierwsza"
+
+# --- schematy.py: linie EventIn bez wiersza w tabelach innych ticketow ---
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class EventIn(BaseModel):"
+zamien = "class EventIn(object):"
+test = "tests/test_granica.py::test_zdarzenie_z_polem_o_jeden_ponad_limit_nie_trafia_do_bufora_ani_na_siec[step_id-send_event]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "text: str = \"\""
+zamien = "text: str"
+test = "tests/test_granica.py::test_zdarzenie_bez_tekstu_ma_pusty_tekst"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "tokens: int | None = None"
+zamien = "tokens: int | None = 0"
+test = "tests/test_granica.py::test_zdarzenie_bez_pomiarow_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "duration_ms: int | None = None"
+zamien = "duration_ms: int | None = 0"
+test = "tests/test_granica.py::test_zdarzenie_bez_pomiarow_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "wyslane_output: int | None = None"
+zamien = "wyslane_output: int | None = 0"
+test = "tests/test_granica.py::test_zdarzenie_bez_pomiarow_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "text_full_len: int | None = Field(default=None, ge=0,"
+zamien = "text_full_len: int | None = Field(default=0, ge=0,"
+test = "tests/test_granica.py::test_zdarzenie_bez_pomiarow_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "text_full_len: int | None = Field(default=None, ge=0,"
+zamien = "text_full_len: int | None = Field(default=None, ge=1,"
+test = "tests/test_granica.py::test_pelna_dlugosc_tekstu_zero_jest_dozwolona"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "text_full_len: int | None = Field(default=None, ge=0,"
+zamien = "text_full_len: int | None = Field(default=None,"
+test = "tests/test_granica.py::test_pelna_dlugosc_tekstu_ujemna_jest_odrzucona"

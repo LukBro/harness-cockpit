@@ -569,11 +569,13 @@
         "properties": {
           "agent_id": {
             "default": "",
+            "maxLength": 100,
             "title": "Agent Id",
             "type": "string"
           },
           "agent_type": {
             "default": "",
+            "maxLength": 100,
             "title": "Agent Type",
             "type": "string"
           },
@@ -609,6 +611,7 @@
           },
           "cost_source": {
             "default": "unavailable",
+            "maxLength": 20,
             "title": "Cost Source",
             "type": "string"
           },
@@ -646,11 +649,13 @@
             "title": "Duration Ms"
           },
           "event_id": {
+            "maxLength": 36,
             "minLength": 1,
             "title": "Event Id",
             "type": "string"
           },
           "kind": {
+            "maxLength": 50,
             "title": "Kind",
             "type": "string"
           },
@@ -702,6 +707,7 @@
             "title": "Num Turns"
           },
           "run_id": {
+            "maxLength": 36,
             "title": "Run Id",
             "type": "string"
           },
@@ -719,6 +725,7 @@
             "title": "Session Id"
           },
           "step_id": {
+            "maxLength": 100,
             "minLength": 1,
             "title": "Step Id",
             "type": "string"
@@ -1365,6 +1372,7 @@
           },
           "workflow": {
             "default": "szkielet",
+            "maxLength": 200,
             "title": "Workflow",
             "type": "string"
           }
@@ -1523,11 +1531,13 @@
             "type": "array"
           },
           "name": {
+            "maxLength": 200,
             "title": "Name",
             "type": "string"
           },
           "version": {
             "default": "",
+            "maxLength": 50,
             "title": "Version",
             "type": "string"
           }

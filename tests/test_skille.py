@@ -6,7 +6,6 @@ Wszystko na tmp_path, bez PostgreSQL. Tier i prawo zapisu to HAR-6, tu ich nie m
 """
 import ast
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,7 @@ from cockpit.services.skills import (
     zapisz_skill,
 )
 from cockpit.services.walidacja import waliduj_definicje
+from procesy import uruchom_i_zbierz
 
 KORZEN_PROJEKTU = Path(__file__).resolve().parents[1]
 
@@ -29,7 +29,7 @@ KORZEN_PROJEKTU = Path(__file__).resolve().parents[1]
 def korzen_repozytorium() -> Path:
     """Korzeń repozytorium git, także gdy test leży w kopii `mutants/` (mutmut
     nie kopiuje `.gitignore`, więc `parents[1]` wskazywałoby katalog bez niego)."""
-    wynik = subprocess.run(
+    wynik = uruchom_i_zbierz(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=Path(__file__).resolve().parent,
         check=True,
@@ -809,7 +809,7 @@ def test_zmaterializowane_skille_nie_sa_zmiana_do_odbioru_w_git_status(
     repo: Path, dom: Path
 ):
     def git(*argumenty: str) -> str:
-        return subprocess.run(
+        return uruchom_i_zbierz(
             ["git", *argumenty], cwd=repo, check=True, capture_output=True, text=True
         ).stdout
 

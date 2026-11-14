@@ -110,7 +110,7 @@ class PomiarKroku:
     session_id: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class WynikKroku:
     status: Literal["zakonczony", "nieudany"]
     powod: str | None
@@ -351,7 +351,7 @@ async def _status_startu(plik) -> str | None:
 def _porazka(
     powod: str, kod: int | None, pomiar: PomiarKroku = PomiarKroku()
 ) -> WynikKroku:
-    return WynikKroku("nieudany", powod, kod, pomiar=pomiar)
+    return WynikKroku(status="nieudany", powod=powod, kod_wyjscia=kod, pomiar=pomiar)
 
 
 def _blad_identyfikatora(krok: str) -> str | None:
@@ -621,8 +621,8 @@ async def wykonaj_krok(
             return _porazka(str(ocena), kod, pomiar)
         if not ocena.zdany:
             return WynikKroku(
-                "nieudany", f"werdykt: {ocena.wartosc}", kod, pomiar=pomiar,
-                werdykt=ocena.wartosc)
+                status="nieudany", powod=f"werdykt: {ocena.wartosc}", kod_wyjscia=kod,
+                pomiar=pomiar, werdykt=ocena.wartosc)
         wartosc_werdyktu = ocena.wartosc
 
     if PLIK_NOTATKI in spec.wyjscia:
@@ -632,6 +632,8 @@ async def wykonaj_krok(
         if powod is not None:
             return _porazka(powod, kod, pomiar)
         return WynikKroku(
-            "zakonczony", None, kod, pomiar=pomiar, kotwice=kotwice, werdykt=wartosc_werdyktu)
+            status="zakonczony", powod=None, kod_wyjscia=kod, pomiar=pomiar, kotwice=kotwice,
+            werdykt=wartosc_werdyktu)
 
-    return WynikKroku("zakonczony", None, kod, pomiar=pomiar, werdykt=wartosc_werdyktu)
+    return WynikKroku(
+        status="zakonczony", powod=None, kod_wyjscia=kod, pomiar=pomiar, werdykt=wartosc_werdyktu)

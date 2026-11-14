@@ -719,7 +719,7 @@ async def test_anulowanie_zadania_checku_zabija_komende_i_potomka_i_przepuszcza_
 async def test_komenda_nieczytelna_konczy_krok_porazka_bez_tresci_komendy_i_bez_pliku_dowodu(sw, zla):
     wynik = await sprawdz(sw, zla)
 
-    assert wynik == WynikKroku("nieudany", "check typecheck: komenda nieczytelna", None)
+    assert wynik == WynikKroku(status="nieudany", powod="check typecheck: komenda nieczytelna", kod_wyjscia=None)
     assert wynik.dowod is None
     assert pliki_pod(sw.katalog) == []
 
@@ -728,7 +728,7 @@ async def test_brak_programu_konczy_krok_porazka_z_nazwa_wyjatku_bez_pliku_dowod
     wynik = await sprawdz(sw, str(tmp_path / "nie-ma-takiego-programu") + " --x")
 
     assert wynik == WynikKroku(
-        "nieudany", "check typecheck: nie uruchomiono komendy (FileNotFoundError)", None)
+        status="nieudany", powod="check typecheck: nie uruchomiono komendy (FileNotFoundError)", kod_wyjscia=None)
     assert pliki_pod(sw.katalog) == []
 
 
@@ -743,7 +743,7 @@ async def test_program_bez_prawa_wykonania_konczy_krok_porazka_z_nazwa_wyjatku_b
     wynik = await sprawdz(sw, str(program))
 
     assert wynik == WynikKroku(
-        "nieudany", "check typecheck: nie uruchomiono komendy (PermissionError)", None)
+        status="nieudany", powod="check typecheck: nie uruchomiono komendy (PermissionError)", kod_wyjscia=None)
     assert pliki_pod(sw.katalog) == []
 
 
@@ -757,9 +757,9 @@ async def test_katalog_kroku_w_repozytorium_konczy_krok_naruszeniem_run_dir_outs
     wynik = await sprawdz(sw, komenda(kod), katalog=katalog)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"niezmiennik run_dir_outside_repo: katalog runu {katalog} lezy w repozytorium {sw.worktree}",
-        None,
+        status="nieudany",
+        powod=f"niezmiennik run_dir_outside_repo: katalog runu {katalog} lezy w repozytorium {sw.worktree}",
+        kod_wyjscia=None,
     )
     assert not start.exists()
     assert pliki_pod(sw.worktree / "wyniki") == []
