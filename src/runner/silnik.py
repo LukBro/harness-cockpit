@@ -175,7 +175,7 @@ def _przygotuj(
 ) -> Przygotowany:
     """Walidacja polecenia, worktree, rejestr, workflow, project.yaml, kopia, materializacja.
 
-    Blad wejscia (dysk, git, zakres, skill) staje sie `BladStartu`; nic nie powstaje na
+    Blad wejscia (dysk, git, zakres, skill) konczy run bledem startu; nic nie powstaje na
     dysku przed sprawdzeniem nazwy workflow i zakresu."""
     nazwa = polecenie.get("workflow")
     if (
@@ -201,7 +201,9 @@ def _przygotuj(
             raise BladStartu(_bledy(problemy_projektu))
         shutil.copyfile(plik, wt.katalog_runu / "workflow.yaml")
         materializuj({k.skill for k in workflow.kroki if k.skill is not None}, rejestr, wt.sciezka)
-    except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:
+    # BladDziedziny i OSError koncza run w `wykonaj_run` (`except BLEDY_GRANICY`) z tym samym
+    # tekstem - tu tylko ZlaKonfiguracjaZakresu, ktora nie jest bledem granicy
+    except ZlaKonfiguracjaZakresu as e:
         raise BladStartu(str(e)) from e
     return Przygotowany(wt, workflow, rejestr, projekt, repo)
 
@@ -300,12 +302,9 @@ async def _krok(
         komendy={n: p.projekt.capabilities[n] for n in skill.needs if n in p.projekt.capabilities},
         budget_usd=krok.budget_usd, max_turns=krok.max_turns,
     )
-    try:
-        prompt = zbuduj_prompt(spec)
-    except ValueError as e:
-        raise PorazkaKroku(str(e)) from e
-    # brak modelu tieru (BrakModelu), zly budzet albo limit tur (ValueError) konczy krok
-    # w petli zadan (`except BLEDY_GRANICY`) z tym samym tekstem - osobny except bylby martwy
+    # zly prompt (ValueError), brak modelu tieru (BrakModelu), zly budzet albo limit tur konczy
+    # krok w petli zadan (`except BLEDY_GRANICY`) z tym samym tekstem - osobny except bylby martwy
+    prompt = zbuduj_prompt(spec)
     argv = polecenie_agenta(spec, profil)
     dodatkowe: dict[str, object] = {}
     if PLIK_NOTATKI in skill.produces:

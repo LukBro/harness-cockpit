@@ -458,6 +458,20 @@ szukaj = "                except BLEDY_GRANICY as e:      # wyjatek zadania krok
 zamien = ""
 test = "tests/test_silnik_konczy_run.py::test_wyjatek_agenta_jednego_kroku_konczy_tylko_ten_krok_a_rownolegly_krok_sie_konczy[OSError]"
 
+# --- silnik: blad dziedziny i dysku z `_przygotuj` konczy run bledem startu (bez BladStartu) ---
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "    except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu\n        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))\n        return\n"
+zamien = ""
+test = "tests/test_silnik_runu.py::test_sciezka_poza_zakresem_runnera_konczy_run_bledem_bez_tworzenia_worktree"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = "    except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu\n        await _blad_przed_startem(emit, run_id, _tekst_bledu(e))\n        return\n"
+zamien = ""
+test = "tests/test_silnik_runu.py::test_blad_zapisu_kopii_workflow_konczy_run_bledem_przed_startem_krokow"
+
 # --- src/cockpit/api/schematy.py: wiersze przeniesione z tabel HAR-170/174/178/78 (lista kodu 3) ---
 
 # z HAR-170.toml, linie [23]

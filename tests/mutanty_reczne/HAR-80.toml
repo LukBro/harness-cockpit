@@ -159,40 +159,20 @@ test = "tests/test_silnik_runu.py::test_przygotowany_run_jest_niezmienny"
 
 # --- typy w `except` ---
 
-# Odmowa zakresu (BladDziedziny) tlumaczona na blad startu.
+# Uszkodzona konfiguracja zakresu tlumaczona na blad startu (BladDziedziny i OSError z
+# `_przygotuj` konczy `except BLEDY_GRANICY` w `wykonaj_run`, wiersze w HAR-242.toml).
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
-zamien = 'except (ZlaKonfiguracjaZakresu, OSError) as e:'
-test = "tests/test_silnik_runu.py::test_sciezka_poza_zakresem_runnera_konczy_run_bledem_bez_tworzenia_worktree"
-
-# Uszkodzona konfiguracja zakresu tlumaczona na blad startu.
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
-zamien = 'except (BladDziedziny, OSError) as e:'
+szukaj = 'except ZlaKonfiguracjaZakresu as e:'
+zamien = 'except KeyError as e:'
 test = "tests/test_silnik_runu.py::test_uszkodzona_konfiguracja_zakresu_konczy_run_bledem_a_nie_pustym_zakresem"
 
-# Blad dysku (OSError) tlumaczony na blad startu.
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = 'except (BladDziedziny, ZlaKonfiguracjaZakresu, OSError) as e:'
-zamien = 'except (BladDziedziny, ZlaKonfiguracjaZakresu) as e:'
-test = "tests/test_silnik_runu.py::test_blad_zapisu_kopii_workflow_konczy_run_bledem_przed_startem_krokow"
-
-# Porazka kroku zbudowanego przez silnik (prompt, model) konczy krok, nie run.
+# Porazka kroku zbudowanego przez silnik konczy krok, nie run (PorazkaKroku nie jest bledem granicy).
 [[mutant]]
 plik = "src/runner/silnik.py"
 szukaj = 'except PorazkaKroku as e:'
 zamien = 'except KeyError as e:'
-test = "tests/test_silnik_runu.py::test_profil_bez_modelu_dla_tieru_roli_konczy_krok_bledem_a_run_idzie_dalej"
-
-# Znak sterujacy w prompcie (ValueError) konczy krok porazka.
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = "zbuduj_prompt(spec)\n    except ValueError as e:"
-zamien = "zbuduj_prompt(spec)\n    except KeyError as e:"
-test = "tests/test_silnik_runu.py::test_znak_sterujacy_w_komendzie_capability_konczy_krok_bledem_bez_uruchomienia_agenta"
+test = "tests/test_petla_naprawcza.py::test_nieczytelny_raport_poprzedniej_proby_konczy_porazka_celu_zamiast_startu_agenta"
 
 # --- stan kroku w toku (linia z `# pragma: no mutate`) ---
 
