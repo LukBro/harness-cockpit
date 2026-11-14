@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from cockpit.db.models import Event
 from test_odbior_dowody import (  # noqa: F401  (swiat to fixture)
+    POLA_KONCA_KROKU,
     dane_zdarzen,
     liczba_zdarzen,
     odrzucone_bez_zapisu,
@@ -80,11 +81,69 @@ async def test_runner_obcego_zespolu_nie_zapisze_manifestu_w_runie_browarka(swia
     assert await liczba_zdarzen(swiat) == 0
 
 
-@pytest.mark.parametrize("rodzaj", ["output", "step_started", "step_waiting", "step_skipped"])
+@pytest.mark.parametrize(
+    "rodzaj",
+    ["output", "step_started", "step_waiting", "step_skipped", "step_finished", "step_failed"])
 async def test_manifest_przy_innym_rodzaju_zdarzenia_niz_context_manifest_jest_odrzucony(
     swiat, rodzaj,
 ):
     await odrzucone_bez_zapisu(swiat, rodzaj, manifest=MANIFEST)
+
+
+KOMUNIKAT_MANIFESTU = "manifest wolno przeslac tylko w zdarzeniu context_manifest"
+KOMUNIKAT_KONCA_KROKU = (
+    "dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")
+
+
+async def odmowa_z_komunikatem_bez_zapisu(swiat, komunikat: str, rodzaj: str, **pola) -> None:
+    przed = await liczba_zdarzen(swiat)
+
+    r = await wyslij(swiat, rodzaj, **pola)
+
+    assert r.status_code == 422, r.text
+    assert r.json() == {"detail": komunikat}
+    assert await liczba_zdarzen(swiat) == przed
+
+
+@pytest.mark.parametrize("rodzaj", ["step_finished", "step_failed", "output"])
+async def test_manifest_poza_context_manifest_wyjasnia_odmowe_pelnym_komunikatem_i_nie_zapisuje(
+    swiat, rodzaj,
+):
+    await odmowa_z_komunikatem_bez_zapisu(swiat, KOMUNIKAT_MANIFESTU, rodzaj, manifest=MANIFEST)
+
+
+@pytest.mark.parametrize("pole", list(POLA_KONCA_KROKU))
+async def test_pole_konca_kroku_w_context_manifest_wyjasnia_odmowe_pelnym_komunikatem(swiat, pole):
+    await odmowa_z_komunikatem_bez_zapisu(
+        swiat, KOMUNIKAT_KONCA_KROKU, "context_manifest", **{pole: POLA_KONCA_KROKU[pole]})
+
+
+async def test_context_manifest_z_manifestem_i_polem_konca_kroku_odmawia_komunikatem_o_polach_konca(
+    swiat,
+):
+    await odmowa_z_komunikatem_bez_zapisu(
+        swiat, KOMUNIKAT_KONCA_KROKU, "context_manifest", manifest=MANIFEST, verdict="pass")
+
+
+async def test_koniec_kroku_z_manifestem_i_polem_konca_kroku_odmawia_komunikatem_o_manifescie(swiat):
+    await odmowa_z_komunikatem_bez_zapisu(
+        swiat, KOMUNIKAT_MANIFESTU, "step_finished", manifest=MANIFEST, verdict="pass")
+
+
+async def test_zdarzenie_innego_rodzaju_z_manifestem_i_polem_konca_kroku_odmawia_komunikatem_o_manifescie(
+    swiat,
+):
+    # `output` nie jest ani context_manifest, ani koncem kroku: obie odmowy pasuja, wygrywa manifest
+    await odmowa_z_komunikatem_bez_zapisu(
+        swiat, KOMUNIKAT_MANIFESTU, "output", manifest=MANIFEST, verdict="pass")
+
+
+async def test_koniec_kroku_z_samym_dowodem_i_context_manifest_z_samym_manifestem_sa_przyjete(swiat):
+    await wyslij_ok(swiat, "step_finished", dowod=POLA_KONCA_KROKU["dowod"], step_id="s1")
+    await wyslij_ok(swiat, "context_manifest", manifest=MANIFEST, step_id="s2")
+
+    assert await dane_zdarzen(swiat, swiat.run_id) == [
+        {"dowod": POLA_KONCA_KROKU["dowod"]}, {"manifest": MANIFEST}]
 
 
 async def test_zdarzenie_context_manifest_bez_manifestu_nie_ma_danych(swiat):

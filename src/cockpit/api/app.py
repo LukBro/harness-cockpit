@@ -206,7 +206,7 @@ class EventIn(BaseModel):
     verdict: str | None = Field(default=None, min_length=1, max_length=200)
     kotwice: _ListaKotwic | None = None
     artefakty: _ListaArtefaktow | None = None
-    manifest: _ListaManifestu | None = None    # tylko w context_manifest (HAR-169)
+    manifest: _ListaManifestu | None = None    # tylko w context_manifest (HAR-169); egzekwuje services.runs
 
     def dane(self) -> dict | None:
         """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""

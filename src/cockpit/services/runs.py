@@ -423,7 +423,9 @@ async def zapisz_zdarzenie(
         )
     if kroki_weryfikujace and kind != _KONIEC_RUNU:
         raise NiespojneDane("kroki_weryfikujace wolno przeslac tylko w zdarzeniu run_finished")
-    if dane and kind not in _KONCZACE_KROK and kind != KIND_MANIFESTU:
+    if dane and "manifest" in dane and kind != KIND_MANIFESTU:
+        raise NiespojneDane("manifest wolno przeslac tylko w zdarzeniu context_manifest")
+    if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:
         raise NiespojneDane(
             "dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")
     # tekst ponad limit nigdy nie udaje calosci: znacznik i pelna dlugosc (HAR-56)

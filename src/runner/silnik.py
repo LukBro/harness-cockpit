@@ -269,12 +269,13 @@ async def _zloz_i_zapisz_manifest(
     try:
         manifest = await asyncio.to_thread(
             zloz_manifest, p.worktree.sciezka, krok.id, sciezki_planu, skill_id=krok.skill)
-        # mutant ensure_ascii=None jest rownowazny (json czyta go jako bool); wariant True chroni reczny mutant HAR-169
-        tresc = json.dumps(manifest.jako_listy(), ensure_ascii=False).encode()  # pragma: no mutate
-        await asyncio.to_thread(
-            _zapisz_atomowo, p.worktree.katalog_runu / f"manifest-{krok.id}.json", tresc)
     except BladManifestu as e:
         raise PorazkaKroku(str(e)) from e
+    # mutant ensure_ascii=None jest rownowazny (json czyta go jako bool); wariant True chroni reczny mutant HAR-169
+    tresc = json.dumps(manifest.jako_listy(), ensure_ascii=False).encode()  # pragma: no mutate
+    try:
+        await asyncio.to_thread(
+            _zapisz_atomowo, p.worktree.katalog_runu / f"manifest-{krok.id}.json", tresc)
     except OSError as e:
         raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e
     return manifest

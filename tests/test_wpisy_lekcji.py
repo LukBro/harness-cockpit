@@ -9,7 +9,7 @@ from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
-from cockpit.services.lekcje import WpisLekcji, wpisy_lekcji
+from cockpit.services.lekcje import WpisLekcji, waliduj_lekcje, wpisy_lekcji
 from test_manifest_kontekstu import lekcja, plik_lekcji
 
 
@@ -19,6 +19,22 @@ def test_sciezki_lekcji_rozdziela_przecinek_a_spacja_wewnatrz_sciezki_zostaje():
     (wpis,) = wpisy_lekcji(plik_lekcji(blok))
 
     assert wpis.sciezki == ("src/*.py", "docs/moj plik.md", "web/a.ts")
+
+
+def test_sciezki_lekcji_traca_spacje_otaczajace_kazda_sciezke():
+    blok = lekcja(1, "budowa", "a.md, src/a.py ,docs/b.md")
+
+    (wpis,) = wpisy_lekcji(plik_lekcji(blok))
+
+    assert wpis.sciezki == ("a.md", "src/a.py", "docs/b.md")
+
+
+def test_zakres_sciezek_z_samych_przecinkow_i_spacji_daje_pusty_zbior_a_nie_pusta_sciezke():
+    blok = lekcja(1, "budowa", ", ,")
+
+    assert waliduj_lekcje(plik_lekcji(blok)) == []
+    (wpis,) = wpisy_lekcji(plik_lekcji(blok))
+    assert wpis.sciezki == ()
 
 
 BEZ_KROKU = (

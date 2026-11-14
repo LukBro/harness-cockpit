@@ -106,17 +106,22 @@ def wpisy_lekcji(tekst: str) -> list[WpisLekcji]:
     wpisy: list[WpisLekcji] = []
     biezacy: list[str] | None = None     # linie wpisu: naglowek `## L-NNN` i reszta do kolejnej sekcji
     otwarcie: tuple[str, int] | None = None
+    # mutant `= ""` jest rownowazny: wartosc poczatkowa nie jest czytana, bo `zamknij()` przy `biezacy is None`
+    # wychodzi od razu, a kazdy naglowek ustawia `zakres = None` zanim ustawi `biezacy`
+    zakres: str | None = None  # pragma: no mutate
 
     def zamknij() -> None:
         if biezacy is None:
             return
-        pola = next((_pola(w[len("zakres:"):]) for w in biezacy if w.startswith("zakres:")), {})
+        pola = _pola(zakres) if zakres is not None else {}
         sciezki = tuple(s.strip() for s in pola.get("ścieżki", "").split(",") if s.strip())
         numer = _NAGLOWEK.match(biezacy[0]).group(1)  # type: ignore[union-attr]
         wpisy.append(WpisLekcji(f"L-{numer}", pola.get("krok", ""), sciezki, "".join(biezacy)))
 
     for linia in tekst.splitlines(keepends=True):
-        # mutant lstrip jest rownowazny: splitlines(keepends=True) konczy linie terminatorem, nie zaczyna jej nim
+        # pragma obejmuje tylko mutant `lstrip` (rownowazny: zostawia koncowy terminator w `gola`, ale kazdy odbiorca
+        # go pomija: `rstrip()` w `_zamyka_blok`, `\b` w `_NAGLOWEK`, `startswith`, `strip()` w `_pola`);
+        # `rstrip()` i `rstrip("XX\r\nXX")` maja wiersze [[mutant]] w tests/mutanty_reczne/HAR-169.toml
         gola = linia.rstrip("\r\n")  # pragma: no mutate
         if otwarcie is not None:
             if _zamyka_blok(gola, otwarcie):
@@ -126,7 +131,13 @@ def wpisy_lekcji(tekst: str) -> list[WpisLekcji]:
             if otwarcie is None and gola.startswith("## "):
                 zamknij()
                 biezacy = [linia] if _NAGLOWEK.match(gola) else None
+                zakres = None
                 continue
+            if (
+                otwarcie is None and biezacy is not None and zakres is None
+                and gola.startswith("zakres:")
+            ):
+                zakres = gola[len("zakres:"):]
         if biezacy is not None:
             biezacy.append(linia)
     zamknij()

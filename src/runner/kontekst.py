@@ -7,6 +7,7 @@ bajtow. Plik, ktorego nie ma, jest pomijany; plik, ktorego nie da sie przeczytac
 from __future__ import annotations
 
 import re
+import stat
 from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
@@ -15,12 +16,12 @@ from pathlib import Path, PurePosixPath
 from cockpit.services.errors import BladDziedziny
 from cockpit.services.lekcje import wpisy_lekcji
 from cockpit.services.warstwy_instrukcji import WarstwaInstrukcji
-from runner.agent import SKILLE_RUNU
+from runner.agent import SKILLE_RUNU, _bez_znakow_sterujacych
 
 PLIK_LEKCJI = ".ai/lessons.md"
 PLIK_PROJEKTU = ".cockpit/project.yaml"
 
-# Limity zdarzenia `context_manifest`; MUSZA byc zgodne z `ManifestWpisIn`/`EventIn` w
+# Limity zdarzenia `context_manifest`; MUSZA byc zgodne z `WpisManifestuIn`/`EventIn` w
 # cockpit/api/app.py (kokpit odrzuca 422, a runner ponawialby w nieskonczonosc: granica-bledow).
 MAX_WPISOW = 1000
 MAX_WARSTWA = 64
@@ -65,6 +66,16 @@ def _odczytaj(wt: Path, sciezka: str) -> bytes | None:
         raise BladManifestu(f"nie można odczytać pliku warstwy {sciezka}: {e}") from e
 
 
+def _jest_plikiem(wt: Path, sciezka: str) -> bool:
+    """Czy kandydat jest zwyklym plikiem; brak to False, nie umiem ocenic (np. PermissionError) to `BladManifestu`."""
+    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError as e:
+        raise BladManifestu(f"nie można odczytać pliku warstwy {sciezka}: {e}") from e
+
+
 def _wpis_pliku(wt: Path, warstwa: WarstwaInstrukcji, sciezka: str) -> WpisManifestu | None:
     bajty = _odczytaj(wt, sciezka)
     if bajty is None:
@@ -76,6 +87,10 @@ def _wpis_pliku(wt: Path, warstwa: WarstwaInstrukcji, sciezka: str) -> WpisManif
 
 def _claude_md_katalogu(wt: Path, sciezki_planu: Sequence[str]) -> str | None:
     """Najblizszy `CLAUDE.md` w gore od wspolnego katalogu sciezek planu; korzen nie liczy sie."""
+    for s in sciezki_planu:
+        # sciezka poza worktree czytalaby CLAUDE.md spoza repozytorium runu: brak dowodu, nie pominiecie
+        if PurePosixPath(s).is_absolute() or ".." in PurePosixPath(s).parts:
+            raise BladManifestu(f"ścieżka planu {s} wskazuje poza worktree")
     katalogi = [PurePosixPath(s).parent.parts for s in sciezki_planu]
     if not katalogi:
         return None
@@ -85,7 +100,7 @@ def _claude_md_katalogu(wt: Path, sciezki_planu: Sequence[str]) -> str | None:
             wspolny.pop()
     while wspolny:
         kandydat = PurePosixPath(*wspolny, "CLAUDE.md").as_posix()
-        if (wt / kandydat).is_file():
+        if _jest_plikiem(wt, kandydat):
             return kandydat
         wspolny.pop()
     return None
@@ -154,6 +169,13 @@ def zloz_manifest(
     worktree: Path, krok: str, sciezki_planu: Sequence[str], *, skill_id: str,
 ) -> Manifest:
     """Wpisy w kolejnosci `OD_NAJWYZSZEJ`; niezmienniki zawsze, jako wpis bez sciezki i hasha."""
+    # znak sterujacy (NUL) w sciezce daje ValueError ze stat()/read_bytes(): ta sama regula co zbuduj_prompt
+    try:
+        _bez_znakow_sterujacych("skill_id", skill_id)
+        for i, s in enumerate(sciezki_planu):
+            _bez_znakow_sterujacych(f"sciezki_planu[{i}]", s)
+    except ValueError as e:
+        raise BladManifestu(str(e)) from e
     wpisy: list[WpisManifestu | None] = [
         WpisManifestu(warstwa=WarstwaInstrukcji.niezmienniki_silnika.value),
         _wpis_pliku(worktree, WarstwaInstrukcji.project_yaml, PLIK_PROJEKTU),
