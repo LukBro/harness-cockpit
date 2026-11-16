@@ -32,8 +32,10 @@ test = "tests/test_lekcje.py::test_zakres_bez_kroku_daje_brak_kroku"
 # Problem lekcji jest niezmienny.
 [[mutant]]
 plik = "src/cockpit/services/lekcje.py"
-szukaj = '@dataclass(frozen=True)'
-zamien = '@dataclass'
+szukaj = '''@dataclass(frozen=True)
+class ProblemLekcji:'''
+zamien = '''@dataclass
+class ProblemLekcji:'''
 test = "tests/test_lekcje.py::test_problem_lekcji_jest_niezmienny"
 
 # Kolejnosc pierwszenstwa to kolejnosc definicji enuma.
