@@ -8,6 +8,7 @@ Testy uruchamiaja PRAWDZIWE skrypty. Pytest, alembic i git pracuja wylacznie w m
 wolal `gh pr create`. Procesy ida przez `tests/procesy.py`.
 """
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -215,9 +216,11 @@ def test_zostawia_potomka():
 def test_wiszacy_test_pod_xdist_tez_konczy_przebieg_kodem_2_z_node_id(tmp_path):
     kod, wyjscie, _ = _testy(tmp_path, PLIK_WISI, "--bez-postepu", "75", "-q", "-n", "2", limit_testu=200.0)
     assert kod == 2
-    assert [w for w in wyjscie.splitlines() if w.startswith("zawieszenie:")] == [
-        "zawieszenie: test_przyklad.py::test_wisi"
-    ]
+    zawieszenia = [w for w in wyjscie.splitlines() if w.startswith("zawieszenie:")]
+    # node id jest wzgledem wspolnego przodka rootdir i tmp_path: pod /private/tmp (worktree sesji,
+    # mutmut) dostaje prefiks katalogu, wiec sprawdzamy jedna linie z nazwa pliku i testu na koncu
+    assert len(zawieszenia) == 1
+    assert re.fullmatch(r"zawieszenie: (\S+/)?test_przyklad\.py::test_wisi", zawieszenia[0])
 
 
 def test_wtyczka_zdarzen_dopisuje_start_i_koniec_testu_do_pliku_z_zmiennej(monkeypatch, tmp_path):

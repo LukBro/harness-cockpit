@@ -1,0 +1,1042 @@
+# Tabela recznych mutantow HAR-169: manifest kroku (warstwy instrukcji z sha256, lekcje filtrowane
+# po zakresie) - elementy poza zasiegiem mutmuta (kod 3 z tools/mutanty_zmian.py): limity `Field(...)`
+# i konfiguracja WpisManifestuIn oraz pole EventIn.manifest w app.py, stala KIND_MANIFESTU w runs.py,
+# stala ZDANIE_KONTEKSTU i pole SpecKroku.kontekst w agent.py, stale, limity i dataclassy w
+# runner/kontekst.py oraz dataclass WpisLekcji w lekcje.py.
+#
+# Pominiete jako niezaimportowalne: usuniecie domyslnej wartosci pola `kontekst` w SpecKroku (pole bez
+# wartosci domyslnej po polach z domyslnymi to TypeError przy imporcie), usuniecie bazy `BaseModel`
+# z WpisManifestuIn (FastAPI odrzuca typ spoza pydantic przy imporcie aplikacji).
+
+# plik lekcji
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'PLIK_LEKCJI = ".ai/lessons.md"'
+zamien = 'PLIK_LEKCJI = ".ai/lekcje.md"'
+test = "tests/test_manifest_kontekstu.py::test_lekcja_pasujaca_do_kroku_i_sciezek_planu_trafia_do_manifestu_z_id_sciezka_i_hashem_bloku"
+
+# plik project.yaml
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'PLIK_PROJEKTU = ".cockpit/project.yaml"'
+zamien = 'PLIK_PROJEKTU = ".cockpit/projekt.yaml"'
+test = "tests/test_manifest_kontekstu.py::test_wpis_pliku_warstwy_ma_sciezke_wzgledna_sha256_i_rozmiar_w_bajtach_faktycznej_tresci[project-yaml]"
+
+# limit wpisow w gore
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WPISOW = 1000'
+zamien = 'MAX_WPISOW = 1001'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiac_jednym_wpisem_jest_odrzucony_przez_runner_z_pelnym_komunikatem"
+
+# limit wpisow w dol
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WPISOW = 1000'
+zamien = 'MAX_WPISOW = 999'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiacem_wpisow_jest_przyjety_przez_runnera"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WARSTWA = 64'
+zamien = 'MAX_WARSTWA = 65'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[warstwa-65]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_WARSTWA = 64'
+zamien = 'MAX_WARSTWA = 63'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[warstwa-64]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_SCIEZKA = 255'
+zamien = 'MAX_SCIEZKA = 256'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sciezka-256]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_SCIEZKA = 255'
+zamien = 'MAX_SCIEZKA = 254'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sciezka-255]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ID = 64'
+zamien = 'MAX_ID = 65'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[id-65]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ID = 64'
+zamien = 'MAX_ID = 63'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[id-64]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ROZMIAR = 2_147_483_647'
+zamien = 'MAX_ROZMIAR = 2_147_483_648'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[rozmiar-ponad-max]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'MAX_ROZMIAR = 2_147_483_647'
+zamien = 'MAX_ROZMIAR = 2_147_483_646'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[rozmiar-max]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-f]{65}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-a]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-f]{63}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-a]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[1-9a-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-zera]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-8a-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-dziewiatki]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-e]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_runnera[sha-f]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9A-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sha-wielkie-litery]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_SHA256 = re.compile(r"[0-9a-f]{64}")'
+zamien = '_SHA256 = re.compile(r"[0-9a-g]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sha-nie-hex]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'class BladManifestu(BladDziedziny):'
+zamien = 'class BladManifestu(Exception):'
+test = "tests/test_limity_manifestu.py::test_blad_manifestu_jest_bledem_dziedziny"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''@dataclass(frozen=True)
+class WpisManifestu:'''
+zamien = '''@dataclass
+class WpisManifestu:'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_jest_niezmienny"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    warstwa: str
+'''
+zamien = '''    warstwa: str = ""
+'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_wymaga_warstwy"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'sciezka: str | None = None'
+zamien = 'sciezka: str | None = ""'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'sha256: str | None = None'
+zamien = 'sha256: str | None = ""'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+# brak pomiaru to nie zero
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'rozmiar: int | None = None'
+zamien = 'rozmiar: int | None = 0'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '    id: str | None = None'
+zamien = '    id: str | None = ""'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_bez_pomiarow_ma_brak_a_nie_zero_ani_pusty_napis"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    sciezka: str | None = None
+    sha256: str | None = None'''
+zamien = '''    sha256: str | None = None
+    sciezka: str | None = None'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ma_pola_w_kolejnosci_warstwa_sciezka_sha256_rozmiar_id"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''@dataclass(frozen=True)
+class Manifest:'''
+zamien = '''@dataclass
+class Manifest:'''
+test = "tests/test_limity_manifestu.py::test_manifest_jest_niezmienny"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wpisy: tuple[WpisManifestu, ...] = ()'
+zamien = 'wpisy: tuple[WpisManifestu, ...] = (WpisManifestu(warstwa="x"),)'
+test = "tests/test_limity_manifestu.py::test_pusty_manifest_nie_ma_wpisow"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''@dataclass(frozen=True)
+class WpisLekcji:'''
+zamien = '''@dataclass
+class WpisLekcji:'''
+test = "tests/test_wpisy_lekcji.py::test_wpis_lekcji_jest_niezmienny"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''    id: str
+    krok: str'''
+zamien = '''    krok: str
+    id: str'''
+test = "tests/test_wpisy_lekcji.py::test_wpis_lekcji_ma_pola_w_kolejnosci_id_krok_sciezki_tekst"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''    sciezki: tuple[str, ...]
+    tekst: str'''
+zamien = '''    tekst: str
+    sciezki: tuple[str, ...]'''
+test = "tests/test_wpisy_lekcji.py::test_wpis_lekcji_ma_pola_w_kolejnosci_id_krok_sciezki_tekst"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'KIND_MANIFESTU = "context_manifest"'
+zamien = 'KIND_MANIFESTU = "context_manifesty"'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+# zapisz_zdarzenie: manifest tylko w context_manifest
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and "manifest" in dane and kind != KIND_MANIFESTU:'
+zamien = 'if dane and "manifest" not in dane and kind != KIND_MANIFESTU:'
+test = "tests/test_ingest_context_manifest.py::test_manifest_poza_context_manifest_wyjasnia_odmowe_pelnym_komunikatem_i_nie_zapisuje[step_finished]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and "manifest" in dane and kind != KIND_MANIFESTU:'
+zamien = 'if dane and kind != KIND_MANIFESTU:'
+test = "tests/test_odbior_dowody.py::test_pole_dowodowe_w_zdarzeniu_output_wyjasnia_odmowe_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and "manifest" in dane and kind != KIND_MANIFESTU:'
+zamien = 'if dane and "manifest" in dane and kind == KIND_MANIFESTU:'
+test = "tests/test_ingest_context_manifest.py::test_manifest_poza_context_manifest_wyjasnia_odmowe_pelnym_komunikatem_i_nie_zapisuje[step_failed]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and "manifest" in dane and kind != KIND_MANIFESTU:'
+zamien = 'if "manifest" in dane and kind != KIND_MANIFESTU:'
+test = "tests/test_ingest_context_manifest.py::test_zdarzenie_context_manifest_bez_manifestu_nie_ma_danych"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'raise NiespojneDane("manifest wolno przeslac tylko w zdarzeniu context_manifest")'
+zamien = 'raise NiespojneDane("manifest wolno przeslac tylko w zdarzeniu context_manifesty")'
+test = "tests/test_ingest_context_manifest.py::test_manifest_poza_context_manifest_wyjasnia_odmowe_pelnym_komunikatem_i_nie_zapisuje[output]"
+
+# zapisz_zdarzenie: pola konca kroku tylko w rodzajach konca kroku (manifest nie jest takim polem)
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+zamien = 'if dane and kind in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+test = "tests/test_ingest_context_manifest.py::test_pole_konca_kroku_w_context_manifest_wyjasnia_odmowe_pelnym_komunikatem[verdict]"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+zamien = 'if dane and dane.keys() - {"manifest"}:'
+test = "tests/test_odbior_dowody.py::test_koniec_kroku_z_dowodem_werdyktem_kotwicami_i_artefaktami_zapisuje_je_w_danych_zdarzenia"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+zamien = 'if dane and kind not in _KONCZACE_KROK and dane.keys():'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+zamien = 'if dane and kind not in _KONCZACE_KROK and dane.keys() & {"manifest"}:'
+test = "tests/test_odbior_dowody.py::test_pole_dowodowe_w_zdarzeniu_output_wyjasnia_odmowe_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = 'if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+zamien = 'if kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:'
+test = "tests/test_ingest_context_manifest.py::test_zdarzenie_context_manifest_bez_manifestu_nie_ma_danych"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '"dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")'
+zamien = '"dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku.")'
+test = "tests/test_ingest_context_manifest.py::test_pole_konca_kroku_w_context_manifest_wyjasnia_odmowe_pelnym_komunikatem[dowod]"
+
+# kolejnosc sprawdzen: zdarzenie z manifestem i polem konca kroku
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''    if dane and "manifest" in dane and kind != KIND_MANIFESTU:
+        raise NiespojneDane("manifest wolno przeslac tylko w zdarzeniu context_manifest")
+    if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:
+        raise NiespojneDane(
+            "dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")
+'''
+zamien = '''    if dane and kind not in _KONCZACE_KROK and dane.keys() - {"manifest"}:
+        raise NiespojneDane(
+            "dowod, verdict, kotwice i artefakty wolno przeslac tylko w zdarzeniu konca kroku")
+    if dane and "manifest" in dane and kind != KIND_MANIFESTU:
+        raise NiespojneDane("manifest wolno przeslac tylko w zdarzeniu context_manifest")
+'''
+test = "tests/test_ingest_context_manifest.py::test_zdarzenie_innego_rodzaju_z_manifestem_i_polem_konca_kroku_odmawia_komunikatem_o_manifescie"
+
+[[mutant]]
+plik = "src/runner/agent.py"
+szukaj = 'ZDANIE_KONTEKSTU = "Przeczytaj te pliki; przy sprzeczności instrukcji wygrywa plik wyżej na liście."'
+zamien = 'ZDANIE_KONTEKSTU = "Przeczytaj te pliki; przy sprzeczności instrukcji wygrywa plik niżej na liście."'
+test = "tests/test_limity_manifestu.py::test_zdanie_reguly_w_prompcie_mowi_ze_przy_sprzecznosci_wygrywa_plik_wyzej_na_liscie"
+
+[[mutant]]
+plik = "src/runner/agent.py"
+szukaj = 'kontekst: tuple[str, ...] = ()'
+zamien = 'kontekst: tuple[str, ...] = ("x",)'
+test = "tests/test_polecenie_agenta.py::test_kontekst_domyslnie_jest_pusty_a_polecenie_agenta_go_nie_dotyczy"
+
+# konfiguracja klasy wygrywa z model_config, wiec to samo co extra=ignore
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'class WpisManifestuIn(BaseModel):'
+zamien = 'class WpisManifestuIn(BaseModel, extra="ignore"):'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[nieznany-klucz]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="ignore", strict=True)'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[nieznany-klucz]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=False)'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[rozmiar-napis]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=False)'''
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[rozmiar-bool]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'warstwa: str = Field(min_length=1, max_length=64)'
+zamien = 'warstwa: str = Field(min_length=0, max_length=64)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[warstwa-pusta]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'warstwa: str = Field(min_length=1, max_length=64)'
+zamien = 'warstwa: str = Field(min_length=1, max_length=65)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[warstwa-65]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'warstwa: str = Field(min_length=1, max_length=64)'
+zamien = 'warstwa: str = Field(min_length=1, max_length=63)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[warstwa-64]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(default=None, min_length=0, max_length=255)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sciezka-pusta]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(default=None, min_length=1, max_length=256)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sciezka-256]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(default=None, min_length=1, max_length=254)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sciezka-255]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sciezka: str | None = Field(default=None, min_length=1, max_length=255)'
+zamien = 'sciezka: str | None = Field(min_length=1, max_length=255)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"[0-9a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sha-przed-64-znakami-cos-jeszcze]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sha-po-64-znakach-cos-jeszcze]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{63}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-a]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{65}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-a]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[1-9a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-zera]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-8a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-dziewiatki]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-e]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[sha-f]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9A-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[sha-wielkie-litery-hex]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-g]{64}$")'
+test = "tests/test_ingest_context_manifest.py::test_wpis_manifestu_z_zla_wartoscia_jest_odrzucony_bez_zapisu[sha256-nie-hex]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")'
+zamien = 'sha256: str | None = Field(pattern=r"^[0-9a-f]{64}$")'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=1, le=2_147_483_647)'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=-1, le=2_147_483_647)'
+test = "tests/test_ingest_context_manifest.py::test_wpis_manifestu_z_zla_wartoscia_jest_odrzucony_bez_zapisu[rozmiar-ujemny]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_648)'
+test = "tests/test_ingest_context_manifest.py::test_wpis_manifestu_z_zla_wartoscia_jest_odrzucony_bez_zapisu[rozmiar-ponad-int4]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_646)'
+test = "tests/test_ingest_context_manifest.py::test_manifest_kroku_trafia_do_danych_zdarzenia_w_bazie_jako_same_hashe"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)'
+zamien = 'rozmiar: int | None = Field(ge=0, le=2_147_483_647)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(default=None, min_length=0, max_length=64)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[id-pusty]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(default=None, min_length=1, max_length=65)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_ponad_limit_albo_zlego_typu_jest_odrzucony_przez_api_bez_zapisu[id-65]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(default=None, min_length=1, max_length=63)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_na_granicy_limitu_jest_przyjety_przez_api_i_zapisany[id-64]"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'id: str | None = Field(default=None, min_length=1, max_length=64)'
+zamien = 'id: str | None = Field(min_length=1, max_length=64)'
+test = "tests/test_limity_manifestu.py::test_wpis_manifestu_tylko_z_warstwa_jest_przyjety_a_brak_pomiaru_zostaje_brakiem"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]'
+zamien = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1001)]'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiac_jednym_wpisem_jest_odrzucony_przez_api_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]'
+zamien = '_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=999)]'
+test = "tests/test_limity_manifestu.py::test_manifest_z_tysiacem_wpisow_jest_przyjety_przez_api"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'manifest: _ListaManifestu | None = None'
+zamien = 'manifest: _ListaManifestu | None'
+test = "tests/test_ingest_context_manifest.py::test_zdarzenie_context_manifest_bez_manifestu_nie_ma_danych"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'if self.manifest is not None:'
+zamien = 'if self.manifest:'
+test = "tests/test_limity_manifestu.py::test_pusta_lista_manifestu_jest_zapisana_jako_pusta_lista_a_nie_brak_danych"
+
+# _jest_plikiem: NotADirectoryError
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False'''
+zamien = '''    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except FileNotFoundError:
+        return False'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_planu_bedacy_zwyklym_plikiem_nie_daje_claude_md_katalogu_ani_bledu"
+
+# _jest_plikiem: FileNotFoundError
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False'''
+zamien = '''    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except NotADirectoryError:
+        return False'''
+test = "tests/test_manifest_kontekstu.py::test_claude_md_katalogu_to_najblizszy_plik_w_gore_od_wspolnego_katalogu_sciezek_planu[brak-claude-md-katalogu]"
+
+# _jest_plikiem: brak pliku to False
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False'''
+zamien = '''    try:
+        return stat.S_ISREG((wt / sciezka).stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return True'''
+test = "tests/test_manifest_kontekstu.py::test_claude_md_katalogu_to_najblizszy_plik_w_gore_od_wspolnego_katalogu_sciezek_planu[w-gore-od-glebokiej-sciezki]"
+
+# _jest_plikiem: tylko zwykly plik
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'return stat.S_ISREG((wt / sciezka).stat().st_mode)'
+zamien = 'return True'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_o_nazwie_claude_md_nie_jest_plikiem_warstwy_i_szukanie_idzie_wyzej"
+
+# _jest_plikiem: inny OSError to blad manifestu
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        raise BladManifestu(f"nie można odczytać pliku warstwy {sciezka}: {e}") from e
+
+
+def _wpis_pliku'''
+zamien = '''        return False
+
+
+def _wpis_pliku'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_planu_bez_praw_dostepu_to_blad_manifestu_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        raise BladManifestu(f"nie można odczytać pliku warstwy {sciezka}: {e}") from e
+
+
+def _wpis_pliku'''
+zamien = '''        raise BladManifestu(f"nie można odczytać {sciezka}: {e}") from e
+
+
+def _wpis_pliku'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_planu_bez_praw_dostepu_to_blad_manifestu_z_pelnym_komunikatem"
+
+# _odczytaj: NotADirectoryError
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    except (FileNotFoundError, NotADirectoryError):
+        return None'''
+zamien = '''    except FileNotFoundError:
+        return None'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_cockpit_bedacy_zwyklym_plikiem_pomija_project_yaml_i_skill_bez_bledu"
+
+# _odczytaj: FileNotFoundError
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    except (FileNotFoundError, NotADirectoryError):
+        return None'''
+zamien = '''    except NotADirectoryError:
+        return None'''
+test = "tests/test_manifest_kontekstu.py::test_brak_pliku_warstwy_pomija_jej_wpis_a_reszta_warstw_zostaje[project-yaml]"
+
+# _odczytaj: inny OSError to blad manifestu
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    except OSError as e:
+        raise BladManifestu(f"nie można odczytać pliku warstwy {sciezka}: {e}") from e
+
+
+def _jest_plikiem'''
+zamien = '''    except OSError as e:
+        return None
+
+
+def _jest_plikiem'''
+test = "tests/test_manifest_kontekstu.py::test_nieczytelny_plik_warstwy_to_blad_dziedziny_z_jego_sciezka_a_nie_pusty_wpis[claude-md-korzenia]"
+
+# straznik sciezek planu: bezwzgledna
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'if PurePosixPath(s).is_absolute() or ".." in PurePosixPath(s).parts:'
+zamien = 'if ".." in PurePosixPath(s).parts:'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_bezwzgledna_sciezka_planu_to_blad_manifestu_mimo_claude_md_w_jej_katalogu"
+
+# straznik sciezek planu: wyjscie w gore
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'if PurePosixPath(s).is_absolute() or ".." in PurePosixPath(s).parts:'
+zamien = 'if PurePosixPath(s).is_absolute():'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_sciezka_planu_wychodzaca_w_gore_to_blad_manifestu_mimo_claude_md_w_tym_katalogu"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'if PurePosixPath(s).is_absolute() or ".." in PurePosixPath(s).parts:'
+zamien = 'if PurePosixPath(s).is_absolute() or ".." in s:'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_nazwa_katalogu_zaczynajaca_sie_od_dwoch_kropek_nie_jest_wyjsciem_w_gore"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'if PurePosixPath(s).is_absolute() or ".." in PurePosixPath(s).parts:'
+zamien = 'if PurePosixPath(s).is_absolute() or ".." in PurePosixPath(s).parts[:1]:'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_sciezka_planu_z_kropkami_w_srodku_jest_odrzucona_takze_gdy_zostaje_w_worktree"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    for s in sciezki_planu:
+'''
+zamien = '''    for s in sciezki_planu[:1]:
+'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_zla_sciezka_planu_na_drugim_miejscu_tez_jest_odrzucona"
+
+# komunikat straznika
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wskazuje poza worktree")'
+zamien = 'wskazuje na worktree")'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_sciezka_planu_wychodzaca_w_gore_to_blad_manifestu_mimo_claude_md_w_tym_katalogu"
+
+# sprawdz_limity wywolane w zloz_manifest
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    sprawdz_limity(manifest)
+    return manifest'''
+zamien = '    return manifest'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_wpis_ze_sciezka_ponad_limit_to_blad_manifestu_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    sprawdz_limity(manifest)
+    return manifest'''
+zamien = '    return manifest'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_tysiac_lekcji_z_wpisem_niezmiennikow_to_blad_manifestu_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    sprawdz_limity(manifest)
+    return manifest'''
+zamien = '    return manifest'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_manifest_ponad_limit_konczy_krok_porazka_bez_agenta_zdarzenia_i_pliku"
+
+# deduplikacja plikow kontekstu w prompcie
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'tuple(dict.fromkeys(w.sciezka for w in manifest.wpisy if w.sciezka is not None))'
+zamien = 'tuple(w.sciezka for w in manifest.wpisy if w.sciezka is not None)'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_plik_lekcji_wystepuje_w_prompcie_kroku_raz_mimo_kilku_pasujacych_lekcji"
+
+# BladManifestu z zloz_manifest przechodzi z wlasnym komunikatem
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''    except BladManifestu as e:
+        raise PorazkaKroku(str(e)) from e'''
+zamien = '''    except BladManifestu as e:
+        raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_planu_bez_praw_dostepu_konczy_krok_porazka_z_komunikatem_o_odczycie"
+
+# wyjatek BladManifestu jest lapany
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''    except BladManifestu as e:
+        raise PorazkaKroku(str(e)) from e'''
+zamien = '''    except ZeroDivisionError as e:
+        raise PorazkaKroku(str(e)) from e'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_manifest_ponad_limit_konczy_krok_porazka_bez_agenta_zdarzenia_i_pliku"
+
+# OSError przy zapisie pliku manifestu
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''    except OSError as e:
+        raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e'''
+zamien = '''    except ZeroDivisionError as e:
+        raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e'''
+test = "tests/test_limity_manifestu.py::test_blad_zapisu_pliku_manifestu_to_porazka_kroku_z_nazwa_kroku_i_przyczyna_dysku"
+
+# pierwszy zakres wygrywa
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = 'otwarcie is None and biezacy is not None and zakres is None'
+zamien = 'otwarcie is None and biezacy is not None'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_przy_dwoch_zakresach_poza_blokiem_wygrywa_pierwszy"
+
+# zakres nie dziedziczy sie miedzy lekcjami
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''                zakres = None
+                continue'''
+zamien = '                continue'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_zakres_poprzedniej_lekcji_nie_przechodzi_na_kolejna_lekcje_bez_zakresu"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '                zakres = gola[len("zakres:"):]'
+zamien = '                zakres = gola'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_zakres_w_bloku_kodu_lekcji_nie_jest_brany_a_wygrywa_prawdziwy_pod_nim"
+
+# rstrip konca linii: bez argumentu nie zostawia spacji, wiec naglowek `## ` nie zamyka lekcji
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = 'gola = linia.rstrip("\r\n")'
+zamien = 'gola = linia.rstrip()'
+test = "tests/test_wpisy_lekcji.py::test_naglowek_sekcji_z_samym_odstepem_po_hashach_konczy_tekst_poprzedniej_lekcji"
+
+# rstrip konca linii: litera X na koncu zakresu to czesc sciezki, nie koniec linii
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = 'gola = linia.rstrip("\r\n")'
+zamien = 'gola = linia.rstrip("XX\r\nXX")'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_zakres_konczacy_sie_litera_x_zachowuje_ja_w_sciezce_lekcji_przy_obu_koncach_linii[lf]"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = 'gola = linia.rstrip("\r\n")'
+zamien = 'gola = linia.rstrip("XX\r\nXX")'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_zakres_konczacy_sie_litera_x_zachowuje_ja_w_sciezce_lekcji_przy_obu_koncach_linii[crlf]"
+
+# glob lekcji dopasowuje cala sciezke planu, nie prefiks
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_glob_na_regex(g).fullmatch(s)'
+zamien = '_glob_na_regex(g).match(s)'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_glob_lekcji_pasuje_do_calej_sciezki_planu_a_nie_do_jej_prefiksu"
+
+# zakres `ścieżki=, ,` to zbior pusty: filtr pustych sciezek
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '.split(",") if s.strip())'
+zamien = '.split(",") if s)'
+test = "tests/test_wpisy_lekcji.py::test_zakres_sciezek_z_samych_przecinkow_i_spacji_daje_pusty_zbior_a_nie_pusta_sciezke"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '.split(",") if s.strip())'
+zamien = '.split(",") if s)'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_lekcja_z_zakresem_sciezek_z_samych_przecinkow_trafia_do_manifestu_planu_dowolnej_sciezki"
+
+# spacje otaczajace sciezke sa obcinane (wartosc wynikowa)
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = 'sciezki = tuple(s.strip() for s in'
+zamien = 'sciezki = tuple(s for s in'
+test = "tests/test_wpisy_lekcji.py::test_sciezki_lekcji_traca_spacje_otaczajace_kazda_sciezke"
+
+# zloz_manifest: kazdy element listy `wpisy`
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        WpisManifestu(warstwa=WarstwaInstrukcji.niezmienniki_silnika.value),
+'''
+zamien = ''
+test = "tests/test_manifest_kontekstu.py::test_manifest_bez_zadnego_pliku_ma_tylko_jawny_wpis_niezmiennikow_bez_sciezki_hasha_i_rozmiaru"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        _wpis_pliku(worktree, WarstwaInstrukcji.project_yaml, PLIK_PROJEKTU),
+'''
+zamien = ''
+test = "tests/test_manifest_kontekstu.py::test_wpis_pliku_warstwy_ma_sciezke_wzgledna_sha256_i_rozmiar_w_bajtach_faktycznej_tresci[project-yaml]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        wpisy.append(_wpis_pliku(worktree, WarstwaInstrukcji.claude_md_katalogu, katalogu))'''
+zamien = '''        pass'''
+test = "tests/test_manifest_kontekstu.py::test_wpis_pliku_warstwy_ma_sciezke_wzgledna_sha256_i_rozmiar_w_bajtach_faktycznej_tresci[claude-md-katalogu]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        _wpis_pliku(worktree, WarstwaInstrukcji.claude_md_korzenia, "CLAUDE.md"),
+'''
+zamien = ''
+test = "tests/test_manifest_kontekstu.py::test_wpis_pliku_warstwy_ma_sciezke_wzgledna_sha256_i_rozmiar_w_bajtach_faktycznej_tresci[claude-md-korzenia]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        _wpis_pliku(
+            worktree, WarstwaInstrukcji.skill_md, f"{SKILLE_RUNU}/{skill_id}/SKILL.md"),
+'''
+zamien = ''
+test = "tests/test_manifest_kontekstu.py::test_wpis_pliku_warstwy_ma_sciezke_wzgledna_sha256_i_rozmiar_w_bajtach_faktycznej_tresci[skill-md]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''        *_lekcje(worktree, krok, sciezki_planu),
+'''
+zamien = ''
+test = "tests/test_manifest_kontekstu.py::test_lekcja_pasujaca_do_kroku_i_sciezek_planu_trafia_do_manifestu_z_id_sciezka_i_hashem_bloku"
+
+# _lekcje: lekcja bez `ścieżki=` pasuje do kazdego planu
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'pasuje_sciezka = not lekcja.sciezki or any('
+zamien = 'pasuje_sciezka = any('
+test = "tests/test_manifest_kontekstu.py::test_lekcja_bez_sciezek_trafia_do_manifestu_kroku_zawsze_takze_przy_pustym_planie"
+
+# _glob_na_regex: znaki globu
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wzorzec += re.escape(glob[i])'
+zamien = 'wzorzec += glob[i]'
+test = "tests/test_glob_lekcji.py::test_glob_lekcji_dopasowuje_sciezke_zgodnie_ze_znaczeniem_kazdego_znaku_specjalnego[kropka-nie-jest-dowolnym-znakiem]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wzorzec += "[^/]*"'
+zamien = 'wzorzec += ".*"'
+test = "tests/test_glob_lekcji.py::test_glob_lekcji_dopasowuje_sciezke_zgodnie_ze_znaczeniem_kazdego_znaku_specjalnego[gwiazdka-nie-przekracza-ukosnika]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wzorzec += "[^/]"'
+zamien = 'wzorzec += "."'
+test = "tests/test_glob_lekcji.py::test_glob_lekcji_dopasowuje_sciezke_zgodnie_ze_znaczeniem_kazdego_znaku_specjalnego[znak-zapytania-nie-przekracza-ukosnika]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'wzorzec += "(?:.*/)?"'
+zamien = 'wzorzec += "(?:.*/)"'
+test = "tests/test_glob_lekcji.py::test_glob_lekcji_dopasowuje_sciezke_zgodnie_ze_znaczeniem_kazdego_znaku_specjalnego[dwie-gwiazdki-ukosnik-zero-katalogow]"
+
+# sprawdz_limity: sha256 dopasowany w calosci, nie prefiksem
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'not _SHA256.fullmatch(w.sha256)'
+zamien = 'not _SHA256.match(w.sha256)'
+test = "tests/test_limity_manifestu.py::test_wpis_ponad_limit_pola_jest_odrzucony_przez_runner_z_pelnym_komunikatem[sha-65]"
+
+# _lekcje: lekcje kroku zaleza od consumes i produces skilla
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'skill.consumes + skill.produces'
+zamien = 'skill.consumes'
+test = "tests/test_manifest_kontekstu.py::test_lekcje_w_manifescie_kroku_zaleza_od_kroku_oraz_od_produces_i_consumes_skilla"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'skill.consumes + skill.produces'
+zamien = 'skill.produces'
+test = "tests/test_manifest_kontekstu.py::test_lekcje_w_manifescie_kroku_zaleza_od_kroku_oraz_od_produces_i_consumes_skilla"
+
+# zdarzenie context_manifest jest wysylane
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''    await emit(_zdarzenie(
+        run_id, "context_manifest", krok.id, krok.id, "", attempt=proba,
+        manifest=manifest.jako_listy()))
+'''
+zamien = '''    pass
+'''
+test = "tests/test_manifest_kontekstu.py::test_zdarzenie_context_manifest_niesie_te_same_wpisy_co_plik_i_idzie_po_starcie_kroku"
+
+# straznik identyfikatora kroku przed zapisem pliku manifestu
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''    if (blad := _blad_identyfikatora(krok.id)) is not None:
+        raise PorazkaKroku(blad)
+'''
+zamien = '''    pass
+'''
+test = "tests/test_limity_manifestu.py::test_krok_z_niedozwolonym_identyfikatorem_nie_dostaje_manifestu_i_konczy_sie_porazka[..]"
+
+# zamkniecie ostatniej lekcji pliku i lekcji przed kolejnym naglowkiem
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''    zamknij()
+    return wpisy'''
+zamien = '''    return wpisy'''
+test = "tests/test_manifest_kontekstu.py::test_wpisy_lekcji_zwracaja_id_krok_sciezki_i_tekst_bloku_kazdej_lekcji_w_kolejnosci_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/lekcje.py"
+szukaj = '''                zamknij()
+                biezacy = [linia]'''
+zamien = '''                biezacy = [linia]'''
+test = "tests/test_manifest_kontekstu.py::test_wpisy_lekcji_zwracaja_id_krok_sciezki_i_tekst_bloku_kazdej_lekcji_w_kolejnosci_pliku"
+
+# prompt: znak sterujacy w sciezce kontekstu
+[[mutant]]
+plik = "src/runner/agent.py"
+szukaj = '''    for i, sciezka in enumerate(spec.kontekst):
+        _bez_znakow_sterujacych(f"kontekst[{i}]", sciezka)
+'''
+zamien = '''    pass
+'''
+test = "tests/test_polecenie_agenta.py::test_znak_sterujacy_w_sciezce_kontekstu_odrzuca_prompt_z_nazwa_pola[nowa-linia]"
+
+# wartosc poczatkowa zakresu nie jest czytana (linia z `# pragma: no mutate`)
+[[rownowazny]]
+plik = "src/cockpit/services/lekcje.py"
+linia_tekst = "zakres: str | None = None  # pragma: no mutate"
+uzasadnienie = "Wariant `zakres = \"\"` jest rownowazny: wartosc poczatkowa nie jest czytana, bo `zamknij()` przy `biezacy is None` wychodzi od razu, a kazdy naglowek `## ` ustawia `zakres = None` zanim ustawi `biezacy`; zadne wejscie nie odroznia wersji. Zerowanie przy naglowku i pierwszenstwo pierwszego zakresu maja wiersze [[mutant]] wyzej."
+
+# mutant `lstrip("\r\n")` zamiast `rstrip("\r\n")` (linia z `# pragma: no mutate`; `rstrip()` i `rstrip("XX\r\nXX")` maja wiersze [[mutant]])
+[[rownowazny]]
+plik = "src/cockpit/services/lekcje.py"
+linia_tekst = 'gola = linia.rstrip("\r\n")  # pragma: no mutate'
+uzasadnienie = "Wariant `lstrip(\"\\r\\n\")` jest rownowazny, choc `gola` rozni sie od oryginalu na kazdej linii zakonczonej terminatorem (`lstrip` zostawia go na koncu). Kazdy odbiorca `gola` pomija koncowy terminator: `_dlugosc_plotka` liczy plotek od poczatku linii, `_zamyka_blok` robi `rstrip()`, `_NAGLOWEK` konczy sie na `\\b` (cyfra przed `\\n` i przed koncem napisu to ta sama granica slowa), `startswith(\"## \")` i `startswith(\"zakres:\")` czytaja tylko poczatek, a wartosc `zakres` przechodzi przez `strip()` w `_pola` (takze `zakres:` bez tresci daje w obu wersjach pole `{\"\": \"\"}`). Terminator na poczatku linii nie wystepuje (`splitlines` tnie na nim), wiec `lstrip` nie ma co obcinac. Zadne wejscie nie odroznia wersji. Warianty `rstrip()` i `rstrip(\"XX\\r\\nXX\")` maja wiersze [[mutant]] wyzej."
+
+# import stat (linia importu jest poza zasiegiem mutmuta): bez niego _jest_plikiem rzuca NameError
+# Pominiety jako niezaimportowalny: usuniecie `_bez_znakow_sterujacych` z importu z runner.agent.
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'import stat'
+zamien = 'import os'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_o_nazwie_claude_md_nie_jest_plikiem_warstwy_i_szukanie_idzie_wyzej"
+
+# znak sterujacy w skill_id i sciezkach planu (zloz_manifest, przed odczytem dysku)
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_bez_znakow_sterujacych("skill_id", skill_id)'
+zamien = 'None'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_skill_id_to_blad_manifestu_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '_bez_znakow_sterujacych(f"sciezki_planu[{i}]", s)'
+zamien = 'None'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_sciezce_planu_to_blad_manifestu_z_pelnym_komunikatem[nul-0]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'for i, s in enumerate(sciezki_planu):'
+zamien = 'for i, s in enumerate(sciezki_planu[:1]):'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_sciezce_planu_to_blad_manifestu_z_pelnym_komunikatem[nul-1]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'for i, s in enumerate(sciezki_planu):'
+zamien = 'for i, s in enumerate(sciezki_planu[1:]):'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_sciezce_planu_to_blad_manifestu_z_pelnym_komunikatem[nul-0]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'for i, s in enumerate(sciezki_planu):'
+zamien = 'for i, s in enumerate(sciezki_planu, 1):'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_sciezce_planu_to_blad_manifestu_z_pelnym_komunikatem[nul-0]"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    except ValueError as e:
+        raise BladManifestu(str(e)) from e'''
+zamien = '''    except TypeError as e:
+        raise BladManifestu(str(e)) from e'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_skill_id_to_blad_manifestu_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = 'raise BladManifestu(str(e)) from e'
+zamien = 'raise BladManifestu("pole zawiera znak sterujący") from e'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_skill_id_to_blad_manifestu_z_pelnym_komunikatem"
+
+# walidacja idzie przed odczytem plikow warstw
+[[mutant]]
+plik = "src/runner/kontekst.py"
+szukaj = '''    try:
+        _bez_znakow_sterujacych("skill_id", skill_id)'''
+zamien = '''    _wpis_pliku(worktree, WarstwaInstrukcji.project_yaml, PLIK_PROJEKTU)
+    try:
+        _bez_znakow_sterujacych("skill_id", skill_id)'''
+test = "tests/test_manifest_kontekstu_brzegi.py::test_znak_sterujacy_w_sciezce_planu_jest_odrzucony_przed_odczytem_plikow_warstw"
+
+# znak sterujacy w produces skilla na prawdziwej sciezce silnika
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'zloz_manifest, p.worktree.sciezka, krok.id, sciezki_planu, skill_id=krok.skill)'
+zamien = 'zloz_manifest, p.worktree.sciezka, krok.id, [], skill_id=krok.skill)'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_sciezka_ze_znakiem_nul_w_produces_konczy_krok_porazka_bez_agenta_zdarzenia_i_pliku"
+
+
+# silnik.py:275 - znaki polskie w pliku manifestu bez ucieczek (mutant ensure_ascii=True)
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = 'json.dumps(manifest.jako_listy(), ensure_ascii=False)'
+zamien = 'json.dumps(manifest.jako_listy(), ensure_ascii=True)'
+test = "tests/test_limity_manifestu.py::test_manifest_w_pliku_runu_zachowuje_polskie_znaki_w_sciezkach_bez_ucieczek"
+
+
+# silnik.py:338 - manifest ponowionej proby kroku niesie jej numer (mutant attempt=1)
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '"context_manifest", krok.id, krok.id, "", attempt=proba,'
+zamien = '"context_manifest", krok.id, krok.id, "", attempt=1,'
+test = "tests/test_manifest_kontekstu_brzegi.py::test_manifest_ponowionego_kroku_niesie_numer_proby_a_nie_zawsze_pierwszy"
