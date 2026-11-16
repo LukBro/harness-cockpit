@@ -647,3 +647,83 @@ plik = ".claude/skills/praca-ticketu/scripts/stan.py"
 szukaj = 'and all(isinstance(x, str) for x in b["argv"])'
 zamien = 'and True'
 test = "tests/test_skill_praca_ticketu.py::test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu[bramki11]"
+
+# --- zamrożony zakres ponownej oceny krytyka: migawka rundy w werdykt.py, prompt --tylko ---
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "    if tekst:\n        kat = os.path.dirname(p)"
+zamien = "    if True:\n        kat = os.path.dirname(p)"
+test = "tests/test_skill_praca_ticketu.py::test_nieczytelny_plik_werdyktu_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "f\"krytyk-werdykt-{runda}.md\"), \"w\", encoding=\"utf-8\") as f:\n                f.write(tekst)"
+zamien = "f\"krytyk-werdykt-{runda}.md\"), \"w\", encoding=\"utf-8\") as f:\n                f.write(\"\")"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_zapisuje_tresc_i_diff_rundy_razem_z_nowym_plikiem"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "f.write(git(\"diff\", sha))"
+zamien = "f.write(\"\")"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_zapisuje_tresc_i_diff_rundy_razem_z_nowym_plikiem"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "f.write(f\"\\n=== nowy plik (nieśledzony): {nowy}\\n{g.read()}\")"
+zamien = "pass"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_zapisuje_tresc_i_diff_rundy_razem_z_nowym_plikiem"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "        except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:\n            print(f\"werdykt: nie zapisano"
+zamien = "        except (RuntimeError, subprocess.TimeoutExpired) as e:\n            print(f\"werdykt: nie zapisano"
+test = "tests/test_skill_praca_ticketu.py::test_nieudany_zapis_migawki_nie_gubi_werdyktu_rundy"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "        except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:\n            print(f\"werdykt: nie zapisano"
+zamien = "        except (OSError, subprocess.TimeoutExpired) as e:\n            print(f\"werdykt: nie zapisano"
+test = "tests/test_skill_praca_ticketu.py::test_blad_gita_przy_migawce_nie_gubi_werdyktu_rundy"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "    for u in re.findall(r\"^\\s*(UWAGA-PO-RUNDZIE:.+?)\\s*$\", tekst or \"\", re.M):\n        print(u)"
+zamien = "    pass"
+test = "tests/test_skill_praca_ticketu.py::test_werdykt_wypisuje_uwage_po_rundzie_bez_wplywu_na_ocene"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "if all(os.path.isfile(m) for m in migawka):"
+zamien = "if True:"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna[krytyk-werdykt-1.md]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "if all(os.path.isfile(m) for m in migawka):"
+zamien = "if any(os.path.isfile(m) for m in migawka):"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna[krytyk-werdykt-1.md]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "if all(os.path.isfile(m) for m in migawka):"
+zamien = "if any(os.path.isfile(m) for m in migawka):"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna[krytyk-diff-1.patch]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "if all(os.path.isfile(m) for m in migawka):"
+zamien = "if not all(os.path.isfile(m) for m in migawka):"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_po_rundzie_z_migawka_ma_zamrozony_zakres"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "            print(f\"prompt_krytyka: brak migawki rundy {r} - pełna ocena bez zamrożenia zakresu\", file=sys.stderr)"
+zamien = "            pass"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna[krytyk-diff-1.patch]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "        r = n - 1"
+zamien = "        r = n"
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_po_rundzie_z_migawka_ma_zamrozony_zakres"
