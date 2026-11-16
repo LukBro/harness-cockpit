@@ -188,8 +188,8 @@ test = "tests/test_silnik_runu.py::test_kazdy_krok_startuje_dokladnie_raz_takze_
 # Brak miejsca z silnika (BrakMiejsca) tlumaczony na przerwanie runu, nie wyjatek zadania.
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "await silnik.wykonaj_run(cmd, emit)\n            except BrakMiejsca:"
-zamien = "await silnik.wykonaj_run(cmd, emit)\n            except KeyError:"
+szukaj = "            except BrakMiejsca:\n                # silnik anulowal kroki"
+zamien = "            except KeyError:\n                # silnik anulowal kroki"
 test = "tests/test_polecenie_run_workflow.py::test_brak_miejsca_na_zdarzenia_kontroluje_run_przerwaniem_a_nie_wyjatkiem_zadania"
 
 # ======================= src/cockpit/api/app.py (RunCreate, create_run) =======================

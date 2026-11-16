@@ -1069,3 +1069,40 @@ plik = "src/cockpit/api/schematy.py"
 szukaj = "text_full_len: int | None = Field(default=None, ge=0,"
 zamien = "text_full_len: int | None = Field(default=None,"
 test = "tests/test_granica.py::test_pelna_dlugosc_tekstu_ujemna_jest_odrzucona"
+
+# Rework straznika: NiewaznePoleZdarzenia u wolajacego konczy run (client.py).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, cmd.get(\"run_id\"), e)"
+zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, cmd.get(\"run_id\"), e)"
+test = "tests/test_granica.py::test_run_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+test = "tests/test_granica.py::test_wznowienie_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, cmd[\"run_id\"], e)"
+zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, cmd[\"run_id\"], e)"
+test = "tests/test_granica.py::test_krok_polecenia_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "step_id=\"run\", kind=\"run_finished\", text=\"\","
+zamien = "step_id=\"run\", kind=\"step_finished\", text=\"\","
+test = "tests/test_granica.py::test_run_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "step_id=\"run\", kind=\"step_failed\","
+zamien = "step_id=\"run\", kind=\"step_aborted\","
+test = "tests/test_granica.py::test_run_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        except NiewaznePoleZdarzenia:\n            print("
+zamien = "        except KeyError:\n            print("
+test = "tests/test_granica.py::test_run_z_run_id_ponad_limit_nie_ma_komu_zglosic_konca_i_nie_rzuca"

@@ -9,6 +9,7 @@ limit to `NiewaznePoleZdarzenia`, a zdarzenie nie trafia ani do bufora, ani na s
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from cockpit.api.schematy import EventIn
+from runner import client as modul_klienta
 from runner.bufor import Bufor
 from runner.client import NiewaznePoleZdarzenia, Runner
 
@@ -633,3 +635,87 @@ def test_pelna_dlugosc_tekstu_zero_jest_dozwolona():
 def test_pelna_dlugosc_tekstu_ujemna_jest_odrzucona():
     with pytest.raises(ValidationError):
         EventIn(**BAZA_MODELU, text_full_len=-1)
+
+
+# --- wolajacy zamienia NiewaznePoleZdarzenia na koniec runu (HAR-242, rework) ---------------
+
+def _zdarzenia_z_transportu(kokpit: _Kokpit) -> list[dict]:
+    return [json.loads(z.content) for z in kokpit.zadania]
+
+
+def _runner_z_kokpitem(tmp_path, kokpit: _Kokpit) -> Runner:
+    return Runner("http://kokpit.test", "tajny-token", bufor=Bufor(tmp_path / "bufor"),
+                  odczekaj=_bez_odczekania, transport=httpx.MockTransport(kokpit))
+
+
+def _asercje_konca_runu(kokpit: _Kokpit, tmp_path) -> None:
+    zdarzenia = _zdarzenia_z_transportu(kokpit)
+    assert [(z["kind"], z["run_id"], z["step_id"]) for z in zdarzenia] == [
+        ("step_failed", "run-1", "run"), ("run_finished", "run-1", "run")]
+    assert "limity" in zdarzenia[0]["text"]
+    assert Bufor(tmp_path / "bufor").niepotwierdzone() == []
+
+
+async def test_run_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+
+    async def silnik_z_za_dlugim_krokiem(cmd, emit):
+        await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
+
+    monkeypatch.setattr(modul_klienta.silnik, "wykonaj_run", silnik_z_za_dlugim_krokiem)
+
+    await _runner_z_kokpitem(tmp_path, kokpit)._run_workflow({"run_id": "run-1"})
+
+    _asercje_konca_runu(kokpit, tmp_path)
+
+
+async def test_wznowienie_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+
+    async def silnik_wznowienia(run_id, step_id, decyzja, emit, powod=None):
+        await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
+
+    monkeypatch.setattr(modul_klienta.silnik, "wznow_run", silnik_wznowienia)
+
+    await _runner_z_kokpitem(tmp_path, kokpit)._resume(
+        {"run_id": "run-1", "step_id": "krok-1", "decyzja": "approve"})
+
+    _asercje_konca_runu(kokpit, tmp_path)
+
+
+async def test_krok_polecenia_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+    runner = _runner_z_kokpitem(tmp_path, kokpit)
+
+    async def run_command(client, run_id, step_id, command):
+        await runner.send_event(client, **{**BAZA_ZDARZENIA, "step_id": "s" * 101})
+
+    monkeypatch.setattr(modul_klienta, "argv_operacji", lambda cmd: ("x",))
+    monkeypatch.setattr(runner, "run_command", run_command)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await runner._krok_z_polecenia(client, {"run_id": "run-1", "step_id": "krok-1"})
+
+    _asercje_konca_runu(kokpit, tmp_path)
+
+
+async def test_run_z_run_id_ponad_limit_nie_ma_komu_zglosic_konca_i_nie_rzuca(
+    tmp_path, monkeypatch, capsys
+):
+    kokpit = _Kokpit()
+
+    async def silnik_z_zlym_run_id(cmd, emit):
+        await emit({**BAZA_ZDARZENIA, "run_id": "r" * 37})
+
+    monkeypatch.setattr(modul_klienta.silnik, "wykonaj_run", silnik_z_zlym_run_id)
+
+    await _runner_z_kokpitem(tmp_path, kokpit)._run_workflow({"run_id": "r" * 37})
+
+    assert kokpit.zadania == []
+    assert "koniec runu niewyslany" in capsys.readouterr().err

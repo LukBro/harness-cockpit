@@ -289,6 +289,24 @@ class Runner:
             return f"brak miejsca: {wolne} MB wolne, wymagane {prog} MB"
         return None
 
+    async def _zglos_niewazne_pole(
+        self, client: httpx.AsyncClient, run_id: object, blad: NiewaznePoleZdarzenia,
+    ) -> None:
+        """Zdarzenie zlamalo limit `EventIn` (HAR-242): kokpit dostaje poprawny `step_failed`
+        i `run_finished` poza buforem, z krokiem `run` i tekstem obcietym do limitu tekstu.
+        Gdy limit lamie sam `run_id`, nie ma do kogo zglosic - zostaje komunikat na stderr."""
+        try:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id="run", kind="step_failed",
+                text=f"zdarzenie przekracza limity pol: {blad}"[:2000],
+                cost_usd=None, cost_source="unavailable")
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id="run", kind="run_finished", text="",
+                cost_usd=None, cost_source="unavailable")
+        except NiewaznePoleZdarzenia:
+            print(f"koniec runu niewyslany: run_id={str(run_id)[:36]!r} - {blad}",
+                  file=sys.stderr)
+
     async def _zglos_koniec_runu(
         self, client: httpx.AsyncClient, run_id: str, step_id: str,
         kind_kroku: str, krok_przyjety: bool,
@@ -418,6 +436,8 @@ class Runner:
 
             try:
                 await silnik.wykonaj_run(cmd, emit)
+            except NiewaznePoleZdarzenia as e:
+                await self._zglos_niewazne_pole(client, cmd.get("run_id"), e)
             except BrakMiejsca:
                 # silnik anulowal kroki w `finally`; kokpit dostaje przerwanie poza buforem
                 await self._wyslij_bezposrednio(
@@ -454,6 +474,8 @@ class Runner:
 
             try:
                 await silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)
+            except NiewaznePoleZdarzenia as e:
+                await self._zglos_niewazne_pole(client, run_id, e)
             except BrakMiejsca:
                 await self._wyslij_bezposrednio(
                     client, run_id=run_id, step_id=step_id, kind="step_aborted",
@@ -541,7 +563,10 @@ class Runner:
         konczy `step_failed` bez startu procesu, a po jego przyjeciu `run_finished`."""
         argv = argv_operacji(cmd)
         if argv is not None:
-            await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
+            try:
+                await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
+            except NiewaznePoleZdarzenia as e:
+                await self._zglos_niewazne_pole(client, cmd["run_id"], e)
             return
         run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
         if not isinstance(run_id, str) or not isinstance(step_id, str):
