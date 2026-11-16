@@ -587,3 +587,49 @@ async def test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tyl
 
     assert [(i, z["text"]) for i, z in odebrane] == [
         ("1", "hist-1"), ("2", "hist-2"), ("3", "hist-3"), ("4", "zywe-4"), ("5", "zywe-5")]
+
+
+async def test_zdarzenia_na_zywo_poza_kolejnoscia_seq_docieraja_oba_i_dokladnie_raz(
+    swiat, monkeypatch
+):
+    """Dwoch rownoleglych piszacych: szyna oddaje 4 przed 3; mniejszy numer nie ginie."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    await _zapisz(swiat, [1, 2])
+    klient = await _zalogowany(swiat)
+
+    async def na_zywo():
+        for seq in (4, 3, 4, 3, 5):
+            await bus.publish_event(swiat.run_a, {"seq": seq, "kind": "log", "text": f"zywe-{seq}"})
+
+    odebrane = await _odbierz(swiat, klient, 3, {"Last-Event-ID": "2"}, na_zywo)
+
+    # 3 i 4 (oba > Last-Event-ID) po razie, w kolejnosci z szyny; 5 dowodzi braku duplikatow
+    assert [i for i, _ in odebrane] == ["4", "3", "5"]
+
+
+async def test_strumien_rozlaczonego_klienta_nie_odtwarza_historii_i_oddaje_subskrypcje(
+    swiat, monkeypatch
+):
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    from cockpit.api.app import run_stream
+
+    await _zapisz(swiat, range(1, 51))
+    tenant = await _tenant_runu(swiat, swiat.run_a)
+    async with swiat.maker() as s:
+        identyfikator, _ = await sesje.utworz(s, swiat.wlasciciel_a)
+
+    async def rozlaczony() -> bool:
+        return True
+
+    odpowiedz = await run_stream(
+        swiat.run_a, SimpleNamespace(is_disconnected=rozlaczony),
+        k=Kontekst(user_id=swiat.wlasciciel_a.id, tenant_id=tenant, rola=RolaWZespole.owner),
+        identyfikator=identyfikator, last_event_id=None)
+
+    async def zbierz():
+        return [ramka async for ramka in odpowiedz.body_iterator]
+
+    ramki = await asyncio.wait_for(zbierz(), LIMIT_CZEKANIA_S)
+
+    assert ramki == []
+    assert not bus._run_subscribers.get(swiat.run_a)

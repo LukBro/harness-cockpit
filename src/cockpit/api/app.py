@@ -516,13 +516,15 @@ async def run_stream(
             q = bus.subscribe_run(run_id)
             # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
             # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
-            # a duplikat odcina `ostatnio`. Sesja zamknieta przed czekaniem na kolejke.
+            # a duplikat odcina `wyslane`. Sesja zamknieta przed czekaniem na kolejke.
             # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
-            ostatnio = po_seq
+            wyslane: set[int] = set()
             async with db_session.SessionLocal() as s3:
                 historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
             for h in historia:
-                ostatnio = h.seq
+                if await request.is_disconnected():
+                    return
+                wyslane |= {h.seq}
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
             ostatnia = time.monotonic()
             while True:
@@ -558,12 +560,11 @@ async def run_stream(
                     ostatnia = time.monotonic()
                 if ev is None:
                     continue
-                # shortcut: jedna liczba ostatnio - zdarzenia poza kolejnoscia seq (6 przed 5 przy
-                # dwoch rownoleglych ingest) gubia mniejszy numer; zbior wyslanych seq, gdy pojawi sie
-                # wiecej niz jeden piszacy runner
-                if ostatnio is not None and ev["seq"] <= ostatnio:
+                # Poza kolejnoscia (6 przed 5 przy dwoch rownoleglych ingest) mniejszy numer
+                # nie moze zginac, wiec odcinamy zbiorem wyslanych, a nie jedna liczba.
+                if ev["seq"] in wyslane or (po_seq is not None and ev["seq"] <= po_seq):
                     continue
-                ostatnio = ev["seq"]
+                wyslane |= {ev["seq"]}
                 yield _ramka_runu(ev)
         finally:
             if q is not None:
