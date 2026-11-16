@@ -1009,9 +1009,10 @@ def test_zawieszony_git_przy_migawce_nie_gubi_werdyktu_rundy(ep, tmp_path):
     assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
 
 
-def test_zly_limit_gita_to_brak_werdyktu(ep):
+@pytest.mark.parametrize("limit", ["piec", "0", "-1", "nan", "inf"])
+def test_zly_limit_gita_to_brak_werdyktu(ep, limit):
     ep.stan_bazowy()
-    ep.env = dict(ep.env, WERDYKT_GIT_TIMEOUT="pięć")
+    ep.env = dict(ep.env, WERDYKT_GIT_TIMEOUT=limit)
     w = _werdykt(ep, WERDYKT_APPROVED)
     assert w.kod == 2
     assert w.linie == ["WERDYKT: kod=2 status=BRAK minimum=-"]

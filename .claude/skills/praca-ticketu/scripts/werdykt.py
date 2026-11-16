@@ -31,6 +31,7 @@ Kody wyjścia:
 import glob
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -143,6 +144,9 @@ def main(a):
     global LIMIT_GITA
     try:
         LIMIT_GITA = float(os.environ.get("WERDYKT_GIT_TIMEOUT", "300"))
+        # 0/ujemny limit rzuca TimeoutExpired juz przy odczycie stanu (kod 1 = falszywe NEEDS WORK), nan wylacza limit
+        if not 0 < LIMIT_GITA < math.inf:
+            raise ValueError(LIMIT_GITA)
     except ValueError:
         print("werdykt: WERDYKT_GIT_TIMEOUT nie jest liczbą sekund", file=sys.stderr)
         print("WERDYKT: kod=2 status=BRAK minimum=-")

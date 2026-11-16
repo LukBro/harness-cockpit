@@ -764,4 +764,22 @@ test = "tests/test_skill_praca_ticketu.py::test_zawieszony_git_przy_migawce_nie_
 plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
 szukaj = "    except ValueError:\n        print(\"werdykt: WERDYKT_GIT_TIMEOUT nie jest liczbą sekund\", file=sys.stderr)\n        print(\"WERDYKT: kod=2 status=BRAK minimum=-\")\n        return 2\n"
 zamien = "    except ValueError:\n        pass\n"
-test = "tests/test_skill_praca_ticketu.py::test_zly_limit_gita_to_brak_werdyktu"
+test = "tests/test_skill_praca_ticketu.py::test_zly_limit_gita_to_brak_werdyktu[piec]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if not 0 < LIMIT_GITA < math.inf:"
+zamien = "if not LIMIT_GITA < math.inf:"
+test = "tests/test_skill_praca_ticketu.py::test_zly_limit_gita_to_brak_werdyktu[0]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if not 0 < LIMIT_GITA < math.inf:"
+zamien = "if not 0 < LIMIT_GITA:"
+test = "tests/test_skill_praca_ticketu.py::test_zly_limit_gita_to_brak_werdyktu[inf]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "if not 0 < LIMIT_GITA < math.inf:"
+zamien = "if False:"
+test = "tests/test_skill_praca_ticketu.py::test_zly_limit_gita_to_brak_werdyktu[nan]"
