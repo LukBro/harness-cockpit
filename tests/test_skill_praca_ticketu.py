@@ -964,3 +964,131 @@ def test_prompt_krytyka_powstaje_po_zielonych_bramkach(ep):
     assert w.kod == 0
     assert w.linie == [str(plik), f"PROMPT-KRYTYKA: kod=0 plik={plik}"]
     assert str(RUBRYKA) in plik.read_text(encoding="utf-8")
+
+
+# ponowna ocena krytyka ma zamrożony zakres względem poprzedniej rundy (HAR-236: 4 rundy, za każdym
+# razem nowe odjęcie w kodzie, którego poprzednia runda nie wskazała)
+
+
+def test_werdykt_zapisuje_tresc_i_diff_rundy_razem_z_nowym_plikiem(ep):
+    ep.stan_bazowy()
+    ep.zapisz("a.py", "y = 2\n", dopisz=True)
+    ep.zapisz("n.py", "nowy = 1\n")
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    assert (ep.kat / "krytyk-werdykt-1.md").read_text(encoding="utf-8") == WERDYKT_NEEDS_WORK
+    diff = (ep.kat / "krytyk-diff-1.patch").read_text(encoding="utf-8")
+    assert "+y = 2" in diff.splitlines()
+    assert "=== nowy plik (nieśledzony): n.py\nnowy = 1\n" in diff
+
+
+def test_nieudany_zapis_migawki_nie_gubi_werdyktu_rundy(ep):
+    ep.stan_bazowy()
+    (ep.kat / "krytyk-werdykt-1.md").mkdir()     # zapis pliku rundy daje IsADirectoryError (OSError)
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert w.kod == 1
+    assert ep.stan()["werdykty"][-1]["kod"] == 1
+    assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
+
+
+def test_blad_gita_przy_migawce_nie_gubi_werdyktu_rundy(ep):
+    ep.stan_bazowy(baseline={"sha": "0" * 40, "pliki_sprzed_startu": []})
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert w.kod == 1
+    assert ep.stan()["werdykty"][-1]["kod"] == 1
+    assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
+
+
+def test_werdykt_wypisuje_uwage_po_rundzie_bez_wplywu_na_ocene(ep):
+    ep.stan_bazowy()
+    w = _werdykt(ep, WERDYKT_APPROVED + "  UWAGA-PO-RUNDZIE: a.py:1 stara wada\n")
+    assert w.kod == 0
+    assert w.linie == ["OCENA: backend=95", "OCENA: testy=100", "UWAGA-PO-RUNDZIE: a.py:1 stara wada",
+                       "WERDYKT: kod=0 status=APPROVED minimum=95"]
+
+
+def test_ponowna_ocena_po_rundzie_z_migawka_ma_zamrozony_zakres(ep):
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    w = ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA), "--tylko", "backend")
+    assert w.kod == 0
+    tresc = (ep.kat / "krytyk-prompt-2.md").read_text(encoding="utf-8")
+    assert "ZAMROŻONY ZAKRES" in tresc
+    assert str(ep.kat / "krytyk-werdykt-1.md") in tresc and str(ep.kat / "krytyk-diff-1.patch") in tresc
+    assert "UWAGA-PO-RUNDZIE" in tresc
+
+
+@pytest.mark.parametrize("brakujacy", ["krytyk-werdykt-1.md", "krytyk-diff-1.patch"])
+def test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna(ep, brakujacy):
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    (ep.kat / brakujacy).unlink()
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    w = ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA), "--tylko", "backend")
+    assert w.kod == 0
+    assert "ZAMROŻONY ZAKRES" not in (ep.kat / "krytyk-prompt-2.md").read_text(encoding="utf-8")
+    assert w.stderr.strip() == "prompt_krytyka: brak migawki rundy 1 - pełna ocena bez zamrożenia zakresu"
+
+
+def test_pierwsza_ocena_nie_ma_zamrozonego_zakresu(ep):
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
+    assert "ZAMROŻONY ZAKRES" not in (ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8")
+
+
+# stan.py bramki: sesja w worktree nie zapisze bramki.json narzędziem pliku (HAR-169)
+
+
+def test_bramki_zapisane_przez_stan_uruchamiaja_bramke_testow(ep):
+    ep.stan_bazowy()
+    w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps([BRAMKA_OK])))
+    assert (w.kod, w.ostatnia) == (0, "BRAMKI: zapisane=1")
+    assert json.loads((ep.kat / "bramki.json").read_text(encoding="utf-8")) == [BRAMKA_OK]
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+
+
+@pytest.mark.parametrize("bramki", [
+    {"nazwa": "lint", "argv": ["ruff"]},          # nie lista
+    5,                                            # nie lista ani obiekt: bez sprawdzenia typu TypeError
+    [],                                           # pusta lista
+    ["lint"],                                     # element nie jest obiektem
+    [{"argv": ["ruff"]}],                         # brak nazwy
+    [{"nazwa": "", "argv": ["ruff"]}],            # pusta nazwa
+    [{"nazwa": "lint", "argv": "ruff check"}],    # argv nie jest listą
+    [{"nazwa": "lint", "argv": []}],              # pusta argv
+    [BRAMKA_OK, {"nazwa": "testy"}],              # jedna zła bramka psuje całą listę
+    [{"nazwa": 5, "argv": ["ruff"]}],             # nazwa nie jest napisem
+    [{"nazwa": "a/b", "argv": ["ruff"]}],         # nazwa z separatorem: log poza katalogiem stanu
+    [{"nazwa": "lint", "argv": ["ruff", 1]}],     # element argv nie jest napisem
+])
+def test_bramki_w_zlym_ksztalcie_nie_trafiaja_do_katalogu_stanu(ep, bramki):
+    w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps(bramki)))
+    assert w.kod == 2
+    assert w.stderr.strip() == "stan: bramki muszą być niepustą listą {nazwa, argv}"
+    assert not (ep.kat / "bramki.json").exists()
+
+
+@pytest.mark.parametrize("tresc", [None, "[{nazwa: lint}]", b"\xff\xfe", "[" * 200_000],
+                         ids=["brak_pliku", "zly_json", "zle_utf8", "glebokie_zagniezdzenie"])
+def test_nieczytelny_plik_bramek_to_blad_wejscia_bez_zapisu(ep, tresc):
+    p = ep.pliki / "b.json"
+    if isinstance(tresc, bytes):
+        p.write_bytes(tresc)
+    elif tresc is not None:
+        p.write_text(tresc, encoding="utf-8")
+    w = ep.skrypt("stan.py", "bramki", KEY, str(p))
+    assert w.kod == 2
+    assert w.stderr.startswith(f"stan: plik bramek nieczytelny ({p}): ")
+    assert not (ep.kat / "bramki.json").exists()
+
+
+@pytest.mark.parametrize("nadmiar", [False, True], ids=["bez_pliku", "nadmiarowy_argument"])
+def test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia(ep, nadmiar):
+    a = [ep.plik("b.json", json.dumps([BRAMKA_OK])), "nadmiar"] if nadmiar else []
+    w = ep.skrypt("stan.py", "bramki", KEY, *a)
+    assert (w.kod, w.stderr.strip()) == (64, "stan: bramki <KEY> <plik>")
+    assert not (ep.kat / "bramki.json").exists()

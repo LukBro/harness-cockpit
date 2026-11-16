@@ -181,13 +181,32 @@ def main(a):
         print(f"OCENA: {ag}={sc}")
     for ag, r in reguly:
         print(f"REGULA: {ag}: {r}")
+    # wada spoza zamrozonego zakresu ponownej oceny: do komentarza ticketu, bez wplywu na ocene
+    for u in re.findall(r"^\s*(UWAGA-PO-RUNDZIE:.+?)\s*$", tekst or "", re.M):
+        print(u)
     if kod == 2:
         print(f"werdykt: {opis}")
     try:
         skrot = skrot_diffu(sha)
     except (RuntimeError, OSError, subprocess.TimeoutExpired):
         skrot = None
-    st.setdefault("werdykty", []).append({"runda": len(st.get("werdykty", [])) + 1, "oceny": oceny,
+    runda = len(st.get("werdykty", [])) + 1
+    # Ponowna ocena (prompt_krytyka --tylko) zamraza zakres wzgledem tego, co krytyk widzial w tej rundzie
+    # (HAR-236: 4 rundy, w kazdej nowe odjecie w kodzie, ktorego poprzednia runda nie wskazala).
+    if tekst:
+        kat = os.path.dirname(p)
+        try:
+            with open(os.path.join(kat, f"krytyk-werdykt-{runda}.md"), "w", encoding="utf-8") as f:
+                f.write(tekst)
+            with open(os.path.join(kat, f"krytyk-diff-{runda}.patch"), "w", encoding="utf-8") as f:
+                f.write(git("diff", sha))
+                root = git("rev-parse", "--show-toplevel").strip()
+                for nowy in filter(None, git("ls-files", "--others", "--exclude-standard").split("\n")):
+                    with open(os.path.join(root, nowy), encoding="utf-8", errors="replace") as g:
+                        f.write(f"\n=== nowy plik (nieśledzony): {nowy}\n{g.read()}")
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
+            print(f"werdykt: nie zapisano migawki rundy {runda}: {e}", file=sys.stderr)
+    st.setdefault("werdykty", []).append({"runda": runda, "oceny": oceny,
                                           "status": opis if kod != 2 else "BRAK", "kod": kod,
                                           "skrot_diffu": skrot, "zrodlo": f"{zrodlo} {wart}"})
     with open(p + ".tmp", "w", encoding="utf-8") as f:
