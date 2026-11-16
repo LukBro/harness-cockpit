@@ -478,6 +478,26 @@ os.replace(tmp, plik)
 time.sleep(300)
 """
 
+# Agent konczy sie SAM (kod z argv[2]) i zostawia wnuka ignorujacego SIGTERM, ktory dziedziczy
+# jego stdout. Pid/pgid zapisuje dopiero, gdy wnuk jest uzbrojony (plik `<plik>.wnuk`).
+KOD_AGENTA_KONCZACEGO_SIE_Z_WNUKIEM = r"""
+import os, subprocess, sys, time
+plik, kod = sys.argv[1], int(sys.argv[2])
+gotowy = plik + ".wnuk"
+subprocess.Popen(
+    [sys.executable, "-I", "-c",
+     "import signal, sys, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+     "open(sys.argv[1], 'w').close()\ntime.sleep(300)", gotowy],
+)
+while not os.path.exists(gotowy):
+    time.sleep(0.02)
+tmp = plik + ".tmp"
+with open(tmp, "w") as f:
+    f.write(f"{os.getpid()} {os.getpgid(0)}")
+os.replace(tmp, plik)
+sys.exit(kod)
+"""
+
 LIMIT_WATKU = 25.0
 
 
@@ -964,6 +984,49 @@ def test_ustawione_zdarzenie_zabija_grupe_agenta_i_daje_kod_143(tmp_path, pgid_d
 
     assert zadanie.wynik() == 143
     assert grupa_zniknela(pgid)
+
+
+def test_agent_konczacy_sie_sam_z_wnukiem_ignorujacym_sigterm_daje_swoj_kod_a_wnuk_ginie(
+    tmp_path, pgid_do_sprzatania
+):
+    plik = tmp_path / "agent.pid"
+
+    kod = Zadanie(
+        lambda: straznik._uruchom(
+            [sys.executable, "-I", "-c", KOD_AGENTA_KONCZACEGO_SIE_Z_WNUKIEM, str(plik), "7"],
+            str(tmp_path), None, threading.Event(),
+        )
+    ).wynik(15)
+
+    pgid = pgid_z_pliku(plik)
+    pgid_do_sprzatania.append(pgid)
+    assert kod == 7  # kod agenta, nie 143 z sygnalu straznika
+    assert grupa_zniknela(pgid), "wnuk przezyl samodzielny koniec agenta jako sierota"
+
+
+async def test_krok_agenta_konczacego_sie_sam_z_wnukiem_trzymajacym_stdout_nie_wisi_na_eof(
+    tmp_path, katalog_kroku, pgid_do_sprzatania
+):
+    plik = tmp_path / "agent.pid"
+
+    async def emit(zdarzenie: dict) -> None:
+        pass
+
+    wynik = await czekaj(
+        wykonaj_krok(
+            spec(),
+            [sys.executable, "-I", "-c", KOD_AGENTA_KONCZACEGO_SIE_Z_WNUKIEM, str(plik), "0"],
+            katalog_kroku,
+            emit,
+        ),
+        30,
+        "krok z wnukiem trzymajacym stdout",
+    )
+
+    pgid = pgid_z_pliku(plik)
+    pgid_do_sprzatania.append(pgid)
+    assert wynik.kod_wyjscia == 0
+    assert grupa_zniknela(pgid), "wnuk przezyl koniec kroku jako sierota"
 
 
 def test_agent_dziala_w_katalogu_podanym_straznikowi(tmp_path):
