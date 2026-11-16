@@ -652,7 +652,11 @@ def _asercje_konca_runu(kokpit: _Kokpit, tmp_path) -> None:
     zdarzenia = _zdarzenia_z_transportu(kokpit)
     assert [(z["kind"], z["run_id"], z["step_id"]) for z in zdarzenia] == [
         ("step_failed", "run-1", "run"), ("run_finished", "run-1", "run")]
-    assert "limity" in zdarzenia[0]["text"]
+    assert zdarzenia[0]["text"].startswith(
+        "zdarzenie przekracza limity pol: zdarzenie output: step_id:")
+    assert zdarzenia[1]["text"] == ""
+    # klucze musza byc na drucie: domyslne wartosci EventIn maskowalyby ich brak w walidacji
+    assert [(z["cost_usd"], z["cost_source"]) for z in zdarzenia] == [(None, "unavailable")] * 2
     assert Bufor(tmp_path / "bufor").niepotwierdzone() == []
 
 
@@ -718,4 +722,17 @@ async def test_run_z_run_id_ponad_limit_nie_ma_komu_zglosic_konca_i_nie_rzuca(
     await _runner_z_kokpitem(tmp_path, kokpit)._run_workflow({"run_id": "r" * 37})
 
     assert kokpit.zadania == []
-    assert "koniec runu niewyslany" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert f"koniec runu niewyslany: run_id={'r' * 36!r} - " in err
+    assert "r" * 37 not in err
+    assert "zdarzenie output: run_id:" in err
+
+
+async def test_tekst_step_failed_ponad_limit_jest_obciety_do_2000_znakow(tmp_path):
+    kokpit = _Kokpit()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await _runner_z_kokpitem(tmp_path, kokpit)._zglos_niewazne_pole(
+            client, "run-1", NiewaznePoleZdarzenia("z" * 5000))
+
+    assert len(_zdarzenia_z_transportu(kokpit)[0]["text"]) == 2000
