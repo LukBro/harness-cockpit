@@ -53,14 +53,18 @@ test = "tests/test_odbior_dowody.py::test_sto_jeden_artefaktow_jest_odrzucone"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = 'model_config = ConfigDict(extra="forbid", strict=True)'
-zamien = 'model_config = ConfigDict(extra="ignore", strict=True)'
+szukaj = '''zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="ignore", strict=True)'''
 test = "tests/test_odbior_dowody.py::test_dowod_z_nieznanym_kluczem_jest_odrzucony_a_zdarzenie_nie_zapisane"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = 'model_config = ConfigDict(extra="forbid", strict=True)'
-zamien = 'model_config = ConfigDict(extra="forbid", strict=False)'
+szukaj = '''zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="forbid", strict=True)'''
+zamien = '''zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="forbid", strict=False)'''
 test = "tests/test_odbior_dowody.py::test_kod_wyjscia_ktory_nie_jest_calkowita_liczba_jest_odrzucony"
 
 [[mutant]]
