@@ -61,6 +61,8 @@ test = "tests/test_strumien_runu.py::test_strumien_rozlaczonego_klienta_nie_odtw
 [[mutant]]
 plik = "src/cockpit/api/app.py"
 szukaj = """            q = bus.subscribe_run(run_id)
+            # Okno kontroli liczymy od subskrypcji, przed odczytem historii (ten oddaje petle).
+            ostatnia = time.monotonic()
             # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
             # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
             # a duplikat odcina `wyslane`. Sesja zamknieta przed czekaniem na kolejke.
@@ -73,9 +75,9 @@ szukaj = """            q = bus.subscribe_run(run_id)
                     return
                 wyslane |= {h.seq}
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
-            ostatnia = time.monotonic()
 """
-zamien = """            wyslane: set[int] = set()
+zamien = """            ostatnia = time.monotonic()
+            wyslane: set[int] = set()
             async with db_session.SessionLocal() as s3:
                 historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
             for h in historia:
@@ -84,7 +86,6 @@ zamien = """            wyslane: set[int] = set()
                 wyslane |= {h.seq}
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
             q = bus.subscribe_run(run_id)
-            ostatnia = time.monotonic()
 """
 test = "tests/test_strumien_runu.py::test_zdarzenie_z_okna_miedzy_odczytem_historii_a_szyna_dociera_raz_i_bez_duplikatow"
 
