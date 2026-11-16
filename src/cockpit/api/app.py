@@ -514,6 +514,8 @@ async def run_stream(
         try:
             # Subskrypcja w try, bo niewystartowany generator nie wykona finally.
             q = bus.subscribe_run(run_id)
+            # Okno kontroli liczymy od subskrypcji, przed odczytem historii (ten oddaje petle).
+            ostatnia = time.monotonic()
             # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
             # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
             # a duplikat odcina `wyslane`. Sesja zamknieta przed czekaniem na kolejke.
@@ -526,7 +528,6 @@ async def run_stream(
                     return
                 wyslane |= {h.seq}
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
-            ostatnia = time.monotonic()
             while True:
                 if await request.is_disconnected():
                     break
@@ -539,7 +540,10 @@ async def run_stream(
                 ev = None
                 if pozostalo > 0:
                     try:
-                        ev = await asyncio.wait_for(q.get(), pozostalo)
+                        # timeout, nie wait_for: na 3.11 wait_for polyka anulowanie, gdy kolejka
+                        # ma akurat zdarzenie, i strumien zostaje przy zamknieciu petli testow
+                        async with asyncio.timeout(pozostalo):
+                            ev = await q.get()
                     except TimeoutError:
                         # cisza przez reszte okna: ev zostaje None, nizej kontrola
                         pass
