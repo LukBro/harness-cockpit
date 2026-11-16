@@ -127,6 +127,17 @@ developera -> jedna linia i ogolna ocena rowna jego ocenie; format zostaje ten s
 
 Bez odjec -> `100/100, APPROVED`. Nie zanizaj "dla zasady".
 
+**Ponowna ocena po poprawce** (prompt z `ZAMROŻONY ZAKRES`): odejmujesz tylko za
+nienaprawione odjecie z poprzedniego werdyktu, wade w kodzie dopisanym albo
+zmienionym od poprzedniego diffu i naruszenie przydzialu. Wada w kodzie bez zmian,
+ktorej poprzedni werdykt nie wskazal, to linia pod ocena agenta, bez odjecia:
+
+```
+<agent-1>: 100 = 100/100
+  -> APPROVED
+  UWAGA-PO-RUNDZIE: tests/e2e/conftest.py:236 element krotki nie trafia na sciezce produkcyjnej
+```
+
 **Odjecie z blokada zewnetrzna** - znacznik i powod w nawiasie odjecia, po
 lokalizacji i wadzie, oddzielone srednikiem:
 
