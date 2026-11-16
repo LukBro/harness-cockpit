@@ -31,6 +31,7 @@ Kody wyjścia:
 import glob
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -39,8 +40,12 @@ import sys
 LINIA = re.compile(r"^\s*(?P<agent>[\w.\-/ ]+?):\s*100\b(?P<odj>.*?)=\s*(?P<score>-?\d{1,3})/100\s*$")
 
 
+# limit wywolania gita; WERDYKT_GIT_TIMEOUT pozwala testowi sprawdzic galaz przekroczenia bez 300 s czekania
+LIMIT_GITA = 300.0
+
+
 def git(*a, binary=False):
-    r = subprocess.run(["git", *a], capture_output=True, timeout=300)
+    r = subprocess.run(["git", *a], capture_output=True, timeout=LIMIT_GITA)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.decode(errors="replace")[:200])
     return r.stdout if binary else r.stdout.decode(errors="replace")
@@ -136,6 +141,16 @@ def parsuj(tekst, agenci, prog):
 
 
 def main(a):
+    global LIMIT_GITA
+    try:
+        LIMIT_GITA = float(os.environ.get("WERDYKT_GIT_TIMEOUT", "300"))
+        # 0/ujemny limit to zawsze TimeoutExpired (kazdy run bez werdyktu), nan wylacza limit
+        if not 0 < LIMIT_GITA < math.inf:
+            raise ValueError(LIMIT_GITA)
+    except ValueError:
+        print("werdykt: WERDYKT_GIT_TIMEOUT nie jest liczbą sekund", file=sys.stderr)
+        print("WERDYKT: kod=2 status=BRAK minimum=-")
+        return 2
     if len(a) < 3:
         print("werdykt: użycie: <KEY> (--plik P | --agent-id ID) [--prog 82]", file=sys.stderr)
         return 64
@@ -153,7 +168,8 @@ def main(a):
             st = json.load(f)
         agenci = list(st["przydzial"].keys())
         sha = st["baseline"]["sha"]
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,
+            subprocess.TimeoutExpired) as e:
         print(f"werdykt: stan nieczytelny: {e}", file=sys.stderr)
         print("WERDYKT: kod=2 status=BRAK minimum=-")
         return 2
