@@ -34,6 +34,13 @@ szukaj = "                wyslane |= {ev[\"seq\"]}\n"
 zamien = "                pass\n"
 test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
 
+# Zdarzenie z szyny z podmienionym numerem: id ramki przestaje byc rowne seq.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "ev = await q.get()"
+zamien = 'ev = (await q.get()) | {"seq": -1}'
+test = "tests/test_strumien_runu.py::test_wznowiony_strumien_runu_nie_powtarza_zdarzen_ktore_klient_juz_ma"
+
 # Powrot do jednej liczby `ostatnio`: mniejszy numer z szyny ginie.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
