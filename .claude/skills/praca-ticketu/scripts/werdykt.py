@@ -144,7 +144,7 @@ def main(a):
     global LIMIT_GITA
     try:
         LIMIT_GITA = float(os.environ.get("WERDYKT_GIT_TIMEOUT", "300"))
-        # 0/ujemny limit rzuca TimeoutExpired juz przy odczycie stanu (kod 1 = falszywe NEEDS WORK), nan wylacza limit
+        # 0/ujemny limit to zawsze TimeoutExpired (kazdy run bez werdyktu), nan wylacza limit
         if not 0 < LIMIT_GITA < math.inf:
             raise ValueError(LIMIT_GITA)
     except ValueError:
@@ -168,7 +168,8 @@ def main(a):
             st = json.load(f)
         agenci = list(st["przydzial"].keys())
         sha = st["baseline"]["sha"]
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,
+            subprocess.TimeoutExpired) as e:
         print(f"werdykt: stan nieczytelny: {e}", file=sys.stderr)
         print("WERDYKT: kod=2 status=BRAK minimum=-")
         return 2

@@ -428,32 +428,32 @@ test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie
 # Każdy typ w krotce `except` stanu: bez niego traceback (kod 1) zamiast kodu 2.
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
-szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
-zamien = "except (ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,"
+zamien = "except (ValueError, KeyError, TypeError, RuntimeError, AttributeError,"
 test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
-szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
-zamien = "except (OSError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,"
+zamien = "except (OSError, KeyError, TypeError, RuntimeError, AttributeError,"
 test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
-szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
-zamien = "except (OSError, ValueError, TypeError, RuntimeError, AttributeError) as e:"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,"
+zamien = "except (OSError, ValueError, TypeError, RuntimeError, AttributeError,"
 test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
-szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
-zamien = "except (OSError, ValueError, KeyError, RuntimeError, AttributeError) as e:"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,"
+zamien = "except (OSError, ValueError, KeyError, RuntimeError, AttributeError,"
 test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
-szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError) as e:"
-zamien = "except (OSError, ValueError, KeyError, TypeError, RuntimeError) as e:"
+szukaj = "except (OSError, ValueError, KeyError, TypeError, RuntimeError, AttributeError,"
+zamien = "except (OSError, ValueError, KeyError, TypeError, RuntimeError,"
 test = "tests/test_skill_praca_ticketu.py::test_werdykt_przy_nieczytelnym_stanie_to_brak_werdyktu"
 
 [[mutant]]
@@ -783,3 +783,9 @@ plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
 szukaj = "if not 0 < LIMIT_GITA < math.inf:"
 zamien = "if False:"
 test = "tests/test_skill_praca_ticketu.py::test_zly_limit_gita_to_brak_werdyktu[nan]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
+szukaj = "AttributeError,\n            subprocess.TimeoutExpired) as e:"
+zamien = "AttributeError) as e:"
+test = "tests/test_skill_praca_ticketu.py::test_zawieszony_git_przy_odczycie_stanu_to_brak_werdyktu"

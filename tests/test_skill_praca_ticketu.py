@@ -1009,6 +1009,22 @@ def test_zawieszony_git_przy_migawce_nie_gubi_werdyktu_rundy(ep, tmp_path):
     assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
 
 
+def test_zawieszony_git_przy_odczycie_stanu_to_brak_werdyktu(ep, tmp_path):
+    ep.stan_bazowy()
+    atrapa = tmp_path / "bin"
+    atrapa.mkdir()
+    (atrapa / "git").write_text(
+        f'#!/bin/sh\nif [ "$1" = rev-parse ]; then exec sleep 60; fi\nexec {shutil.which("git")} "$@"\n', encoding="utf-8")
+    (atrapa / "git").chmod(0o755)
+    ep.env = dict(ep.env, PATH=f"{atrapa}{os.pathsep}{ep.env.get('PATH', os.environ['PATH'])}",
+                  WERDYKT_GIT_TIMEOUT="5")
+    w = _werdykt(ep, WERDYKT_APPROVED)
+    assert w.kod == 2
+    assert w.linie == ["WERDYKT: kod=2 status=BRAK minimum=-"]
+    assert w.stderr.startswith("werdykt: stan nieczytelny: ")
+    assert "werdykty" not in ep.stan()
+
+
 @pytest.mark.parametrize("limit", ["piec", "0", "-1", "nan", "inf"])
 def test_zly_limit_gita_to_brak_werdyktu(ep, limit):
     ep.stan_bazowy()
