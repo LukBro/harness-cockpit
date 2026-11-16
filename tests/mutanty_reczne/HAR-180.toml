@@ -1043,3 +1043,9 @@ plik = "src/cockpit/services/skille_api.py"
 szukaj = "\"produces\": w.produces,"
 zamien = "\"produces\": w.produces or [],"
 test = "tests/test_skille_api.py::test_skill_z_bledem_jest_na_liscie_jako_problem_a_pozostale_skille_dalej_sa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "wiersze = sorted("
+zamien = "wiersze = (lambda x, key: list(x))("
+test = "tests/test_skille_api.py::test_lista_skilli_jest_posortowana_po_id_takze_gdy_baza_oddaje_wiersze_w_innej_kolejnosci"

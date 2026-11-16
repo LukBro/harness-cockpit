@@ -12,12 +12,19 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from httpx import AsyncClient
+from sqlalchemy import select, text
+from transport_asgi import TransportASGIStrumieniujacy
 
 from cockpit.api import bus
-from cockpit.db.models import Definicja
+from cockpit.api.app import app
+from cockpit.db import session as db_session
+from cockpit.db.models import Definicja, Project
+from sesja_testowa import zaloguj_klienta, zaloz_runnera, zaloz_wlasciciela
+from test_dostep import maker_pg, tylko_postgres
 from test_projekty_zmiana import (
     KOMUNIKAT_OFFLINE,
     KOMUNIKAT_POZA_ZAKRESEM,
@@ -25,7 +32,7 @@ from test_projekty_zmiana import (
     swiat,
 )
 
-FIXTURY_Z_TEST_PROJEKTY_ZMIANA = (swiat,)   # fixture pytest zaimportowana z innego pliku testow
+FIXTURY_Z_TEST_PROJEKTY_ZMIANA = (swiat, maker_pg)   # fixture pytest zaimportowana z innego pliku testow
 
 KOMUNIKAT_SKILL_NIEZNANY = "skill nieznany"
 DOZWOLONE_ROLE = "author, reviewer, executor, gatherer"
@@ -123,13 +130,46 @@ async def test_lista_skilli_projektu_ma_dla_kazdego_id_nazwe_role_consumes_produ
 
 
 async def test_lista_skilli_jest_posortowana_po_id(swiat):
-    for katalog in ("zeta", "alfa", "mu"):
-        _skill(swiat.korzen, ".cockpit/skills", katalog)
+    _skill(swiat.korzen, ".cockpit/skills", "zeta")   # repo jest wstawiane przed domem: zeta, alfa
+    _skill(swiat.dom, ".cockpit/skills", "alfa")
     klient = await _klient_z_katalogiem(swiat)
 
     odp = await _lista(klient, swiat.projekt_a)
 
-    assert [w["id"] for w in odp.json()["skille"]] == ["alfa", "mu", "zeta"]
+    assert [w["id"] for w in odp.json()["skille"]] == ["alfa", "zeta"]
+
+
+@pytest.mark.baza
+@tylko_postgres
+async def test_lista_skilli_jest_posortowana_po_id_takze_gdy_baza_oddaje_wiersze_w_innej_kolejnosci(
+    maker_pg, monkeypatch
+):
+    monkeypatch.setattr(db_session, "SessionLocal", maker_pg)
+    wlasciciel, tenant = await zaloz_wlasciciela(maker_pg, "pg@example.com")
+    runner = await zaloz_runnera(maker_pg, tenant, "laptop-pg", "token-pg")
+    async with maker_pg() as s:
+        projekt = Project(tenant_id=tenant, runner_id=runner, path="/pg/projekt", name="app")
+        s.add(projekt)
+        # bez indeksu unikalnosci zwykly SELECT idzie sekwencyjnie, w kolejnosci wstawienia
+        await s.execute(text("ALTER TABLE definicja DROP CONSTRAINT uq_definicja_klucz"))
+        await s.commit()
+    for klucz in ("zeta", "alfa", "mid"):
+        await _wstaw_definicje(SimpleNamespace(maker=maker_pg), tenant, runner, "/pg/projekt", klucz)
+    async with maker_pg() as s:
+        surowa = (await s.execute(
+            text("SELECT klucz FROM definicja WHERE tenant_id = :t AND rodzaj = 'skill'"),
+            {"t": tenant})).scalars().all()
+    assert surowa == ["zeta", "alfa", "mid"]   # dowod: baza bez ORDER BY nie oddaje ich po id
+    klient = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    try:
+        await zaloguj_klienta(klient, maker_pg, wlasciciel)
+
+        odp = await _lista(klient, projekt.id)
+
+        assert odp.status_code == 200, odp.text
+        assert [w["id"] for w in odp.json()["skille"]] == ["alfa", "mid", "zeta"]
+    finally:
+        await klient.aclose()
 
 
 async def test_lokalny_skill_o_id_globalnego_jest_oznaczony_jako_nadpisany(swiat):
