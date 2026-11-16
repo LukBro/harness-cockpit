@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -974,11 +975,48 @@ def test_werdykt_zapisuje_tresc_i_diff_rundy_razem_z_nowym_plikiem(ep):
     ep.stan_bazowy()
     ep.zapisz("a.py", "y = 2\n", dopisz=True)
     ep.zapisz("n.py", "nowy = 1\n")
-    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert w.kod == 1
+    assert w.stderr == ""      # udana migawka bez ostrzezenia (pusta linia z `git ls-files` to nie plik)
     assert (ep.kat / "krytyk-werdykt-1.md").read_text(encoding="utf-8") == WERDYKT_NEEDS_WORK
     diff = (ep.kat / "krytyk-diff-1.patch").read_text(encoding="utf-8")
     assert "+y = 2" in diff.splitlines()
     assert "=== nowy plik (nieśledzony): n.py\nnowy = 1\n" in diff
+
+
+def test_niesledzony_plik_binarny_trafia_do_migawki_bez_utraty_werdyktu(ep):
+    ep.stan_bazowy()
+    (ep.repo / "obraz.bin").write_bytes(b"\xff\xfe\x00binarne")
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert (w.kod, w.stderr) == (1, "")
+    assert ep.stan()["werdykty"][-1]["kod"] == 1
+    assert "=== nowy plik (nieśledzony): obraz.bin\n" in (ep.kat / "krytyk-diff-1.patch").read_text(encoding="utf-8")
+
+
+def test_zawieszony_git_przy_migawce_nie_gubi_werdyktu_rundy(ep, tmp_path):
+    ep.stan_bazowy()
+    atrapa = tmp_path / "bin"
+    atrapa.mkdir()
+    (atrapa / "git").write_text(
+        # exec: na limicie subprocess zabija sam sleep (wnuk trzymalby rure), 60 s >> limit 5 s nawet pod obciazeniem
+        f'#!/bin/sh\nif [ "$1" = ls-files ]; then exec sleep 60; fi\nexec {shutil.which("git")} "$@"\n', encoding="utf-8")
+    (atrapa / "git").chmod(0o755)
+    ep.env = dict(ep.env, PATH=f"{atrapa}{os.pathsep}{ep.env.get('PATH', os.environ['PATH'])}",
+                  WERDYKT_GIT_TIMEOUT="5")
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert w.kod == 1
+    assert ep.stan()["werdykty"][-1]["kod"] == 1
+    assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
+
+
+def test_zly_limit_gita_to_brak_werdyktu(ep):
+    ep.stan_bazowy()
+    ep.env = dict(ep.env, WERDYKT_GIT_TIMEOUT="pięć")
+    w = _werdykt(ep, WERDYKT_APPROVED)
+    assert w.kod == 2
+    assert w.linie == ["WERDYKT: kod=2 status=BRAK minimum=-"]
+    assert w.stderr.strip() == "werdykt: WERDYKT_GIT_TIMEOUT nie jest liczbą sekund"
+    assert "werdykty" not in ep.stan()
 
 
 def test_nieudany_zapis_migawki_nie_gubi_werdyktu_rundy(ep):
