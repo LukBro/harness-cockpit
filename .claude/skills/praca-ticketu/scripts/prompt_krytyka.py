@@ -105,9 +105,22 @@ def main(a):
     n = len(st.get("werdykty") or []) + 1
     if "--tylko" in op:
         poprzedni = (st.get("werdykty") or [{}])[-1].get("oceny", {})
+        r = n - 1
         zakres = (f"TYLKO agent {op['--tylko']} (ponowna ocena po poprawce). Oceny pozostałych są kontekstem: "
                   f"{json.dumps(poprzedni, ensure_ascii=False)}. Mimo to wykonaj `git diff --stat {st['baseline']['sha']}`"
                   f" na całym repo - naruszenie przydziału w iteracji też się liczy.")
+        migawka = [os.path.join(kat, f"krytyk-werdykt-{r}.md"), os.path.join(kat, f"krytyk-diff-{r}.patch")]
+        if all(os.path.isfile(m) for m in migawka):
+            zakres += (
+                  f"\nZAMROŻONY ZAKRES (HAR-236: każda runda znajdowała nowe odjęcie w kodzie, którego poprzednia nie "
+                  f"wskazała). Poprzedni werdykt: {migawka[0]}, diff, który wtedy "
+                  f"oceniałeś: {migawka[1]}. Odejmujesz WYŁĄCZNIE za: (a) odjęcie "
+                  f"z poprzedniego werdyktu, które nie zostało naprawione; (b) wadę w kodzie, którego nie było w tamtym "
+                  f"diffie albo który poprawka zmieniła; (c) naruszenie przydziału. Wada w kodzie bez zmian od tamtego "
+                  f"diffu, której poprzedni werdykt nie wskazał, to linia `UWAGA-PO-RUNDZIE: <plik:linia> <opis>` pod "
+                  f"oceną agenta, bez odjęcia.")
+        else:   # runda sprzed migawek: pelna ocena jest surowsza, nie lagodniejsza
+            print(f"prompt_krytyka: brak migawki rundy {r} - pełna ocena bez zamrożenia zakresu", file=sys.stderr)
     else:
         zakres = "wszyscy agenci z `przydzial`"
     tresc = SZABLON.format(key=key, tytul=(st.get("ticket") or {}).get("title", ""), rubryka=op["--rubryka"],

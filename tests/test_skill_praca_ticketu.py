@@ -966,6 +966,80 @@ def test_prompt_krytyka_powstaje_po_zielonych_bramkach(ep):
     assert str(RUBRYKA) in plik.read_text(encoding="utf-8")
 
 
+# ponowna ocena krytyka ma zamrożony zakres względem poprzedniej rundy (HAR-236: 4 rundy, za każdym
+# razem nowe odjęcie w kodzie, którego poprzednia runda nie wskazała)
+
+
+def test_werdykt_zapisuje_tresc_i_diff_rundy_razem_z_nowym_plikiem(ep):
+    ep.stan_bazowy()
+    ep.zapisz("a.py", "y = 2\n", dopisz=True)
+    ep.zapisz("n.py", "nowy = 1\n")
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    assert (ep.kat / "krytyk-werdykt-1.md").read_text(encoding="utf-8") == WERDYKT_NEEDS_WORK
+    diff = (ep.kat / "krytyk-diff-1.patch").read_text(encoding="utf-8")
+    assert "+y = 2" in diff.splitlines()
+    assert "=== nowy plik (nieśledzony): n.py\nnowy = 1\n" in diff
+
+
+def test_nieudany_zapis_migawki_nie_gubi_werdyktu_rundy(ep):
+    ep.stan_bazowy()
+    (ep.kat / "krytyk-werdykt-1.md").mkdir()     # zapis pliku rundy daje IsADirectoryError (OSError)
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert w.kod == 1
+    assert ep.stan()["werdykty"][-1]["kod"] == 1
+    assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
+
+
+def test_blad_gita_przy_migawce_nie_gubi_werdyktu_rundy(ep):
+    ep.stan_bazowy(baseline={"sha": "0" * 40, "pliki_sprzed_startu": []})
+    w = _werdykt(ep, WERDYKT_NEEDS_WORK)
+    assert w.kod == 1
+    assert ep.stan()["werdykty"][-1]["kod"] == 1
+    assert w.stderr.startswith("werdykt: nie zapisano migawki rundy 1: ")
+
+
+def test_werdykt_wypisuje_uwage_po_rundzie_bez_wplywu_na_ocene(ep):
+    ep.stan_bazowy()
+    w = _werdykt(ep, WERDYKT_APPROVED + "  UWAGA-PO-RUNDZIE: a.py:1 stara wada\n")
+    assert w.kod == 0
+    assert w.linie == ["OCENA: backend=95", "OCENA: testy=100", "UWAGA-PO-RUNDZIE: a.py:1 stara wada",
+                       "WERDYKT: kod=0 status=APPROVED minimum=95"]
+
+
+def test_ponowna_ocena_po_rundzie_z_migawka_ma_zamrozony_zakres(ep):
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    w = ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA), "--tylko", "backend")
+    assert w.kod == 0
+    tresc = (ep.kat / "krytyk-prompt-2.md").read_text(encoding="utf-8")
+    assert "ZAMROŻONY ZAKRES" in tresc
+    assert str(ep.kat / "krytyk-werdykt-1.md") in tresc and str(ep.kat / "krytyk-diff-1.patch") in tresc
+    assert "UWAGA-PO-RUNDZIE" in tresc
+
+
+@pytest.mark.parametrize("brakujacy", ["krytyk-werdykt-1.md", "krytyk-diff-1.patch"])
+def test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna(ep, brakujacy):
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    (ep.kat / brakujacy).unlink()
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    w = ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA), "--tylko", "backend")
+    assert w.kod == 0
+    assert "ZAMROŻONY ZAKRES" not in (ep.kat / "krytyk-prompt-2.md").read_text(encoding="utf-8")
+    assert w.stderr.strip() == "prompt_krytyka: brak migawki rundy 1 - pełna ocena bez zamrożenia zakresu"
+
+
+def test_pierwsza_ocena_nie_ma_zamrozonego_zakresu(ep):
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
+    assert "ZAMROŻONY ZAKRES" not in (ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8")
+
+
 # stan.py bramki: sesja w worktree nie zapisze bramki.json narzędziem pliku (HAR-169)
 
 
