@@ -108,6 +108,8 @@ WSTRZYKNIETE = {
     "worktree.is_dir": ("wznowienie",),
     "_obsluz_porazke": ("petla", "wznowienie_petla"),
     "_zapisz_raport_porazki": ("petla", "wznowienie_petla"),
+    "_zloz_i_zapisz_manifest": ("run", "wznowienie"),
+    "zloz_manifest": ("run", "wznowienie"),
 }
 
 
@@ -127,6 +129,8 @@ CZYSTE = {
         "NAZWA_WORKFLOW.fullmatch",
         "startowane.get", "bramki.add", "deque", "type", "raport.as_posix",
         "('\\n'.join(linie) + '\\n').encode",
+        "dict.fromkeys", "tuple", "manifest.jako_listy",
+        "json.dumps(manifest.jako_listy(), ensure_ascii=False).encode",
     ),
     **_grupa(
         "konstruktor albo wyjatek dziedziny z samych pol, bez walidacji i bez I/O",
