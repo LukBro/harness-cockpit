@@ -13,15 +13,31 @@ staticmethod/classmethod, oraz linie wylaczone pragma `# pragma: no mutate` wedl
 `PragmaVisitor` mutmuta (zbior i nazwy czytane z zainstalowanego mutmuta, nie z kopii).
 Priorytet kodow: 2 > 1 > 3 > 0.
 Skrypt niczego nie usuwa ani nie czysci cache `mutants/`.
+
+HAR-236 (opcjonalne flagi; bez nich kody i stdout bez zmian):
+- `--max-children N` (N >= 1) idzie do `mutmut run --max-children N`.
+- `--od-przebiegu KATALOG` (tryb przyrostowy): w KATALOGU lezy `przebieg.json` (katalog
+  tymczasowy zadania, nigdy `mutants/` ani repozytorium). Do mutmuta ida tylko funkcje, ktorych
+  odcisk (sha256 tekstu z dekoratorami) rozni sie od zapisanego; przezywajace pozostalych biora sie
+  z zapisu. Zmiana plikow pod `tests/` (takze nieSledzonych) albo `pyproject.toml` albo
+  brak/uszkodzenie zapisu to pelny przebieg. Zapis powstaje po kodzie 0, 1 albo 3, nie po 2.
+  Znany kompromis: odcisk obejmuje tekst funkcji, nie jej zaleznosci.
+- Na stderr idzie czas faz (`czas fazy <faza>: <X.X> s|brak pomiaru`): wybor-funkcji, statystyki,
+  mutanty, wyniki. Statystyki mutmuta sa wewnatrz `mutmut run`, wiec ich czas jest zawsze
+  `brak pomiaru`, a `mutanty` to czas calego `mutmut run`.
 """
 from __future__ import annotations
 
 import argparse
 import ast
 import fnmatch
+import hashlib
+import json
+import os
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -81,13 +97,24 @@ def _zakres(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, int]:
 
 def wzorce_dla_pliku(sciezka: str, zrodlo: str, linie: set[int]) -> list[str]:
     """Wzorce mutantow funkcji i metod, ktorych zakres przecina zmienione linie."""
+    return sorted(wzorce_z_odciskami_dla_pliku(sciezka, zrodlo, linie))
+
+
+def wzorce_z_odciskami_dla_pliku(sciezka: str, zrodlo: str, linie: set[int]) -> dict[str, str]:
+    """Wzorzec mutantow -> sha256 tekstu funkcji z dekoratorami (HAR-236)."""
     try:
         drzewo = ast.parse(zrodlo, filename=sciezka)
     except (SyntaxError, ValueError) as blad:
         raise BladNarzedzia(f"{sciezka}: nie da sie sparsowac: {blad}") from blad
     modul = modul_ze_sciezki(sciezka)
     funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)
-    wynik: set[str] = set()
+    wynik: dict[str, str] = {}
+    fizyczne = zrodlo.splitlines()
+
+    def odcisk(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+        start, koniec = _zakres(wezel)
+        tekst = "\n".join(fizyczne[start - 1 : koniec])
+        return hashlib.sha256(tekst.encode("utf-8")).hexdigest()
 
     def dotkniete(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         start, koniec = _zakres(wezel)
@@ -96,12 +123,13 @@ def wzorce_dla_pliku(sciezka: str, zrodlo: str, linie: set[int]) -> list[str]:
     for wezel in drzewo.body:
         if isinstance(wezel, funkcje):
             if _mutowana(wezel) and dotkniete(wezel):
-                wynik.add(f"{modul}.x_{wezel.name}__mutmut_*")
+                wynik[f"{modul}.x_{wezel.name}__mutmut_*"] = odcisk(wezel)
         elif isinstance(wezel, ast.ClassDef):
             for metoda in wezel.body:
                 if isinstance(metoda, funkcje) and _mutowana(metoda) and dotkniete(metoda):
-                    wynik.add(f"{modul}.x{ZNAK}{wezel.name}{ZNAK}{metoda.name}__mutmut_*")
-    return sorted(wynik)
+                    wzorzec = f"{modul}.x{ZNAK}{wezel.name}{ZNAK}{metoda.name}__mutmut_*"
+                    wynik[wzorzec] = odcisk(metoda)
+    return wynik
 
 
 def _w_zrodlach(sciezka: str, source_paths: list[str]) -> bool:
@@ -113,7 +141,14 @@ def _w_zrodlach(sciezka: str, source_paths: list[str]) -> bool:
 
 def wzorce(zmiany: dict[str, set[int]], source_paths: list[str], korzen: Path) -> list[str]:
     """Wzorce mutantow dla zmian w plikach `.py` z `source_paths`."""
-    wynik: set[str] = set()
+    return sorted(wzorce_z_odciskami(zmiany, source_paths, korzen))
+
+
+def wzorce_z_odciskami(
+    zmiany: dict[str, set[int]], source_paths: list[str], korzen: Path
+) -> dict[str, str]:
+    """Jak `wzorce`, z odciskiem tekstu kazdej funkcji (wzorzec -> sha256)."""
+    wynik: dict[str, str] = {}
     for sciezka, linie in zmiany.items():
         if not sciezka.endswith(".py") or not _w_zrodlach(sciezka, source_paths):
             continue
@@ -123,8 +158,8 @@ def wzorce(zmiany: dict[str, set[int]], source_paths: list[str], korzen: Path) -
             continue
         except (OSError, UnicodeDecodeError) as blad:
             raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
-        wynik.update(wzorce_dla_pliku(sciezka, zrodlo, linie))
-    return sorted(wynik)
+        wynik.update(wzorce_z_odciskami_dla_pliku(sciezka, zrodlo, linie))
+    return wynik
 
 
 def _mutowana(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -317,7 +352,112 @@ def _nowe_pliki(wyjscie: str, korzen: Path) -> dict[str, set[int]]:
     return zmiany
 
 
-def _przebieg(baza: str, korzen: Path) -> int:
+FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")
+PLIK_ZAPISU = "przebieg.json"
+WERSJA_ZAPISU = 1
+
+
+class _Czasy:
+    """Czasy faz; faza bez pomiaru to brak wpisu, nigdy zero (measured_or_null)."""
+
+    def __init__(self) -> None:
+        self.start = time.monotonic()
+        self.fazy: dict[str, float] = {}
+
+    def zmierz(self, faza: str, od: float) -> None:
+        self.fazy[faza] = time.monotonic() - od
+
+    def wypisz(self) -> None:
+        for faza in FAZY:
+            sekundy = self.fazy.get(faza)
+            wartosc = "brak pomiaru" if sekundy is None else f"{sekundy:.1f} s"
+            print(f"czas fazy {faza}: {wartosc}", file=sys.stderr)
+
+
+def odcisk_testow(korzen: Path) -> str:
+    """sha256 sciezek i tresci plikow pod `tests/` (takze nieSledzonych) oraz `pyproject.toml`."""
+    lista = uruchom(["git", "ls-files", "-z", "-co", "--exclude-standard", "--", "tests"])
+    if lista.returncode != 0:
+        raise BladNarzedzia(f"git ls-files tests nie powiodl sie: {lista.stderr.strip()}")
+    skrot = hashlib.sha256()
+    for sciezka in sorted({s for s in lista.stdout.split("\0") if s} | {"pyproject.toml"}):
+        try:
+            tresc = (korzen / sciezka).read_bytes()
+        except FileNotFoundError:
+            continue  # sledzony, ale usuniety z dysku: brak pliku to tez stan (inny odcisk)
+        except OSError as blad:
+            raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
+        skrot.update(sciezka.encode("utf-8") + b"\0" + hashlib.sha256(tresc).digest())
+    return skrot.hexdigest()
+
+
+def _poprawny_zapis(zapis: object) -> bool:
+    if not isinstance(zapis, dict):
+        return False
+    wersja = zapis.get("wersja")
+    # JSON `true` == 1 w Pythonie, ale to nie wersja zapisu
+    if type(wersja) is not int or wersja != WERSJA_ZAPISU:
+        return False
+    funkcje = zapis.get("funkcje")
+    if not isinstance(zapis.get("odcisk_testow"), str) or not isinstance(funkcje, dict):
+        return False
+    return all(
+        isinstance(wpis, dict)
+        and isinstance(wpis.get("odcisk"), str)
+        and isinstance(wpis.get("przezywajace"), list)
+        and all(isinstance(m, str) for m in wpis["przezywajace"])
+        for wpis in funkcje.values()
+    )
+
+
+def wczytaj_zapis(plik: Path) -> dict | None:
+    """Zapis przebiegu albo None (brak, nieczytelny, obca wersja = pelny przebieg)."""
+    try:
+        zapis = json.loads(plik.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):  # ValueError: tez JSONDecodeError i Unicode
+        return None
+    return zapis if _poprawny_zapis(zapis) else None
+
+
+def zapisz_przebieg(plik: Path, odcisk: str, funkcje: dict[str, dict]) -> None:
+    """Zapis do pliku tymczasowego obok, potem `os.replace`; `OSError` to blad narzedzia."""
+    tresc = json.dumps(
+        {"wersja": WERSJA_ZAPISU, "odcisk_testow": odcisk, "funkcje": funkcje},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    tymczasowy = plik.with_name(f"{plik.name}.{os.getpid()}.tmp")
+    try:
+        plik.parent.mkdir(parents=True, exist_ok=True)
+        tymczasowy.write_text(tresc + "\n", encoding="utf-8")
+        os.replace(tymczasowy, plik)
+    except OSError as blad:
+        try:
+            tymczasowy.unlink(missing_ok=True)
+        except OSError:  # sprzatanie nie moze przerwac tlumaczenia bledu (np. rodzic to plik)
+            pass
+        raise BladNarzedzia(f"{plik}: nie da sie zapisac przebiegu: {blad}") from blad
+
+
+def _wybierz_do_mutowania(
+    lista: list[str], odciski: dict[str, str], odcisk_testow_teraz: str, plik: Path
+) -> tuple[list[str], dict[str, list[str]]]:
+    """(funkcje do zmutowania, przezywajace pozostalych z zapisu); bez waznego zapisu: wszystkie."""
+    zapis = wczytaj_zapis(plik)
+    if zapis is None or zapis["odcisk_testow"] != odcisk_testow_teraz:
+        return lista, {}
+    poprzednie = zapis["funkcje"]
+    do_mutowania = [w for w in lista if poprzednie.get(w, {}).get("odcisk") != odciski[w]]
+    return do_mutowania, {w: poprzednie[w]["przezywajace"] for w in lista if w not in do_mutowania}
+
+
+def _przebieg(
+    baza: str,
+    korzen: Path,
+    czasy: _Czasy,
+    max_children: int | None = None,
+    od_przebiegu: Path | None = None,
+) -> int:
     source_paths = source_paths_z_pyproject(korzen / "pyproject.toml")
 
     merge = uruchom(["git", "merge-base", baza, "HEAD"])
@@ -351,25 +491,55 @@ def _przebieg(baza: str, korzen: Path) -> int:
         zmiany.setdefault(sciezka, set()).update(linie)
 
     poza_zasiegiem = bez_mutantow(zmiany, source_paths, korzen)
-    lista = wzorce(zmiany, source_paths, korzen)
-    if not lista:
+    odciski = wzorce_z_odciskami(zmiany, source_paths, korzen)
+    lista = sorted(odciski)
+    do_mutowania, z_zapisu = lista, {}
+    plik_zapisu = None if od_przebiegu is None else od_przebiegu / PLIK_ZAPISU
+    odcisk_testow_teraz = ""
+    if plik_zapisu is not None:
+        odcisk_testow_teraz = odcisk_testow(korzen)
+        do_mutowania, z_zapisu = _wybierz_do_mutowania(
+            lista, odciski, odcisk_testow_teraz, plik_zapisu
+        )
+    czasy.zmierz("wybor-funkcji", czasy.start)
+
+    nowe_przezywajace: list[str] = []
+    if not lista and plik_zapisu is None:
         if not poza_zasiegiem:
             print("brak zmienionych funkcji - nie ma czego mutowac", file=sys.stderr)
         return _zakoncz([], poza_zasiegiem)
-
-    bieg = uruchom([sys.executable, "-m", "mutmut", "run", *lista])
-    if bieg.returncode != 0:
-        if "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
+    if do_mutowania:
+        polecenie = [sys.executable, "-m", "mutmut", "run"]
+        if max_children is not None:
+            polecenie += ["--max-children", str(max_children)]
+        start = time.monotonic()
+        bieg = uruchom([*polecenie, *do_mutowania])
+        czasy.zmierz("mutanty", start)
+        if bieg.returncode == 0:
+            start = time.monotonic()
+            wyniki = uruchom([sys.executable, "-m", "mutmut", "results"])
+            czasy.zmierz("wyniki", start)
+            if wyniki.returncode != 0:
+                raise BladNarzedzia(f"mutmut results zakonczyl sie bledem:\n{_koncowka(wyniki)}")
+            nowe_przezywajace = przezywajace(wyniki.stdout, do_mutowania)
+        elif "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
             print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
-            return _zakoncz([], poza_zasiegiem)
-        raise BladNarzedzia(f"mutmut run zakonczyl sie bledem:\n{_koncowka(bieg)}")
+        else:
+            raise BladNarzedzia(f"mutmut run zakonczyl sie bledem:\n{_koncowka(bieg)}")
 
-    wyniki = uruchom([sys.executable, "-m", "mutmut", "results"])
-    if wyniki.returncode != 0:
-        raise BladNarzedzia(f"mutmut results zakonczyl sie bledem:\n{_koncowka(wyniki)}")
-
-    survivory = przezywajace(wyniki.stdout, lista)
-    if not survivory and not poza_zasiegiem:
+    survivory = sorted({*nowe_przezywajace, *(m for ms in z_zapisu.values() for m in ms)})
+    if plik_zapisu is not None:
+        funkcje = {
+            w: {
+                "odcisk": odciski[w],
+                "przezywajace": z_zapisu[w]
+                if w in z_zapisu
+                else [m for m in nowe_przezywajace if fnmatch.fnmatchcase(m, w)],
+            }
+            for w in lista
+        }
+        zapisz_przebieg(plik_zapisu, odcisk_testow_teraz, funkcje)
+    if do_mutowania and not survivory and not poza_zasiegiem:
         print("brak przezywajacych mutantow w zmienionych funkcjach", file=sys.stderr)
     return _zakoncz(survivory, poza_zasiegiem)
 
@@ -401,16 +571,33 @@ def _zakoncz(survivory: list[str], poza_zasiegiem: list[str]) -> int:
     return 0
 
 
+def _liczba_dzieci(tekst: str) -> int:
+    if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:
+        raise argparse.ArgumentTypeError(f"oczekiwano liczby calkowitej >= 1, jest {tekst!r}")
+    return int(tekst)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--baza", default="origin/main", help="baza porownania (merge-base z HEAD)")
     parser.add_argument("--korzen", type=Path, default=Path.cwd(), help="korzen repozytorium")
+    parser.add_argument(
+        "--max-children", type=_liczba_dzieci, default=None, metavar="N",
+        help="liczba rownoleglych procesow mutmuta (mutmut run --max-children N)",
+    )
+    parser.add_argument(
+        "--od-przebiegu", type=Path, default=None, metavar="KATALOG",
+        help=f"tryb przyrostowy: katalog z zapisem przebiegu ({PLIK_ZAPISU})",
+    )
     args = parser.parse_args(argv)
+    czasy = _Czasy()
     try:
-        return _przebieg(args.baza, args.korzen)
+        return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
+    finally:
+        czasy.wypisz()
 
 
 if __name__ == "__main__":
