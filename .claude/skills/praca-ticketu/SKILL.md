@@ -211,7 +211,7 @@ python3 <SKILL_DIR>/scripts/werdykt.py <KEY> --agent-id <agentId z wyniku narzę
 | Kod | Co robisz |
 |---|---|
 | 0 | APPROVED dla każdego agenta - krok 7 |
-| 1 | NEEDS WORK: tylko agenci poniżej 82. Linie `REGULA:` zapisujesz addytywnie do `.claude/agent-memory/<typ>/MEMORY.md`, chyba że reguły projektu zabraniają zapisu w `.claude/` z tej sesji - wtedy do komentarza ticketu. `stan.py poprawka`, re-run agenta z feedbackiem, krok 5, potem `prompt_krytyka.py ... --tylko <agent>` i nowy werdykt |
+| 1 | NEEDS WORK: tylko agenci poniżej 82. Linie `REGULA:` zapisujesz addytywnie do `.claude/agent-memory/<typ>/MEMORY.md`, chyba że reguły projektu zabraniają zapisu w `.claude/` z tej sesji - wtedy do komentarza ticketu. `stan.py poprawka`, re-run agenta z feedbackiem, krok 5, potem `prompt_krytyka.py ... --tylko <agent>` i nowy werdykt. Ponowna ocena ma zamrożony zakres (odjęcie tylko za nienaprawione odjęcie, kod zmieniony poprawką albo przydział); linie `UWAGA-PO-RUNDZIE:` z wyjścia `werdykt.py` idą do komentarza ticketu, nie do kolejnej poprawki |
 | 4 | poniżej progu wyłącznie przez `BLOKADA-ZEWNĘTRZNA` - kolejna iteracja nic nie zmieni: komentarz BLOKADA (`references/komentarze.md`), decyzja człowieka z opcjami (a)/(b)/(c); bez auto-commita |
 | 2 | brak werdyktu - jedno ponowne powołanie krytyka; drugi brak -> decyzja człowieka. Nigdy nie liczysz tego jako zaliczenie |
 

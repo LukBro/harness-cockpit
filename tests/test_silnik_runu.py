@@ -335,8 +335,9 @@ async def test_lancuch_krokow_wykonuje_sie_po_kolei_a_koniec_runu_wskazuje_ostat
     assert agent.czas("start", "b") >= agent.czas("koniec", "a")
     assert agent.czas("start", "c") >= agent.czas("koniec", "b")
     assert rodzaje([z for z in zdarzenia if z["kind"] != "output"]) == [
-        "step_started", "step_finished", "step_started", "step_finished",
-        "step_started", "step_finished", "run_finished"]
+        "step_started", "context_manifest", "step_finished",
+        "step_started", "context_manifest", "step_finished",
+        "step_started", "context_manifest", "step_finished", "run_finished"]
     assert zdarzenia[-1]["step_id"] == "c"
 
 
