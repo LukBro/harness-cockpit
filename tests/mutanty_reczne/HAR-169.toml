@@ -707,24 +707,6 @@ szukaj = 'tuple(dict.fromkeys(w.sciezka for w in manifest.wpisy if w.sciezka is 
 zamien = 'tuple(w.sciezka for w in manifest.wpisy if w.sciezka is not None)'
 test = "tests/test_manifest_kontekstu_brzegi.py::test_plik_lekcji_wystepuje_w_prompcie_kroku_raz_mimo_kilku_pasujacych_lekcji"
 
-# BladManifestu z zloz_manifest przechodzi z wlasnym komunikatem
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = '''    except BladManifestu as e:
-        raise PorazkaKroku(str(e)) from e'''
-zamien = '''    except BladManifestu as e:
-        raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e'''
-test = "tests/test_manifest_kontekstu_brzegi.py::test_katalog_planu_bez_praw_dostepu_konczy_krok_porazka_z_komunikatem_o_odczycie"
-
-# wyjatek BladManifestu jest lapany
-[[mutant]]
-plik = "src/runner/silnik.py"
-szukaj = '''    except BladManifestu as e:
-        raise PorazkaKroku(str(e)) from e'''
-zamien = '''    except ZeroDivisionError as e:
-        raise PorazkaKroku(str(e)) from e'''
-test = "tests/test_manifest_kontekstu_brzegi.py::test_manifest_ponad_limit_konczy_krok_porazka_bez_agenta_zdarzenia_i_pliku"
-
 # OSError przy zapisie pliku manifestu
 [[mutant]]
 plik = "src/runner/silnik.py"

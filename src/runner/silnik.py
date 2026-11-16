@@ -78,7 +78,7 @@ from runner.krok import (
     _zapisz_atomowo,
     wykonaj_krok,
 )
-from runner.kontekst import BladManifestu, Manifest, zloz_manifest
+from runner.kontekst import Manifest, zloz_manifest
 from runner.krok_diff import wykonaj_diff
 from runner.weryfikacja import kroki_weryfikujace
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
@@ -272,15 +272,14 @@ async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
 async def _zloz_i_zapisz_manifest(
     p: Przygotowany, krok: Krok, sciezki_planu: Sequence[str],
 ) -> Manifest:
-    """Manifest kroku ze skillem w `<katalog_runu>/manifest-<id>.json`; blad to `PorazkaKroku`."""
+    """Manifest kroku ze skillem w `<katalog_runu>/manifest-<id>.json`; blad konczy krok."""
     assert krok.skill is not None
     if (blad := _blad_identyfikatora(krok.id)) is not None:
         raise PorazkaKroku(blad)
-    try:
-        manifest = await asyncio.to_thread(
-            zloz_manifest, p.worktree.sciezka, krok.id, sciezki_planu, skill_id=krok.skill)
-    except BladManifestu as e:
-        raise PorazkaKroku(str(e)) from e
+    # BladManifestu (BladDziedziny) konczy krok w petli zadan (`except BLEDY_GRANICY`) z tym samym
+    # tekstem - osobny except bylby martwy
+    manifest = await asyncio.to_thread(
+        zloz_manifest, p.worktree.sciezka, krok.id, sciezki_planu, skill_id=krok.skill)
     # mutant ensure_ascii=None jest rownowazny (json czyta go jako bool); wariant True chroni reczny mutant HAR-169
     tresc = json.dumps(manifest.jako_listy(), ensure_ascii=False).encode()  # pragma: no mutate
     try:
