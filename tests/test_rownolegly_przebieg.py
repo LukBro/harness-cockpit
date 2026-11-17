@@ -265,6 +265,14 @@ def _joby_ci() -> dict:
     return YAML(typ="safe").load(sciezka.read_text(encoding="utf-8"))["jobs"]
 
 
+def test_kazdy_job_ci_konczy_sie_po_limicie_czasu_a_nie_po_szesciu_godzinach():
+    joby = _joby_ci()
+    assert joby
+    for nazwa, job in joby.items():
+        limit = job.get("timeout-minutes")
+        assert isinstance(limit, int) and 0 < limit <= 60, f"job {nazwa}: timeout-minutes {limit!r}"
+
+
 def _polecenia_pytest(job: dict) -> list[tuple[str, list[str]]]:
     wynik = []
     for krok in job.get("steps", []):
