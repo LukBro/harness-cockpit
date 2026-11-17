@@ -9,22 +9,26 @@ Nazwy testow w jezyku dziedziny, nie technologii (CLAUDE.md).
 """
 from __future__ import annotations
 
+import asyncio
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
 from ruamel.yaml import YAML
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from transport_asgi import TransportASGIStrumieniujacy
 
 from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Project, RolaWZespole
+from cockpit.db.models import Base, Project, RolaWZespole, Run
 from runner import operacje
 from sesja_testowa import zaloguj_klienta, zaloz_czlonka, zaloz_runnera, zaloz_wlasciciela
+from test_dostep import LIMIT_S, _czeka_na_blokade_wiersza, maker_pg, tylko_postgres
 
 KOMUNIKAT_OFFLINE = "runner offline — tryb tylko do odczytu"
 KOMUNIKAT_PROJEKT_NIEZNANY = "projekt nieznany"
@@ -943,3 +947,170 @@ def test_komenda_dluzsza_o_znak_niz_szerokosc_4096_jest_zawijana_a_wartosc_zosta
     assert nowy != tekst + "  lint: ruff\n"
     assert capabilities == {"test": komenda, "lint": "ruff"}
     assert _dane(nowy)["capabilities"] == {"test": komenda, "lint": "ruff"}
+
+
+# --- HAR-180: rownolegle zmiany tego samego projektu nie gubia sie (PostgreSQL) -----------------
+
+FIXTURY_Z_TEST_DOSTEP = (maker_pg,)   # fixture pytest zaimportowana z innego pliku testow
+
+
+class RunnerPrzeplatany:
+    """Podstawka runnera z trescia pliku w pamieci. Pierwszy odczyt zglasza sie i stoi, az test go
+    zwolni; kazdy odczyt oddaje tresc z chwili odczytu, a zapis nadpisuje cala tresc."""
+
+    def __init__(self, tresc: str) -> None:
+        self.tresc = tresc
+        self.odczyty = 0
+        self.pierwszy_odczyt = asyncio.Event()
+        self.drugi_odczyt = asyncio.Event()
+        self.zwolnij = asyncio.Event()
+
+    async def __call__(self, runner_id, typ, dane, timeout_s):
+        if typ == "write_file":
+            self.tresc = dane["tresc"]
+            return {"ok": True, "wynik": {"sciezka": dane["sciezka"], "rozmiar": len(self.tresc)}}
+        odczytana = self.tresc
+        self.odczyty += 1
+        if self.odczyty == 1:
+            self.pierwszy_odczyt.set()
+            await asyncio.wait_for(self.zwolnij.wait(), LIMIT_S)
+        else:
+            self.drugi_odczyt.set()
+        return {"ok": True, "wynik": {"sciezka": dane["sciezka"], "tresc": odczytana,
+                                      "rozmiar": len(odczytana)}}
+
+
+@pytest.mark.baza
+@tylko_postgres
+async def test_dwie_rownolegle_zmiany_capabilities_tego_samego_projektu_zostawiaja_w_pliku_obie(
+    maker_pg, monkeypatch
+):
+    # Pierwszy PATCH odczytal plik i stoi przed zapisem. Bez blokady wiersza projektu drugi czyta
+    # ten sam oryginal, zapisuje pierwszy, a zapis pierwszego gubi jego zmiane. Z blokada drugi
+    # czeka i czyta plik juz ze zmiana pierwszego.
+    monkeypatch.setattr(db_session, "SessionLocal", maker_pg)
+    runner_atrapa = RunnerPrzeplatany(PROJECT_YAML)
+    monkeypatch.setattr(bus, "zapytaj", runner_atrapa)
+    wlasciciel, tenant = await zaloz_wlasciciela(maker_pg, "pg-zmiana@example.com")
+    runner = await zaloz_runnera(maker_pg, tenant, "laptop-pg", "token-pg")
+    async with maker_pg() as s:
+        projekt = Project(tenant_id=tenant, runner_id=runner, path="/pg/projekt", name="app")
+        s.add(projekt)
+        await s.commit()
+    bus.mark_runner_connected(runner)
+    klient_a = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    klient_b = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    zadania = []
+    try:
+        await zaloguj_klienta(klient_a, maker_pg, wlasciciel)
+        await zaloguj_klienta(klient_b, maker_pg, wlasciciel)
+        zadanie_a = asyncio.create_task(
+            klient_a.patch(f"/api/projects/{projekt.id}", json={"capabilities": {"alfa": "make a"}}))
+        zadania.append(zadanie_a)
+        await asyncio.wait_for(runner_atrapa.pierwszy_odczyt.wait(), LIMIT_S)
+        zadanie_b = asyncio.create_task(
+            klient_b.patch(f"/api/projects/{projekt.id}", json={"capabilities": {"beta": "make b"}}))
+        zadania.append(zadanie_b)
+        # drugi PATCH albo dochodzi do odczytu (brak blokady), albo staje na blokadzie wiersza
+        koniec = asyncio.get_running_loop().time() + LIMIT_S
+        while not runner_atrapa.drugi_odczyt.is_set() and not await _czeka_na_blokade_wiersza(maker_pg):
+            assert asyncio.get_running_loop().time() < koniec, "drugi PATCH ani nie czyta, ani nie czeka"
+            await asyncio.sleep(0.05)
+        runner_atrapa.zwolnij.set()
+        odp_a, odp_b = await asyncio.wait_for(asyncio.gather(*zadania), LIMIT_S)
+    finally:
+        runner_atrapa.zwolnij.set()
+        for zadanie in zadania:
+            zadanie.cancel()
+        await asyncio.gather(*zadania, return_exceptions=True)
+        await klient_a.aclose()
+        await klient_b.aclose()
+        while runner in bus.connected_runner_ids():
+            bus.mark_runner_disconnected(runner)
+        getattr(bus, "_rozlaczone", {}).pop(runner, None)
+
+    assert (odp_a.status_code, odp_b.status_code) == (200, 200), (odp_a.text, odp_b.text)
+    assert _dane(runner_atrapa.tresc)["capabilities"] == {
+        "test": "pytest -q", "lint": "ruff check .", "build": "make build",
+        "alfa": "make a", "beta": "make b"}   # plik u runnera, nie tylko kody odpowiedzi
+
+
+# --- HAR-180: blokada wiersza projektu trzymana przez PATCH nie wstrzymuje innych operacji ------
+
+LIMIT_ODPOWIEDZI_S = 5   # operacja bez blokady odpowiada w ulamku sekundy; to margines na wolne CI
+
+
+@asynccontextmanager
+async def _patch_stojacy_u_runnera(maker_pg, monkeypatch, email):
+    """PATCH capabilities stoi na odczycie u runnera, czyli trzyma blokade wiersza projektu."""
+    monkeypatch.setattr(db_session, "SessionLocal", maker_pg)
+    runner_atrapa = RunnerPrzeplatany(PROJECT_YAML)
+    monkeypatch.setattr(bus, "zapytaj", runner_atrapa)
+    wlasciciel, tenant = await zaloz_wlasciciela(maker_pg, email)
+    runner = await zaloz_runnera(maker_pg, tenant, "laptop-pg", "token-pg")
+    async with maker_pg() as s:
+        projekt = Project(tenant_id=tenant, runner_id=runner, path="/pg/projekt", name="app")
+        s.add(projekt)
+        await s.commit()
+    bus.mark_runner_connected(runner)
+    klient_patch = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    klient = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    zadanie = None
+    try:
+        await zaloguj_klienta(klient_patch, maker_pg, wlasciciel)
+        await zaloguj_klienta(klient, maker_pg, wlasciciel)
+        zadanie = asyncio.create_task(klient_patch.patch(
+            f"/api/projects/{projekt.id}", json={"capabilities": {"alfa": "make a"}}))
+        await asyncio.wait_for(runner_atrapa.pierwszy_odczyt.wait(), LIMIT_S)
+        yield SimpleNamespace(klient=klient, projekt=projekt.id, tenant=tenant, patch=zadanie)
+    finally:
+        runner_atrapa.zwolnij.set()
+        if zadanie is not None:
+            zadanie.cancel()
+            await asyncio.gather(zadanie, return_exceptions=True)
+        await klient_patch.aclose()
+        await klient.aclose()
+        while runner in bus.connected_runner_ids():
+            bus.mark_runner_disconnected(runner)
+        getattr(bus, "_rozlaczone", {}).pop(runner, None)
+
+
+@pytest.mark.baza
+@tylko_postgres
+async def test_odczyt_skilli_projektu_nie_czeka_na_zmiane_capabilities_trwajaca_u_runnera(
+    maker_pg, monkeypatch
+):
+    # Blokada wiersza projektu jest tylko dla zmian capabilities: lista i szczegoly skilli
+    # (projekt_zespolu bez blokady) odpowiadaja, gdy PATCH stoi u runnera.
+    async with _patch_stojacy_u_runnera(maker_pg, monkeypatch, "pg-odczyt@example.com") as w:
+        lista = await asyncio.wait_for(
+            w.klient.get("/api/skills", params={"project": w.projekt}), LIMIT_ODPOWIEDZI_S)
+        szczegoly = await asyncio.wait_for(
+            w.klient.get("/api/skills/nie-ma-takiego", params={"project": w.projekt}),
+            LIMIT_ODPOWIEDZI_S)
+
+        assert not w.patch.done()   # PATCH nadal trzyma blokade, a odczyty i tak odpowiedzialy
+    assert lista.status_code == 200, lista.text
+    assert lista.json()["skille"] == []
+    assert (szczegoly.status_code, szczegoly.json()) == (404, {"detail": "skill nieznany"})
+
+
+@pytest.mark.baza
+@tylko_postgres
+async def test_start_runu_w_projekcie_nie_czeka_na_zmiane_capabilities_trwajaca_u_runnera(
+    maker_pg, monkeypatch
+):
+    # Run z project_id bierze FOR KEY SHARE na wierszu projektu (klucz obcy); blokada PATCH
+    # to FOR NO KEY UPDATE, wiec wstawienie runu przechodzi, choc PATCH jeszcze stoi.
+    async with _patch_stojacy_u_runnera(maker_pg, monkeypatch, "pg-run@example.com") as w:
+        async with maker_pg() as s:
+            await s.execute(text("SET LOCAL lock_timeout = '2s'"))
+            run = Run(tenant_id=w.tenant, project_id=w.projekt)
+            s.add(run)
+            await asyncio.wait_for(s.commit(), LIMIT_ODPOWIEDZI_S)
+        assert not w.patch.done()
+        async with maker_pg() as s:
+            zapisane = (await s.execute(
+                select(Run.id).where(Run.project_id == w.projekt))).scalars().all()
+
+    assert zapisane == [run.id]   # wiersz w bazie, nie tylko brak bledu

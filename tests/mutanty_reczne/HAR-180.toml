@@ -1049,3 +1049,38 @@ plik = "src/cockpit/services/skille_api.py"
 szukaj = "wiersze = sorted("
 zamien = "wiersze = (lambda x, key: list(x))("
 test = "tests/test_skille_api.py::test_lista_skilli_jest_posortowana_po_id_takze_gdy_baza_oddaje_wiersze_w_innej_kolejnosci"
+
+# =====================================================================================
+# src/cockpit/services/projekty.py: blokada wiersza projektu przy zmianie capabilities
+# (wymaga PostgreSQL; bez COCKPIT_TEST_DATABASE_URL test jest pomijany, a to nie zabicie mutanta)
+# =====================================================================================
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "zapytanie = zapytanie.with_for_update(key_share=True)"
+zamien = "zapytanie = zapytanie"
+test = "tests/test_projekty_zmiana.py::test_dwie_rownolegle_zmiany_capabilities_tego_samego_projektu_zostawiaja_w_pliku_obie"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "projekt_zespolu(s, tenant_id, project_id, blokuj=True)"
+zamien = "projekt_zespolu(s, tenant_id, project_id, blokuj=False)"
+test = "tests/test_projekty_zmiana.py::test_dwie_rownolegle_zmiany_capabilities_tego_samego_projektu_zostawiaja_w_pliku_obie"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "*, blokuj: bool = False,"
+zamien = "*, blokuj: bool = True,"
+test = "tests/test_projekty_zmiana.py::test_odczyt_skilli_projektu_nie_czeka_na_zmiane_capabilities_trwajaca_u_runnera"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "    if blokuj:\n"
+zamien = "    if True:\n"
+test = "tests/test_projekty_zmiana.py::test_odczyt_skilli_projektu_nie_czeka_na_zmiane_capabilities_trwajaca_u_runnera"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = ".with_for_update(key_share=True)"
+zamien = ".with_for_update()"
+test = "tests/test_projekty_zmiana.py::test_start_runu_w_projekcie_nie_czeka_na_zmiane_capabilities_trwajaca_u_runnera"

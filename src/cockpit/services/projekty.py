@@ -116,11 +116,16 @@ async def sciezka_projektu(s: AsyncSession, tenant_id: str, project_id: str) -> 
     return sciezka
 
 
-async def projekt_zespolu(s: AsyncSession, tenant_id: str, project_id: str) -> Project:
-    """Projekt zespolu (HAR-180); obcy albo nieznany to NieZnaleziono. Wynik zostaje w serwisach."""
-    projekt = (await s.execute(
-        select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
-    )).scalar_one_or_none()
+async def projekt_zespolu(
+    s: AsyncSession, tenant_id: str, project_id: str, *, blokuj: bool = False,
+) -> Project:
+    """Projekt zespolu (HAR-180); obcy albo nieznany to NieZnaleziono. Wynik zostaje w serwisach.
+    `blokuj=True` blokuje wiersz (`FOR NO KEY UPDATE`) do konca transakcji. Blokada nie wstrzymuje
+    startu runu: FK run.project_id bierze FOR KEY SHARE, ktore z FOR NO KEY UPDATE sie nie wyklucza."""
+    zapytanie = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
+    if blokuj:
+        zapytanie = zapytanie.with_for_update(key_share=True)
+    projekt = (await s.execute(zapytanie)).scalar_one_or_none()
     if projekt is None:
         raise NieZnaleziono("projekt nieznany")
     return projekt
@@ -154,10 +159,12 @@ async def zmien_projekt(
     """Zapisuje capabilities w `.cockpit/project.yaml` projektu przez jego runnera (HAR-180).
 
     Odczyt, zmiana w miejscu (ruamel round-trip) i zapis; zapis tylko po udanym odczycie
-    i walidacji pliku. Odczyt i zapis to dwa osobne zapytania do runnera bez blokady: rownolegle
-    zmiany tego samego pliku (dwa PATCH, edycja w edytorze) moga sie nadpisac -
-    wygrywa ostatni zapis."""
-    projekt = await projekt_zespolu(s, tenant_id, project_id)
+    i walidacji pliku. PATCH tego samego projektu sa szeregowane blokada wiersza Project
+    (`FOR NO KEY UPDATE` trzymany w tej samej transakcji przez odczyt i zapis), wiec nie gubia
+    zmian. Blokada nie wstrzymuje startu runu: FK run.project_id bierze FOR KEY SHARE, ktore
+    z FOR NO KEY UPDATE sie nie wyklucza.
+    Edycja pliku w edytorze poza kokpitem nadal moze sie nadpisac - kokpit jej nie widzi."""
+    projekt = await projekt_zespolu(s, tenant_id, project_id, blokuj=True)
     wzgledna = PLIK_PROJEKTU.as_posix()
     tekst = await czytaj_plik_projektu(s, tenant_id, projekt, wzgledna, polaczone, wyslij)
     nowy, po_zmianie = zmien_capabilities(tekst, capabilities)
