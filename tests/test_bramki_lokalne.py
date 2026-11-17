@@ -581,10 +581,12 @@ def test_kazda_bramka_ma_wlasna_grupe_procesow_rozna_od_grupy_skryptu(tmp_path):
         pidy = [_pid_z_pliku(falszywe / p) for p in PLIKI_PID]
         testy, wnuk_testow, mutanty, wnuk_mutantow = pidy
         grupy = {p: os.getpgid(p) for p in pidy}
-        assert grupy[testy] == grupy[wnuk_testow] == testy
-        assert grupy[mutanty] == grupy[wnuk_mutantow] == mutanty
-        assert testy != mutanty
-        assert os.getpgid(proc.pid) not in (testy, mutanty)
+        # lider grupy to proces zadania (`sh -c` dla testow): bash na macOS robi exec atrapy,
+        # dash w CI nie, wiec atrapa nie musi byc liderem - liczy sie wspolna, osobna grupa
+        assert grupy[testy] == grupy[wnuk_testow]
+        assert grupy[mutanty] == grupy[wnuk_mutantow]
+        assert grupy[testy] != grupy[mutanty]
+        assert os.getpgid(proc.pid) not in (grupy[testy], grupy[mutanty])
     finally:
         for pid in pidy:
             if czy_zyje(pid):
