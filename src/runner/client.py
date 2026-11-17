@@ -293,16 +293,22 @@ class Runner:
         self, client: httpx.AsyncClient, run_id: object, blad: NiewaznePoleZdarzenia,
     ) -> None:
         """Zdarzenie zlamalo limit `EventIn` (HAR-242): kokpit dostaje poprawny `step_failed`
-        i `run_finished` poza buforem, z krokiem `run` i tekstem obcietym do limitu tekstu.
-        Gdy limit lamie sam `run_id`, nie ma do kogo zglosic - zostaje komunikat na stderr."""
+        przez bufor (ponawianie) i `run_finished` dopiero po jego przyjeciu (HAR-78), z krokiem
+        `run` i tekstem obcietym do limitu tekstu. BrakMiejsca z bufora konczy sie `step_aborted`
+        poza buforem (jak u wolajacych). Gdy limit lamie sam `run_id`, nie ma do kogo zglosic -
+        zostaje komunikat na stderr (takze gdy `step_aborted` lamie limit)."""
         try:
-            await self._wyslij_bezposrednio(
-                client, run_id=run_id, step_id="run", kind="step_failed",
-                text=f"zdarzenie przekracza limity pol: {blad}"[:2000],
-                cost_usd=None, cost_source="unavailable")
-            await self._wyslij_bezposrednio(
-                client, run_id=run_id, step_id="run", kind="run_finished", text="",
-                cost_usd=None, cost_source="unavailable")
+            try:
+                przyjety = await self.send_event(
+                    client, run_id=run_id, step_id="run", kind="step_failed",
+                    text=f"zdarzenie przekracza limity pol: {blad}"[:2000],
+                    cost_usd=None, cost_source="unavailable")
+                await self._zglos_koniec_runu(client, run_id, "run", "step_failed", przyjety)
+            except BrakMiejsca:
+                await self._wyslij_bezposrednio(
+                    client, run_id=run_id, step_id="run", kind="step_aborted",
+                    text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
         except NiewaznePoleZdarzenia:
             print(f"koniec runu niewyslany: run_id={str(run_id)[:36]!r} - {blad}",
                   file=sys.stderr)

@@ -1091,9 +1091,45 @@ test = "tests/test_granica.py::test_krok_polecenia_ze_zdarzeniem_ponad_limit_kon
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "step_id=\"run\", kind=\"run_finished\", text=\"\","
-zamien = "step_id=\"run\", kind=\"step_finished\", text=\"\","
-test = "tests/test_granica.py::test_run_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
+szukaj = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", przyjety)"
+zamien = "self._zglos_koniec_runu(client, run_id, \"krok\", \"step_failed\", przyjety)"
+test = "tests/test_granica.py::test_przyjety_step_failed_po_niewaznym_polu_jest_przed_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", przyjety)"
+zamien = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", True)"
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze[http_503]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", przyjety)"
+zamien = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", True)"
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze[blad_transportu]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", przyjety)"
+zamien = "self._zglos_koniec_runu(client, run_id, \"run\", \"step_failed\", False)"
+test = "tests/test_granica.py::test_przyjety_step_failed_po_niewaznym_polu_jest_przed_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "            przyjety = await self.send_event("
+zamien = "            przyjety = await self._wyslij_bezposrednio("
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze[http_503]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "            przyjety = await self.send_event("
+zamien = "            przyjety = await self._wyslij_bezposrednio("
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze[blad_transportu]"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+test = "tests/test_granica.py::test_wznowienie_runu_bez_checkpointu_ze_step_id_ponad_limit_konczy_sie_krokiem_run"
 
 [[mutant]]
 plik = "src/runner/client.py"
@@ -1106,3 +1142,277 @@ plik = "src/runner/client.py"
 szukaj = "        except NiewaznePoleZdarzenia:\n            print("
 zamien = "        except KeyError:\n            print("
 test = "tests/test_granica.py::test_run_z_run_id_ponad_limit_nie_ma_komu_zglosic_konca_i_nie_rzuca"
+
+# --- WpisManifestuIn i pole manifest (schematy.py:43-55, 88) ---
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class WpisManifestuIn(BaseModel):"
+zamien = "class WpisManifestuIn(BaseModel, extra=\"ignore\"):"
+test = "tests/test_granica.py::test_wpis_manifestu_z_nieznanym_kluczem_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "przed wyslaniem).\"\"\"\n    model_config = ConfigDict(extra=\"forbid\", strict=True)"
+zamien = "przed wyslaniem).\"\"\"\n    model_config = ConfigDict(extra=\"ignore\", strict=True)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_nieznanym_kluczem_jest_odrzucony"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "przed wyslaniem).\"\"\"\n    model_config = ConfigDict(extra=\"forbid\", strict=True)"
+zamien = "przed wyslaniem).\"\"\"\n    model_config = ConfigDict(extra=\"forbid\", strict=False)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_wartoscia_zlego_typu_jest_odrzucony_bez_konwersji[rozmiar-5]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "przed wyslaniem).\"\"\"\n    model_config = ConfigDict(extra=\"forbid\", strict=True)"
+zamien = "przed wyslaniem).\"\"\"\n    model_config = ConfigDict(extra=\"forbid\", strict=False)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_wartoscia_zlego_typu_jest_odrzucony_bez_konwersji[rozmiar-True]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "warstwa: str = Field(min_length=1, max_length=64)"
+zamien = "warstwa: str = Field(min_length=0, max_length=64)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_pustym_polem_tekstowym_jest_odrzucony[warstwa]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "warstwa: str = Field(min_length=1, max_length=64)"
+zamien = "warstwa: str = Field(min_length=1, max_length=65)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_polem_o_jeden_ponad_limit_jest_odrzucony[warstwa-65]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "warstwa: str = Field(min_length=1, max_length=64)"
+zamien = "warstwa: str = Field(min_length=1, max_length=63)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_polem_dokladnie_na_limicie_dlugosci_jest_przyjety[warstwa-64]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sciezka: str | None = Field(default=None, min_length=1, max_length=255)"
+zamien = "sciezka: str | None = Field(default=None, min_length=0, max_length=255)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_pustym_polem_tekstowym_jest_odrzucony[sciezka]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sciezka: str | None = Field(default=None, min_length=1, max_length=255)"
+zamien = "sciezka: str | None = Field(default=None, min_length=1, max_length=256)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_polem_o_jeden_ponad_limit_jest_odrzucony[sciezka-256]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sciezka: str | None = Field(default=None, min_length=1, max_length=255)"
+zamien = "sciezka: str | None = Field(default=None, min_length=1, max_length=254)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_polem_dokladnie_na_limicie_dlugosci_jest_przyjety[sciezka-255]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sciezka: str | None = Field(default=None, min_length=1, max_length=255)"
+zamien = "sciezka: str | None = Field(min_length=1, max_length=255)"
+test = "tests/test_granica.py::test_wpis_manifestu_bez_pol_opcjonalnych_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"[0-9a-f]{64}$\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_innym_niz_64_znaki_hex_malymi_literami_jest_odrzucony[przed_hashem_znak]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_innym_niz_64_znaki_hex_malymi_literami_jest_odrzucony[po_hashu_nowa_linia]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{63}$\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_ze_wszystkimi_cyframi_hex_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{65}$\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_ze_wszystkimi_cyframi_hex_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-e]{64}$\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_ze_wszystkimi_cyframi_hex_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"^[1-9a-f]{64}$\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_ze_wszystkimi_cyframi_hex_jest_przyjety"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern=r\"^[0-9a-f]{64}$\")"
+zamien = "sha256: str | None = Field(default=None, pattern=r\"^[0-9A-f]{64}$\")"
+test = "tests/test_granica.py::test_wpis_manifestu_z_haszem_innym_niz_64_znaki_hex_malymi_literami_jest_odrzucony[wielkie_litery]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "sha256: str | None = Field(default=None, pattern="
+zamien = "sha256: str | None = Field(pattern="
+test = "tests/test_granica.py::test_wpis_manifestu_bez_pol_opcjonalnych_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "rozmiar: int | None = Field(default=None, ge=1, le=2_147_483_647)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_rozmiarem_na_granicach_zakresu_jest_przyjety[0]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "rozmiar: int | None = Field(default=None, ge=-1, le=2_147_483_647)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_rozmiarem_poza_zakresem_jest_odrzucony[-1]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_648)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_rozmiarem_poza_zakresem_jest_odrzucony[2147483648]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_646)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_rozmiarem_na_granicach_zakresu_jest_przyjety[2147483647]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)"
+zamien = "rozmiar: int | None = Field(ge=0, le=2_147_483_647)"
+test = "tests/test_granica.py::test_wpis_manifestu_bez_pol_opcjonalnych_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "id: str | None = Field(default=None, min_length=1, max_length=64)"
+zamien = "id: str | None = Field(default=None, min_length=0, max_length=64)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_pustym_polem_tekstowym_jest_odrzucony[id]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "id: str | None = Field(default=None, min_length=1, max_length=64)"
+zamien = "id: str | None = Field(default=None, min_length=1, max_length=65)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_polem_o_jeden_ponad_limit_jest_odrzucony[id-65]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "id: str | None = Field(default=None, min_length=1, max_length=64)"
+zamien = "id: str | None = Field(default=None, min_length=1, max_length=63)"
+test = "tests/test_granica.py::test_wpis_manifestu_z_polem_dokladnie_na_limicie_dlugosci_jest_przyjety[id-64]"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "id: str | None = Field(default=None, min_length=1, max_length=64)"
+zamien = "id: str | None = Field(min_length=1, max_length=64)"
+test = "tests/test_granica.py::test_wpis_manifestu_bez_pol_opcjonalnych_ma_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]"
+zamien = "_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1001)]"
+test = "tests/test_granica.py::test_zdarzenie_z_wpisami_manifestu_ponad_tysiac_jest_odrzucone"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]"
+zamien = "_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=999)]"
+test = "tests/test_granica.py::test_zdarzenie_z_tysiacem_wpisow_manifestu_jest_przyjete"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]"
+zamien = "_ListaManifestu = Annotated[list[dict], Field(max_length=1000)]"
+test = "tests/test_granica.py::test_manifest_zdarzenia_jest_lista_wpisow_a_nie_slownikow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "manifest: _ListaManifestu | None = None"
+zamien = "manifest: _ListaManifestu | None"
+test = "tests/test_granica.py::test_zdarzenie_bez_manifestu_ma_brak_manifestu_a_nie_pusta_liste"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "manifest: _ListaManifestu | None = None"
+zamien = "manifest: _ListaManifestu | None = []"
+test = "tests/test_granica.py::test_zdarzenie_bez_manifestu_ma_brak_manifestu_a_nie_pusta_liste"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "manifest: _ListaManifestu | None = None"
+zamien = "manifest: list[dict] | None = None"
+test = "tests/test_granica.py::test_manifest_zdarzenia_jest_lista_wpisow_a_nie_slownikow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = 'await self._zglos_koniec_runu(client, run_id, "run", "step_failed", przyjety)'
+zamien = 'await self._zglos_koniec_runu(client, run_id, "run", None, przyjety)'
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = 'await self._zglos_koniec_runu(client, run_id, "run", "step_failed", przyjety)'
+zamien = 'await self._zglos_koniec_runu(client, run_id, "run", "XXstep_failedXX", przyjety)'
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = 'await self._zglos_koniec_runu(client, run_id, "run", "step_failed", przyjety)'
+zamien = 'await self._zglos_koniec_runu(client, run_id, "run", "STEP_FAILED", przyjety)'
+test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze"
+
+# Rework krytyka (runda 2): BrakMiejsca z send_event w _zglos_niewazne_pole konczy sie step_aborted.
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "            except BrakMiejsca:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+zamien = "            except KeyError:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+test = "tests/test_granica.py::test_brak_miejsca_w_buforze_przy_zgloszeniu_niewaznego_pola_konczy_krok_run_przerwaniem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "            except BrakMiejsca:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+zamien = "            except KeyError:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+test = "tests/test_granica.py::test_run_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwaniem_a_nie_wyjatkiem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "            except BrakMiejsca:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+zamien = "            except KeyError:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+test = "tests/test_granica.py::test_wznowienie_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwaniem_a_nie_wyjatkiem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "            except BrakMiejsca:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+zamien = "            except KeyError:\n                await self._wyslij_bezposrednio(\n                    client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+test = "tests/test_granica.py::test_krok_polecenia_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwaniem_a_nie_wyjatkiem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+zamien = "client, run_id=run_id, step_id=\"krok\", kind=\"step_aborted\","
+test = "tests/test_granica.py::test_brak_miejsca_w_buforze_przy_zgloszeniu_niewaznego_pola_konczy_krok_run_przerwaniem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "client, run_id=run_id, step_id=\"run\", kind=\"step_aborted\","
+zamien = "client, run_id=run_id, step_id=\"run\", kind=\"step_failed\","
+test = "tests/test_granica.py::test_brak_miejsca_w_buforze_przy_zgloszeniu_niewaznego_pola_konczy_krok_run_przerwaniem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "kind=\"step_aborted\",\n                    text=\"brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)\",\n                )\n        except NiewaznePoleZdarzenia:"
+zamien = "kind=\"step_aborted\",\n                    text=\"brak dysku: zapis zdarzen runnera nie powiodl sie (ENOSPC)\",\n                )\n        except NiewaznePoleZdarzenia:"
+test = "tests/test_granica.py::test_brak_miejsca_w_buforze_przy_zgloszeniu_niewaznego_pola_konczy_krok_run_przerwaniem"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        except NiewaznePoleZdarzenia:\n            print("
+zamien = "        except KeyError:\n            print("
+test = "tests/test_granica.py::test_przerwanie_z_braku_miejsca_ponad_limit_run_id_nie_ucieka_a_zostaje_na_stderr"

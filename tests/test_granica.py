@@ -22,9 +22,9 @@ from procesy import uruchom_proces_sync, zakoncz_proces_sync
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from cockpit.api.schematy import EventIn
+from cockpit.api.schematy import EventIn, WpisManifestuIn
 from runner import client as modul_klienta
-from runner.bufor import Bufor
+from runner.bufor import BrakMiejsca, Bufor
 from runner.client import NiewaznePoleZdarzenia, Runner
 
 KORZEN = Path(__file__).resolve().parent.parent
@@ -637,6 +637,104 @@ def test_pelna_dlugosc_tekstu_ujemna_jest_odrzucona():
         EventIn(**BAZA_MODELU, text_full_len=-1)
 
 
+# --- WpisManifestuIn i pole manifest zdarzenia: limity i ksztalt wpisu (kod 3 w schematy.py) -----
+
+WPIS = {"warstwa": "skill", "sciezka": "a.py", "sha256": "a" * 64, "rozmiar": 5, "id": "x"}
+
+
+def _wpis(**pola) -> WpisManifestuIn:
+    return WpisManifestuIn(**{**WPIS, **pola})
+
+
+def test_wpis_manifestu_bez_pol_opcjonalnych_ma_brak_pomiaru_a_nie_zero():
+    w = WpisManifestuIn(warstwa="skill")
+
+    assert (w.sciezka, w.sha256, w.rozmiar, w.id) == (None, None, None, None)
+
+
+@pytest.mark.parametrize(("pole", "dlugosc"), [("warstwa", 64), ("sciezka", 255), ("id", 64)])
+def test_wpis_manifestu_z_polem_dokladnie_na_limicie_dlugosci_jest_przyjety(pole, dlugosc):
+    assert getattr(_wpis(**{pole: "x" * dlugosc}), pole) == "x" * dlugosc
+
+
+@pytest.mark.parametrize(("pole", "dlugosc"), [("warstwa", 65), ("sciezka", 256), ("id", 65)])
+def test_wpis_manifestu_z_polem_o_jeden_ponad_limit_jest_odrzucony(pole, dlugosc):
+    with pytest.raises(ValidationError):
+        _wpis(**{pole: "x" * dlugosc})
+
+
+@pytest.mark.parametrize("pole", ["warstwa", "sciezka", "id"])
+def test_wpis_manifestu_z_pustym_polem_tekstowym_jest_odrzucony(pole):
+    with pytest.raises(ValidationError):
+        _wpis(**{pole: ""})
+
+
+@pytest.mark.parametrize(
+    "sha",
+    [
+        pytest.param("a" * 63, id="za_krotki"),
+        pytest.param("a" * 65, id="za_dlugi"),
+        pytest.param("A" * 64, id="wielkie_litery"),
+        pytest.param("g" * 64, id="znak_spoza_hex"),
+        pytest.param("\n" + "a" * 64, id="przed_hashem_nowa_linia"),
+        pytest.param("a" * 64 + "\n", id="po_hashu_nowa_linia"),
+        pytest.param("x" + "a" * 64, id="przed_hashem_znak"),
+    ],
+)
+def test_wpis_manifestu_z_haszem_innym_niz_64_znaki_hex_malymi_literami_jest_odrzucony(sha):
+    with pytest.raises(ValidationError):
+        _wpis(sha256=sha)
+
+
+def test_wpis_manifestu_z_haszem_ze_wszystkimi_cyframi_hex_jest_przyjety():
+    assert _wpis(sha256="0123456789abcdef" * 4).sha256 == "0123456789abcdef" * 4
+
+
+@pytest.mark.parametrize("rozmiar", [0, 2_147_483_647])
+def test_wpis_manifestu_z_rozmiarem_na_granicach_zakresu_jest_przyjety(rozmiar):
+    assert _wpis(rozmiar=rozmiar).rozmiar == rozmiar
+
+
+@pytest.mark.parametrize("rozmiar", [-1, 2_147_483_648])
+def test_wpis_manifestu_z_rozmiarem_poza_zakresem_jest_odrzucony(rozmiar):
+    with pytest.raises(ValidationError):
+        _wpis(rozmiar=rozmiar)
+
+
+def test_wpis_manifestu_z_nieznanym_kluczem_jest_odrzucony():
+    with pytest.raises(ValidationError):
+        _wpis(tresc="sekret")
+
+
+@pytest.mark.parametrize(("pole", "zla"), [("rozmiar", "5"), ("rozmiar", True)])
+def test_wpis_manifestu_z_wartoscia_zlego_typu_jest_odrzucony_bez_konwersji(pole, zla):
+    with pytest.raises(ValidationError):
+        _wpis(**{pole: zla})
+
+
+def test_zdarzenie_z_tysiacem_wpisow_manifestu_jest_przyjete():
+    assert len(EventIn(**BAZA_MODELU, manifest=[WPIS] * 1000).manifest) == 1000
+
+
+def test_zdarzenie_z_wpisami_manifestu_ponad_tysiac_jest_odrzucone():
+    with pytest.raises(ValidationError):
+        EventIn(**BAZA_MODELU, manifest=[WPIS] * 1001)
+
+
+def test_zdarzenie_bez_manifestu_ma_brak_manifestu_a_nie_pusta_liste():
+    z = EventIn(**BAZA_MODELU)
+
+    assert z.manifest is None
+    assert z.dane() is None
+
+
+def test_manifest_zdarzenia_jest_lista_wpisow_a_nie_slownikow():
+    z = EventIn(**BAZA_MODELU, manifest=[WPIS])
+
+    assert isinstance(z.manifest[0], WpisManifestuIn)
+    assert z.dane() == {"manifest": [WPIS]}
+
+
 # --- wolajacy zamienia NiewaznePoleZdarzenia na koniec runu (HAR-242, rework) ---------------
 
 def _zdarzenia_z_transportu(kokpit: _Kokpit) -> list[dict]:
@@ -736,3 +834,175 @@ async def test_tekst_step_failed_ponad_limit_jest_obciety_do_2000_znakow(tmp_pat
             client, "run-1", NiewaznePoleZdarzenia("z" * 5000))
 
     assert len(_zdarzenia_z_transportu(kokpit)[0]["text"]) == 2000
+
+
+# --- koniec runu po niewaznym polu: step_failed przez bufor, run_finished po jego przyjeciu ------
+
+def _runner_ktorego_odczekanie_go_zatrzymuje(tmp_path, kokpit) -> Runner:
+    """Pierwsze odczekanie przed ponowieniem zatrzymuje runner: wpis zostaje w buforze."""
+    runner: Runner
+
+    async def odczekaj_i_zatrzymaj(sekundy: float) -> None:
+        runner._zatrzymany.set()
+
+    runner = Runner("http://kokpit.test", "tajny-token", bufor=Bufor(tmp_path / "bufor"),
+                    odczekaj=odczekaj_i_zatrzymaj, transport=httpx.MockTransport(kokpit))
+    return runner
+
+
+class _KokpitOdrzucajacy(_Kokpit):
+    def __init__(self, blad_transportu: bool) -> None:
+        super().__init__()
+        self._blad_transportu = blad_transportu
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.zadania.append(request)
+        if self._blad_transportu:
+            raise httpx.ConnectError("brak polaczenia", request=request)
+        return httpx.Response(503)
+
+
+@pytest.mark.parametrize("blad_transportu", [False, True], ids=["http_503", "blad_transportu"])
+async def test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze(
+    tmp_path, blad_transportu, capsys
+):
+    kokpit = _KokpitOdrzucajacy(blad_transportu)
+    runner = _runner_ktorego_odczekanie_go_zatrzymuje(tmp_path, kokpit)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await runner._zglos_niewazne_pole(client, "run-1", NiewaznePoleZdarzenia("za dlugi"))
+
+    assert [z["kind"] for z in _zdarzenia_z_transportu(kokpit)] == ["step_failed"]
+    assert [w["kind"] for w in Bufor(tmp_path / "bufor").niepotwierdzone()] == ["step_failed"]
+    stderr = capsys.readouterr().err
+    assert "run_id=run-1" in stderr
+    assert "zdarzenie kroku step_failed nie zostalo przyjete" in stderr
+
+
+async def test_przyjety_step_failed_po_niewaznym_polu_jest_przed_run_finished(tmp_path):
+    kokpit = _Kokpit()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await _runner_z_kokpitem(tmp_path, kokpit)._zglos_niewazne_pole(
+            client, "run-1", NiewaznePoleZdarzenia("za dlugi"))
+
+    assert [(z["kind"], z["run_id"], z["step_id"]) for z in _zdarzenia_z_transportu(kokpit)] == [
+        ("step_failed", "run-1", "run"), ("run_finished", "run-1", "run")]
+
+
+async def test_wznowienie_runu_bez_checkpointu_ze_step_id_ponad_limit_konczy_sie_krokiem_run(
+    tmp_path, monkeypatch
+):
+    """Prawdziwy `wznow_run`: brak checkpointu to porazka kroku `s*101`, ktorej zdarzenie
+    lamie limit `step_id`; kokpit dostaje step_failed i run_finished z krokiem `run`."""
+    monkeypatch.setenv("COCKPIT_RUNS_DIR", str(tmp_path / "runy"))
+    kokpit = _Kokpit()
+
+    await _runner_z_kokpitem(tmp_path, kokpit)._resume(
+        {"run_id": "run-1", "step_id": "s" * 101, "decyzja": "approve"})
+
+    zdarzenia = _zdarzenia_z_transportu(kokpit)
+    assert [(z["kind"], z["run_id"], z["step_id"]) for z in zdarzenia] == [
+        ("step_failed", "run-1", "run"), ("run_finished", "run-1", "run")]
+    assert Bufor(tmp_path / "bufor").niepotwierdzone() == []
+
+
+# --- brak miejsca w buforze przy zgloszeniu niewaznego pola: step_aborted poza buforem -------
+
+def _runner_z_buforem_bez_miejsca(tmp_path, kokpit: _Kokpit, monkeypatch) -> Runner:
+    runner = _runner_z_kokpitem(tmp_path, kokpit)
+
+    def bufor_bez_miejsca(wpis):
+        raise BrakMiejsca("zapis: OSError")
+
+    monkeypatch.setattr(runner._bufor, "dopisz", bufor_bez_miejsca)
+    return runner
+
+
+def _asercje_przerwania_bez_miejsca(kokpit: _Kokpit) -> None:
+    zdarzenia = _zdarzenia_z_transportu(kokpit)
+    assert [(z["kind"], z["run_id"], z["step_id"]) for z in zdarzenia] == [
+        ("step_aborted", "run-1", "run")]
+    assert zdarzenia[0]["text"] == "brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)"
+
+
+async def test_brak_miejsca_w_buforze_przy_zgloszeniu_niewaznego_pola_konczy_krok_run_przerwaniem(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+    runner = _runner_z_buforem_bez_miejsca(tmp_path, kokpit, monkeypatch)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await runner._zglos_niewazne_pole(client, "run-1", NiewaznePoleZdarzenia("x"))
+
+    _asercje_przerwania_bez_miejsca(kokpit)
+
+
+async def test_run_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwaniem_a_nie_wyjatkiem(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+    runner = _runner_z_buforem_bez_miejsca(tmp_path, kokpit, monkeypatch)
+
+    async def silnik_z_za_dlugim_krokiem(cmd, emit):
+        await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
+
+    monkeypatch.setattr(modul_klienta.silnik, "wykonaj_run", silnik_z_za_dlugim_krokiem)
+
+    await runner._run_workflow({"run_id": "run-1"})
+
+    _asercje_przerwania_bez_miejsca(kokpit)
+
+
+async def test_wznowienie_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwaniem_a_nie_wyjatkiem(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+    runner = _runner_z_buforem_bez_miejsca(tmp_path, kokpit, monkeypatch)
+
+    async def silnik_wznowienia(run_id, step_id, decyzja, emit, powod=None):
+        await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
+
+    monkeypatch.setattr(modul_klienta.silnik, "wznow_run", silnik_wznowienia)
+
+    await runner._resume({"run_id": "run-1", "step_id": "krok-1", "decyzja": "approve"})
+
+    _asercje_przerwania_bez_miejsca(kokpit)
+
+
+async def test_krok_polecenia_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwaniem_a_nie_wyjatkiem(
+    tmp_path, monkeypatch
+):
+    kokpit = _Kokpit()
+    runner = _runner_z_buforem_bez_miejsca(tmp_path, kokpit, monkeypatch)
+
+    async def run_command(client, run_id, step_id, command):
+        await runner.send_event(client, **{**BAZA_ZDARZENIA, "step_id": "s" * 101})
+
+    monkeypatch.setattr(modul_klienta, "argv_operacji", lambda cmd: ("x",))
+    monkeypatch.setattr(runner, "run_command", run_command)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await runner._krok_z_polecenia(client, {"run_id": "run-1", "step_id": "krok-1"})
+
+    _asercje_przerwania_bez_miejsca(kokpit)
+
+
+async def test_przerwanie_z_braku_miejsca_ponad_limit_run_id_nie_ucieka_a_zostaje_na_stderr(
+    tmp_path, monkeypatch, capsys
+):
+    """`send_event` waliduje ten sam `run_id` przed buforem, wiec przez prawdziwy bufor ta galaz
+    nie jest osiagalna; atrapa `send_event` rzucajaca BrakMiejsca sprawdza tylko zagniezdzenie."""
+    kokpit = _Kokpit()
+    runner = _runner_z_kokpitem(tmp_path, kokpit)
+
+    async def send_event_bez_miejsca(client, **kw):
+        raise BrakMiejsca("zapis: OSError")
+
+    monkeypatch.setattr(runner, "send_event", send_event_bez_miejsca)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await runner._zglos_niewazne_pole(client, "r" * 37, NiewaznePoleZdarzenia("x"))
+
+    assert kokpit.zadania == []
+    assert f"koniec runu niewyslany: run_id={'r' * 36!r} - x" in capsys.readouterr().err
