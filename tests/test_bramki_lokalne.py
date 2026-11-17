@@ -69,6 +69,13 @@ case "${FALSZYWY_TRYB:-}" in
     sleep 300 &
     echo "$!" > "$FALSZYWY_KAT/%NAZWA%.wnuk"
     wait ;;
+  oporny)
+    # lider konczy sie na SIGTERM dopiero po zwolnieniu FIFO `.zwolnij` przez test (znacznik
+    # `.term_start` = SIGTERM dotarl), a jego wnuk ignoruje SIGTERM: zabic go moze tylko KILL grupy
+    trap ': > "$FALSZYWY_KAT/%NAZWA%.term_start"; [ ! -p "$FALSZYWY_KAT/%NAZWA%.zwolnij" ] || read z < "$FALSZYWY_KAT/%NAZWA%.zwolnij"; : > "$FALSZYWY_KAT/%NAZWA%.term"; exit 0' TERM
+    ( trap '' TERM; exec sleep 300 ) &
+    echo "$!" > "$FALSZYWY_KAT/%NAZWA%.wnuk"
+    wait ;;
   uparty)
     # ignoruje SIGTERM: zabic go moze tylko KILL do grupy po 10 s straznika
     trap ': > "$FALSZYWY_KAT/%NAZWA%.term"' TERM
@@ -588,7 +595,175 @@ def test_kazda_bramka_ma_wlasna_grupe_procesow_rozna_od_grupy_skryptu(tmp_path):
         assert grupy[testy] != grupy[mutanty]
         assert os.getpgid(proc.pid) not in (grupy[testy], grupy[mutanty])
     finally:
-        for pid in pidy:
-            if czy_zyje(pid):
-                zabij_proces(pid, signal.SIGKILL)
+        # najpierw skrypt (jego trap zabija obie grupy); zabicie dzieci przed nim zostawialo
+        # grupe skryptu bez zywych procesow i `killpg` dawal na macOS EPERM
+        try:
+            zakoncz_proces_sync(proc, nazwa="bramki_lokalne.sh")
+        finally:
+            for pid in pidy:
+                if czy_zyje(pid):
+                    zabij_proces(pid, signal.SIGKILL)
+
+
+# --- przerwanie: drugi sygnal w trakcie sprzatania, wnuki ignorujace SIGTERM, straznik -----------
+
+
+def _start_przerwania(env: dict[str, str]) -> subprocess.Popen:
+    return uruchom_proces_sync(
+        [sys.executable, "-c", START_Z_DOMYSLNYMI_SYGNALAMI, str(SKRYPT)],
+        cwd=KORZEN, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _dobij(pidy: list[int]) -> None:
+    for pid in pidy:
+        if czy_zyje(pid):
+            zabij_proces(pid, signal.SIGKILL)
+
+
+@pytest.mark.parametrize(
+    ("pierwszy", "drugi", "kod"),
+    [
+        pytest.param(signal.SIGTERM, signal.SIGTERM, 143, id="term_potem_term"),
+        pytest.param(signal.SIGTERM, signal.SIGINT, 143, id="term_potem_int"),
+        pytest.param(signal.SIGINT, signal.SIGTERM, 130, id="int_potem_term"),
+    ],
+)
+def test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_i_nie_zostawia_procesow(
+    tmp_path, pierwszy, drugi, kod
+):
+    # Atrapy ignoruja SIGTERM (znacznik `.term`, praca trwa): sprzatanie czeka na straznika (10 s).
+    # W tym czasie przychodzi drugi sygnal, ktory trap w `przerwij` musi zignorowac.
+    env = _srodowisko(tmp_path, FALSZYWY_TRYB="uparty")
+    falszywe = _falszywe(tmp_path)
+    proc = _start_przerwania(env)
+    pidy: list[int] = []
+    try:
+        _czekaj_na(
+            lambda: all(_pid_z_pliku(falszywe / p) for p in ("testy.pid", "mutanty.pid")),
+            "start bramek",
+        )
+        pidy = [_pid_z_pliku(falszywe / p) for p in ("testy.pid", "mutanty.pid")]
+        zabij_proces(proc.pid, pierwszy)
+        _czekaj_na(
+            lambda: (falszywe / "testy.term").exists() and (falszywe / "mutanty.term").exists(),
+            "pierwszy sygnal dotarl do obu grup",
+        )
+        assert proc.poll() is None  # bramki ignoruja SIGTERM, wiec skrypt jeszcze sprzata
+        zabij_proces(proc.pid, drugi)
+        proc.wait(timeout=LIMIT_PROCESU)
+        assert proc.returncode == kod
+        _czekaj_na(lambda: not any(czy_zyje(p) for p in pidy), "koniec bramek po KILL")
+    finally:
+        _dobij(pidy)
         zakoncz_proces_sync(proc, nazwa="bramki_lokalne.sh")
+
+
+def _zwolnij_fifo(fifo: Path) -> None:
+    """Zapis do FIFO konczy `read` w atrapie; otwarcie bez blokowania udaje sie dopiero, gdy
+    czytnik otworzyl FIFO (wczesniej ENXIO)."""
+    koniec = time.monotonic() + LIMIT_ZDARZENIA
+    while time.monotonic() < koniec:
+        try:
+            fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+        except OSError:
+            time.sleep(0.02)
+            continue
+        try:
+            os.write(fd, b"zwolnij\n")
+        finally:
+            os.close(fd)
+        return
+    raise LimitCzasuTestu(f"zwolnienie {fifo.name}: limit {LIMIT_ZDARZENIA} s")
+
+
+@pytest.mark.parametrize("wolniejsza", ["testy", "mutanty"])
+def test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm(
+    tmp_path, wolniejsza
+):
+    """Lider `wolniejsza` stoi w obsludze SIGTERM (FIFO), wiec skrypt jest w `wait` na niego.
+    Skrypt musi (a) poczekac na lidera (znacznik `.term` powstaje dopiero po zwolnieniu),
+    (b) po jego wyjsciu dobic KILL-em grupe z wnukiem, ktory ignoruje SIGTERM, (c) zabic grupe
+    straznika. `sleep 10` straznika trwa w tym tescie 300 s, wiec zegar straznika nigdy nie dobija
+    wnukow: skrypt, ktory nie zabija grupy straznika, wisi na jego `wait` (zdarzenie, nie czas)."""
+    falszywe = _falszywe(tmp_path)
+    bin_dir = tmp_path / "bin"
+    _zapisz_program(
+        bin_dir / "sleep",
+        "#!/bin/sh\ndosc=/bin/sleep\n[ -x \"$dosc\" ] || dosc=/usr/bin/sleep\n"
+        '[ "$1" != 10 ] || exec "$dosc" 300\nexec "$dosc" "$@"\n',
+    )
+    env = _srodowisko(tmp_path, FALSZYWY_TRYB="oporny")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    falszywe.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(falszywe / f"{wolniejsza}.zwolnij")
+    proc = _start_przerwania(env)
+    pidy: list[int] = []
+    try:
+        _czekaj_na(lambda: all(_pid_z_pliku(falszywe / p) for p in PLIKI_PID), "start bramek")
+        pidy = [_pid_z_pliku(falszywe / p) for p in PLIKI_PID]
+        wnuki = [pidy[1], pidy[3]]
+        zabij_proces(proc.pid, signal.SIGTERM)
+        _czekaj_na(
+            lambda: all((falszywe / f"{n}.term_start").exists() for n in ("testy", "mutanty")),
+            "SIGTERM dla obu grup",
+        )
+        _czekaj_na(
+            lambda: (falszywe / f"{'mutanty' if wolniejsza == 'testy' else 'testy'}.term").exists(),
+            "obsluga SIGTERM w szybszej bramce",
+        )
+        assert proc.poll() is None  # lider `wolniejsza` stoi na FIFO, skrypt czeka na niego
+        assert not (falszywe / f"{wolniejsza}.term").exists()
+        _zwolnij_fifo(falszywe / f"{wolniejsza}.zwolnij")
+        proc.wait(timeout=LIMIT_PROCESU)
+        assert proc.returncode == 143
+        assert (falszywe / "testy.term").exists() and (falszywe / "mutanty.term").exists()
+        koniec = time.monotonic() + 3  # tylko asynchroniczne umieranie po SIGKILL
+        while any(czy_zyje(p) for p in wnuki) and time.monotonic() < koniec:
+            time.sleep(0.05)
+        assert [p for p in wnuki if czy_zyje(p)] == [], "wnuk ignorujacy SIGTERM przezyl skrypt"
+    finally:
+        _dobij(pidy)
+        zakoncz_proces_sync(proc, nazwa="bramki_lokalne.sh")
+
+
+# --- katalog tymczasowy bez TMPDIR ---------------------------------------------------------------
+
+
+def _atrapa_mktemp(tmp_path: Path, tresc_po_zapisie: str) -> Path:
+    bin_dir = tmp_path / "bin"
+    _zapisz_program(
+        bin_dir / "mktemp",
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$FALSZYWY_KAT/mktemp.argv"\n' + tresc_po_zapisie,
+    )
+    return bin_dir
+
+
+def test_bez_tmpdir_katalog_logow_jest_tworzony_przez_mktemp_pod_tmp(tmp_path):
+    falszywe = _falszywe(tmp_path)
+    falszywe.mkdir(parents=True, exist_ok=True)
+    wynik = tmp_path / "z-mktemp"
+    bin_dir = _atrapa_mktemp(tmp_path, f'mkdir -p "{wynik}"\necho "{wynik}"\n')
+    env = _srodowisko(tmp_path, COCKPIT_BRAMKI_KATALOG=None, TMPDIR=None)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    kod, out, err = _uruchom(env)
+
+    assert kod == 0, out + err
+    assert _wiersze(falszywe / "mktemp.argv") == ["-d", "/tmp/bramki_lokalne.XXXXXX"]
+    assert err == f"logi: {wynik}\n"
+
+
+def test_nieudany_mktemp_bez_tmpdir_ma_w_komunikacie_katalog_tmp_i_nic_nie_startuje(tmp_path):
+    falszywe = _falszywe(tmp_path)
+    falszywe.mkdir(parents=True, exist_ok=True)
+    bin_dir = _atrapa_mktemp(tmp_path, "exit 1\n")
+    env = _srodowisko(tmp_path, COCKPIT_BRAMKI_KATALOG=None, TMPDIR=None)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+    kod, out, err = _uruchom(env)
+
+    assert kod == 2
+    assert out == ""
+    assert err == "BLAD: nie udalo sie utworzyc katalogu tymczasowego w '/tmp'\n"
+    assert _nic_nie_wystartowalo(tmp_path)

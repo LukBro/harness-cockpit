@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from procesy import czy_zyje
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import mutanty_zmian  # noqa: E402
 
@@ -790,6 +792,7 @@ class _Srodowisko:
             "opoznienie_wynikow": 0,
             "opoznienie_diffu": 0,
             "opoznienie_biegu": 0,
+            "linie_biegu": [],  # (opoznienie przed linia w s, linia wyjscia `mutmut run`)
             "tests_rc": 0,
             "tests_dodatkowe": "",  # dopisane do listy plikow testow (np. katalog, plik, ktorego nie ma)
         }
@@ -816,7 +819,7 @@ class _Srodowisko:
         pliki = [p for p in pliki if "--exclude-standard" not in flagi or p not in self.ignorowane]
         return "".join(p + ("\0" if z_zerami else "\n") for p in pliki)
 
-    def __call__(self, argv):
+    def __call__(self, argv, na_linie=None):
         self.wywolania.append(list(argv))
         if argv[:2] == ["git", "merge-base"]:
             return self._wynik(argv, self.u["merge_rc"], "abc123\n", "fatal: brak bazy")
@@ -833,6 +836,11 @@ class _Srodowisko:
         if argv[:2] == ["git", "ls-files"]:
             return self._wynik(argv, self.u["nowe_rc"], self.u["nowe"], "fatal: ls-files")
         if argv[1:3] == ["-m", "mutmut"] and argv[3] == "run":
+            # HAR-236: `na_linie` dostaje linie wyjscia w trakcie trwania procesu, z opoznieniami
+            for opoznienie, linia in self.u["linie_biegu"]:
+                time.sleep(opoznienie)
+                if na_linie is not None:
+                    na_linie(linia)
             time.sleep(self.u["opoznienie_biegu"])
             return self._wynik(argv, self.u["run_rc"], self.u["run_out"], self.u["run_err"])
         if argv[1:3] == ["-m", "mutmut"] and argv[3] == "results":
@@ -2570,3 +2578,334 @@ def test_przebieg_przyrostowy_bez_zmutowanych_funkcji_nie_twierdzi_ze_nie_ma_prz
     assert sesja.main() == 0
     assert sesja.s.mutmut("run") == []
     assert "brak przezywajacych mutantow" not in capsys.readouterr().err
+
+
+def test_survivory_z_zapisu_i_z_nowego_przebiegu_sa_wypisane_w_kolejnosci_alfabetycznej(
+    sesja, capsys
+):
+    stare = [f"cockpit.services.a.x_inna__mutmut_{n}" for n in (4, 2, 3, 1)]
+    nowe = [f"cockpit.services.a.x_zapisz__mutmut_{n}" for n in (4, 3, 2, 1)]  # odwrotnie
+    sesja.s.u["results"] = _wyniki(*[(k, "survived") for k in stare], (KLUCZ_A, "killed"))
+    assert sesja.main() == 1
+    capsys.readouterr()
+    sesja.zrodlo(ZRODLO_ZMIENIONE)  # zmienia sie tylko `zapisz`; survivory `inna` ida z zapisu
+    sesja.s.u["results"] = _wyniki(*[(k, "survived") for k in nowe])
+    assert sesja.main() == 1
+    assert capsys.readouterr().out.splitlines() == sorted([*stare, *nowe])
+
+
+def test_komunikat_o_braku_mutantow_dla_zmienionych_funkcji_jest_na_stderr_tylko_gdy_ich_brak(
+    monkeypatch, tmp_path, capsys
+):
+    komunikat = "mutmut nie wygenerowal mutantow dla zmienionych funkcji"
+    s = _Srodowisko(
+        diff=_diff_a(),
+        run_rc=1,
+        run_out="AssertionError: Filtered for specific mutants, but nothing matches",
+    )
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert komunikat in capsys.readouterr().err.splitlines()
+    s2 = _Srodowisko(diff=_diff_a(), results=_wyniki((KLUCZ_A, "killed")))
+    (tmp_path / "drugi").mkdir()
+    assert _main(monkeypatch, tmp_path / "drugi", s2) == 0
+    assert komunikat not in capsys.readouterr().err
+
+
+# --- HAR-236: faza `statystyki` mierzona ze znacznikow w wyjsciu `mutmut run` (`na_linie`) -----
+
+
+def _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie, **ust) -> dict[str, str]:
+    s = _Srodowisko(
+        diff=_diff_a(), results=_wyniki((KLUCZ_A, "killed")), linie_biegu=linie, **ust
+    )
+    assert _main(monkeypatch, tmp_path, s) == 0
+    return _czasy_faz(capsys.readouterr().err)
+
+
+def _sek(tekst: str) -> float:
+    assert re.fullmatch(r"\d+\.\d s", tekst), tekst
+    return float(tekst.removesuffix(" s"))
+
+
+def test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow(
+    monkeypatch, tmp_path, capsys
+):
+    linie = [(0, "Running stats"), (0.4, "Running clean tests"), (0.4, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert 0.3 <= _sek(czasy["statystyki"]) < 0.8
+
+
+def test_koniec_statystyk_to_tez_znacznik_mutacji_gdy_nie_bylo_czystych_testow(
+    monkeypatch, tmp_path, capsys
+):
+    linie = [(0, "Running stats"), (0.4, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert 0.3 <= _sek(czasy["statystyki"]) < 0.8
+
+
+def test_mutanty_licza_sie_od_konca_statystyk_a_nie_od_startu_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    linie = [(0, "Running stats"), (0.6, "Running mutation testing"), (0.0, "koniec")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie, opoznienie_biegu=0.3)
+    assert _sek(czasy["statystyki"]) >= 0.5
+    assert 0.2 <= _sek(czasy["mutanty"]) < 0.55  # 0.3 s po znaczniku, bez 0.6 s statystyk
+
+
+def test_mutanty_licza_sie_od_pierwszego_znacznika_testow_do_konca_procesu(monkeypatch, tmp_path, capsys):
+    linie = [(0, "Running stats"), (0.0, "Running clean tests"), (0.5, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie, opoznienie_biegu=0.4)
+    assert 0.8 <= _sek(czasy["mutanty"]) < 5  # od `Running clean tests`: 0.5 + 0.4 s
+
+
+def test_bez_znacznika_statystyk_ta_faza_to_brak_pomiaru_a_nie_zero(monkeypatch, tmp_path, capsys):
+    linie = [(0.0, "cos innego"), (0.2, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert czasy["statystyki"] == "brak pomiaru"
+
+
+def test_bez_zadnych_znacznikow_statystyki_to_brak_pomiaru_a_mutanty_licza_caly_bieg(
+    monkeypatch, tmp_path, capsys
+):
+    czasy = _czasy_z_biegu(
+        monkeypatch, tmp_path, capsys, [(0.0, "linia bez znacznika")], opoznienie_biegu=0.3
+    )
+    assert czasy["statystyki"] == "brak pomiaru"
+    assert 0.2 <= _sek(czasy["mutanty"]) < 5
+
+
+def test_znacznik_w_srodku_linii_tez_rozpoczyna_faze(monkeypatch, tmp_path, capsys):
+    linie = [(0, "[12:00] Running stats..."), (0.4, "[12:01] Running mutation testing...")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert 0.3 <= _sek(czasy["statystyki"]) < 0.8
+
+
+def test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu():
+    kod = "import sys, time; print('a', flush=True); time.sleep(0.6); print('b', flush=True)"
+    zebrane: list[tuple[str, float]] = []
+    wynik = mutanty_zmian.uruchom(
+        [sys.executable, "-c", kod],
+        na_linie=lambda linia: zebrane.append((linia.strip(), time.monotonic())),
+    )
+    assert wynik.returncode == 0
+    assert wynik.stdout == "a\nb\n"
+    assert [linia for linia, _ in zebrane] == ["a", "b"]
+    assert zebrane[1][1] - zebrane[0][1] >= 0.4  # linia "a" doszla, zanim proces skonczyl
+
+    bez = mutanty_zmian.uruchom([sys.executable, "-c", kod])
+    assert (bez.returncode, bez.stdout) == (0, "a\nb\n")
+    assert wynik.stderr == ""
+
+
+def test_koniec_statystyk_to_pierwszy_znacznik_a_kolejne_znaczniki_konca_sa_ignorowane(
+    monkeypatch, tmp_path, capsys
+):
+    linie = [(0, "Running stats"), (0.1, "Running clean tests"), (0.6, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie, opoznienie_biegu=0.3)
+    assert _sek(czasy["statystyki"]) < 0.4  # 0.1 s, nie 0.7 s
+    assert _sek(czasy["mutanty"]) >= 0.8  # od `Running clean tests`: 0.6 + 0.3 s
+
+
+def test_linia_bez_znacznika_nie_konczy_statystyk(monkeypatch, tmp_path, capsys):
+    linie = [(0, "Running stats"), (0.3, "cos innego"), (0.3, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert 0.5 <= _sek(czasy["statystyki"]) < 1.2
+
+
+def test_znacznik_statystyk_bez_znacznika_konca_to_brak_pomiaru_statystyk(
+    monkeypatch, tmp_path, capsys
+):
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, [(0, "Running stats")])
+    assert czasy["statystyki"] == "brak pomiaru"
+
+
+def test_linia_z_obydwoma_znacznikami_zaczyna_statystyki_ale_ich_nie_konczy(
+    monkeypatch, tmp_path, capsys
+):
+    linie = [(0, "Running stats Running clean tests"), (0.4, "Running mutation testing")]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert 0.3 <= _sek(czasy["statystyki"]) < 0.8
+
+
+# --- `uruchom` z `na_linie` na prawdziwym procesie -----------------------------------------------
+
+
+def _skrypt(tresc: str) -> list[str]:
+    return [sys.executable, "-c", tresc]
+
+
+def test_uruchom_z_na_linie_laczy_stderr_ze_stdout_i_zwraca_pusty_stderr():
+    kod = "import sys; print('o', flush=True); print('e', file=sys.stderr, flush=True); sys.exit(3)"
+    zebrane: list[str] = []
+    wynik = mutanty_zmian.uruchom(_skrypt(kod), na_linie=zebrane.append)
+    assert wynik.returncode == 3
+    assert sorted(wynik.stdout.splitlines()) == ["e", "o"]
+    assert sorted(linia.strip() for linia in zebrane) == ["e", "o"]
+    assert wynik.stderr == ""
+
+
+def test_uruchom_z_na_linie_nie_wywala_sie_na_bajtach_spoza_utf8():
+    kod = "import sys; sys.stdout.buffer.write(b'\\xff\\n'); sys.stdout.flush()"
+    wynik = mutanty_zmian.uruchom(_skrypt(kod), na_linie=lambda _linia: None)
+    assert wynik.stdout == "�\n"
+
+
+def test_uruchom_z_na_linie_brak_binarki_to_blad_narzedzia_z_pelnym_komunikatem(tmp_path):
+    brak = str(tmp_path / "nie_ma_takiej_binarki")
+    with pytest.raises(OSError) as prawdziwy:  # tresc bledu systemu, jak ja zobaczy `uruchom`
+        subprocess.Popen([brak])
+    with pytest.raises(BladNarzedzia) as blad:
+        mutanty_zmian.uruchom([brak], na_linie=lambda _linia: None)
+    assert str(blad.value) == f"nie da sie uruchomic {brak}: {prawdziwy.value}"
+
+
+class _ZapamietajProcesy:
+    """Podmiana `subprocess.Popen`: prawdziwy proces, ale zapamietany do asercji po `uruchom`."""
+
+    def __init__(self, prawdziwy):
+        self.prawdziwy = prawdziwy
+        self.procesy: list[subprocess.Popen] = []
+
+    def __call__(self, *args, **kwargs):
+        proces = self.prawdziwy(*args, **kwargs)
+        self.procesy.append(proces)
+        return proces
+
+
+class _StrumienZBledem:
+    """`proces.stdout`, ktorego odczyt rzuca OSError; `close` zamyka prawdziwy strumien."""
+
+    def __init__(self, prawdziwy):
+        self.prawdziwy = prawdziwy
+
+    def readline(self):
+        raise OSError("zerwany potok")
+
+    def close(self):
+        self.prawdziwy.close()
+
+    @property
+    def closed(self):
+        return self.prawdziwy.closed
+
+
+SPI_PO_LINII = "import os, time; print(os.getpid(), flush=True); time.sleep(5)"
+
+
+def _zapamietane(monkeypatch) -> _ZapamietajProcesy:
+    zapamietane = _ZapamietajProcesy(subprocess.Popen)
+    monkeypatch.setattr(subprocess, "Popen", zapamietane)
+    return zapamietane
+
+
+def test_blad_z_na_linie_przechodzi_jako_oryginalny_wyjatek_a_proces_jest_zabity_i_zebrany(
+    monkeypatch,
+):
+    zapamietane = _zapamietane(monkeypatch)
+    oryginalny = OSError("zerwany potok")
+
+    def zly_odbiorca(_linia: str) -> None:
+        raise oryginalny
+
+    start = time.monotonic()
+    with pytest.raises(OSError) as wyjatek:
+        mutanty_zmian.uruchom(_skrypt(SPI_PO_LINII), na_linie=zly_odbiorca)
+    assert wyjatek.value is oryginalny
+    assert not isinstance(wyjatek.value, BladNarzedzia)
+    assert time.monotonic() - start < 3  # proces zabity, a nie dopiero dojechal do konca
+    (proces,) = zapamietane.procesy
+    assert proces.poll() is not None
+    assert not czy_zyje(proces.pid)  # takze zebrany (zombie tez zyje dla os.kill(pid, 0))
+
+
+def test_oserror_z_na_linie_nie_dostaje_etykiety_bledu_odczytu_wyjscia(monkeypatch):
+    _zapamietane(monkeypatch)
+
+    def zly_odbiorca(_linia: str) -> None:
+        raise OSError("zerwany potok")
+
+    with pytest.raises(OSError, match=r"^zerwany potok$") as wyjatek:
+        mutanty_zmian.uruchom(_skrypt(SPI_PO_LINII), na_linie=zly_odbiorca)
+    assert "nie da sie odczytac wyjscia" not in str(wyjatek.value)
+    assert wyjatek.value.args == ("zerwany potok",)
+
+
+def test_blad_odczytu_strumienia_to_blad_narzedzia_z_pelnym_komunikatem_a_proces_jest_zabity(
+    monkeypatch,
+):
+    zapamietane = _zapamietane(monkeypatch)
+    prawdziwy_popen = zapamietane.prawdziwy
+
+    def popen_ze_zlym_strumieniem(*args, **kwargs):
+        proces = prawdziwy_popen(*args, **kwargs)
+        proces.stdout = _StrumienZBledem(proces.stdout)
+        zapamietane.procesy.append(proces)
+        return proces
+
+    monkeypatch.setattr(subprocess, "Popen", popen_ze_zlym_strumieniem)
+    argv = _skrypt(SPI_PO_LINII)
+
+    start = time.monotonic()
+    with pytest.raises(BladNarzedzia) as blad:
+        mutanty_zmian.uruchom(argv, na_linie=lambda _linia: None)
+    assert str(blad.value) == f"nie da sie odczytac wyjscia {argv[0]}: zerwany potok"
+    assert time.monotonic() - start < 3
+    (proces,) = zapamietane.procesy
+    assert proces.poll() is not None
+    assert not czy_zyje(proces.pid)
+
+
+@pytest.mark.parametrize("scenariusz", ["sukces", "wyjatek_z_na_linie", "blad_odczytu"])
+def test_po_uruchom_z_na_linie_strumien_wyjscia_procesu_jest_zamkniety(monkeypatch, scenariusz):
+    zapamietane = _zapamietane(monkeypatch)
+    prawdziwy_popen = zapamietane.prawdziwy
+    kod = "print('a', flush=True)" if scenariusz == "sukces" else SPI_PO_LINII
+    if scenariusz == "blad_odczytu":
+
+        def popen_ze_zlym_strumieniem(*args, **kwargs):
+            proces = prawdziwy_popen(*args, **kwargs)
+            proces.stdout = _StrumienZBledem(proces.stdout)
+            zapamietane.procesy.append(proces)
+            return proces
+
+        monkeypatch.setattr(subprocess, "Popen", popen_ze_zlym_strumieniem)
+
+    def odbiorca(_linia: str) -> None:
+        if scenariusz == "wyjatek_z_na_linie":
+            raise ZeroDivisionError
+
+    oczekiwany = {
+        "sukces": None,
+        "wyjatek_z_na_linie": ZeroDivisionError,
+        "blad_odczytu": BladNarzedzia,
+    }[scenariusz]
+    if oczekiwany is None:
+        mutanty_zmian.uruchom(_skrypt(kod), na_linie=odbiorca)
+    else:
+        with pytest.raises(oczekiwany):
+            mutanty_zmian.uruchom(_skrypt(kod), na_linie=odbiorca)
+    (proces,) = zapamietane.procesy
+    assert proces.stdout.closed is True
+
+
+def test_wyjatek_z_na_linie_zabija_proces_i_go_zbiera_zanim_pojdzie_dalej():
+    kod = "import os, time; print(os.getpid(), flush=True); time.sleep(5)"
+    pidy: list[int] = []
+
+    def zly_odbiorca(linia: str) -> None:
+        pidy.append(int(linia))
+        raise ZeroDivisionError
+
+    start = time.monotonic()
+    with pytest.raises(ZeroDivisionError):
+        mutanty_zmian.uruchom(_skrypt(kod), na_linie=zly_odbiorca)
+    assert time.monotonic() - start < 3
+    assert not czy_zyje(pidy[0])
+
+
+def test_uruchom_z_na_linie_nie_otwiera_nowej_sesji_wiec_sygnal_do_grupy_zabija_i_mutmuta():
+    # Nowa sesja (start_new_session) zostawilaby mutmuta jako sierote po SIGTERM do grupy bramek.
+    wynik = mutanty_zmian.uruchom(
+        _skrypt("import os; print(os.getpgid(0), os.getsid(0))"), na_linie=lambda _linia: None
+    )
+    assert wynik.stdout.split() == [str(os.getpgid(0)), str(os.getsid(0))]

@@ -23,8 +23,9 @@ HAR-236 (opcjonalne flagi; bez nich kody i stdout bez zmian):
   brak/uszkodzenie zapisu to pelny przebieg. Zapis powstaje po kodzie 0, 1 albo 3, nie po 2.
   Znany kompromis: odcisk obejmuje tekst funkcji, nie jej zaleznosci.
 - Na stderr idzie czas faz (`czas fazy <faza>: <X.X> s|brak pomiaru`): wybor-funkcji, statystyki,
-  mutanty, wyniki. Statystyki mutmuta sa wewnatrz `mutmut run`, wiec ich czas jest zawsze
-  `brak pomiaru`, a `mutanty` to czas calego `mutmut run`.
+  mutanty, wyniki. Czasy statystyk i mutantow sa czytane ze znacznikow w wyjsciu `mutmut run`
+  (`Running stats`, potem pierwszy z `Running clean tests` / `Running mutation testing`);
+  bez znacznika statystyk ta faza to `brak pomiaru`, a bez zadnego znacznika `mutanty` to caly bieg.
 """
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 ZNAK = "ǁ"  # separator klasy i metody w nazwach mutantow mutmuta
@@ -323,12 +325,47 @@ def przezywajace(wyniki: str, wzorce: list[str]) -> list[str]:
     return sorted(klucze)
 
 
-def uruchom(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    """Jedyne miejsce uruchamiania procesow (bez powloki)."""
+def uruchom(
+    argv: list[str], na_linie: Callable[[str], None] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Jedyne miejsce uruchamiania procesow (bez powloki).
+
+    Z `na_linie` proces jest czytany na biezaco: kazda linia wyjscia (stderr polaczony ze stdout,
+    wynik niesie je w `stdout`) trafia do `na_linie`, zanim proces sie skonczy.
+    """
+    if na_linie is None:
+        try:
+            return subprocess.run(argv, capture_output=True, text=True, check=False)
+        except OSError as blad:
+            raise BladNarzedzia(f"nie da sie uruchomic {argv[0]}: {blad}") from blad
     try:
-        return subprocess.run(argv, capture_output=True, text=True, check=False)
+        proces = subprocess.Popen(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+        )
     except OSError as blad:
         raise BladNarzedzia(f"nie da sie uruchomic {argv[0]}: {blad}") from blad
+    zebrane: list[str] = []
+    try:
+        while True:
+            try:
+                linia = proces.stdout.readline()
+            except OSError as blad:
+                raise BladNarzedzia(f"nie da sie odczytac wyjscia {argv[0]}: {blad}") from blad
+            if not linia:
+                break
+            zebrane.append(linia)
+            na_linie(linia)
+        kod = proces.wait()
+    finally:
+        if proces.poll() is None:
+            proces.kill()
+            proces.wait()
+        proces.stdout.close()
+    return subprocess.CompletedProcess(argv, kod, stdout="".join(zebrane), stderr="")
 
 
 def _koncowka(wyjscie: subprocess.CompletedProcess[str], ile: int = 20) -> str:
@@ -353,6 +390,8 @@ def _nowe_pliki(wyjscie: str, korzen: Path) -> dict[str, set[int]]:
 
 
 FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")
+ZNACZNIK_STATYSTYK = "Running stats"
+ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests", "Running mutation testing")
 PLIK_ZAPISU = "przebieg.json"
 WERSJA_ZAPISU = 1
 
@@ -363,6 +402,23 @@ class _Czasy:
     def __init__(self) -> None:
         self.start = time.monotonic()
         self.fazy: dict[str, float] = {}
+        self.start_statystyk: float | None = None
+        self.koniec_statystyk: float | None = None
+
+    def na_linie(self, linia: str) -> None:
+        """Znaczniki faz w wyjsciu `mutmut run` (moga stac w srodku linii)."""
+        if self.koniec_statystyk is not None:
+            return
+        if ZNACZNIK_STATYSTYK in linia:
+            self.start_statystyk = time.monotonic()
+        elif any(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):
+            self.koniec_statystyk = time.monotonic()
+
+    def zmierz_bieg(self, od: float) -> None:
+        """Statystyki: miedzy znacznikami; mutanty: od konca statystyk (bez znacznika: caly bieg)."""
+        if self.start_statystyk is not None and self.koniec_statystyk is not None:
+            self.fazy["statystyki"] = self.koniec_statystyk - self.start_statystyk
+        self.zmierz("mutanty", od if self.koniec_statystyk is None else self.koniec_statystyk)
 
     def zmierz(self, faza: str, od: float) -> None:
         self.fazy[faza] = time.monotonic() - od
@@ -513,8 +569,8 @@ def _przebieg(
         if max_children is not None:
             polecenie += ["--max-children", str(max_children)]
         start = time.monotonic()
-        bieg = uruchom([*polecenie, *do_mutowania])
-        czasy.zmierz("mutanty", start)
+        bieg = uruchom([*polecenie, *do_mutowania], na_linie=czasy.na_linie)
+        czasy.zmierz_bieg(start)
         if bieg.returncode == 0:
             start = time.monotonic()
             wyniki = uruchom([sys.executable, "-m", "mutmut", "results"])
