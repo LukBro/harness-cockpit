@@ -102,7 +102,7 @@ async def _uruchom(
 
 
 def _porazka(capability: str, powod: str, kod: int | None) -> WynikKroku:
-    return WynikKroku("nieudany", f"check {capability}: {powod}", kod)
+    return WynikKroku(status="nieudany", powod=f"check {capability}: {powod}", kod_wyjscia=kod)
 
 
 async def wykonaj_check(
@@ -123,7 +123,7 @@ async def wykonaj_check(
         return _porazka(capability, "komenda nieczytelna", None)
     naruszenie = sprawdz_katalog_runu(katalog_kroku, worktree)
     if naruszenie is not None:
-        return WynikKroku("nieudany", str(naruszenie), None)
+        return WynikKroku(status="nieudany", powod=str(naruszenie), kod_wyjscia=None)
 
     start = datetime.now(timezone.utc).isoformat()
     try:
@@ -164,13 +164,16 @@ async def wykonaj_check(
 
     if przekroczony:
         return WynikKroku(
-            "nieudany", f"check {capability}: przekroczony limit czasu {limit_s:g} s", None,
-            dowod=dowod)
+            status="nieudany",
+            powod=f"check {capability}: przekroczony limit czasu {limit_s:g} s",
+            kod_wyjscia=None, dowod=dowod)
     if kod != 0:
         return WynikKroku(
-            "nieudany", f"check {capability}: kod wyjścia {kod}", kod, dowod=dowod)
+            status="nieudany", powod=f"check {capability}: kod wyjścia {kod}", kod_wyjscia=kod,
+            dowod=dowod)
     if not wyjscie.ma_tresc:
         # kod 0 bez zadnego wyniku to brak dowodu, nie zielony check
         brak = dowod_z_komendy("")
-        return WynikKroku("nieudany", f"check {capability}: {brak}", kod, dowod=dowod)
-    return WynikKroku("zakonczony", None, kod, dowod=dowod)
+        return WynikKroku(
+            status="nieudany", powod=f"check {capability}: {brak}", kod_wyjscia=kod, dowod=dowod)
+    return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=kod, dowod=dowod)

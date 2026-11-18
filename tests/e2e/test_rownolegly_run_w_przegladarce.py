@@ -43,7 +43,7 @@ def _ticket_runu_w_bazie(run_id: str) -> str | None:
 
     # sync API playwrighta trzyma petle zdarzen w watku testu: osobny watek i petla
     with ThreadPoolExecutor(max_workers=1) as pula:
-        return pula.submit(lambda: asyncio.run(_pytaj())).result()
+        return pula.submit(lambda: asyncio.run(_pytaj())).result(timeout=60)
 
 
 @pytest.fixture

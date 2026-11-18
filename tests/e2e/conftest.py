@@ -26,6 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from procesy import (
+    uruchom_i_zbierz,
     SIGTERM,
     grupa_istnieje,
     uruchom_proces_sync,
@@ -104,7 +105,7 @@ def _skalar_z_bazy(zapytanie: str):
 
     # sync API playwrighta trzyma petle zdarzen w watku testu; asyncio.run osobno
     with ThreadPoolExecutor(max_workers=1) as pula:
-        return pula.submit(lambda: asyncio.run(_pytaj())).result()
+        return pula.submit(lambda: asyncio.run(_pytaj())).result(timeout=60)
 
 
 def _liczba_runow() -> int:
@@ -203,7 +204,7 @@ def czysta_baza():
     # (`Connection.wrap_api_call`), ktore czekalo na glowny watek, a ten na migracje -
     # zakleszczenie w CI (HAR-121, zrzut stosu i zadan asyncio z przebiegu e2e PR #167).
     def _migruj(akcja: str, rewizja: str) -> None:
-        wynik = subprocess.run(
+        wynik = uruchom_i_zbierz(
             [sys.executable, "-m", "alembic", "-c", str(KORZEN / "alembic.ini"), akcja, rewizja],
             env={**os.environ, "COCKPIT_DATABASE_URL": URL_BAZY},
             cwd=KORZEN, capture_output=True, text=True, timeout=120,
@@ -229,7 +230,7 @@ def token_runnera(czysta_baza, tmp_path, dane_wlasciciela) -> str:
     Dane wlasciciela ida zmiennymi srodowiska procesu, nigdy argumentami (widocznymi w ps).
     """
     email, haslo = dane_wlasciciela
-    wynik = subprocess.run(
+    wynik = uruchom_i_zbierz(
         [sys.executable, str(KORZEN / "tools" / "seed_dev.py")],
         env=_srodowisko(tmp_path, COCKPIT_DATABASE_URL=czysta_baza,
                         COCKPIT_DEV_EMAIL=email, COCKPIT_DEV_PASSWORD=haslo),

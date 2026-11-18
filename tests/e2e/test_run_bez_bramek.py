@@ -44,7 +44,7 @@ def _utworz_run_w_toku() -> str:
             await engine.dispose()
 
     with ThreadPoolExecutor(max_workers=1) as pula:
-        pula.submit(lambda: asyncio.run(_wstaw())).result()
+        pula.submit(lambda: asyncio.run(_wstaw())).result(timeout=60)
     return run_id
 
 

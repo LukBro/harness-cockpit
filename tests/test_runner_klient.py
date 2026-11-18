@@ -155,7 +155,7 @@ async def _wyslij_zdarzenie(status: int) -> bool:
     transport = httpx.MockTransport(lambda request: httpx.Response(status))
     async with httpx.AsyncClient(transport=transport) as client:
         return await asyncio.wait_for(
-            runner.send_event(client, run_id=RUN_ID, kind="output", text="x"), 10)
+            runner.send_event(client, run_id=RUN_ID, step_id=STEP_ID, kind="output", text="x"), 10)
 
 
 @pytest.mark.parametrize("status", [400, 404])
@@ -556,7 +556,7 @@ async def test_runner_z_wlasnym_buforem_trzyma_niewyslane_zdarzenia_w_nim_a_nie_
 
     async with httpx.AsyncClient(transport=transport) as client:
         assert await asyncio.wait_for(
-            runner.send_event(client, run_id=RUN_ID, kind="output", text="x"), 10) is False
+            runner.send_event(client, run_id=RUN_ID, step_id=STEP_ID, kind="output", text="x"), 10) is False
 
     assert [z["text"] for z in wlasny.niepotwierdzone()] == ["x"]
     assert Bufor().niepotwierdzone() == []          # katalog domyslny (COCKPIT_STATE_DIR) pusty
@@ -576,7 +576,7 @@ async def test_domyslne_odczekanie_pozwala_dokonczyc_ponowienie_po_awarii_kokpit
 
     async with httpx.AsyncClient(transport=transport) as client:
         przyjete = await asyncio.wait_for(
-            runner.send_event(client, run_id=RUN_ID, kind="output", text="x"), 5)
+            runner.send_event(client, run_id=RUN_ID, step_id=STEP_ID, kind="output", text="x"), 5)
 
     assert przyjete is True
 
