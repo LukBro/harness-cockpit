@@ -44,6 +44,7 @@ from runner.odbior import BladOdbioru, zbierz_diff
 from runner.worktree import utworz_worktree
 from sesja_testowa import zaloguj_klienta, zaloz_runnera, zaloz_wlasciciela
 from transport_asgi import TransportASGIStrumieniujacy
+from procesy import uruchom_i_zbierz
 
 TOZSAMOSC = [
     "-c", "user.name=Test",
@@ -57,7 +58,7 @@ SHA_NIEISTNIEJACY = "0" * 40
 
 
 def git(repo: Path, *argumenty: str) -> str:
-    return subprocess.run(
+    return uruchom_i_zbierz(
         ["git", *TOZSAMOSC, "-C", str(repo), *argumenty],
         check=True, capture_output=True, text=True, timeout=60,
     ).stdout

@@ -6,6 +6,7 @@ Testy sa synchroniczne celowo: env.py Alembica sam uruchamia petle zdarzen
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from cockpit.db.models import (
-    Base, Event, RolaWZespole, Run, RunnerKind, RunStatus, StepRun, StepStatus,
+    Base, Definicja, Event, RolaWZespole, Run, RunnerKind, RunStatus, StepRun, StepStatus,
 )
 
 KORZEN = Path(__file__).resolve().parent.parent
@@ -863,3 +864,109 @@ def test_krok_zapisany_przez_model_bez_pomiaru_ma_pomiar_nieznany_a_nie_zero(cfg
         ).one())
 
     assert _z_polaczeniem(zapytaj) == (None, None, None, None, None)
+
+
+# --- HAR-180: consumes, produces, zakres i problem skilla w katalogu definicji ---
+
+POLA_SKILLA_W_KATALOGU = ("consumes", "produces", "zakres", "problem")
+
+
+def test_migracja_skilli_dodaje_do_definicji_cztery_kolumny_dopuszczajace_brak_wartosci(cfg):
+    command.upgrade(cfg, "0014")
+    assert not set(POLA_SKILLA_W_KATALOGU) & set(_kolumny_tabeli("definicja"))  # kontrast
+
+    command.upgrade(cfg, "head")
+
+    kolumny = _kolumny_tabeli("definicja")
+    assert {pole: kolumny.get(pole) for pole in POLA_SKILLA_W_KATALOGU} == {
+        pole: "YES" for pole in POLA_SKILLA_W_KATALOGU}
+
+
+def test_cofniecie_migracji_skilli_usuwa_cztery_kolumny_i_zostawia_reszte_definicji(cfg):
+    command.upgrade(cfg, "head")
+    assert set(POLA_SKILLA_W_KATALOGU) <= set(_kolumny_tabeli("definicja"))  # kontrast
+
+    command.downgrade(cfg, "0014")
+
+    kolumny = _kolumny_tabeli("definicja")
+    assert not set(POLA_SKILLA_W_KATALOGU) & set(kolumny)
+    assert {"id", "tenant_id", "runner_id", "projekt", "rodzaj", "klucz", "nazwa", "rola",
+            "sciezka", "odswiezono_at"} <= set(kolumny)
+
+
+def _json_albo_brak(napis: str | None):
+    return None if napis is None else json.loads(napis)
+
+
+def _pola_skilla_definicji(id_wiersza: str) -> tuple:
+    """(consumes, produces, zakres, problem); listy z kolumn JSON odczytane jako tekst, bo tylko
+    tekst nie zalezy od kodeka sterownika."""
+    def zapytaj(c):
+        return tuple(c.execute(
+            text("SELECT consumes::text, produces::text, zakres, problem "
+                 "FROM definicja WHERE id = :id"),
+            {"id": id_wiersza},
+        ).one())
+
+    consumes, produces, zakres, problem = _z_polaczeniem(zapytaj)
+    return _json_albo_brak(consumes), _json_albo_brak(produces), zakres, problem
+
+
+def test_definicja_sprzed_migracji_ma_po_niej_brak_wartosci_a_nie_pusta_liste_ani_zakres(cfg):
+    command.upgrade(cfg, "0014")
+
+    def wstaw(c):
+        _wstaw_runnera(c)
+        _wstaw_definicje(c, "d1")
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    command.upgrade(cfg, "head")
+
+    def surowe(c):
+        return tuple(c.execute(text(
+            "SELECT consumes IS NULL, produces IS NULL, zakres, problem "
+            "FROM definicja WHERE id = 'd1'")).one())
+
+    assert _z_polaczeniem(surowe) == (True, True, None, None)
+
+
+def test_cofniecie_migracji_skilli_zostawia_wiersz_definicji(cfg):
+    command.upgrade(cfg, "head")
+
+    def wstaw(c):
+        _wstaw_runnera(c)
+        _wstaw_definicje(c, "d1")
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    command.downgrade(cfg, "0014")
+
+    def zapytaj(c):
+        return c.execute(text("SELECT klucz FROM definicja WHERE id = 'd1'")).scalars().all()
+
+    assert _z_polaczeniem(zapytaj) == ["x"]
+
+
+def test_definicja_zapisana_przez_model_zachowuje_listy_zakres_i_dlugi_problem(cfg):
+    command.upgrade(cfg, "head")
+    problem = "p" * 5000
+
+    def wstaw(c):
+        _wstaw_runnera(c)
+        c.execute(Definicja.__table__.insert().values(
+            id="d1", tenant_id="t1", runner_id="rn1", projekt="/p", rodzaj="skill", klucz="x",
+            nazwa="X", sciezka="a/SKILL.md", odswiezono_at=text("now()"),
+            consumes=["a.md", "b.md"], produces=[], zakres="nadpisany", problem=None))
+        c.execute(Definicja.__table__.insert().values(
+            id="d2", tenant_id="t1", runner_id="rn1", projekt="/p", rodzaj="skill", klucz="y",
+            nazwa="Y", sciezka="b/SKILL.md", odswiezono_at=text("now()"),
+            consumes=None, produces=None, zakres="lokalny", problem=problem))
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    assert _pola_skilla_definicji("d1") == (["a.md", "b.md"], [], "nadpisany", None)
+    assert _pola_skilla_definicji("d2") == (None, None, "lokalny", problem)

@@ -25,44 +25,44 @@
 # --- api/app.py: pole EventIn.kroki_weryfikujace -----------------------------------------------
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "Field(min_length=1, max_length=200)"
 zamien = "Field(min_length=0, max_length=200)"
 test = "tests/test_pokrycie_runu.py::test_pusty_napis_w_liscie_krokow_weryfikujacych_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "min_length=1, max_length=200)]]"
 zamien = "min_length=1, max_length=201)]]"
 test = "tests/test_pokrycie_runu.py::test_element_listy_krokow_weryfikujacych_dluzszy_niz_200_znakow_jest_odrzucony"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "min_length=1, max_length=200)]]"
 zamien = "min_length=1, max_length=199)]]"
 test = "tests/test_pokrycie_runu.py::test_element_listy_krokow_weryfikujacych_o_200_znakach_jest_przyjety"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "default=None, max_length=1000)"
 zamien = "default=None, max_length=1001)"
 test = "tests/test_pokrycie_runu.py::test_lista_krokow_weryfikujacych_dluzsza_niz_1000_elementow_jest_odrzucona"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "default=None, max_length=1000)"
 zamien = "default=None, max_length=999)"
 test = "tests/test_pokrycie_runu.py::test_lista_krokow_weryfikujacych_o_1000_elementach_jest_przyjeta"
 
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "default=None, max_length=1000)"
 zamien = 'default=["x"], max_length=1000)'
 test = "tests/test_pokrycie_runu.py::test_run_z_wykonanymi_bramkami_ma_pokrycie_sprawdzone_w_kolumnach_runu"
 
 # Bez `| None` jawny null od runnera jest odrzucany (422).
 [[mutant]]
-plik = "src/cockpit/api/app.py"
+plik = "src/cockpit/api/schematy.py"
 szukaj = "]] | None = Field("
 zamien = "]] = Field("
 test = "tests/test_pokrycie_runu.py::test_jawny_null_w_polu_krokow_weryfikujacych_jest_brakiem_klasyfikacji"
