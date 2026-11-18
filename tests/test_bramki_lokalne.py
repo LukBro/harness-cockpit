@@ -677,9 +677,18 @@ def _zwolnij_fifo(fifo: Path) -> None:
     raise LimitCzasuTestu(f"zwolnienie {fifo.name}: limit {LIMIT_ZDARZENIA} s")
 
 
-@pytest.mark.parametrize("wolniejsza", ["testy", "mutanty"])
+@pytest.mark.parametrize(
+    ("wolniejsza", "komenda_testow"),
+    [
+        pytest.param("testy", "{atrapa}", id="testy"),
+        pytest.param("mutanty", "{atrapa}", id="mutanty"),
+        # Komenda zlozona: zaden sh nie podmieni sie na nia exec-iem (dash przy `sh -c "<prosta>"`
+        # tez nie, bash tak), wiec `sh` zostaje rodzicem atrapy i dostaje SIGTERM z grupy razem z nia.
+        pytest.param("testy", "{atrapa}; exit $?", id="testy_komenda_zlozona"),
+    ],
+)
 def test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm(
-    tmp_path, wolniejsza
+    tmp_path, wolniejsza, komenda_testow
 ):
     """Lider `wolniejsza` stoi w obsludze SIGTERM (FIFO), wiec skrypt jest w `wait` na niego.
     Skrypt musi (a) poczekac na lidera (znacznik `.term` powstaje dopiero po zwolnieniu),
@@ -694,6 +703,8 @@ def test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigter
         '[ "$1" != 10 ] || exec "$dosc" 300\nexec "$dosc" "$@"\n',
     )
     env = _srodowisko(tmp_path, FALSZYWY_TRYB="oporny")
+    atrapa = shlex.quote(str(falszywe / "testy.sh"))
+    env["COCKPIT_BRAMKI_TESTY"] = komenda_testow.format(atrapa=atrapa)
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     falszywe.mkdir(parents=True, exist_ok=True)
     os.mkfifo(falszywe / f"{wolniejsza}.zwolnij")

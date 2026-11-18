@@ -3,7 +3,7 @@
 # trwa tyle co dluzsza z nich.
 #   tools/bramki_lokalne.sh [argumenty dla mutanty_zmian.py ...]   (np. --od-przebiegu KATALOG)
 #
-# Testy:   sh -c "${COCKPIT_BRAMKI_TESTY:-pytest -q -n 4}"  -> $KAT/testy.log (stdout + stderr)
+# Testy:   sh -c "trap : TERM; ${COCKPIT_BRAMKI_TESTY:-pytest -q -n 4}"  -> $KAT/testy.log (stdout + stderr)
 # Mutanty: $PYTHON tools/mutanty_zmian.py --max-children $COCKPIT_MUTMUT_DZIECI "$@"
 #          -> $KAT/mutanty.stdout i $KAT/mutanty.stderr; bez COCKPIT_TEST_DATABASE_URL i
 #          COCKPIT_WYMAGAJ_BAZY (mutmut nie potrzebuje bazy testow).
@@ -70,7 +70,8 @@ set -m
 trap 'przerwij 143' TERM
 trap 'przerwij 130' INT
 
-sh -c "$TESTY" < /dev/null > "$KAT/testy.log" 2>&1 &
+# dash nie robi exec dla `sh -c`, wiec sh jest liderem grupy; trap TERM trzyma go przy zyciu, az komenda skonczy.
+sh -c "trap : TERM; $TESTY" < /dev/null > "$KAT/testy.log" 2>&1 &
 PID_TESTY=$!
 env -u COCKPIT_TEST_DATABASE_URL -u COCKPIT_WYMAGAJ_BAZY \
   "$PY" tools/mutanty_zmian.py --max-children "$DZIECI" "$@" \

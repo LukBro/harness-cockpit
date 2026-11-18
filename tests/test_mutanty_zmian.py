@@ -5,6 +5,7 @@ Skrypt `tools/mutanty_zmian.py` mapuje diff względem bazy na wzorce mutantów
 przeżywające mutanty. Testy nie uruchamiają ani gita, ani mutmuta: diff,
 źródła i wyniki mutmuta są daną w `tmp_path`, a `uruchom` jest podmieniane.
 """
+import errno
 import hashlib
 import json
 import os
@@ -2786,11 +2787,11 @@ def test_uruchom_z_na_linie_nie_wywala_sie_na_bajtach_spoza_utf8():
 
 def test_uruchom_z_na_linie_brak_binarki_to_blad_narzedzia_z_pelnym_komunikatem(tmp_path):
     brak = str(tmp_path / "nie_ma_takiej_binarki")
-    with pytest.raises(OSError) as prawdziwy:  # tresc bledu systemu, jak ja zobaczy `uruchom`
-        subprocess.Popen([brak])
+    # tresc bledu systemu, jak ja zobaczy `uruchom` (Popen rzuca dokladnie ten wyjatek)
+    prawdziwy = FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), brak)
     with pytest.raises(BladNarzedzia) as blad:
         mutanty_zmian.uruchom([brak], na_linie=lambda _linia: None)
-    assert str(blad.value) == f"nie da sie uruchomic {brak}: {prawdziwy.value}"
+    assert str(blad.value) == f"nie da sie uruchomic {brak}: {prawdziwy}"
 
 
 class _ZapamietajProcesy:

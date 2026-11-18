@@ -43,25 +43,25 @@ test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie
 plik = "tools/bramki_lokalne.sh"
 szukaj = '[ -z "$PID_TESTY" ] || wait "$PID_TESTY" 2>/dev/null'
 zamien = 'true'
-test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm"
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy]"
 
 [[mutant]]
 plik = "tools/bramki_lokalne.sh"
 szukaj = '[ -z "$PID_MUTANTY" ] || wait "$PID_MUTANTY" 2>/dev/null'
 zamien = 'true'
-test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm"
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[mutanty]"
 
 [[mutant]]
 plik = "tools/bramki_lokalne.sh"
 szukaj = 'kill -KILL -- "-$PID_TESTY" "-$PID_MUTANTY" 2>/dev/null || true'
 zamien = 'true'
-test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm"
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy]"
 
 [[mutant]]
 plik = "tools/bramki_lokalne.sh"
 szukaj = 'kill -KILL -- "-$straznik" 2>/dev/null || true'
 zamien = 'true'
-test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm"
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy]"
 
 # ---------------------------------------------------------------- tools/mutanty_zmian.py: odcisk funkcji
 
@@ -913,13 +913,13 @@ test = "tests/test_bramki_lokalne.py::test_testy_ida_domyslnie_przez_pytest_q_n_
 
 [[mutant]]
 plik = "tools/bramki_lokalne.sh"
-szukaj = 'sh -c "$TESTY" < /dev/null'
-zamien = 'sh -c "$TESTY"'
+szukaj = 'sh -c "trap : TERM; $TESTY" < /dev/null'
+zamien = 'sh -c "trap : TERM; $TESTY"'
 test = "tests/test_bramki_lokalne.py::test_bramki_nie_dziedzicza_standardowego_wejscia_skryptu"
 
 [[mutant]]
 plik = "tools/bramki_lokalne.sh"
-szukaj = 'sh -c "$TESTY" <'
+szukaj = 'sh -c "trap : TERM; $TESTY" <'
 zamien = '$TESTY <'
 test = "tests/test_bramki_lokalne.py::test_komenda_testow_ze_zmiennej_idzie_przez_powloke_z_argumentami_i_cytowaniem"
 
@@ -1152,3 +1152,9 @@ zamien = """        kod = _przebieg(args.baza, args.korzen, czasy, args.max_chil
         return 2
 """
 test = "tests/test_mutanty_zmian.py::test_czasy_faz_trafiaja_na_stderr_gdy_mutmut_run_konczy_sie_bledem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'sh -c "trap : TERM; $TESTY"'
+zamien = 'sh -c "$TESTY"'
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy_komenda_zlozona]"
