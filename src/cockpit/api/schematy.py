@@ -12,11 +12,95 @@ wyliczenia stanu runu i rodzaju runnera (dozwolone w `api/` przez tools/check_la
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from cockpit.db.models import RunnerKind, RunStatus
+
+
+_ListaKotwic = Annotated[
+    list[Annotated[str, Field(min_length=1, max_length=1000)]], Field(max_length=1000)]
+_ListaArtefaktow = Annotated[
+    list[Annotated[str, Field(min_length=1, max_length=255)]], Field(max_length=100)]
+
+
+class DowodIn(BaseModel):
+    """Dowod kroku w ksztalcie, jaki wysyla silnik (`runner.dowody`); `argv` i `stdout_tail`
+    zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    capability: str = Field(max_length=200, min_length=1)
+    # None przy przekroczeniu limitu czasu; strict odrzuca bool, napis i liczbe zmiennoprzecinkowa
+    exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    started_at: str = Field(min_length=1, max_length=64)
+    finished_at: str = Field(min_length=1, max_length=64)
+    source: Literal["engine", "agent"]
+    plik: str = Field(min_length=1, max_length=255)
+
+
+class WpisManifestuIn(BaseModel):
+    """Wpis manifestu kroku (HAR-169): sciezka i hash, nigdy tresc; brak pomiaru to None, nie zero.
+    Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    warstwa: str = Field(min_length=1, max_length=64)
+    sciezka: str | None = Field(default=None, min_length=1, max_length=255)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]
+
+
+class EventIn(BaseModel):
+    run_id: str = Field(max_length=36)     # kolumny String(n): max_length = n (HAR-242)
+    event_id: str = Field(min_length=1, max_length=36)    # nadaje runner; idempotencja (HAR-39)
+    step_id: str = Field(min_length=1, max_length=100)
+    agent_id: str = Field(default="", max_length=100)
+    agent_type: str = Field(default="", max_length=100)
+    kind: str = Field(max_length=50)
+    text: str = ""
+    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)  # None = brak pomiaru, nigdy 0 (BRO-87)
+    cost_source: str = Field(default="unavailable", max_length=20)
+    tokens: int | None = None
+    duration_ms: int | None = None
+    wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
+    # pelna dlugosc tekstu przed obcieciem przez runnera; le = int4 PostgreSQL (HAR-56)
+    text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
+    attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    # pomiar kroku z wyniku agenta (HAR-174); brak to None, nigdy 0; le = int4 PostgreSQL
+    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
+    kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
+        default=None, max_length=1000)
+    # dane konca kroku (HAR-170), tylko w step_finished/step_failed; brak to None
+    dowod: DowodIn | None = None
+    verdict: str | None = Field(default=None, min_length=1, max_length=200)
+    kotwice: _ListaKotwic | None = None
+    artefakty: _ListaArtefaktow | None = None
+    manifest: _ListaManifestu | None = None    # tylko w context_manifest (HAR-169); egzekwuje services.runs
+
+    def dane(self) -> dict | None:
+        """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""
+        dane: dict = {}
+        if self.dowod is not None:
+            dane["dowod"] = self.dowod.model_dump()
+        if self.verdict is not None:
+            dane["verdict"] = self.verdict
+        if self.kotwice is not None:
+            dane["kotwice"] = self.kotwice
+        if self.artefakty is not None:
+            dane["artefakty"] = self.artefakty
+        if self.manifest is not None:
+            dane["manifest"] = [w.model_dump() for w in self.manifest]
+        return dane or None
 
 
 class Zdrowie(BaseModel):
@@ -110,6 +194,67 @@ class Projekt(BaseModel):
     name: str
     stack: list[str]
     created_at: str
+
+
+MAX_NAZWA_CAPABILITY = 100
+MAX_KOMENDA_CAPABILITY = 1000
+
+
+class ZmianaProjektu(BaseModel):
+    """Zmiana capabilities projektu (HAR-180): nazwa -> komenda; pusta komenda albo null usuwa.
+    Poza `capabilities` nic sie nie zmienia (`stack`, `tickets` to 422)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capabilities: dict[
+        Annotated[str, StringConstraints(min_length=1, max_length=MAX_NAZWA_CAPABILITY)],
+        Annotated[str, StringConstraints(max_length=MAX_KOMENDA_CAPABILITY)] | None,
+    ]
+
+    @field_validator("capabilities")
+    @classmethod
+    def _komenda_nie_jest_samymi_bialymi_znakami(
+        cls, capabilities: dict[str, str | None],
+    ) -> dict[str, str | None]:
+        for nazwa, komenda in capabilities.items():
+            if komenda and not komenda.strip():
+                raise ValueError(f"komenda capability {nazwa} sklada sie z samych bialych znakow")
+        return capabilities
+
+
+class CapabilitiesProjektu(BaseModel):
+    project_id: str
+    capabilities: dict[str, str]   # pelna mapa z pliku po zmianie, w kolejnosci pliku
+
+
+ZakresSkilla = Literal["globalny", "lokalny", "nadpisany"]
+
+
+class SkillNaLiscie(BaseModel):
+    id: str
+    name: str
+    role: str | None   # null przy problemie: skill zepsuty nie ma roli
+    consumes: list[str] | None   # null przy problemie: brak pomiaru, nie pusta lista
+    produces: list[str] | None
+    zakres: ZakresSkilla
+    problem: str | None   # komunikat BlednySkill; null, gdy skill jest poprawny
+
+
+class ListaSkilli(BaseModel):
+    odswiezono_at: str | None   # null, gdy katalog projektu nie byl jeszcze odswiezony
+    skille: list[SkillNaLiscie]
+
+
+class SkillSzczegoly(BaseModel):
+    id: str
+    name: str
+    role: str
+    consumes: list[str]
+    produces: list[str]
+    zakres: ZakresSkilla
+    sciezka: str
+    frontmatter: str   # tekst miedzy liniami granicznymi, bajt w bajt
+    brief: str         # wszystko po zamykajacej linii granicznej, bajt w bajt
 
 
 class DiffRunu(BaseModel):

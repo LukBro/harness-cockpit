@@ -2,7 +2,8 @@ name: CI
 
 # CI sprawdza przed wejsciem zmiany do main: testy pytest (w tym testy
 # rejestru EGZEKWOWANE), granice warstw (tools/check_layers.py), zakres
-# wpisow lekcji (tools/check_lessons.py), lint ruff,
+# wpisow lekcji (tools/check_lessons.py), limity pol wejscia wzgledem kolumn
+# (tools/check_granica.py), lint ruff,
 # zgodnosc schematu OpenAPI, build frontu oraz testy z PostgreSQL i e2e.
 # CI nie wymusza niezmiennikow w czasie dzialania; ktore sa egzekwowane
 # na sciezce wykonania, mowi EGZEKWOWANE w services/walidacja.py.
@@ -19,6 +20,8 @@ jobs:
   # agent zuzyje budzet petli debugowania na naprawianie cudzej awarii.
   python:
     runs-on: ubuntu-24.04
+    # zawieszony test konczy job po ~3x zwyklego czasu, nie po 6 h domyslnych (zwykle 5-6 min)
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +46,9 @@ jobs:
       - name: Lekcje - każdy wpis .ai/lessons.md ma zakres
         run: python tools/check_lessons.py
 
+      - name: Granica wejścia - limity pól zgodne z kolumnami, runner waliduje EventIn
+        run: python tools/check_granica.py
+
       - name: Lint - ruff (E4, E7, E9, F)
         run: ruff check .
 
@@ -51,6 +57,8 @@ jobs:
 
   web:
     runs-on: ubuntu-24.04
+    # zawieszony test konczy job po ~3x zwyklego czasu, nie po 6 h domyslnych (zwykle <1 min)
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -70,6 +78,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-24.04
+    # zawieszony test konczy job po ~3x zwyklego czasu, nie po 6 h domyslnych (zwykle 17 min)
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:16

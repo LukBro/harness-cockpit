@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
+from fastapi import Path as SciezkaUrl
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +32,8 @@ from sse_starlette.sse import EventSourceResponse
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import (
-    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje, tickety,
+    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
+    skille_api, tickety,
 )
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
@@ -41,16 +43,19 @@ from cockpit.settings import settings
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
+    CapabilitiesProjektu,
     DecyzjaIn,
     DecyzjaOdbioru,
     DecyzjaOdbioruIn,
     DecyzjaPrzyjeta,
     DiffRunu,
     DowodyRunu,
+    EventIn,
     Katalog,
     KatalogOdswiezony,
     KrokRunu,
     ListaPlikow,
+    ListaSkilli,
     PlikOdczytany,
     PlikZapisany,
     PokrycieRunu,
@@ -60,6 +65,7 @@ from .schematy import (
     RunNaLiscie,
     RunSzczegoly,
     RunUtworzony,
+    SkillSzczegoly,
     SkrotTicketu,
     TicketPobrany,
     Zacommitowano,
@@ -67,6 +73,7 @@ from .schematy import (
     ZdarzenieRunu,
     Zdrowie,
     Zintegrowano,
+    ZmianaProjektu,
     odpowiedzi_bledow,
 )
 from .zaleznosci import (
@@ -126,103 +133,19 @@ class BackendIn(BaseModel):
 
 
 class RunnerRegister(BaseModel):
-    name: str
-    version: str = ""
+    name: str = Field(max_length=200)      # kolumny Runner.name/version: String(n) (HAR-242)
+    version: str = Field(default="", max_length=50)
     backends: list[BackendIn] = []
 
 
 class RunCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")   # bez `command`: kokpit nie podaje argv (HAR-159)
 
-    workflow: str = "szkielet"
+    workflow: str = Field(default="szkielet", max_length=200)     # kolumna String(200)
     operacja: str = Field(default="szkielet", max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     ticket_id: str | None = Field(default=None, min_length=1, max_length=200)  # kolumna String(200)
     potwierdz_rownolegly: bool = False
     project_id: str | None = Field(default=None, min_length=1, max_length=36)  # kolumna String(36)
-
-
-_ListaKotwic = Annotated[
-    list[Annotated[str, Field(min_length=1, max_length=1000)]], Field(max_length=1000)]
-_ListaArtefaktow = Annotated[
-    list[Annotated[str, Field(min_length=1, max_length=255)]], Field(max_length=100)]
-
-
-class DowodIn(BaseModel):
-    """Dowod kroku w ksztalcie, jaki wysyla silnik (`runner.dowody`); `argv` i `stdout_tail`
-    zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    capability: str = Field(max_length=200, min_length=1)
-    # None przy przekroczeniu limitu czasu; strict odrzuca bool, napis i liczbe zmiennoprzecinkowa
-    exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    started_at: str = Field(min_length=1, max_length=64)
-    finished_at: str = Field(min_length=1, max_length=64)
-    source: Literal["engine", "agent"]
-    plik: str = Field(min_length=1, max_length=255)
-
-
-class WpisManifestuIn(BaseModel):
-    """Wpis manifestu kroku (HAR-169): sciezka i hash, nigdy tresc; brak pomiaru to None, nie zero.
-    Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    warstwa: str = Field(min_length=1, max_length=64)
-    sciezka: str | None = Field(default=None, min_length=1, max_length=255)
-    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    id: str | None = Field(default=None, min_length=1, max_length=64)
-
-
-_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]
-
-
-class EventIn(BaseModel):
-    run_id: str
-    event_id: str = Field(min_length=1)    # nadaje runner; idempotencja (HAR-39)
-    step_id: str = Field(min_length=1)
-    agent_id: str = ""
-    agent_type: str = ""
-    kind: str
-    text: str = ""
-    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)  # None = brak pomiaru, nigdy 0 (BRO-87)
-    cost_source: str = "unavailable"
-    tokens: int | None = None
-    duration_ms: int | None = None
-    wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
-    # pelna dlugosc tekstu przed obcieciem przez runnera; le = int4 PostgreSQL (HAR-56)
-    text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
-    attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
-    # pomiar kroku z wyniku agenta (HAR-174); brak to None, nigdy 0; le = int4 PostgreSQL
-    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    session_id: str | None = Field(default=None, min_length=1, max_length=100)
-    # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
-    kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
-        default=None, max_length=1000)
-    # dane konca kroku (HAR-170), tylko w step_finished/step_failed; brak to None
-    dowod: DowodIn | None = None
-    verdict: str | None = Field(default=None, min_length=1, max_length=200)
-    kotwice: _ListaKotwic | None = None
-    artefakty: _ListaArtefaktow | None = None
-    manifest: _ListaManifestu | None = None    # tylko w context_manifest (HAR-169); egzekwuje services.runs
-
-    def dane(self) -> dict | None:
-        """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""
-        dane: dict = {}
-        if self.dowod is not None:
-            dane["dowod"] = self.dowod.model_dump()
-        if self.verdict is not None:
-            dane["verdict"] = self.verdict
-        if self.kotwice is not None:
-            dane["kotwice"] = self.kotwice
-        if self.artefakty is not None:
-            dane["artefakty"] = self.artefakty
-        if self.manifest is not None:
-            dane["manifest"] = [w.model_dump() for w in self.manifest]
-        return dane or None
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -685,6 +608,44 @@ async def podlacz_projekt(
     dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)   # przed zapytaniem runnera
     return await projekty.podlacz_projekt(
         s, k.tenant_id, body.runner_id, body.path, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.patch("/api/projects/{project_id}", response_model=CapabilitiesProjektu,
+           responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def zmien_projekt(
+    project_id: Annotated[str, SciezkaUrl(max_length=36)],
+    body: ZmianaProjektu,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    # capabilities to komendy w .cockpit/project.yaml, obok skilli i workflow: edycja definicji
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem runnera
+    return await projekty.zmien_projekt(
+        s, k.tenant_id, project_id, body.capabilities, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.get("/api/skills", response_model=ListaSkilli,
+         responses=odpowiedzi_bledow(401, 404, 422))
+async def lista_skilli(
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await skille_api.rejestr_projektu(s, k.tenant_id, project)
+
+
+@app.get("/api/skills/{skill_id}", response_model=SkillSzczegoly,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def szczegoly_skilla(
+    skill_id: str,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await skille_api.skill_projektu(
+        s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)
 
 
 @app.get("/api/tickety", response_model=list[SkrotTicketu],

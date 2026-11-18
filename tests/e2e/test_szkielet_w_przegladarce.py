@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +14,7 @@ import pytest
 from playwright.sync_api import expect
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+from procesy import uruchom_i_zbierz
 
 pytestmark = [pytest.mark.e2e, pytest.mark.baza]
 
@@ -107,7 +107,7 @@ def test_zatrzymany_runner_wylacza_uruchom_z_podpowiedzia_i_nie_tworzy_runu(
 
 
 def test_token_runnera_nie_jest_widoczny_w_argumentach_procesu(runner_online, token_runnera):
-    argumenty = subprocess.run(
+    argumenty = uruchom_i_zbierz(
         ["ps", "-o", "args=", "-p", str(runner_online.pid)],
         capture_output=True, text=True, check=True,
     ).stdout
@@ -138,7 +138,7 @@ def _utworz_run_w_toku() -> str:
             await engine.dispose()
 
     with ThreadPoolExecutor(max_workers=1) as pula:
-        pula.submit(lambda: asyncio.run(_wstaw())).result()
+        pula.submit(lambda: asyncio.run(_wstaw())).result(timeout=60)
     return run_id
 
 

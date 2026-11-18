@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from ruamel.yaml import YAML
+from procesy import uruchom_i_zbierz
 
 KORZEN = Path(__file__).resolve().parents[1]
 WORKFLOW = KORZEN / ".github" / "workflows" / "straz-sciezek.yml"
@@ -34,7 +35,7 @@ def _uruchom(tmp_path: Path, pliki: list[str]) -> subprocess.CompletedProcess:
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
     env = {**os.environ, "PATH": f"{bin_}:{os.environ['PATH']}", "PR": "1",
            "REPO": "LukBro/harness-cockpit", "ATRAPA_PLIKI": "".join(p + "\n" for p in pliki)}
-    return subprocess.run(["bash", "-c", _krok()["run"]], cwd=tmp_path, env=env,
+    return uruchom_i_zbierz(["bash", "-c", _krok()["run"]], cwd=tmp_path, env=env,
                           capture_output=True, text=True, timeout=30)
 
 
