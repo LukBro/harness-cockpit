@@ -409,7 +409,7 @@ class _Czasy:
         """Znaczniki faz w wyjsciu `mutmut run` (moga stac w srodku linii)."""
         if self.koniec_statystyk is not None:
             return
-        if ZNACZNIK_STATYSTYK in linia:
+        if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:
             self.start_statystyk = time.monotonic()
         elif any(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):
             self.koniec_statystyk = time.monotonic()

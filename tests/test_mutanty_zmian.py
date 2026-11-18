@@ -2727,6 +2727,40 @@ def test_linia_z_obydwoma_znacznikami_zaczyna_statystyki_ale_ich_nie_konczy(
     assert 0.3 <= _sek(czasy["statystyki"]) < 0.8
 
 
+def test_statystyki_mierza_cala_faze_gdy_mutmut_odswieza_znacznik_wielokrotnie(
+    monkeypatch, tmp_path, capsys
+):
+    # prawdziwy mutmut dopisuje `\r<spinner> Running stats` co ~0.1 s; start to pierwszy znacznik
+    linie = [
+        (0, "\u280b Running stats"),
+        (0.3, "\u2819 Running stats"),
+        (0.3, "\u2839 Running stats"),
+        (0.1, "Running clean tests"),
+    ]
+    czasy = _czasy_z_biegu(monkeypatch, tmp_path, capsys, linie)
+    assert _sek(czasy["statystyki"]) >= 0.6
+
+
+def test_czasy_faz_trafiaja_na_stderr_gdy_mutmut_run_konczy_sie_bledem(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_a(), run_rc=1, run_out="Traceback: cos innego")
+    assert _main(monkeypatch, tmp_path, s) == 2
+    czasy = _czasy_faz(capsys.readouterr().err)
+    _sek(czasy["wybor-funkcji"])
+    assert {czasy["statystyki"], czasy["wyniki"]} == {"brak pomiaru"}
+
+
+def test_czasy_faz_trafiaja_na_stderr_gdy_mutmut_results_konczy_sie_bledem(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_a(), results_rc=1)
+    assert _main(monkeypatch, tmp_path, s) == 2
+    czasy = _czasy_faz(capsys.readouterr().err)
+    _sek(czasy["wybor-funkcji"])
+    assert czasy["statystyki"] == "brak pomiaru"
+
+
 # --- `uruchom` z `na_linie` na prawdziwym procesie -----------------------------------------------
 
 

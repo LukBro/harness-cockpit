@@ -589,15 +589,15 @@ test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznik
 
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = 'if ZNACZNIK_STATYSTYK in linia:'
-zamien = 'if True:'
-test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+szukaj = 'if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:'
+zamien = 'if True and self.start_statystyk is None:'
+test = "tests/test_mutanty_zmian.py::test_bez_znacznika_statystyk_ta_faza_to_brak_pomiaru_a_nie_zero"
 
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = 'if ZNACZNIK_STATYSTYK in linia:'
-zamien = 'if ZNACZNIK_STATYSTYK not in linia:'
-test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+szukaj = 'if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:'
+zamien = 'if ZNACZNIK_STATYSTYK not in linia and self.start_statystyk is None:'
+test = "tests/test_mutanty_zmian.py::test_bez_znacznika_statystyk_ta_faza_to_brak_pomiaru_a_nie_zero"
 
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
@@ -1128,3 +1128,27 @@ plik = "tools/bramki_lokalne.sh"
 szukaj = 'echo "bramki: $KOD"'
 zamien = 'echo "bramki: 0"'
 test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:"
+zamien = "if ZNACZNIK_STATYSTYK in linia:"
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_cala_faze_gdy_mutmut_odswieza_znacznik_wielokrotnie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = """        return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
+    except BladNarzedzia as blad:
+        print(f"blad: {blad}", file=sys.stderr)
+        return 2
+    finally:
+        czasy.wypisz()
+"""
+zamien = """        kod = _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
+        czasy.wypisz()
+        return kod
+    except BladNarzedzia as blad:
+        print(f"blad: {blad}", file=sys.stderr)
+        return 2
+"""
+test = "tests/test_mutanty_zmian.py::test_czasy_faz_trafiaja_na_stderr_gdy_mutmut_run_konczy_sie_bledem"
