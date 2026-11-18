@@ -296,7 +296,7 @@ class Runner:
         przez bufor (ponawianie) i `run_finished` dopiero po jego przyjeciu (HAR-78), z krokiem
         `run` i tekstem obcietym do limitu tekstu. BrakMiejsca z bufora konczy sie `step_aborted`
         poza buforem (jak u wolajacych). Gdy limit lamie sam `run_id`, nie ma do kogo zglosic -
-        zostaje komunikat na stderr (takze gdy `step_aborted` lamie limit)."""
+        zostaje komunikat na stderr."""
         try:
             try:
                 przyjety = await self.send_event(
@@ -590,6 +590,8 @@ class Runner:
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",
                 text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
             )
+        except NiewaznePoleZdarzenia as e:
+            await self._zglos_niewazne_pole(client, run_id, e)
 
     async def _nasluchuj(self) -> None:
         async with self._klient_http() as client:

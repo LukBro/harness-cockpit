@@ -1416,3 +1416,9 @@ plik = "src/runner/client.py"
 szukaj = "        except NiewaznePoleZdarzenia:\n            print("
 zamien = "        except KeyError:\n            print("
 test = "tests/test_granica.py::test_przerwanie_z_braku_miejsca_ponad_limit_run_id_nie_ucieka_a_zostaje_na_stderr"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = "        except NiewaznePoleZdarzenia as e:\n            await self._zglos_niewazne_pole(client, run_id, e)\n\n    async def _nasluchuj"
+zamien = "        except KeyError as e:\n            await self._zglos_niewazne_pole(client, run_id, e)\n\n    async def _nasluchuj"
+test = "tests/test_granica.py::test_polecenie_spoza_listy_z_pustym_step_id_konczy_run_step_failed_i_run_finished"
