@@ -20,7 +20,9 @@ from types import MappingProxyType
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
+from cockpit.api.schematy import EventIn
 from runner import operacje, silnik
 from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
@@ -58,6 +60,21 @@ def argv_operacji(cmd: Mapping[str, Any]) -> tuple[str, ...] | None:
 class StrumienZamkniety(Exception):
     """Kokpit zamknal strumien polecen. Sygnal wewnetrzny: `listen()` laczy sie wtedy
     ponownie, proces runnera sie nie konczy."""
+
+
+class NiewaznePoleZdarzenia(ValueError):
+    """Zdarzenie lamie limity `EventIn` (HAR-242): kokpit odpowiedzialby 4xx i zdarzenie
+    przepadloby po wyslaniu. Nie trafia do bufora ani na siec, nie jest ponawiane."""
+
+
+def _sprawdz_zdarzenie(kw: Mapping[str, Any]) -> None:
+    """Ta sama walidacja co w kokpicie, przed buforem i POST; blad to `NiewaznePoleZdarzenia`."""
+    try:
+        EventIn.model_validate(kw)
+    except ValidationError as e:
+        opisy = "; ".join(
+            f"{'.'.join(str(c) for c in b['loc'])}: {b['msg']}" for b in e.errors())
+        raise NiewaznePoleZdarzenia(f"zdarzenie {kw.get('kind')}: {opisy}") from e
 
 
 class KokpitNiezgodny(Exception):
@@ -231,6 +248,7 @@ class Runner:
         w logu."""
         # event_id nadaje runner; ponowienie z tym samym nie tworzy duplikatu (HAR-39)
         kw.setdefault("event_id", str(uuid.uuid4()))
+        _sprawdz_zdarzenie(kw)
         self._bufor.dopisz(kw)
         wyniki: dict[str, bool] = {}
         await self.dosylaj(client, wyniki)
@@ -240,6 +258,7 @@ class Runner:
         """Jedna proba POST z pominieciem bufora: przy braku miejsca bufor sam nie zadziala,
         a ponowienie opoznialoby przerwanie runu. Nigdy token ani tresc odpowiedzi w logu."""
         kw.setdefault("event_id", str(uuid.uuid4()))
+        _sprawdz_zdarzenie(kw)
         try:
             r = await client.post(f"{self.base_url}/api/events", json=kw, headers=self._headers)
         except httpx.TransportError as e:
@@ -269,6 +288,30 @@ class Runner:
         if wolne < prog:
             return f"brak miejsca: {wolne} MB wolne, wymagane {prog} MB"
         return None
+
+    async def _zglos_niewazne_pole(
+        self, client: httpx.AsyncClient, run_id: object, blad: NiewaznePoleZdarzenia,
+    ) -> None:
+        """Zdarzenie zlamalo limit `EventIn` (HAR-242): kokpit dostaje poprawny `step_failed`
+        przez bufor (ponawianie) i `run_finished` dopiero po jego przyjeciu (HAR-78), z krokiem
+        `run` i tekstem obcietym do limitu tekstu. BrakMiejsca z bufora konczy sie `step_aborted`
+        poza buforem (jak u wolajacych). Gdy limit lamie sam `run_id`, nie ma do kogo zglosic -
+        zostaje komunikat na stderr."""
+        try:
+            try:
+                przyjety = await self.send_event(
+                    client, run_id=run_id, step_id="run", kind="step_failed",
+                    text=f"zdarzenie przekracza limity pol: {blad}"[:2000],
+                    cost_usd=None, cost_source="unavailable")
+                await self._zglos_koniec_runu(client, run_id, "run", "step_failed", przyjety)
+            except BrakMiejsca:
+                await self._wyslij_bezposrednio(
+                    client, run_id=run_id, step_id="run", kind="step_aborted",
+                    text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
+        except NiewaznePoleZdarzenia:
+            print(f"koniec runu niewyslany: run_id={str(run_id)[:36]!r} - {blad}",
+                  file=sys.stderr)
 
     async def _zglos_koniec_runu(
         self, client: httpx.AsyncClient, run_id: str, step_id: str,
@@ -399,6 +442,8 @@ class Runner:
 
             try:
                 await silnik.wykonaj_run(cmd, emit)
+            except NiewaznePoleZdarzenia as e:
+                await self._zglos_niewazne_pole(client, cmd.get("run_id"), e)
             except BrakMiejsca:
                 # silnik anulowal kroki w `finally`; kokpit dostaje przerwanie poza buforem
                 await self._wyslij_bezposrednio(
@@ -435,6 +480,8 @@ class Runner:
 
             try:
                 await silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)
+            except NiewaznePoleZdarzenia as e:
+                await self._zglos_niewazne_pole(client, run_id, e)
             except BrakMiejsca:
                 await self._wyslij_bezposrednio(
                     client, run_id=run_id, step_id=step_id, kind="step_aborted",
@@ -522,7 +569,10 @@ class Runner:
         konczy `step_failed` bez startu procesu, a po jego przyjeciu `run_finished`."""
         argv = argv_operacji(cmd)
         if argv is not None:
-            await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
+            try:
+                await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
+            except NiewaznePoleZdarzenia as e:
+                await self._zglos_niewazne_pole(client, cmd["run_id"], e)
             return
         run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
         if not isinstance(run_id, str) or not isinstance(step_id, str):
@@ -540,6 +590,8 @@ class Runner:
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",
                 text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
             )
+        except NiewaznePoleZdarzenia as e:
+            await self._zglos_niewazne_pole(client, run_id, e)
 
     async def _nasluchuj(self) -> None:
         async with self._klient_http() as client:

@@ -193,7 +193,7 @@ async def test_step_waiting_jest_po_zakonczeniu_kroku_niezaleznego_od_bramki(tmp
 
 async def test_step_waiting_jest_po_porazce_kroku_niezaleznego_od_bramki(tmp_path):
     s = swiat(tmp_path, [K("a", extra=BRAMKA), K("c")])
-    agent = Szpieg(wyniki={"c": WynikKroku("nieudany", "kod wyjścia 1", 1)})
+    agent = Szpieg(wyniki={"c": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1)})
 
     zdarzenia = await uruchom(s, agent)
 
@@ -351,7 +351,7 @@ async def test_po_zakonczeniu_petli_checkpoint_ma_aktualne_stany_krokow_i_to_sam
 
 async def test_nieudany_krok_niezalezny_trafia_do_checkpointu_jako_nieudany_z_jedna_proba(tmp_path):
     s = swiat(tmp_path, [K("a", extra=BRAMKA), K("c")])
-    agent = Szpieg(wyniki={"c": WynikKroku("nieudany", "kod wyjścia 1", 1)})
+    agent = Szpieg(wyniki={"c": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1)})
 
     await uruchom(s, agent)
 

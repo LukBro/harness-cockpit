@@ -122,13 +122,13 @@ async def test_krok_z_kodem_zero_i_wszystkimi_artefaktami_jest_zakonczony(run):
         run,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
 
 async def test_krok_bez_deklarowanych_artefaktow_i_z_kodem_zero_jest_zakonczony(run):
     wynik, _ = await uruchom(spec(), atrapa(), run)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
 
 async def test_brak_drugiego_artefaktu_jest_nazwany_w_powodzie(run):
@@ -136,7 +136,7 @@ async def test_brak_drugiego_artefaktu_jest_nazwany_w_powodzie(run):
         spec(wyjscia=["a.md", "b.md"]), atrapa(zapisz={"a.md": "jest"}), run
     )
 
-    assert wynik == WynikKroku("nieudany", "brak artefaktu b.md", 0)
+    assert wynik == WynikKroku(status="nieudany", powod="brak artefaktu b.md", kod_wyjscia=0)
 
 
 async def test_brak_pierwszego_artefaktu_wygrywa_z_pustym_drugim(run):
@@ -144,7 +144,7 @@ async def test_brak_pierwszego_artefaktu_wygrywa_z_pustym_drugim(run):
         spec(wyjscia=["a.md", "b.md"]), atrapa(zapisz={"b.md": ""}), run
     )
 
-    assert wynik == WynikKroku("nieudany", "brak artefaktu a.md", 0)
+    assert wynik == WynikKroku(status="nieudany", powod="brak artefaktu a.md", kod_wyjscia=0)
 
 
 async def test_pusty_pierwszy_artefakt_wygrywa_z_brakiem_drugiego(run):
@@ -153,7 +153,7 @@ async def test_pusty_pierwszy_artefakt_wygrywa_z_brakiem_drugiego(run):
     )
 
     assert wynik == WynikKroku(
-        "nieudany", f"niezmiennik evidence_required: plik dowodu jest pusty: {run / 'a.md'}", 0
+        status="nieudany", powod=f"niezmiennik evidence_required: plik dowodu jest pusty: {run / 'a.md'}", kod_wyjscia=0
     )
 
 
@@ -161,9 +161,9 @@ async def test_pusty_artefakt_to_brak_dowodu_a_nie_zielone_przejscie(run):
     wynik, _ = await uruchom(spec(wyjscia=["werdykt.md"]), atrapa(zapisz={"werdykt.md": ""}), run)
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"niezmiennik evidence_required: plik dowodu jest pusty: {run / 'werdykt.md'}",
-        0,
+        status="nieudany",
+        powod=f"niezmiennik evidence_required: plik dowodu jest pusty: {run / 'werdykt.md'}",
+        kod_wyjscia=0,
     )
     assert (run / "werdykt.md").is_file()
 
@@ -174,9 +174,9 @@ async def test_artefakt_z_samych_bialych_znakow_to_brak_dowodu(run):
     )
 
     assert wynik == WynikKroku(
-        "nieudany",
-        f"niezmiennik evidence_required: plik dowodu jest pusty: {run / 'werdykt.md'}",
-        0,
+        status="nieudany",
+        powod=f"niezmiennik evidence_required: plik dowodu jest pusty: {run / 'werdykt.md'}",
+        kod_wyjscia=0,
     )
 
 
@@ -209,7 +209,7 @@ async def test_artefakt_w_katalogu_bez_prawa_przeszukiwania_to_brak_artefaktu(ru
     finally:
         katalog.chmod(0o755)
 
-    assert wynik == WynikKroku("nieudany", "brak artefaktu sub/a.md", 0)
+    assert wynik == WynikKroku(status="nieudany", powod="brak artefaktu sub/a.md", kod_wyjscia=0)
     assert (katalog / "a.md").read_text() == "tresc"
 
 
@@ -217,13 +217,13 @@ async def test_artefakt_w_katalogu_bez_prawa_przeszukiwania_to_brak_artefaktu(ru
 async def test_kod_wyjscia_rozny_od_zera_jest_w_powodzie_porazki(run, kod):
     wynik, _ = await uruchom(spec(), atrapa(kod=kod), run)
 
-    assert wynik == WynikKroku("nieudany", f"kod wyjścia {kod}", kod)
+    assert wynik == WynikKroku(status="nieudany", powod=f"kod wyjścia {kod}", kod_wyjscia=kod)
 
 
 async def test_kod_wyjscia_ma_pierwszenstwo_przed_brakiem_artefaktow(run):
     wynik, _ = await uruchom(spec(wyjscia=["a.md"]), atrapa(kod=3), run)
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3)
 
 
 # --- reviewer_readonly -------------------------------------------------------
@@ -234,7 +234,7 @@ async def test_recenzent_tworzacy_nowy_plik_poza_katalogiem_runu_jest_nieudany(r
         spec(Rola.reviewer), atrapa(zapisz={"nowy.txt": "samowola"}), run
     )
 
-    assert wynik == WynikKroku("nieudany", NARUSZENIE + "nowe: nowy.txt", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "nowe: nowy.txt", kod_wyjscia=0)
     assert (run / "nowy.txt").read_text() == "samowola"
 
 
@@ -245,7 +245,7 @@ async def test_recenzent_zmieniajacy_istniejacy_plik_jest_nieudany(run):
         spec(Rola.reviewer), atrapa(zapisz={"istniejacy.txt": "nowe"}), run
     )
 
-    assert wynik == WynikKroku("nieudany", NARUSZENIE + "zmienione: istniejacy.txt", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "zmienione: istniejacy.txt", kod_wyjscia=0)
     assert (run / "istniejacy.txt").read_text() == "nowe"
 
 
@@ -254,7 +254,7 @@ async def test_recenzent_usuwajacy_istniejacy_plik_jest_nieudany(run):
 
     wynik, _ = await uruchom(spec(Rola.reviewer), atrapa(usun=["istniejacy.txt"]), run)
 
-    assert wynik == WynikKroku("nieudany", NARUSZENIE + "usuniete: istniejacy.txt", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "usuniete: istniejacy.txt", kod_wyjscia=0)
     assert not (run / "istniejacy.txt").exists()
 
 
@@ -267,7 +267,7 @@ async def test_recenzent_piszacy_tylko_do_katalogu_runu_jest_zakonczony(run):
         run,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (run / ".cockpit" / "_run" / "x.md").read_text() == "werdykt: ok"
 
 
@@ -282,7 +282,7 @@ async def test_pliki_runu_obecne_przed_krokiem_recenzenta_nie_sa_naruszeniem(run
         run,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert skill.read_text() == "skill skopiowany przez runner przed krokiem"
     assert (run / ".cockpit" / "_run" / "x.md").read_text() == "werdykt: ok"
 
@@ -294,7 +294,7 @@ async def test_wyjatek_katalogu_runu_nie_chroni_zapisu_poza_nim(run):
         run,
     )
 
-    assert wynik == WynikKroku("nieudany", NARUSZENIE + "nowe: nowy.txt", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "nowe: nowy.txt", kod_wyjscia=0)
 
 
 async def test_zapis_obok_katalogu_runu_w_cockpit_jest_naruszeniem(run):
@@ -304,7 +304,7 @@ async def test_zapis_obok_katalogu_runu_w_cockpit_jest_naruszeniem(run):
         run,
     )
 
-    assert wynik == WynikKroku("nieudany", NARUSZENIE + "nowe: .cockpit/inny.md", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "nowe: .cockpit/inny.md", kod_wyjscia=0)
 
 
 async def test_zbieracz_piszacy_poza_katalogiem_runu_jest_nieudany(run):
@@ -312,14 +312,14 @@ async def test_zbieracz_piszacy_poza_katalogiem_runu_jest_nieudany(run):
         spec(Rola.gatherer), atrapa(zapisz={"nowy.txt": "samowola"}), run
     )
 
-    assert wynik == WynikKroku("nieudany", NARUSZENIE + "nowe: nowy.txt", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "nowe: nowy.txt", kod_wyjscia=0)
     assert (run / "nowy.txt").is_file()
 
 
 async def test_autor_piszacy_poza_katalogiem_runu_jest_zakonczony(run):
     wynik, _ = await uruchom(spec(Rola.author), atrapa(zapisz={"nowy.txt": "praca"}), run)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (run / "nowy.txt").read_text() == "praca"
 
 
@@ -330,7 +330,7 @@ async def test_wykonawca_zmieniajacy_istniejacy_plik_jest_zakonczony(run):
         spec(Rola.executor), atrapa(zapisz={"istniejacy.txt": "nowe"}), run
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (run / "istniejacy.txt").read_text() == "nowe"
 
 
@@ -339,7 +339,7 @@ async def test_recenzent_z_kodem_bledu_dostaje_powod_z_kodem_a_nie_z_naruszenia(
         spec(Rola.reviewer), atrapa(zapisz={"nowy.txt": "poza"}, kod=3), run
     )
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3)
 
 
 # --- zdarzenia wyjscia -------------------------------------------------------
@@ -359,7 +359,7 @@ async def test_kazda_linia_wyjscia_trafia_do_zdarzen_z_identyfikatorami_kroku_po
         run,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert zdarzenia == [
         zdarzenie_wyjscia("pierwsza"),
         zdarzenie_wyjscia("druga"),
@@ -383,14 +383,14 @@ async def test_zakonczenie_linii_crlf_nie_zostaje_w_tekscie_zdarzenia(run):
 async def test_bajty_spoza_utf8_nie_wywracaja_kroku_i_sa_zastapione(run):
     wynik, zdarzenia = await uruchom(spec(), atrapa(bajty="ff0a"), run)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert zdarzenia == [zdarzenie_wyjscia("�")]
 
 
 async def test_wyjscie_nieudanego_kroku_tez_trafia_do_zdarzen(run):
     wynik, zdarzenia = await uruchom(spec(), atrapa(linie=[["out", "przed bledem\n"]], kod=3), run)
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3)
     assert zdarzenia == [zdarzenie_wyjscia("przed bledem")]
 
 
@@ -399,7 +399,7 @@ async def test_linia_dluzsza_niz_64_kib_nie_wywraca_kroku_i_jest_wyemitowana_w_c
 
     wynik, zdarzenia = await uruchom(spec(), atrapa(dluga=dlugosc), run)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert all(z["kind"] == "output" for z in zdarzenia)
     assert "".join(z["text"] for z in zdarzenia) == "x" * dlugosc
 
@@ -487,7 +487,7 @@ async def test_autor_z_nieczytelnym_plikiem_w_katalogu_runu_jest_zakonczony(run)
     finally:
         nieczytelny.chmod(0o644)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
 
 # --- sprzatanie procesow -----------------------------------------------------
@@ -553,3 +553,10 @@ async def test_wyjatek_z_emit_wychodzi_z_kroku_i_grupa_procesow_jest_martwa(run,
         assert await grupa_umarla(pgid)
     finally:
         sprzatnij_atrape(pgid, wnuk)
+
+
+def test_wynik_kroku_nie_przyjmuje_pol_pozycyjnie():
+    # HAR-242 (G6): nowe pole w srodku listy po merge dwoch ticketow nie moze cicho
+    # wpasc w zla pozycje - konstruktor wymaga argumentow nazwanych.
+    with pytest.raises(TypeError):
+        WynikKroku("zakonczony", None, 0)  # type: ignore[misc]

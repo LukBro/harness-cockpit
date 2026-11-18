@@ -183,6 +183,31 @@ def uruchom_proces_sync(argv: Sequence[str], **kw: Any) -> subprocess.Popen:
     return proc
 
 
+LIMIT_DOMYSLNY_S = 120.0
+
+
+def uruchom_i_zbierz(
+    argv: Sequence[str], *, capture_output: bool = False, check: bool = False,
+    timeout: float = LIMIT_DOMYSLNY_S, input: str | bytes | None = None, **kw: Any,
+) -> subprocess.CompletedProcess:
+    """Odpowiednik `subprocess.run` na helperze (HAR-242): nowa sesja, twardy limit czasu
+    (domyslnie `LIMIT_DOMYSLNY_S`, nigdy bez limitu) i sprzatanie wlasnej grupy po
+    przekroczeniu limitu. `check` rzuca `CalledProcessError`, limit `TimeoutExpired`."""
+    if capture_output:
+        kw["stdout"] = subprocess.PIPE
+        kw["stderr"] = subprocess.PIPE
+    if input is not None:
+        kw["stdin"] = subprocess.PIPE
+    proc = uruchom_proces_sync(argv, **kw)
+    try:
+        out, err = proc.communicate(input=input, timeout=timeout)
+    finally:
+        zakoncz_proces_sync(proc, nazwa="uruchom_i_zbierz")
+    if check and proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, list(argv), out, err)
+    return subprocess.CompletedProcess(list(argv), proc.returncode, out, err)
+
+
 def _grupa_procesu(pid: int, nazwa: str) -> int | None:
     """pgid procesu do zabicia; None gdy proces zniknal; grupa testu -> proces jest
     dobijany sam (bez grupy, zeby nie zostal sierota), potem `WlasnaGrupaProcesow`."""
