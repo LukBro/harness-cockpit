@@ -1114,3 +1114,23 @@ async def test_start_runu_w_projekcie_nie_czeka_na_zmiane_capabilities_trwajaca_
                 select(Run.id).where(Run.project_id == w.projekt))).scalars().all()
 
     assert zapisane == [run.id]   # wiersz w bazie, nie tylko brak bledu
+
+
+async def test_projekt_zespolu_bez_jawnej_prosby_nie_blokuje_wiersza():
+    # Odczyty (lista i szczegoly skilli) nie biora blokady wiersza projektu; bez tego czekalyby
+    # na PATCH capabilities stojacy u runnera. Zapytanie czytamy w dialekcie PostgreSQL.
+    from sqlalchemy.dialects import postgresql
+
+    from cockpit.services.projekty import projekt_zespolu
+
+    zapytania = []
+
+    class Sesja:
+        async def execute(self, zapytanie):
+            zapytania.append(str(zapytanie.compile(dialect=postgresql.dialect())))
+            return SimpleNamespace(scalar_one_or_none=lambda: object())
+
+    await projekt_zespolu(Sesja(), "t", "p")
+    await projekt_zespolu(Sesja(), "t", "p", blokuj=True)
+    assert "FOR" not in zapytania[0]
+    assert zapytania[1].rstrip().endswith("FOR NO KEY UPDATE")
