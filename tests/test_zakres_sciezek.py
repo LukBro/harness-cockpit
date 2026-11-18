@@ -834,3 +834,233 @@ def test_domyslna_sciezka_konfiguracji_w_trybie_scislym_jest_czytana_ze_zmiennej
 
     with pytest.raises(ZlaKonfiguracjaZakresu):
         Zakres.z_konfiguracji(scisle=True)
+
+
+# --- HAR-180: wiodace `~/` oznacza katalog domowy uzytkownika runnera --------------------------
+
+SKILL_DOMOWY = "~/.cockpit/skills/x/SKILL.md"
+
+
+@pytest.fixture
+def swiat_z_domem(swiat):
+    """Zakres z projektem i rejestrem domowym (jak z konfiguracji runnera), HOME w katalogu testu."""
+    plik = _konfig(swiat.baza / "cfg.json", {"projekty": [str(swiat.projekt)]})
+    skille_dom = swiat.dom / ".cockpit" / "skills"
+    (skille_dom / "x").mkdir(parents=True)
+    return SimpleNamespace(
+        projekt=swiat.projekt, obcy=swiat.obcy, dom=swiat.dom, baza=swiat.baza,
+        skille_dom=skille_dom, zakres=Zakres.z_konfiguracji(plik))
+
+
+def test_tylda_ze_ukosnikiem_jest_rozwijana_do_katalogu_domowego_uzytkownika(swiat_z_domem):
+    zakres = swiat_z_domem.zakres
+
+    assert zakres.rozwiaz(SKILL_DOMOWY) == swiat_z_domem.skille_dom / "x" / "SKILL.md"
+
+
+def test_tylda_jest_rozwijana_wedlug_katalogu_domowego_z_chwili_wywolania(
+    swiat_z_domem, monkeypatch,
+):
+    inny_dom = swiat_z_domem.baza / "inny-dom"
+    (inny_dom / ".cockpit" / "skills").mkdir(parents=True)
+    zakres = Zakres([inny_dom / ".cockpit" / "skills"])
+    monkeypatch.setenv("HOME", str(inny_dom))
+
+    assert zakres.rozwiaz(SKILL_DOMOWY) == inny_dom / ".cockpit" / "skills" / "x" / "SKILL.md"
+
+
+def test_tylda_nie_wskazuje_katalogu_roboczego_procesu(swiat_z_domem, monkeypatch):
+    monkeypatch.chdir(swiat_z_domem.projekt)
+
+    cel = swiat_z_domem.zakres.rozwiaz(SKILL_DOMOWY)
+
+    assert not cel.is_relative_to(swiat_z_domem.projekt)
+    assert cel.is_relative_to(swiat_z_domem.dom)
+
+
+@pytest.mark.parametrize("sciezka", [
+    "~",
+    "~root/.cockpit/skills/x/SKILL.md",
+    "~lukasz/x",
+    "a/~/b",
+    ".cockpit/skills/~/SKILL.md",
+    "x/SKILL.md",
+], ids=["sama_tylda", "tylda_innego_uzytkownika", "tylda_z_nazwa", "tylda_w_srodku",
+        "tylda_w_srodku_wzglednej", "zwykla_wzgledna"])
+def test_inna_forma_niz_wiodaca_tylda_z_ukosnikiem_jest_nadal_odmowiona_jako_wzgledna(
+    swiat, sciezka,
+):
+    # katalog domowy jest w zakresie: rozwiniecie samej `~` dalo by wynik w zakresie
+    zakres = Zakres([swiat.projekt, swiat.dom])
+
+    assert _powod(zakres, sciezka) == "wzgledna"
+
+
+def test_tylda_prowadzaca_poza_korzenie_zakresu_jest_odmowiona_jako_poza_zakresem(swiat_z_domem):
+    (swiat_z_domem.dom / "inny").mkdir()
+
+    assert _powod(swiat_z_domem.zakres, "~/inny/plik") == "poza_zakresem"
+
+
+def test_sam_katalog_domowy_przez_tylde_nie_jest_w_zakresie_rejestru_domowego(swiat_z_domem):
+    assert _powod(swiat_z_domem.zakres, "~/") == "poza_zakresem"
+
+
+def test_tylda_z_kropkami_wychodzacymi_z_rejestru_domowego_jest_odmowiona(swiat_z_domem):
+    (swiat_z_domem.dom / "sekretny.txt").write_text("x")
+
+    assert _powod(swiat_z_domem.zakres, "~/.cockpit/skills/../../sekretny.txt") == "poza_zakresem"
+
+
+def test_tylda_przez_dowiazanie_poza_zakres_jest_odmowiona(swiat_z_domem):
+    (swiat_z_domem.skille_dom / "furtka").symlink_to(swiat_z_domem.obcy, target_is_directory=True)
+
+    assert _powod(swiat_z_domem.zakres, "~/.cockpit/skills/furtka/plik") == "poza_zakresem"
+
+
+def test_tylda_w_zakresie_bez_rejestru_domowego_jest_odmowiona_jako_poza_zakresem(swiat):
+    assert _powod(swiat.zakres, SKILL_DOMOWY) == "poza_zakresem"
+
+
+def test_zapis_przez_tylde_w_rejestrze_domowym_jest_dozwolony(swiat_z_domem):
+    cel = swiat_z_domem.skille_dom / "x" / "SKILL.md"
+
+    assert swiat_z_domem.zakres.rozwiaz(SKILL_DOMOWY, do_zapisu=True) == cel
+
+
+def test_zapis_przez_tylde_poza_rejestrem_domowym_jest_odmowiony(swiat_z_domem):
+    assert _powod(swiat_z_domem.zakres, "~/inny/plik.txt", do_zapisu=True) == "poza_zakresem"
+
+
+def test_zapis_przez_tylde_do_katalogu_git_jest_odmowiony_z_powodem_no_git_write(swiat_z_domem):
+    (swiat_z_domem.skille_dom / ".git").mkdir()
+
+    assert _powod(swiat_z_domem.zakres, "~/.cockpit/skills/.git/config",
+                  do_zapisu=True) == "no_git_write"
+
+
+def test_zapis_przez_tylde_pliku_sekretu_jest_odmowiony_z_powodem_sekret(swiat_z_domem):
+    assert _powod(swiat_z_domem.zakres, "~/.cockpit/skills/x/.env", do_zapisu=True) == "sekret"
+
+
+def test_odczyt_przez_tylde_pliku_sekretu_jest_odmowiony_z_powodem_sekret(swiat_z_domem):
+    assert _powod(swiat_z_domem.zakres, "~/.cockpit/skills/x/klucz.pem") == "sekret"
+
+
+def test_zapis_przez_tylde_w_dowiazanie_jest_odmowiony_z_powodem_dowiazanie(swiat_z_domem):
+    (swiat_z_domem.skille_dom / "x" / "SKILL.md").symlink_to(swiat_z_domem.obcy / "cel.md")
+
+    assert _powod(swiat_z_domem.zakres, SKILL_DOMOWY, do_zapisu=True) == "dowiazanie"
+
+
+def test_tylda_z_bajtem_zerowym_jest_odmowiona_z_powodem_nul(swiat_z_domem):
+    assert _powod(swiat_z_domem.zakres, "~/.cockpit/skills/x\0/SKILL.md") == "nul"
+
+
+def test_odmowa_przez_tylde_niesie_zadana_sciezke_z_tylda_bez_zmian(swiat_z_domem):
+    with pytest.raises(PozaZakresem) as e:
+        swiat_z_domem.zakres.rozwiaz("~/inny/plik")
+
+    assert e.value.sciezka == "~/inny/plik"
+
+
+# --- HAR-180: kazda odmowa niesie oryginalna sciezke i dokladny powod -----------------------------
+
+def _odmowa(zakres, sciezka, **kw):
+    with pytest.raises(PozaZakresem) as e:
+        zakres.rozwiaz(sciezka, **kw)
+    return e.value
+
+
+def _sprawdz_odmowe(odmowa, sciezka, powod, capsys):
+    assert odmowa.sciezka == sciezka
+    assert odmowa.powod == powod
+    assert str(odmowa) == f"sciezka poza zakresem ({powod}): {str(sciezka)!r}"
+    linie = capsys.readouterr().err.splitlines()
+    assert len(linie) == 1
+    zgodna = LINIA_ODMOWY.match(linie[0])
+    assert zgodna.group(2) == powod
+    assert zgodna.group(3) == repr(str(sciezka))
+
+
+def test_odmowa_sciezki_z_nul_niesie_oryginalna_sciezke(swiat, capsys):
+    zadana = f"{swiat.projekt}/a\0b"
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana), zadana, "nul", capsys)
+
+
+def test_odmowa_sciezki_wzglednej_niesie_oryginalna_sciezke(swiat, capsys):
+    _sprawdz_odmowe(_odmowa(swiat.zakres, "wzgledna/plik"), "wzgledna/plik", "wzgledna", capsys)
+
+
+def test_odmowa_odczytu_poza_zakresem_niesie_oryginalna_sciezke(swiat, capsys):
+    zadana = swiat.obcy / "plik.txt"
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana), zadana, "poza_zakresem", capsys)
+
+
+def test_odmowa_odczytu_gdy_nie_da_sie_rozwiazac_sciezki_niesie_oryginalna_sciezke(
+    swiat, capsys, monkeypatch
+):
+    cel = swiat.projekt / "petla.txt"
+    _resolve_rzuca_dla(monkeypatch, cel, OSError)
+    _sprawdz_odmowe(_odmowa(swiat.zakres, cel), cel, "poza_zakresem", capsys)
+
+
+def test_odmowa_zapisu_do_nie_pliku_niesie_oryginalna_sciezke(swiat, capsys):
+    zadana = f"{swiat.projekt}/.."
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "nie_plik", capsys)
+
+
+def test_odmowa_zapisu_gdy_nie_da_sie_rozwiazac_rodzica_niesie_oryginalna_sciezke(
+    swiat, capsys, monkeypatch
+):
+    rodzic = swiat.projekt / "petla"
+    zadana = rodzic / "plik.txt"
+    _resolve_rzuca_dla(monkeypatch, rodzic, OSError)
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "poza_zakresem", capsys)
+
+
+def test_odmowa_zapisu_gdy_rodzic_jest_poza_zakresem_niesie_oryginalna_sciezke(swiat, capsys):
+    zadana = swiat.obcy / "plik.txt"
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "poza_zakresem", capsys)
+
+
+def test_odmowa_zapisu_przez_dowiazanie_niesie_oryginalna_sciezke(swiat, capsys):
+    zadana = swiat.projekt / "link.txt"
+    zadana.symlink_to(swiat.obcy / "cel.txt")
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "dowiazanie", capsys)
+
+
+def test_odmowa_zapisu_gdy_nie_da_sie_rozwiazac_celu_niesie_oryginalna_sciezke(
+    swiat, capsys, monkeypatch
+):
+    zadana = swiat.projekt / "petla.txt"
+    _resolve_rzuca_dla(monkeypatch, zadana, OSError)
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "poza_zakresem", capsys)
+
+
+def test_odmowa_zapisu_gdy_rozwiazany_cel_wypada_poza_zakres_niesie_oryginalna_sciezke_i_powod(
+    swiat, capsys, monkeypatch
+):
+    # cel nie jest dowiazaniem, a jego rozwiazanie wypada poza zakres: odmawia dopiero druga
+    # kontrola zakresu, nie pierwsza
+    zadana = swiat.projekt / "plik.txt"
+    oryginal = Path.resolve
+
+    def owijka(self, *a, **kw):
+        if self == zadana:
+            return swiat.obcy / "plik.txt"
+        return oryginal(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "resolve", owijka)
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "poza_zakresem", capsys)
+
+
+def test_odmowa_zapisu_do_katalogu_git_niesie_oryginalna_sciezke(swiat, capsys):
+    zadana = swiat.projekt / ".git" / "HEAD"
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=True), zadana, "no_git_write", capsys)
+
+
+@pytest.mark.parametrize("do_zapisu", [False, True])
+def test_odmowa_sekretu_niesie_oryginalna_sciezke(swiat, capsys, do_zapisu):
+    zadana = swiat.projekt / ".env"
+    _sprawdz_odmowe(_odmowa(swiat.zakres, zadana, do_zapisu=do_zapisu), zadana, "sekret", capsys)

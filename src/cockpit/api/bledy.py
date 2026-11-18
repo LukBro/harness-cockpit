@@ -31,6 +31,7 @@ from cockpit.services.errors import (
     Zabronione,
     ZbytWieleProb,
 )
+from cockpit.services.projekt import BlednyProjekt
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     StanNiemozliwy: 409,
     NaruszonyNiezmiennik: 422,
     BlednySkill: 422,
+    BlednyProjekt: 422,
     BlednyPlikLekcji: 422,
     NiespojneDane: 422,
     NieprawidloweObecneHaslo: 422,

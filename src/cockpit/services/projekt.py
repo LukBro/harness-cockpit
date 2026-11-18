@@ -8,6 +8,7 @@ a ich tresci nie wpisujemy do komunikatow (moga zawierac sekret). Tylko ruamel.y
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import YAMLError
 
+from cockpit.services.errors import BladDziedziny
 from cockpit.services.skills import Rejestr
 from cockpit.services.workflow import Poziom, Problem, Workflow
 
@@ -33,6 +35,10 @@ BLAD_POLA = "blad_pola"
 BLEDNA_CAPABILITY = "bledna_capability"
 
 _ZA_GLEBOKO = "niepoprawny YAML: zbyt gleboko zagniezdzona struktura"
+
+
+class BlednyProjekt(BladDziedziny):
+    """project.yaml nie da sie zmienic: zly YAML, duplikat klucza, nie mapa (HAR-180)."""
 
 
 class Projekt(BaseModel):
@@ -114,6 +120,51 @@ def wczytaj_projekt(repo: Path) -> tuple[Projekt | None, list[Problem]]:
         return None, [Problem(None, ZDUPLIKOWANY_KLUCZ, f"zduplikowany klucz{_lokalizacja(exc)}")]
     except YAMLError as exc:
         return None, [Problem(None, NIEPOPRAWNY_YAML, f"niepoprawny YAML{_lokalizacja(exc)}")]
+
+
+def _yaml_zapisu() -> YAML:
+    """Round-trip jak `skills._yaml()`, z szerokoscia, przy ktorej dluga komenda zostaje w jednej linii."""
+    y = YAML()
+    y.preserve_quotes = True
+    y.indent(sequence=4, offset=2)
+    y.width = 4096
+    return y
+
+
+def zmien_capabilities(tekst: str, zmiany: dict[str, str | None]) -> tuple[str, dict[str, str]]:
+    """(nowy tekst project.yaml, capabilities po zmianie) - funkcja czysta, tylko ruamel round-trip.
+
+    Niepusta komenda dodaje albo zmienia capability; pusta (`""`, `None`) usuwa ja, a brak
+    capability do usuniecia to nie blad. Reszta pliku (komentarze, kolejnosc kluczy) zostaje.
+    Zly plik to BlednyProjekt (teksty jak w `wczytaj_projekt`); capabilities nie sa tu walidowane
+    co do dlugosci - to wejscie API."""
+    y = _yaml_zapisu()
+    try:
+        mapa = y.load(tekst)
+    except RecursionError:
+        raise BlednyProjekt(_ZA_GLEBOKO) from None
+    except DuplicateKeyError as exc:
+        raise BlednyProjekt(f"zduplikowany klucz{_lokalizacja(exc)}") from None
+    except YAMLError as exc:
+        raise BlednyProjekt(f"niepoprawny YAML{_lokalizacja(exc)}") from None
+    except (ValueError, TypeError, OverflowError):
+        # konstrukcja wartosci (np. data 2024-02-30), nie skladnia
+        raise BlednyProjekt("niepoprawny YAML: niepoprawna wartosc") from None
+    if not isinstance(mapa, CommentedMap):
+        raise BlednyProjekt("project.yaml musi byc mapa")
+    if "capabilities" not in mapa and any(zmiany.values()):
+        mapa["capabilities"] = CommentedMap()
+    capabilities = mapa.get("capabilities", CommentedMap())
+    if not isinstance(capabilities, CommentedMap):
+        raise BlednyProjekt("capabilities musi byc mapa nazwa: komenda")
+    for nazwa, komenda in zmiany.items():
+        if komenda:
+            capabilities[nazwa] = komenda
+        else:
+            capabilities.pop(nazwa, None)
+    wyjscie = io.StringIO()
+    y.dump(mapa, wyjscie)
+    return wyjscie.getvalue(), _zbuduj(mapa)[0].capabilities
 
 
 @dataclass(frozen=True)
