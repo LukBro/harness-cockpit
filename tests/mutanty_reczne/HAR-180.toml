@@ -1084,3 +1084,9 @@ plik = "src/cockpit/services/projekty.py"
 szukaj = ".with_for_update(key_share=True)"
 zamien = ".with_for_update()"
 test = "tests/test_projekty_zmiana.py::test_start_runu_w_projekcie_nie_czeka_na_zmiane_capabilities_trwajaca_u_runnera"
+
+[[mutant]]
+plik = "src/cockpit/services/projekty.py"
+szukaj = "*, blokuj: bool = False,"
+zamien = "*, blokuj: bool = True,"
+test = "tests/test_projekty_zmiana.py::test_projekt_zespolu_bez_jawnej_prosby_nie_blokuje_wiersza"
