@@ -12,9 +12,9 @@ wyliczenia stanu runu i rodzaju runnera (dozwolone w `api/` przez tools/check_la
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from cockpit.db.models import RunnerKind, RunStatus
 
@@ -110,6 +110,67 @@ class Projekt(BaseModel):
     name: str
     stack: list[str]
     created_at: str
+
+
+MAX_NAZWA_CAPABILITY = 100
+MAX_KOMENDA_CAPABILITY = 1000
+
+
+class ZmianaProjektu(BaseModel):
+    """Zmiana capabilities projektu (HAR-180): nazwa -> komenda; pusta komenda albo null usuwa.
+    Poza `capabilities` nic sie nie zmienia (`stack`, `tickets` to 422)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capabilities: dict[
+        Annotated[str, StringConstraints(min_length=1, max_length=MAX_NAZWA_CAPABILITY)],
+        Annotated[str, StringConstraints(max_length=MAX_KOMENDA_CAPABILITY)] | None,
+    ]
+
+    @field_validator("capabilities")
+    @classmethod
+    def _komenda_nie_jest_samymi_bialymi_znakami(
+        cls, capabilities: dict[str, str | None],
+    ) -> dict[str, str | None]:
+        for nazwa, komenda in capabilities.items():
+            if komenda and not komenda.strip():
+                raise ValueError(f"komenda capability {nazwa} sklada sie z samych bialych znakow")
+        return capabilities
+
+
+class CapabilitiesProjektu(BaseModel):
+    project_id: str
+    capabilities: dict[str, str]   # pelna mapa z pliku po zmianie, w kolejnosci pliku
+
+
+ZakresSkilla = Literal["globalny", "lokalny", "nadpisany"]
+
+
+class SkillNaLiscie(BaseModel):
+    id: str
+    name: str
+    role: str | None   # null przy problemie: skill zepsuty nie ma roli
+    consumes: list[str] | None   # null przy problemie: brak pomiaru, nie pusta lista
+    produces: list[str] | None
+    zakres: ZakresSkilla
+    problem: str | None   # komunikat BlednySkill; null, gdy skill jest poprawny
+
+
+class ListaSkilli(BaseModel):
+    odswiezono_at: str | None   # null, gdy katalog projektu nie byl jeszcze odswiezony
+    skille: list[SkillNaLiscie]
+
+
+class SkillSzczegoly(BaseModel):
+    id: str
+    name: str
+    role: str
+    consumes: list[str]
+    produces: list[str]
+    zakres: ZakresSkilla
+    sciezka: str
+    frontmatter: str   # tekst miedzy liniami granicznymi, bajt w bajt
+    brief: str         # wszystko po zamykajacej linii granicznej, bajt w bajt
 
 
 class DiffRunu(BaseModel):

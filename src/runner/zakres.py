@@ -134,7 +134,8 @@ class Zakres:
         tekst = str(sciezka)
         if "\0" in tekst:
             raise _odmow(sciezka, "nul")
-        zadana = Path(tekst)
+        # HAR-180: wiodace `~/` to katalog domowy z chwili wywolania; dalej te same reguly zakresu
+        zadana = Path.home() / tekst[2:] if tekst.startswith("~/") else Path(tekst)
         if not zadana.is_absolute():
             raise _odmow(sciezka, "wzgledna")
 
