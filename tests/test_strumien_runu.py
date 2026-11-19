@@ -756,3 +756,92 @@ async def test_strumien_rozlaczonego_klienta_nie_odtwarza_historii_i_oddaje_subs
 
     assert ramki == []
     assert not bus._run_subscribers.get(swiat.run_a)
+
+
+async def _otworz_wprost(swiat):
+    """Otwiera strumien run_a wprost (bez HTTP); klient nigdy sie nie rozlacza sam."""
+    from cockpit.api.app import run_stream
+
+    tenant = await _tenant_runu(swiat, swiat.run_a)
+    async with swiat.maker() as s:
+        identyfikator, _ = await sesje.utworz(s, swiat.wlasciciel_a)
+
+    async def nie_rozlaczony() -> bool:
+        return False
+
+    odpowiedz = await run_stream(
+        swiat.run_a, SimpleNamespace(is_disconnected=nie_rozlaczony),
+        k=Kontekst(user_id=swiat.wlasciciel_a.id, tenant_id=tenant, rola=RolaWZespole.owner),
+        identyfikator=identyfikator, last_event_id=None)
+    return odpowiedz.body_iterator
+
+
+async def _anuluj_i_poczekaj(zadanie: asyncio.Future) -> None:
+    zadanie.cancel()
+    await asyncio.wait({zadanie}, timeout=LIMIT_CZEKANIA_S)
+    assert zadanie.done()
+
+
+async def test_odczyt_historii_nie_jest_przerywany_gdy_klient_zamyka_strumien_w_trakcie(
+    swiat, monkeypatch
+):
+    """Przerwany odczyt unieważnia polaczenie z baza i jego zamkniecie wisi: odczyt ma dobiec,
+    a subskrypcja szyny zostac zwolniona."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    rozpoczety, dobiegl = asyncio.Event(), asyncio.Event()
+
+    async def wolny_odczyt(s, run, po_seq=None):
+        rozpoczety.set()
+        await asyncio.sleep(0.2)
+        dobiegl.set()
+        return []
+
+    monkeypatch.setattr(uslugi, "zdarzenia_runu", wolny_odczyt)
+    strumien = await _otworz_wprost(swiat)
+    konsument = asyncio.ensure_future(strumien.__anext__())
+    try:
+        await asyncio.wait_for(rozpoczety.wait(), LIMIT_CZEKANIA_S)
+        await _anuluj_i_poczekaj(konsument)
+        await asyncio.wait_for(dobiegl.wait(), LIMIT_CZEKANIA_S)
+    finally:
+        konsument.cancel()
+        await asyncio.wait({konsument}, timeout=LIMIT_CZEKANIA_S)
+
+    assert dobiegl.is_set()
+    assert not bus._run_subscribers.get(swiat.run_a)
+
+
+async def test_dociaganie_dziury_nie_jest_przerywane_gdy_klient_zamyka_strumien_w_trakcie(
+    swiat, monkeypatch
+):
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    await _zapisz(swiat, [1, 2])
+    prawdziwa = uslugi.zdarzenia_runu
+    odczyty: list[int] = []
+    rozpoczety, dobiegl = asyncio.Event(), asyncio.Event()
+
+    async def z_wolna_dziura(s, run, po_seq=None):
+        odczyty.append(1)
+        if len(odczyty) == 1:  # historia; po niej na szynie tylko 5, wiec jest dziura 3-4
+            wynik = await prawdziwa(s, run, po_seq)
+            await bus.publish_event(run.id, {"seq": 5, "kind": "log", "text": "zywe-5"})
+            return wynik
+        rozpoczety.set()
+        await asyncio.sleep(0.2)
+        dobiegl.set()
+        return []
+
+    monkeypatch.setattr(uslugi, "zdarzenia_runu", z_wolna_dziura)
+    strumien = await _otworz_wprost(swiat)
+    try:
+        for _ in range(2):  # historia 1, 2
+            await asyncio.wait_for(strumien.__anext__(), LIMIT_CZEKANIA_S)
+        konsument = asyncio.ensure_future(strumien.__anext__())
+        await asyncio.wait_for(rozpoczety.wait(), LIMIT_CZEKANIA_S)
+        await _anuluj_i_poczekaj(konsument)
+        await asyncio.wait_for(dobiegl.wait(), LIMIT_CZEKANIA_S)
+    finally:
+        await asyncio.wait({asyncio.ensure_future(strumien.aclose())}, timeout=LIMIT_CZEKANIA_S)
+
+    assert dobiegl.is_set()
+    assert not bus._run_subscribers.get(swiat.run_a)

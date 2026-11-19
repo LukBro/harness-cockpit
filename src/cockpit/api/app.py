@@ -418,6 +418,13 @@ def _po_seq(naglowek: str | None) -> int | None:
     return n if n <= 2**31 - 1 else None
 
 
+async def _zdarzenia_runu_bez_przerwania(run_ref: Any, po_seq: int | None) -> list[Any]:
+    # Wolane przez shield(ensure_future(...)): anulowanie generatora w srodku zapytania
+    # unieważnia polaczenie i jego graceful close wisi przy zamknieciu petli.
+    async with db_session.SessionLocal() as s:
+        return await uslugi.zdarzenia_runu(s, run_ref, po_seq)
+
+
 @app.get("/api/runs/{run_id}/events", response_model=None,
          responses=odpowiedzi_bledow(401, 404, 422))
 async def run_stream(
@@ -449,8 +456,8 @@ async def run_stream(
             # id ramki rosnie monotonicznie (Last-Event-ID wznawia bez dziur i duplikatow);
             # seq zapisu idzie pod blokada wiersza runu, wiec kolejnosc commitow = kolejnosc seq.
             ostatni_seq = po_seq or 0
-            async with db_session.SessionLocal() as s3:
-                historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
+            historia = await asyncio.shield(asyncio.ensure_future(
+                _zdarzenia_runu_bez_przerwania(run_ref, po_seq)))
             for h in historia:
                 if await request.is_disconnected():
                     return
@@ -496,8 +503,8 @@ async def run_stream(
                 if ev["seq"] > ostatni_seq + 1:
                     # Dziura (np. 5 przed 4 przy rownoleglych ingest): dociagamy z bazy
                     # i wysylamy rosnaco, zeby id nie cofalo sie po wznowieniu.
-                    async with db_session.SessionLocal() as s4:
-                        luka = await uslugi.zdarzenia_runu(s4, run_ref, ostatni_seq)
+                    luka = await asyncio.shield(asyncio.ensure_future(
+                        _zdarzenia_runu_bez_przerwania(run_ref, ostatni_seq)))
                     for h in luka:
                         if await request.is_disconnected():
                             return
