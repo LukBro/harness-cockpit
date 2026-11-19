@@ -847,6 +847,9 @@ class _Srodowisko:
         if argv[1:3] == ["-m", "mutmut"] and argv[3] == "results":
             time.sleep(self.u["opoznienie_wynikow"])
             return self._wynik(argv, self.u["results_rc"], self.u["results"])
+        if argv[2:3] == ["mutmut-run"]:
+            # HAR-255: opakowanie mutmuta z dowodami shardow zamiast `-m mutmut run`.
+            return self._wynik(argv, self.u["run_rc"], self.u["run_out"], self.u["run_err"])
         raise AssertionError(f"nieoczekiwane polecenie: {argv}")
 
     @staticmethod
@@ -855,6 +858,9 @@ class _Srodowisko:
 
     def mutmut(self, tryb: str) -> list[list[str]]:
         return [w for w in self.wywolania if w[1:3] == ["-m", "mutmut"] and w[3] == tryb]
+
+    def opakowane_run(self) -> list[list[str]]:
+        return [w for w in self.wywolania if w[2:3] == ["mutmut-run"]]
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -1953,6 +1959,111 @@ def test_pragma_block_w_ciele_przypadku_zglasza_dalsze_instrukcje_ciala_ale_nie_
         "    return 0 + 1\n"
     )
     assert _bez(zrodlo, 4, 6, 8, 9) == [6]
+
+
+# --- HAR-255: dowody shardow zamiast "clean tests" mutmuta -------------------------------------
+#
+# Z flaga `--katalog-dowodow` mutmut biegnie przez opakowanie `tools/statystyki_mutmuta.py mutmut-run`,
+# ktore przed podmiana `run_clean_tests` sprawdza dowody (brak dowodu to kod 2). Bez flagi: `-m mutmut run`.
+
+FLAGA_DOWODOW = "--katalog-dowodow"
+DIFF_DWIE_FUNKCJE = _diff("src/cockpit/services/a.py", "@@ -1,5 +1,5 @@")
+WZORCE_DWOCH_FUNKCJI = ["cockpit.services.a.x_inna__mutmut_*", "cockpit.services.a.x_zapisz__mutmut_*"]
+
+
+def _katalog_dowodow(tmp_path: Path) -> Path:
+    katalog = tmp_path / "dowody-ci"
+    katalog.mkdir()
+    return katalog
+
+
+def test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run(
+    monkeypatch, tmp_path
+):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 0
+    assert s.mutmut("run") == []
+    assert s.opakowane_run() == [
+        [
+            sys.executable,
+            str(Path(mutanty_zmian.__file__).with_name("statystyki_mutmuta.py")),
+            "mutmut-run",
+            FLAGA_DOWODOW,
+            str(katalog),
+            *WZORCE_DWOCH_FUNKCJI,
+        ]
+    ]
+
+
+def test_z_katalogiem_dowodow_wyniki_mutantow_czyta_zwykly_mutmut_results(monkeypatch, tmp_path):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE, results=_wyniki((KLUCZ_A, "survived")))
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 1
+    assert s.mutmut("results") == [[sys.executable, "-m", "mutmut", "results"]]
+
+
+def test_bez_katalogu_dowodow_mutmut_biegnie_zwyklym_run_z_oryginalnymi_clean_tests(monkeypatch, tmp_path):
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert s.opakowane_run() == []
+    assert s.mutmut("run") == [[sys.executable, "-m", "mutmut", "run", *WZORCE_DWOCH_FUNKCJI]]
+
+
+def test_katalog_dowodow_ktory_nie_istnieje_to_kod_2_z_brakiem_dowodu_bez_wolania_gita_i_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    katalog = tmp_path / "nie-ma-dowodow"
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 2
+    assert s.wywolania == []
+    assert f"blad: brak dowodu: katalog dowodow {katalog} nie istnieje" in capsys.readouterr().err.splitlines()
+
+
+def test_zwykly_plik_zamiast_katalogu_dowodow_to_kod_2_z_brakiem_dowodu(monkeypatch, tmp_path, capsys):
+    plik = tmp_path / "dowody-ci"
+    plik.write_text("x", encoding="utf-8")
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(plik)) == 2
+    assert s.wywolania == []
+    assert f"blad: brak dowodu: katalog dowodow {plik} nie istnieje" in capsys.readouterr().err.splitlines()
+
+
+def test_brak_dowodu_zgloszony_przez_opakowanie_daje_kod_2_z_trescia_na_stderr_i_bez_czytania_wynikow(
+    monkeypatch, tmp_path, capsys
+):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE, run_rc=2, run_err="blad: brak dowodu: brak pliku shardu 1 z 4")
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 2
+    assert s.mutmut("results") == []
+    assert "brak dowodu: brak pliku shardu 1 z 4" in capsys.readouterr().err
+
+
+def test_opakowanie_bez_pasujacych_mutantow_daje_kod_0_jak_zwykly_mutmut(monkeypatch, tmp_path):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(
+        diff=DIFF_DWIE_FUNKCJE,
+        run_rc=1,
+        run_out="AssertionError: Filtered for specific mutants, but nothing matches",
+    )
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 0
+    assert s.mutmut("results") == []
+
+
+def test_z_katalogiem_dowodow_i_bez_zmienionych_funkcji_nie_wola_opakowania(monkeypatch, tmp_path):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko()
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 0
+    assert s.opakowane_run() == []
+    assert s.mutmut("run") == []
 
 
 # --- HAR-236: --max-children, czasy faz, tryb przyrostowy (--od-przebiegu) ---------------------

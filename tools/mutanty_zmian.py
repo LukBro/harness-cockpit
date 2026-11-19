@@ -513,7 +513,11 @@ def _przebieg(
     czasy: _Czasy,
     max_children: int | None = None,
     od_przebiegu: Path | None = None,
+    katalog_dowodow: Path | None = None,
 ) -> int:
+    # Katalog dowodow sprawdzamy pierwszy: bez niego nie ma po co wolac gita ani mutmuta.
+    if katalog_dowodow is not None and not katalog_dowodow.is_dir():
+        raise BladNarzedzia(f"brak dowodu: katalog dowodow {katalog_dowodow} nie istnieje")
     source_paths = source_paths_z_pyproject(korzen / "pyproject.toml")
 
     merge = uruchom(["git", "merge-base", baza, "HEAD"])
@@ -565,7 +569,17 @@ def _przebieg(
             print("brak zmienionych funkcji - nie ma czego mutowac", file=sys.stderr)
         return _zakoncz([], poza_zasiegiem)
     if do_mutowania:
-        polecenie = [sys.executable, "-m", "mutmut", "run"]
+        if katalog_dowodow is None:
+            polecenie = [sys.executable, "-m", "mutmut", "run"]
+        else:
+            # HAR-255: opakowanie mutmuta sprawdza dowody shardow zamiast `run_clean_tests`.
+            polecenie = [
+                sys.executable,
+                str(Path(__file__).with_name("statystyki_mutmuta.py")),
+                "mutmut-run",
+                "--katalog-dowodow",
+                str(katalog_dowodow),
+            ]
         if max_children is not None:
             polecenie += ["--max-children", str(max_children)]
         start = time.monotonic()
@@ -638,6 +652,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baza", default="origin/main", help="baza porownania (merge-base z HEAD)")
     parser.add_argument("--korzen", type=Path, default=Path.cwd(), help="korzen repozytorium")
     parser.add_argument(
+        "--katalog-dowodow", type=Path, default=None,
+        help="katalog dowodow shardow: clean tests mutmuta zastepuje sprawdzenie dowodow",
+    )
+    parser.add_argument(
         "--max-children", type=_liczba_dzieci, default=None, metavar="N",
         help="liczba rownoleglych procesow mutmuta (mutmut run --max-children N)",
     )
@@ -648,7 +666,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     czasy = _Czasy()
     try:
-        return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
+        return _przebieg(
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+        )
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
