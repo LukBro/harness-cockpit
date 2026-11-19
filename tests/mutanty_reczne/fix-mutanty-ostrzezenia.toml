@@ -1,0 +1,86 @@
+# Tabela recznych mutantow fix-mutanty-ostrzezenia: ostrzezenia trybu przejsciowego w tools/mutanty_zmian.py.
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''if nazwy.returncode != 0:'''
+zamien = '''if nazwy.returncode == 0:'''
+test = "tests/test_mutanty_zmian.py::test_nieudane_pobranie_listy_zmienionych_plikow_daje_ostrzezenie_a_nie_kod_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''"tests/mutanty_reczne/*.toml") for p in pliki)'''
+zamien = '''"tests/mutanty_reczne/*") for p in pliki)'''
+test = "tests/test_mutanty_zmian.py::test_plik_inny_niz_toml_w_katalogu_tabel_nie_zastepuje_tabeli_recznych_mutantow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''"tests/mutanty_reczne/*.toml") for p in pliki)'''
+zamien = '''"x/*.toml") for p in pliki)'''
+test = "tests/test_mutanty_zmian.py::test_zmiana_poza_zasiegiem_z_zmieniona_tabela_recznych_mutantow_nie_daje_ostrzezenia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''if plik.startswith(PREFIKSY_POZA_ZASIEGIEM):'''
+zamien = '''if True:'''
+test = "tests/test_mutanty_zmian.py::test_podobna_sciezka_poza_lista_katalogow_nie_daje_ostrzezenia_poza_zasiegiem[src/tools/x.py]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''("tools/", '''
+zamien = '''('''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[tools/x.py]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''"cicd/", '''
+zamien = ''''''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[cicd/x.sh]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''"web/", '''
+zamien = ''''''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[web/src/x.ts]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''".claude/skills/", '''
+zamien = ''''''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[.claude/skills/s/SKILL.md]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''".claude/hooks/")'''
+zamien = ''')'''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[.claude/hooks/h.py]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''"--name-only", '''
+zamien = ''''''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[tools/x.py]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    _ostrzez_o_zmianach_bez_tabeli(sha)
+    zmiany = zmienione_linie'''
+zamien = '''    zmiany = zmienione_linie'''
+test = "tests/test_mutanty_zmian.py::test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu[tools/x.py]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''{len(do_mutowania)} zmienionych'''
+zamien = '''{0} zmienionych'''
+test = "tests/test_mutanty_zmian.py::test_zmienione_funkcje_bez_zadnego_mutanta_daja_ostrzezenie_brak_dowodu_bez_zmiany_kodu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''f"OSTRZEZENIE: brak dowodu: {len(do_mutowania)} zmienionych funkcji bez mutantow",'''
+zamien = '''"",'''
+test = "tests/test_mutanty_zmian.py::test_zmienione_funkcje_bez_zadnego_mutanta_daja_ostrzezenie_brak_dowodu_bez_zmiany_kodu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    pliki = nazwy.stdout.splitlines() + nowe.stdout.splitlines()"
+zamien = "    pliki = nazwy.stdout.splitlines()"
+test = "tests/test_mutanty_zmian.py::test_nowa_niezacommitowana_tabela_recznych_mutantow_tez_wylacza_ostrzezenie"
