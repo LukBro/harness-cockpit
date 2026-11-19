@@ -496,7 +496,7 @@ def test_przejscie_na_inny_run_z_bledem_pobrania_nie_zostawia_krokow_poprzednieg
 
 
 def _podstaw_szczegoly_runu(page, run_id, *, status="running", kroki=()):
-    """Odpowiedz GET /api/runs/{id} w kształcie RunSzczegoly (tylko ten adres, nie /stream)."""
+    """Odpowiedz GET /api/runs/{id} w kształcie RunSzczegoly (tylko ten adres, nie /events)."""
     szczegoly = {"id": run_id, "workflow": "szkielet", "status": status, "runner_kind": "local",
                  "reason": None, "events": [], "steps": list(kroki)}
     page.route(f"**/api/runs/{run_id}", lambda r: r.fulfill(json=szczegoly))

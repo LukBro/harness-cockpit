@@ -618,7 +618,7 @@ class _Ekran:
         self.zapisy_decyzji: list[dict] = []
         self.obsluga_dowodow = None       # (trasa, numer pobrania) -> None; domyslnie odpowiedz z `dowody`
         self.obsluga_decyzji = None       # (trasa, numer zapisu) -> None; domyslnie `zapisz`
-        self.strumienie = _wstrzymaj(page, "**/api/runs/*/stream")
+        self.strumienie = _wstrzymaj(page, "**/api/runs/*/events")
         adres = f"/api/runs/{self.run_id}"
         page.route(lambda url: url.split("?")[0].endswith(adres), self._szczegoly)
         page.route(lambda url: url.split("?")[0].endswith(f"{adres}/dowody"), self._odczyt_dowodow)

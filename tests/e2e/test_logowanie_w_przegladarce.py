@@ -289,7 +289,7 @@ def _wygas_sesje_przy_otwartym_widoku_runu(
 
     Wraca po pojawieniu sie alertu i ekranu logowania; druga lista to zadania o strumien runu."""
     run_id = _zaloz_run_zespolu(czysta_baza)
-    sciezka_strumienia = f"/api/runs/{run_id}/stream"
+    sciezka_strumienia = f"/api/runs/{run_id}/events"
     zadania_strumienia: list[str] = []
     pierwsza = otworz_kontekst().new_page()
     pierwsza.on(
