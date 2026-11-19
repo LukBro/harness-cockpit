@@ -1,0 +1,1768 @@
+# Tabela recznych mutantow HAR-255: statystyki mutmuta w shardach i dowod zamiast "clean tests".
+# Mutmut nie mutuje workflow ani tools/, wiec ta tabela jest jedyna egzekucja ich regul. Wiersz:
+# element | mutacja | test, ktory po mutacji oblewa. `szukaj` jest KONTRAKTEM tekstu dla implementacji:
+# wystepuje w pliku dokladnie raz (HAR-255: szkielet linii w raporcie test-writera).
+#
+# Pliki:
+# - .github/workflows/mutation.yml: job `mutation-statystyki` (macierz shardow) i zmiany jobu `mutation`,
+# - tools/mutanty_zmian.py: flaga `--katalog-dowodow` i opakowanie `mutmut-run`,
+# - tools/statystyki_mutmuta.py: podzial testow, odcisk zrodel, wczytanie i sprawdzenie dowodow,
+#   zlozenie statystyk, podmiana clean tests, sha commita i bramki podkomendy `shard`.
+#
+# Bez wierszy (mutacja rownowazna): komentarze i docstringi; tresc komunikatow chronia testy porownujace
+# caly napis (mutant XX...XX zachowuje slowa, wiec nie ma osobnych wierszy na kazdy komunikat).
+
+# ===========================================================================
+# .github/workflows/mutation.yml: job zbiorczy `mutation`
+# ===========================================================================
+
+# Bez `always()` job zbiorczy pomijalby sie po czerwonym shardzie, a wymagany check swiecilby jako pominiety.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if: github.event_name == 'pull_request' && always()"
+zamien = "if: github.event_name == 'pull_request'"
+test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_odpala_sie_na_pull_request_a_nie_na_push"
+
+# `always()` zamiast warunku zdarzenia uruchomiloby job takze na push.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if: github.event_name == 'pull_request' && always()"
+zamien = "if: always()"
+test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_odpala_sie_na_pull_request_a_nie_na_push"
+
+# Alternatywa zamiast koniunkcji.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "if: github.event_name == 'pull_request' && always()"
+zamien = "if: github.event_name == 'pull_request' || always()"
+test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_odpala_sie_na_pull_request_a_nie_na_push"
+
+# Job zbiorczy bez zaleznosci od shardow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "needs: [mutation-statystyki]"
+zamien = "needs: []"
+test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_wlasnej"
+
+# Job zbiorczy z wlasna nazwa zmienilby nazwe wymaganego checku.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "needs: [mutation-statystyki]"
+zamien = "needs: [mutation-statystyki]\n    name: mutation-zbiorczy"
+test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_wlasnej"
+
+# Wyniki jobow z wyrazenia innego niz lista wszystkich `needs`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "WYNIKI_SHARDOW: ${{ join(needs.*.result, ' ') }}"
+zamien = "WYNIKI_SHARDOW: ${{ needs.mutation-statystyki.result }}"
+test = "tests/test_workflow_mutacje.py::test_krok_wyniku_shardow_czyta_wyniki_jobow_ze_zmiennej_srodowiska_a_nie_z_wyrazenia_w_skrypcie"
+
+# Krok wyniku shardow nie jest pierwszym krokiem joba (checkout przed nim).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''    steps:
+      - name: wynik shardów statystyk mutmuta'''
+zamien = '''    steps:
+      - uses: actions/checkout@v7
+      - name: wynik shardów statystyk mutmuta'''
+test = "tests/test_workflow_mutacje.py::test_krok_wyniku_shardow_jest_pierwszym_krokiem_zadania_mutation_i_nie_ma_warunku"
+
+# Krok wyniku shardow pod inna nazwa.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: wynik shardów statystyk mutmuta"
+zamien = "- name: wynik shardow"
+test = "tests/test_workflow_mutacje.py::test_krok_wyniku_shardow_jest_pierwszym_krokiem_zadania_mutation_i_nie_ma_warunku"
+
+# Pusty wynik traktowany jak sukces (-z zamienione na -n).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '[ -z "${WYNIKI_SHARDOW//[[:space:]]/}" ]'
+zamien = '[ -n "${WYNIKI_SHARDOW//[[:space:]]/}" ]'
+test = "tests/test_workflow_mutacje.py::test_brak_wyniku_shardow_oblewa_krok_wyniku_z_osobnym_komunikatem[pusty]"
+
+# Wynik z samych spacji przechodzi jako niepusty.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '${WYNIKI_SHARDOW//[[:space:]]/}'
+zamien = '${WYNIKI_SHARDOW}'
+test = "tests/test_workflow_mutacje.py::test_brak_wyniku_shardow_oblewa_krok_wyniku_z_osobnym_komunikatem[same_spacje]"
+
+# Komunikat bez wyjscia z kodem 1 to zielony krok (ksztalty-mutantow.md: kazda galaz exit 1).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''brak wyniku shardow statystyk mutmuta"
+            exit 1'''
+zamien = 'brak wyniku shardow statystyk mutmuta"'
+test = "tests/test_workflow_mutacje.py::test_brak_wyniku_shardow_oblewa_krok_wyniku_z_osobnym_komunikatem[pusty]"
+
+# Drugi exit 1 (wynik inny niz success): bez niego petla konczy sie kodem 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''(wyniki: $WYNIKI_SHARDOW)"
+              exit 1'''
+zamien = '(wyniki: $WYNIKI_SHARDOW)"'
+test = "tests/test_workflow_mutacje.py::test_kazdy_wynik_shardow_inny_niz_success_oblewa_krok_wyniku_z_brakiem_dowodu[failure]"
+
+# Odwrocone porownanie: czerwony przy success.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'if [ "$wynik" != "success" ]; then'
+zamien = 'if [ "$wynik" = "success" ]; then'
+test = "tests/test_workflow_mutacje.py::test_wszystkie_shardy_z_wynikiem_success_daja_zielony_krok_wyniku[jeden_job_zielony]"
+
+# Slowo oczekiwane literowka: success nie jest sukcesem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '!= "success"'
+zamien = '!= "succes"'
+test = "tests/test_workflow_mutacje.py::test_wszystkie_shardy_z_wynikiem_success_daja_zielony_krok_wyniku[jeden_job_zielony]"
+
+# Sprawdzany tylko pierwszy wynik: drugi job nie jest sukcesem, a krok zielony.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'for wynik in $WYNIKI_SHARDOW; do'
+zamien = 'for wynik in ${WYNIKI_SHARDOW%% *}; do'
+test = "tests/test_workflow_mutacje.py::test_kazdy_wynik_shardow_inny_niz_success_oblewa_krok_wyniku_z_brakiem_dowodu[drugi_failure]"
+
+# Sprawdzany tylko ostatni wynik.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'for wynik in $WYNIKI_SHARDOW; do'
+zamien = 'for wynik in ${WYNIKI_SHARDOW##* }; do'
+test = "tests/test_workflow_mutacje.py::test_kazdy_wynik_shardow_inny_niz_success_oblewa_krok_wyniku_z_brakiem_dowodu[pierwszy_failure]"
+
+# --- pobranie dowodow i scalenie ---------------------------------------------------------------
+
+# Maska pobrania nie lapie artefaktow shardow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "pattern: dowody-*"
+zamien = "pattern: wyniki-*"
+test = "tests/test_workflow_mutacje.py::test_artefakty_dowodow_sa_pobierane_do_jednego_katalogu_pasujacego_do_nazw_wgranych_przez_shardy"
+
+# Maska pobrania lapie takze artefakt raportu mutacji.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "pattern: dowody-*"
+zamien = 'pattern: "*"'
+test = "tests/test_workflow_mutacje.py::test_pobranie_dowodow_nie_lapie_artefaktu_raportu_mutacji"
+
+# Bez merge-multiple kazdy shard trafia do podkatalogu i skrypt nie widzi plikow shard-N.json.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "merge-multiple: true"
+zamien = "merge-multiple: false"
+test = "tests/test_workflow_mutacje.py::test_artefakty_dowodow_sa_pobierane_do_jednego_katalogu_pasujacego_do_nazw_wgranych_przez_shardy"
+
+# Pobranie do innego katalogu niz wgrany.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''pattern: dowody-*
+          path: dowody'''
+zamien = '''pattern: dowody-*
+          path: wyniki'''
+test = "tests/test_workflow_mutacje.py::test_artefakty_dowodow_sa_pobierane_do_jednego_katalogu_pasujacego_do_nazw_wgranych_przez_shardy"
+
+# Scalenie wolane z innym katalogiem niz pobrany.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "scal --katalog-dowodow dowody"
+zamien = "scal --katalog-dowodow inny"
+test = "tests/test_workflow_mutacje.py::test_krok_scalenia_woła_narzedzie_z_katalogiem_dowodow"
+
+# Scalenie wola zla podkomende.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "python3 tools/statystyki_mutmuta.py scal"
+zamien = "python3 tools/statystyki_mutmuta.py shard"
+test = "tests/test_workflow_mutacje.py::test_krok_scalenia_woła_narzedzie_z_katalogiem_dowodow"
+
+# Krok scalenia pod inna nazwa.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: scalenie statystyk shardów"
+zamien = "- name: scalenie statystyk"
+test = "tests/test_workflow_mutacje.py::test_scalenie_statystyk_stoi_po_przywroceniu_cache_i_pobraniu_dowodow_a_przed_mutantami_zmienionych_funkcji"
+
+# Kolejnosc: krok scalenia przed przywroceniem cache (cache nadpisalby scalone statystyki).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- uses: actions/cache/restore@v4"
+zamien = '''- name: scalenie statystyk shardów
+        run: echo przesuniete przed cache
+      - uses: actions/cache/restore@v4'''
+test = "tests/test_workflow_mutacje.py::test_scalenie_statystyk_stoi_po_przywroceniu_cache_i_pobraniu_dowodow_a_przed_mutantami_zmienionych_funkcji"
+
+# Kolejnosc: pobranie dowodow po scaleniu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- uses: actions/download-artifact@v4"
+zamien = '''- name: scalenie statystyk shardów
+        run: echo przesuniete przed pobranie
+      - uses: actions/download-artifact@v4'''
+test = "tests/test_workflow_mutacje.py::test_scalenie_statystyk_stoi_po_przywroceniu_cache_i_pobraniu_dowodow_a_przed_mutantami_zmienionych_funkcji"
+
+# Narzedzie mutantow zmian bez katalogu dowodow wola oryginalne clean tests.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = " --katalog-dowodow dowody > mutants/mutanty-zmian.txt"
+zamien = " > mutants/mutanty-zmian.txt"
+test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_dostaje_katalog_dowodow_shardow"
+
+# Narzedzie mutantow zmian z innym katalogiem niz scalony.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--katalog-dowodow dowody > mutants/mutanty-zmian.txt"
+zamien = "--katalog-dowodow inny > mutants/mutanty-zmian.txt"
+test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_dostaje_katalog_dowodow_shardow"
+
+# ===========================================================================
+# .github/workflows/mutation.yml: job shardow `mutation-statystyki`
+# ===========================================================================
+
+# Shardy na push zamiast na pull_request.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = """  mutation-statystyki:
+    if: github.event_name == 'pull_request'"""
+zamien = """  mutation-statystyki:
+    if: github.event_name == 'push'"""
+test = "tests/test_workflow_mutacje.py::test_zadanie_statystyk_shardow_odpala_sie_tylko_na_pull_request"
+
+# Macierz bez shardu 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "shard: [0, 1, 2, 3]"
+zamien = "shard: [1, 2, 3]"
+test = "tests/test_workflow_mutacje.py::test_macierz_shardow_ma_co_najmniej_dwa_kolejne_indeksy_od_zera"
+
+# Macierz z dziura w indeksach.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "shard: [0, 1, 2, 3]"
+zamien = "shard: [0, 1, 3]"
+test = "tests/test_workflow_mutacje.py::test_macierz_shardow_ma_co_najmniej_dwa_kolejne_indeksy_od_zera"
+
+# Macierz z jednym shardem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "shard: [0, 1, 2, 3]"
+zamien = "shard: [0]"
+test = "tests/test_workflow_mutacje.py::test_macierz_shardow_ma_co_najmniej_dwa_kolejne_indeksy_od_zera"
+
+# Indeks shardu staly zamiast z macierzy.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "SHARD: ${{ matrix.shard }}"
+zamien = "SHARD: 0"
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_dostaje_indeks_i_liczbe_shardow_ze_zmiennych_srodowiska"
+
+# Liczba shardow stala zamiast z `strategy.job-total`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "LICZBA_SHARDOW: ${{ strategy.job-total }}"
+zamien = "LICZBA_SHARDOW: 4"
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_dostaje_indeks_i_liczbe_shardow_ze_zmiennych_srodowiska"
+
+# Narzedzie shardu bez indeksu z macierzy.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--indeks "$SHARD"'
+zamien = "--indeks 0"
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_woła_narzedzie_z_indeksem_liczba_shardow_i_katalogiem_dowodow"
+
+# Narzedzie shardu z liczba shardow 1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '--liczba "$LICZBA_SHARDOW"'
+zamien = "--liczba 1"
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_woła_narzedzie_z_indeksem_liczba_shardow_i_katalogiem_dowodow"
+
+# Narzedzie shardu zapisuje dowod w innym katalogu niz wgrywany.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '"$LICZBA_SHARDOW" --katalog-dowodow dowody'
+zamien = '"$LICZBA_SHARDOW" --katalog-dowodow inny'
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_woła_narzedzie_z_indeksem_liczba_shardow_i_katalogiem_dowodow"
+
+# Krok shardu pod inna nazwa.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: statystyki mutmuta shardu"
+zamien = "- name: statystyki shardu"
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_stoi_po_instalacji_zaleznosci_z_mutmutem"
+
+# Krok shardu przed instalacja zaleznosci.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''- run: pip install -e ".[dev]"
+      - name: statystyki mutmuta shardu'''
+zamien = '''- name: statystyki mutmuta shardu
+        run: echo przesuniete przed instalacje
+      - run: pip install -e ".[dev]"
+      - name: statystyki mutmuta shardu'''
+test = "tests/test_workflow_mutacje.py::test_krok_shardu_stoi_po_instalacji_zaleznosci_z_mutmutem"
+
+# Shard przywraca cache mutmuta (statystyki ze starego stanu).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''- run: pip install -e ".[dev]"
+      - name: statystyki mutmuta shardu'''
+zamien = '''- run: pip install -e ".[dev]"
+      - uses: actions/cache/restore@v4
+        with:
+          path: mutants
+          key: mutmut-v1-x
+      - name: statystyki mutmuta shardu'''
+test = "tests/test_workflow_mutacje.py::test_zadanie_statystyk_shardow_nie_przywraca_ani_nie_zapisuje_cache_mutmuta"
+
+# Dowod wgrywany pod ta sama nazwa przez kazdy shard.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''name: dowody-${{ matrix.shard }}
+          path: dowody'''
+zamien = '''name: dowody
+          path: dowody'''
+test = "tests/test_workflow_mutacje.py::test_dowod_shardu_jest_wgrywany_jako_artefakt_o_nazwie_z_indeksem_shardu_po_kroku_shardu"
+
+# Wgrywany inny katalog niz zapisuje narzedzie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''name: dowody-${{ matrix.shard }}
+          path: dowody'''
+zamien = '''name: dowody-${{ matrix.shard }}
+          path: wyniki'''
+test = "tests/test_workflow_mutacje.py::test_dowod_shardu_jest_wgrywany_jako_artefakt_o_nazwie_z_indeksem_shardu_po_kroku_shardu"
+
+# Drugie wgranie przed krokiem shardu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: statystyki mutmuta shardu"
+zamien = '''- uses: actions/upload-artifact@v4
+        with:
+          name: dowody-${{ matrix.shard }}
+          path: dowody
+      - name: statystyki mutmuta shardu'''
+test = "tests/test_workflow_mutacje.py::test_dowod_shardu_jest_wgrywany_jako_artefakt_o_nazwie_z_indeksem_shardu_po_kroku_shardu"
+
+# ===========================================================================
+# tools/mutanty_zmian.py: flaga `--katalog-dowodow` i opakowanie `mutmut-run`
+# ===========================================================================
+
+# Flaga z domyslnym katalogiem: bez flagi tez idzie opakowanie.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'parser.add_argument("--katalog-dowodow", type=Path, default=None,'
+zamien = 'parser.add_argument("--katalog-dowodow", type=Path, default=Path("dowody"),'
+test = "tests/test_mutanty_zmian.py::test_bez_katalogu_dowodow_mutmut_biegnie_zwyklym_run_z_oryginalnymi_clean_tests"
+
+# Flaga przeczytana, ale niepodana do `_przebieg`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return _przebieg(args.baza, args.korzen, args.katalog_dowodow)"
+zamien = "return _przebieg(args.baza, args.korzen)"
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# Katalog dowodow, ktory nie istnieje, przechodzi bez bledu.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if katalog_dowodow is not None and not katalog_dowodow.is_dir():"
+zamien = "if katalog_dowodow is not None and katalog_dowodow.is_dir():"
+test = "tests/test_mutanty_zmian.py::test_katalog_dowodow_ktory_nie_istnieje_to_kod_2_z_brakiem_dowodu_bez_wolania_gita_i_mutmuta"
+
+# Kontrola katalogu bez warunku obecnosci flagi: pada na None.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if katalog_dowodow is not None and not katalog_dowodow.is_dir():"
+zamien = "if not katalog_dowodow.is_dir():"
+test = "tests/test_mutanty_zmian.py::test_bez_katalogu_dowodow_mutmut_biegnie_zwyklym_run_z_oryginalnymi_clean_tests"
+
+# Kazdy podany katalog traktowany jak brakujacy.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if katalog_dowodow is not None and not katalog_dowodow.is_dir():"
+zamien = "if katalog_dowodow is not None:"
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# Zwykly plik zamiast katalogu przechodzi (is_dir -> exists).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "not katalog_dowodow.is_dir():"
+zamien = "not katalog_dowodow.exists():"
+test = "tests/test_mutanty_zmian.py::test_zwykly_plik_zamiast_katalogu_dowodow_to_kod_2_z_brakiem_dowodu"
+
+# Wybor polecenia odwrocony.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if katalog_dowodow is None:"
+zamien = "if katalog_dowodow is not None:"
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# Opakowanie pod zla podkomenda.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '"mutmut-run"'
+zamien = '"run"'
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# Opakowanie bez katalogu dowodow z flagi.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '"--katalog-dowodow", str(katalog_dowodow), '
+zamien = '"--katalog-dowodow", "dowody", '
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# Opakowanie bez flagi `--katalog-dowodow`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '"--katalog-dowodow", str(katalog_dowodow), '
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# Skrypt opakowania szukany po nazwie wzglednej zamiast obok tego pliku.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'str(Path(__file__).with_name("statystyki_mutmuta.py"))'
+zamien = '"statystyki_mutmuta.py"'
+test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: podzial testow na shardy
+# ===========================================================================
+
+# Zerowa liczba shardow przechodzi pierwsza kontrole.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if liczba < 1:"
+zamien = "if liczba < 0:"
+test = "tests/test_statystyki_mutmuta.py::test_liczba_shardow_zero_to_blad_narzedzia_o_liczbie_a_nie_o_indeksie"
+
+# Indeks 0 odrzucony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not 0 <= indeks < liczba:"
+zamien = "if not 0 < indeks < liczba:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_dostaje_co_trzeci_test_z_posortowanej_listy_niezaleznie_od_kolejnosci_wejscia[shard_0]"
+
+# Indeks rowny liczbie shardow przyjety.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not 0 <= indeks < liczba:"
+zamien = "if not 0 <= indeks <= liczba:"
+test = "tests/test_statystyki_mutmuta.py::test_indeks_rowny_liczbie_shardow_lub_wiekszy_to_blad_narzedzia[3]"
+
+# Indeks -1 przyjety.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not 0 <= indeks < liczba:"
+zamien = "if not -1 <= indeks < liczba:"
+test = "tests/test_statystyki_mutmuta.py::test_ujemny_indeks_shardu_to_blad_narzedzia"
+
+# Powtorzony identyfikator trafia do shardu dwa razy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return sorted(set(testy))[indeks::liczba]"
+zamien = "return sorted(testy)[indeks::liczba]"
+test = "tests/test_statystyki_mutmuta.py::test_powtorzony_identyfikator_testu_trafia_do_shardu_raz"
+
+# Kazdy shard bierze testy od poczatku listy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return sorted(set(testy))[indeks::liczba]"
+zamien = "return sorted(set(testy))[::liczba]"
+test = "tests/test_statystyki_mutmuta.py::test_shard_dostaje_co_trzeci_test_z_posortowanej_listy_niezaleznie_od_kolejnosci_wejscia[shard_1]"
+
+# Podzial po nieposortowanej liscie (kolejnosc wejscia decyduje o shardzie).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return sorted(set(testy))[indeks::liczba]"
+zamien = "return list(set(testy))[indeks::liczba]"
+test = "tests/test_statystyki_mutmuta.py::test_shard_dostaje_co_trzeci_test_z_posortowanej_listy_niezaleznie_od_kolejnosci_wejscia[shard_1]"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: odcisk zrodel i konfiguracji
+# ===========================================================================
+
+# Odcisk bez wpisow mutmuta (source_paths i also_copy).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "korzenie = _wpisy_mutmuta(korzen)"
+zamien = "korzenie = []"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[zrodlo_z_source_paths]"
+
+# Wpisy mutmuta bez `source_paths`.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "*konfiguracja.source_paths, "
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[zrodlo_z_source_paths]"
+
+# Wpisy mutmuta bez `also_copy` (a z nim pyproject.toml, plikow z also_copy i testow dokladanych przez mutmuta).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = ", *konfiguracja.also_copy]"
+zamien = "]"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[plik_z_also_copy]"
+
+# Sam pyproject.toml wypada z odcisku razem z also_copy: zmiana sekcji pytest jest niewidoczna.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = ", *konfiguracja.also_copy]"
+zamien = "]"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_sekcji_pytest_w_pyproject_zmienia_odcisk_przy_tych_samych_plikach"
+
+# Konfiguracja mutmuta bledna (ValueError) przy wpisach: wyjatek ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''*konfiguracja.also_copy]]
+        except (OSError, ValueError) as blad_konfiguracji:'''
+zamien = '''*konfiguracja.also_copy]]
+        except OSError as blad_konfiguracji:'''
+test = "tests/test_statystyki_mutmuta.py::test_zla_wartosc_process_isolation_to_blad_narzedzia_z_konfiguracji_mutmuta"
+
+# Konfiguracja mutmuta bez zrodel (OSError) przy wpisach: wyjatek ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''*konfiguracja.also_copy]]
+        except (OSError, ValueError) as blad_konfiguracji:'''
+zamien = '''*konfiguracja.also_copy]]
+        except ValueError as blad_konfiguracji:'''
+test = "tests/test_statystyki_mutmuta.py::test_pusty_source_paths_w_katalogu_bez_zrodel_to_blad_narzedzia_z_konfiguracji_mutmuta"
+
+# Odcisk konfiguracji mutmuta: ValueError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''return mm.config().config_fingerprint()
+        except (OSError, ValueError) as blad_konfiguracji:'''
+zamien = '''return mm.config().config_fingerprint()
+        except OSError as blad_konfiguracji:'''
+test = "tests/test_statystyki_mutmuta.py::test_odcisk_konfiguracji_mutmuta_ze_zla_izolacja_to_blad_narzedzia_z_konfiguracji"
+
+# Odcisk konfiguracji mutmuta: OSError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''return mm.config().config_fingerprint()
+        except (OSError, ValueError) as blad_konfiguracji:'''
+zamien = '''return mm.config().config_fingerprint()
+        except ValueError as blad_konfiguracji:'''
+test = "tests/test_statystyki_mutmuta.py::test_odcisk_konfiguracji_mutmuta_bez_zrodel_to_blad_narzedzia_z_konfiguracji"
+
+# Przygotowanie mutants/: ValueError (zla izolacja procesow) ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''mm.glowny.create_mutants(os.cpu_count() or 4)
+    except (OSError, ValueError) as blad_przygotowania:'''
+zamien = '''mm.glowny.create_mutants(os.cpu_count() or 4)
+    except OSError as blad_przygotowania:'''
+test = "tests/test_statystyki_mutmuta.py::test_przygotowanie_mutants_ze_zla_izolacja_procesow_to_blad_narzedzia"
+
+# Przygotowanie mutants/: OSError (mutants jest plikiem) ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''mm.glowny.create_mutants(os.cpu_count() or 4)
+    except (OSError, ValueError) as blad_przygotowania:'''
+zamien = '''mm.glowny.create_mutants(os.cpu_count() or 4)
+    except ValueError as blad_przygotowania:'''
+test = "tests/test_statystyki_mutmuta.py::test_przygotowanie_mutants_gdy_mutants_jest_zwyklym_plikiem_to_blad_narzedzia"
+
+# Odczyt konfiguracji dla glebokosci zaleznosci po przygotowaniu mutants/: config() jest juz wczytany przez
+# `copy_src_dir()` (a blad konfiguracji przerwalby wczesniej), wiec `.dependency_tracking_depth` nie rzuca.
+[[rownowazny]]
+plik = "tools/statystyki_mutmuta.py"
+linia_tekst = "glebokosc = mm.config().dependency_tracking_depth"
+uzasadnienie = "config() zapamietuje wynik pierwszego udanego wczytania; pierwsze wywolanie jest w bloku przygotowania mutants/ (copy_src_dir), ktory przy bledzie konfiguracji konczy sie wczesniej BladNarzedzia, wiec w tym miejscu zadne wejscie nie rzuca OSError ani ValueError"
+
+# Wpis wskazujacy plik pominiety.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if cel.is_file():"
+zamien = "if cel.is_dir():"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[plik_z_also_copy]"
+
+# Wpis wskazujacy katalog pominiety.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "elif cel.is_dir():"
+zamien = "elif cel.is_file():"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[zrodlo_z_source_paths]"
+
+# Przegladanie katalogu bez podkatalogow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "for katalog, _, nazwy in os.walk(cel, onerror=zglos):"
+zamien = "for katalog, _, nazwy in list(os.walk(cel, onerror=zglos))[:1]:"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[zrodlo_w_podkatalogu_source_paths]"
+
+# Nieczytelny podkatalog polkniety przez os.walk (brak `onerror`): odcisk z czesci plikow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "os.walk(cel, onerror=zglos)"
+zamien = "os.walk(cel)"
+test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_podkatalog_objetego_katalogu_to_blad_narzedzia_a_nie_pominiecie[w_zrodlach]"
+
+# Nieczytelny podkatalog testow polkniety przez os.walk.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "os.walk(cel, onerror=zglos)"
+zamien = "os.walk(cel)"
+test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_podkatalog_objetego_katalogu_to_blad_narzedzia_a_nie_pominiecie[w_testach]"
+
+# Sciezka bledu katalogu bez nazwy wzglednej (pelna sciezka w komunikacie).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "Path(nazwa).relative_to(korzen).as_posix() if nazwa else str(korzen)"
+zamien = "str(Path(nazwa)) if nazwa else str(korzen)"
+test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_podkatalog_objetego_katalogu_to_blad_narzedzia_a_nie_pominiecie[w_zrodlach]"
+
+# Wpis nieczytelny przy `stat()`: wyjatek ucieka (zly typ w `except`).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad_wpisu:"
+zamien = "except ValueError as blad_wpisu:"
+test = "tests/test_statystyki_mutmuta.py::test_wpis_also_copy_w_nieczytelnym_katalogu_to_blad_narzedzia_z_nazwa_wpisu"
+
+# Wpis nieistniejacy nie jest juz pomijany.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except FileNotFoundError:"
+zamien = "except NotADirectoryError:"
+test = "tests/test_statystyki_mutmuta.py::test_wpis_also_copy_wskazujacy_nieistniejacy_plik_jest_pominiety"
+
+# `__pycache__` wlaczony do odcisku, reszta pominieta.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if "__pycache__" in sciezka.parts:'
+zamien = 'if "__pycache__" not in sciezka.parts:'
+test = "tests/test_statystyki_mutmuta.py::test_skompilowane_pliki_z_pycache_nie_zmieniaja_odcisku[w_zrodlach]"
+
+# Zepsute dowiazanie symboliczne liczone jako plik (read_bytes rzuca).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if plik.is_file():"
+zamien = "if True:"
+test = "tests/test_statystyki_mutmuta.py::test_zepsuty_dowiazek_symboliczny_w_zrodlach_jest_pominiety_jak_nie_plik"
+
+# Odcisk zalezny od kolejnosci przegladania zbioru (rozne procesy, rozne wyniki).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "sorted(_pliki(korzen, korzenie))"
+zamien = "list(_pliki(korzen, korzenie))"
+test = "tests/test_statystyki_mutmuta.py::test_odcisk_jest_taki_sam_w_procesach_o_roznym_losowaniu_kolejnosci_zbiorow"
+
+# Sciezka pliku poza odciskiem (zmiana nazwy niewidoczna).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'skrot.update(sciezka.as_posix().encode("utf-8") + b"\0")'
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_nazwy_pliku_przy_tej_samej_tresci_zmienia_odcisk"
+
+# Tresc pliku poza odciskiem.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'skrot.update((korzen / sciezka).read_bytes() + b"\0")'
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_zmiana_tresci_pliku_objetego_przez_mutmuta_zmienia_odcisk[zrodlo_z_source_paths]"
+
+# Sekcja [tool.mutmut] w skrocie odcisku: kazda jej zmiana zmienia tez bajty pyproject.toml, ktory mutmut
+# zawsze dokleja do also_copy (configuration.py), wiec skrot plikow i tak sie zmienia.
+[[rownowazny]]
+plik = "tools/statystyki_mutmuta.py"
+linia_tekst = 'skrot.update(json.dumps(konfiguracja, sort_keys=True).encode("utf-8"))'
+uzasadnienie = "pyproject.toml jest zawsze w also_copy mutmuta (mutmut/configuration.py: Path(\"pyproject.toml\")), wiec jest hashowany jako plik; wejscie, w ktorym sekcja [tool.mutmut] sie rozni, a bajty pyproject.toml nie, nie istnieje"
+
+# Wartosc spoza JSON w sekcji (data TOML) bez zamiany na napis przy tworzeniu slownika konfiguracji.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return json.loads(json.dumps(mutmut, default=str))"
+zamien = "return mutmut"
+test = "tests/test_statystyki_mutmuta.py::test_data_w_sekcji_mutmut_nie_psuje_odcisku"
+
+# Bez `default=str` data rzuca TypeError przy zamianie na JSON.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "json.dumps(mutmut, default=str)"
+zamien = "json.dumps(mutmut)"
+test = "tests/test_statystyki_mutmuta.py::test_data_w_sekcji_mutmut_nie_psuje_odcisku"
+
+# `[tool]` niebedace tabela: AttributeError zamiast bledu sekcji.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'narzedzia.get("mutmut") if isinstance(narzedzia, dict) else None'
+zamien = 'narzedzia.get("mutmut")'
+test = "tests/test_statystyki_mutmuta.py::test_sekcja_tool_niebedaca_tabela_to_brak_sekcji_mutmut"
+
+# Nieczytelny plik zrodlowy: zly typ w `except` (wyjatek ucieka jako traceback).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad_odczytu:"
+zamien = "except ValueError as blad_odczytu:"
+test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_plik_zrodlowy_to_blad_narzedzia_z_nazwa_pliku"
+
+# pyproject: brak pliku nie jest tlumaczony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:"
+zamien = "except (UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_brak_pyproject_to_blad_narzedzia_z_przyczyna_odczytu"
+
+# pyproject: bajty spoza UTF-8 nie sa tlumaczone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:"
+zamien = "except (OSError, tomllib.TOMLDecodeError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_pyproject_z_bajtami_spoza_utf8_to_blad_narzedzia_z_przyczyna_odczytu"
+
+# pyproject: uszkodzony TOML nie jest tlumaczony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:"
+zamien = "except (OSError, UnicodeDecodeError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_uszkodzony_plik_pyproject_to_blad_narzedzia_z_przyczyna_odczytu"
+
+# Sekcja [tool.mutmut] wymagana.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not isinstance(mutmut, dict):"
+zamien = "if isinstance(mutmut, dict):"
+test = "tests/test_statystyki_mutmuta.py::test_pyproject_bez_sekcji_mutmut_to_blad_narzedzia"
+
+# source_paths: element niebedacy napisem przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not isinstance(zrodla, list) or not all(isinstance(s, str) for s in zrodla):"
+zamien = "if not isinstance(zrodla, list):"
+test = "tests/test_statystyki_mutmuta.py::test_zle_source_paths_to_blad_narzedzia[source_paths_z_liczba]"
+
+# source_paths: napis zamiast listy przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not isinstance(zrodla, list) or not all(isinstance(s, str) for s in zrodla):"
+zamien = "if not all(isinstance(s, str) for s in zrodla):"
+test = "tests/test_statystyki_mutmuta.py::test_zle_source_paths_to_blad_narzedzia[source_paths_to_napis]"
+
+# also_copy: element niebedacy napisem przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not isinstance(kopiowane, list) or not all(isinstance(s, str) for s in kopiowane):"
+zamien = "if not isinstance(kopiowane, list):"
+test = "tests/test_statystyki_mutmuta.py::test_zle_also_copy_to_blad_narzedzia[lista_z_liczba]"
+
+# also_copy: napis zamiast listy przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not isinstance(kopiowane, list) or not all(isinstance(s, str) for s in kopiowane):"
+zamien = "if not all(isinstance(s, str) for s in kopiowane):"
+test = "tests/test_statystyki_mutmuta.py::test_zle_also_copy_to_blad_narzedzia[napis]"
+
+# also_copy opcjonalne: brak klucza daje blad.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'kopiowane = mutmut.get("also_copy", [])'
+zamien = 'kopiowane = mutmut.get("also_copy")'
+test = "tests/test_statystyki_mutmuta.py::test_brak_also_copy_nie_jest_bledem_a_zmiana_testow_nadal_zmienia_odcisk"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: sha commita
+# ===========================================================================
+
+# Brak binarki git: wyjatek OSError ucieka (zly typ w `except`).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad:"
+zamien = "except ValueError as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_bez_binarki_git_konczy_sie_kodem_2_z_brakiem_dowodu_a_nie_tracebackiem"
+
+# Kod wyjscia gita czytany odwrotnie.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if wynik.returncode != 0:"
+zamien = "if wynik.returncode == 0:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_poza_repozytorium_git_konczy_sie_kodem_2_bez_dowodu"
+
+# Sha innego commitu niz HEAD.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"rev-parse", "HEAD"'
+zamien = '"rev-parse", "HEAD~0^{tree}"'
+test = "tests/test_statystyki_mutmuta.py::test_dowod_shardu_niesie_sha_commita_i_odcisk_zrodel_miniatury"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: wczytanie dowodow
+# ===========================================================================
+
+# fullmatch -> match / search: do regexu docieraja tylko nazwy z filtra fnmatch `shard-*.json` (zaczynaja sie od
+# `shard-` i koncza na `.json`). Nazwa z dopiskiem po `.json` (np. `shard-1.json.json`) daje przy `match` numer 1 i
+# odrzucenie `nazwa pliku nie jest postaci shard-N.json` z porownania nazwy, a przy `fullmatch` to samo odrzucenie
+# z galezi `else`: ten sam wyjatek i komunikat. Nazwa z przedrostkiem przed `shard-` nie przechodzi fnmatch.
+[[rownowazny]]
+plik = "tools/statystyki_mutmuta.py"
+linia_tekst = "dopasowanie = WZORZEC_PLIKU.fullmatch(plik.name)"
+uzasadnienie = "kazda nazwa, ktora match/search przyjmuje inaczej niz fullmatch, ma dopisek po .json albo przedrostek, a pierwsze odrzuca ten sam BladDowodu z porownania nazwy, drugie filtr fnmatch; wejscia o innym wyniku nie ma"
+
+# Kropka w regexie `\.json` nieescapowana: nazwa przechodzaca fnmatch konczy sie literalnym `.json`, wiec kropka
+# `.` dopasowuje ta sama kropke; nazwa z innym znakiem w miejscu kropki nie przechodzi filtra fnmatch.
+[[rownowazny]]
+plik = "tools/statystyki_mutmuta.py"
+linia_tekst = 'WZORZEC_PLIKU = re.compile(r"shard-(\d+)\.json")'
+uzasadnienie = "do regexu docieraja tylko nazwy konczace sie literalnym .json (filtr fnmatch), wiec nieescapowana kropka dopasowuje te sama kropke; nazwa z innym znakiem zamiast kropki nie dociera do regexu"
+
+# Regex nazwy pliku: jedna cyfra zamiast kilku (shard-10 pominiety).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'WZORZEC_PLIKU = re.compile(r"shard-(\d+)\.json")'
+zamien = 'WZORZEC_PLIKU = re.compile(r"shard-(\d)\.json")'
+test = "tests/test_statystyki_mutmuta.py::test_dowody_jedenastu_shardow_sa_zwrocone_wedlug_numeru_a_nie_wedlug_nazwy_pliku"
+
+# Filtr nazw: `shard-*.json` zamiast szerszego `shard-*` (shard-0.txt zostalby uznany za niekanoniczny dowod).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'fnmatch.fnmatchcase(plik.name, "shard-*.json")'
+zamien = 'fnmatch.fnmatchcase(plik.name, "shard-*")'
+test = "tests/test_statystyki_mutmuta.py::test_katalog_bez_plikow_shardow_to_brak_dowodu_a_cudze_pliki_sie_nie_licza"
+
+# Filtr nazw szerszy z drugiej strony (`*.json`): inne.json zostaloby uznane za niekanoniczny dowod.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'fnmatch.fnmatchcase(plik.name, "shard-*.json")'
+zamien = 'fnmatch.fnmatchcase(plik.name, "*.json")'
+test = "tests/test_statystyki_mutmuta.py::test_katalog_bez_plikow_shardow_to_brak_dowodu_a_cudze_pliki_sie_nie_licza"
+
+# Filtr nazw odwrocony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if not fnmatch.fnmatchcase(plik.name, "shard-*.json"):'
+zamien = 'if fnmatch.fnmatchcase(plik.name, "shard-*.json"):'
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Nazwa niekanoniczna (np. shard-01.json) przyjeta jako numer 1.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''if plik.name != f"shard-{numer}.json":
+                raise BladDowodu(f"{plik.name}: nazwa pliku nie jest postaci shard-N.json")'''
+zamien = '''if plik.name != f"shard-{numer}.json":
+                pass'''
+test = "tests/test_statystyki_mutmuta.py::test_plik_pasujacy_do_shard_gwiazdka_json_o_niekanonicznej_nazwie_to_brak_dowodu[zero_wiodace]"
+
+# Porownanie nazwy odwrocone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if plik.name != f"shard-{numer}.json":'
+zamien = 'if plik.name == f"shard-{numer}.json":'
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Nazwa spoza wzorca (shard-x.json) pominieta zamiast bledu.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''else:
+            raise BladDowodu(f"{plik.name}: nazwa pliku nie jest postaci shard-N.json")'''
+zamien = '''else:
+            continue'''
+test = "tests/test_statystyki_mutmuta.py::test_plik_pasujacy_do_shard_gwiazdka_json_o_niekanonicznej_nazwie_to_brak_dowodu[litera]"
+
+# Katalog dowodow wyliczany bez sortowania: pierwszy blad zalezy od kolejnosci w systemie plikow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "pliki = sorted(katalog.iterdir())"
+zamien = "pliki = list(katalog.iterdir())"
+test = "tests/test_statystyki_mutmuta.py::test_dwa_uszkodzone_pliki_shardow_daja_blad_pierwszego_wedlug_nazwy"
+
+# Katalog dowodow bez prawa odczytu: OSError ucieka (zly typ w `except`).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad_listy:"
+zamien = "except ValueError as blad_listy:"
+test = "tests/test_statystyki_mutmuta.py::test_katalog_dowodow_bez_prawa_odczytu_to_brak_dowodu_z_nazwa_katalogu"
+
+# Dopasowanie nazwy odwrocone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if dopasowanie is not None:"
+zamien = "if dopasowanie is None:"
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Kolejnosc po nazwie pliku zamiast po numerze shardu.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "kolejne = sorted(wczytane.items())"
+zamien = "kolejne = list(wczytane.items())"
+test = "tests/test_statystyki_mutmuta.py::test_dowody_jedenastu_shardow_sa_zwrocone_wedlug_numeru_a_nie_wedlug_nazwy_pliku"
+
+# Katalog dowodow, ktory nie istnieje, przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not katalog.is_dir():"
+zamien = "if katalog.is_dir():"
+test = "tests/test_statystyki_mutmuta.py::test_katalog_dowodow_ktory_nie_istnieje_to_brak_dowodu"
+
+# Zwykly plik zamiast katalogu przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not katalog.is_dir():"
+zamien = "if not katalog.exists():"
+test = "tests/test_statystyki_mutmuta.py::test_zwykly_plik_zamiast_katalogu_dowodow_to_brak_dowodu"
+
+# Pusty katalog przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not wczytane:"
+zamien = "if wczytane:"
+test = "tests/test_statystyki_mutmuta.py::test_katalog_bez_plikow_shardow_to_brak_dowodu_a_cudze_pliki_sie_nie_licza"
+
+# Rozne liczby shardow w plikach przechodza.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if len(liczby) != 1:"
+zamien = "if len(liczby) > 2:"
+test = "tests/test_statystyki_mutmuta.py::test_pliki_zglaszajace_rozne_liczby_shardow_to_brak_dowodu"
+
+# Indeks w pliku rozny od nazwy przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if dowod["indeks"] != numer:'
+zamien = 'if dowod["indeks"] == numer:'
+test = "tests/test_statystyki_mutmuta.py::test_indeks_w_pliku_inny_niz_w_nazwie_pliku_to_brak_dowodu"
+
+# Numer pliku rowny liczbie shardow przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not 0 <= numer < liczba:"
+zamien = "if not 0 <= numer <= liczba:"
+test = "tests/test_statystyki_mutmuta.py::test_plik_shardu_o_numerze_spoza_zakresu_liczby_shardow_to_brak_dowodu"
+
+# Brak ostatniego pliku shardu przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "for numer in range(liczba):"
+zamien = "for numer in range(liczba - 1):"
+test = "tests/test_statystyki_mutmuta.py::test_brak_pliku_jednego_shardu_to_brak_dowodu_z_jego_numerem_takze_gdy_to_ostatni_shard[2]"
+
+# Warunek brakujacego pliku odwrocony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if numer not in wczytane:"
+zamien = "if numer in wczytane:"
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Brak pliku shardu 0 przechodzi (kolejnosc od 1).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "for numer in range(liczba):"
+zamien = "for numer in range(1, liczba):"
+test = "tests/test_statystyki_mutmuta.py::test_brak_pliku_jednego_shardu_to_brak_dowodu_z_jego_numerem_takze_gdy_to_ostatni_shard[0]"
+
+# Sha innego commitu przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if dowod["sha"] != sha:'
+zamien = 'if dowod["sha"] == sha:'
+test = "tests/test_statystyki_mutmuta.py::test_sha_inny_niz_w_jobie_koncowym_to_brak_dowodu_z_nazwa_pliku_shardu[1]"
+
+# Odcisk innych zrodel przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if dowod["odcisk"] != odcisk:'
+zamien = 'if dowod["odcisk"] == odcisk:'
+test = "tests/test_statystyki_mutmuta.py::test_odcisk_inny_niz_w_jobie_koncowym_to_brak_dowodu_z_nazwa_pliku_shardu[1]"
+
+# Kod pytesta -1 przechodzi (tylko dodatnie sa bledem).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if dowod["kod_pytesta"] != 0:'
+zamien = 'if dowod["kod_pytesta"] > 0:'
+test = "tests/test_statystyki_mutmuta.py::test_shard_z_niezerowym_kodem_pytesta_to_brak_dowodu_mimo_listy_testow[-1]"
+
+# Kod pytesta czytany odwrotnie.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if dowod["kod_pytesta"] != 0:'
+zamien = 'if dowod["kod_pytesta"] == 0:'
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Shard bez testow przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if not dowod["testy"]:'
+zamien = 'if dowod["testy"]:'
+test = "tests/test_statystyki_mutmuta.py::test_shard_bez_zadnego_testu_z_kodem_zero_to_brak_dowodu"
+
+# Odczyt pliku: katalog zamiast pliku (OSError) nie jest tlumaczony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+zamien = "except (UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_katalog_zamiast_pliku_dowodu_to_brak_dowodu_z_nazwa_pliku"
+
+# Odczyt pliku: bajty spoza UTF-8 nie sa tlumaczone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+zamien = "except (OSError, RecursionError, json.JSONDecodeError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_plik_dowodu_to_brak_dowodu_z_nazwa_pliku[bajty_spoza_utf8]"
+
+# Odczyt pliku: gleboko zagniezdzony JSON (RecursionError) nie jest tlumaczony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+zamien = "except (OSError, UnicodeDecodeError, json.JSONDecodeError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_dowod_z_gleboko_zagniezdzonym_json_to_brak_dowodu_a_nie_wyjatek_rekurencji"
+
+# Odczyt pliku: uszkodzony JSON nie jest tlumaczony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+zamien = "except (OSError, UnicodeDecodeError, RecursionError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_plik_dowodu_to_brak_dowodu_z_nazwa_pliku[uszkodzony_json]"
+
+# Dowod niebedacy obiektem przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not isinstance(dane, dict):"
+zamien = "if isinstance(dane, dict):"
+test = "tests/test_statystyki_mutmuta.py::test_dowod_ktory_nie_jest_obiektem_json_to_brak_dowodu[lista]"
+
+# Brak pola przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if pole not in dane:"
+zamien = "if pole in dane:"
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Zly typ pola przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not poprawny(dane[pole]):"
+zamien = "if poprawny(dane[pole]):"
+test = "tests/test_statystyki_mutmuta.py::test_poprawne_dowody_wszystkich_shardow_sa_zwrocone_wedlug_indeksu"
+
+# Czasy testow: dodatkowy czas (nadzbior listy testow) przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if set(dane["duration_by_test"]) != set(dane["testy"]):'
+zamien = 'if set(dane["duration_by_test"]) < set(dane["testy"]):'
+test = "tests/test_statystyki_mutmuta.py::test_czasy_testow_niezgodne_z_lista_testow_shardu_to_brak_dowodu[czas_testu_spoza_listy]"
+
+# Czasy testow: brak czasu testu (podzbior listy testow) przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if set(dane["duration_by_test"]) != set(dane["testy"]):'
+zamien = 'if set(dane["duration_by_test"]) > set(dane["testy"]):'
+test = "tests/test_statystyki_mutmuta.py::test_czasy_testow_niezgodne_z_lista_testow_shardu_to_brak_dowodu[brak_czasu_jednego_testu]"
+
+# Mapa funkcji wskazujaca test spoza shardu przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if not testy_z_mapy <= set(dane["testy"]):'
+zamien = 'if testy_z_mapy <= set(dane["testy"]):'
+test = "tests/test_statystyki_mutmuta.py::test_mapa_funkcji_wskazujaca_test_spoza_listy_testow_shardu_to_brak_dowodu"
+
+# Mapa funkcji obejmujaca tylko czesc testow shardu odrzucona.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'if not testy_z_mapy <= set(dane["testy"]):'
+zamien = 'if not testy_z_mapy >= set(dane["testy"]):'
+test = "tests/test_statystyki_mutmuta.py::test_mapa_funkcji_wskazujaca_podzbior_testow_shardu_jest_poprawna"
+
+# --- walidatory typow ----------------------------------------------------------------------------
+
+# Bool jako liczba calkowita.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, int) and not isinstance(wartosc, bool)"
+zamien = "return isinstance(wartosc, int)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[indeks_bool]"
+
+# Kazdy nie-bool jako liczba calkowita.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, int) and not isinstance(wartosc, bool)"
+zamien = "return not isinstance(wartosc, bool)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[indeks_napis]"
+
+# Bool jako liczba.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, (int, float)) and not isinstance(wartosc, bool)"
+zamien = "return isinstance(wartosc, (int, float))"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[stats_time_bool]"
+
+# Kazdy nie-bool jako liczba.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, (int, float)) and not isinstance(wartosc, bool)"
+zamien = "return not isinstance(wartosc, bool)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[stats_time_napis]"
+
+# Liczba calkowita nie jest liczba (tylko float).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, (int, float)) and not isinstance(wartosc, bool)"
+zamien = "return isinstance(wartosc, float) and not isinstance(wartosc, bool)"
+test = "tests/test_statystyki_mutmuta.py::test_stats_time_jako_liczba_calkowita_i_czas_testu_jako_liczba_calkowita_sa_poprawne"
+
+# Kazda wartosc jako napis.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, str)"
+zamien = "return True"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[sha_liczba]"
+
+# Lista z elementami niebedacymi napisami.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, list) and all(isinstance(t, str) for t in wartosc)"
+zamien = "return isinstance(wartosc, list)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[testy_z_liczba]"
+
+# Napis jako lista napisow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, list) and all(isinstance(t, str) for t in wartosc)"
+zamien = "return all(isinstance(t, str) for t in wartosc)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[testy_napis]"
+
+# Slownik napisow z wartoscia niebedaca napisem.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, dict) and all(isinstance(v, str) for v in wartosc.values())"
+zamien = "return isinstance(wartosc, dict)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[hash_liczba]"
+
+# Lista jako slownik napisow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, dict) and all(isinstance(v, str) for v in wartosc.values())"
+zamien = "return all(isinstance(v, str) for v in wartosc.values())"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[hashe_lista]"
+
+# Slownik list napisow z wartoscia niebedaca lista.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, dict) and all(_lista_napisow(v) for v in wartosc.values())"
+zamien = "return isinstance(wartosc, dict)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[mapa_wartosc_napis]"
+
+# Lista jako slownik list napisow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, dict) and all(_lista_napisow(v) for v in wartosc.values())"
+zamien = "return all(_lista_napisow(v) for v in wartosc.values())"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[mapa_lista]"
+
+# Slownik czasow z wartoscia niebedaca liczba.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, dict) and all(_liczba(v) for v in wartosc.values())"
+zamien = "return isinstance(wartosc, dict)"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[czas_napis]"
+
+# Lista jako slownik czasow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return isinstance(wartosc, dict) and all(_liczba(v) for v in wartosc.values())"
+zamien = "return all(_liczba(v) for v in wartosc.values())"
+test = "tests/test_statystyki_mutmuta.py::test_pole_dowodu_o_zlym_typie_to_brak_dowodu_z_nazwa_pola[czasy_lista]"
+
+# --- schemat pol dowodu: kazdy wpis mapy ma osobny wiersz ---------------------------------------
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "indeks": _calkowita,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[indeks]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "liczba_shardow": _calkowita,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[liczba_shardow]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "sha": _napis,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[sha]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "odcisk": _napis,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[odcisk]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "testy": _lista_napisow,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[testy]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "kod_pytesta": _calkowita,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[kod_pytesta]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "tests_by_mangled_function_name": _mapa_list_napisow,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[tests_by_mangled_function_name]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "duration_by_test": _mapa_liczb,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[duration_by_test]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "stats_time": _liczba,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[stats_time]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "function_hashes": _mapa_napisow,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[function_hashes]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''    "function_dependencies": _mapa_list_napisow,
+'''
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_dowod_bez_pola_to_brak_dowodu_z_nazwa_pola[function_dependencies]"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: sprawdzenie dowodow wzgledem testow joba koncowego
+# ===========================================================================
+
+# Sha i odcisk podane odwrotnie do wczytania dowodow.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "dowody = wczytaj_dowody(katalog, sha=sha, odcisk=odcisk)"
+zamien = "dowody = wczytaj_dowody(katalog, sha=odcisk, odcisk=sha)"
+test = "tests/test_statystyki_mutmuta.py::test_sha_innego_commitu_w_dowodzie_to_brak_dowodu_takze_przy_pelnej_sumie_testow"
+
+# Test w dwoch shardach przechodzi (prog 2 zamiast 1).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if ile > 1)"
+zamien = "if ile > 2)"
+test = "tests/test_statystyki_mutmuta.py::test_test_uruchomiony_w_dwoch_shardach_to_brak_dowodu_z_jego_nazwa_a_suma_jest_pelna"
+
+# Kazdy test uznany za duplikat.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if ile > 1)"
+zamien = "if ile >= 1)"
+test = "tests/test_statystyki_mutmuta.py::test_dowody_pokrywajace_dokladnie_wszystkie_testy_i_testy_zmian_przechodza"
+
+# Duplikaty przechodza.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if powtorzone:"
+zamien = "if not powtorzone:"
+test = "tests/test_statystyki_mutmuta.py::test_test_uruchomiony_w_dwoch_shardach_to_brak_dowodu_z_jego_nazwa_a_suma_jest_pelna"
+
+# Duplikaty tylko w obrebie jednego shardu: zbior zamiast listy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "uruchomione = [test for dowod in dowody for test in dowod[\"testy\"]]"
+zamien = "uruchomione = sorted({test for dowod in dowody for test in dowod[\"testy\"]})"
+test = "tests/test_statystyki_mutmuta.py::test_test_powtorzony_w_liscie_jednego_shardu_tez_jest_duplikatem"
+
+# Separator duplikatow bez spacji.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "', '.join(powtorzone)"
+zamien = "','.join(powtorzone)"
+test = "tests/test_statystyki_mutmuta.py::test_kilka_duplikatow_jest_wypisanych_posortowanych_po_przecinku"
+
+# Duplikaty bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "powtorzone = sorted("
+zamien = "powtorzone = list("
+test = "tests/test_statystyki_mutmuta.py::test_kilka_duplikatow_jest_wypisanych_posortowanych_po_przecinku"
+
+# Brakujace testy liczone w druga strone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "bez_shardu = sorted(set(wszystkie_testy) - suma)"
+zamien = "bez_shardu = sorted(suma - set(wszystkie_testy))"
+test = "tests/test_statystyki_mutmuta.py::test_test_z_listy_joba_koncowego_bez_shardu_to_brak_dowodu"
+
+# Test bez shardu przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if bez_shardu:"
+zamien = "if not bez_shardu:"
+test = "tests/test_statystyki_mutmuta.py::test_test_z_listy_joba_koncowego_bez_shardu_to_brak_dowodu"
+
+# Separator testow bez shardu.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "', '.join(bez_shardu)"
+zamien = "','.join(bez_shardu)"
+test = "tests/test_statystyki_mutmuta.py::test_kilka_testow_bez_shardu_jest_wypisanych_posortowanych"
+
+# Testy bez shardu bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "bez_shardu = sorted("
+zamien = "bez_shardu = list("
+test = "tests/test_statystyki_mutmuta.py::test_kilka_testow_bez_shardu_jest_wypisanych_posortowanych"
+
+# Nadmiarowe testy liczone w druga strone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "spoza_listy = sorted(suma - set(wszystkie_testy))"
+zamien = "spoza_listy = sorted(set(wszystkie_testy) - suma)"
+test = "tests/test_statystyki_mutmuta.py::test_test_uruchomiony_przez_shard_a_spoza_listy_joba_koncowego_to_brak_dowodu"
+
+# Test spoza listy przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if spoza_listy:"
+zamien = "if not spoza_listy:"
+test = "tests/test_statystyki_mutmuta.py::test_test_uruchomiony_przez_shard_a_spoza_listy_joba_koncowego_to_brak_dowodu"
+
+# Separator testow spoza listy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "', '.join(spoza_listy)"
+zamien = "','.join(spoza_listy)"
+test = "tests/test_statystyki_mutmuta.py::test_kilka_testow_spoza_listy_joba_koncowego_jest_wypisanych_posortowanych"
+
+# Testy spoza listy bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "spoza_listy = sorted("
+zamien = "spoza_listy = list("
+test = "tests/test_statystyki_mutmuta.py::test_kilka_testow_spoza_listy_joba_koncowego_jest_wypisanych_posortowanych"
+
+# Testy zmienionych funkcji liczone w druga strone.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "bez_dowodu = sorted(set(testy_zmian) - suma)"
+zamien = "bez_dowodu = sorted(suma - set(testy_zmian))"
+test = "tests/test_statystyki_mutmuta.py::test_test_zmienionej_funkcji_spoza_sumy_shardow_to_brak_dowodu"
+
+# Test zmienionej funkcji bez dowodu przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if bez_dowodu:"
+zamien = "if not bez_dowodu:"
+test = "tests/test_statystyki_mutmuta.py::test_test_zmienionej_funkcji_spoza_sumy_shardow_to_brak_dowodu"
+
+# Separator testow zmian bez dowodu.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "', '.join(bez_dowodu)"
+zamien = "','.join(bez_dowodu)"
+test = "tests/test_statystyki_mutmuta.py::test_kilka_testow_zmian_bez_dowodu_jest_wypisanych_posortowanych"
+
+# Testy zmian bez dowodu bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "bez_dowodu = sorted("
+zamien = "bez_dowodu = list("
+test = "tests/test_statystyki_mutmuta.py::test_kilka_testow_zmian_bez_dowodu_jest_wypisanych_posortowanych"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: zlozenie statystyk shardow
+# ===========================================================================
+
+# Testy tej samej funkcji z ostatniego shardu zamiast sumy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "mapa[funkcja].update(testy)"
+zamien = "mapa[funkcja] = set(testy)"
+test = "tests/test_statystyki_mutmuta.py::test_ta_sama_funkcja_w_dwoch_shardach_ma_testy_z_obu_a_nie_tylko_z_ostatniego"
+
+# Zaleznosci funkcji z ostatniego shardu zamiast sumy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "zaleznosci[funkcja].update(wolajacy)"
+zamien = "zaleznosci[funkcja] = set(wolajacy)"
+test = "tests/test_statystyki_mutmuta.py::test_zaleznosci_funkcji_z_roznych_shardow_sa_sumowane_a_nie_nadpisywane"
+
+# Czasy testow pominiete.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'czasy.update(dowod["duration_by_test"])'
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_czasy_testow_ze_wszystkich_shardow_dopelniaja_sie_do_wszystkich_testow_z_zachowaniem_wartosci"
+
+# Hashe funkcji pominiete.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'hashe.update(dowod["function_hashes"])'
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_hashe_funkcji_ze_wszystkich_shardow_sa_w_jednym_slowniku"
+
+# Czas statystyk: maksimum zamiast sumy.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"stats_time": sum(dowod["stats_time"] for dowod in dowody),'
+zamien = '"stats_time": max(dowod["stats_time"] for dowod in dowody),'
+test = "tests/test_statystyki_mutmuta.py::test_czas_statystyk_to_suma_czasow_shardow"
+
+# Czas statystyk: tylko pierwszego shardu.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"stats_time": sum(dowod["stats_time"] for dowod in dowody),'
+zamien = '"stats_time": dowody[0]["stats_time"],'
+test = "tests/test_statystyki_mutmuta.py::test_czas_statystyk_to_suma_czasow_shardow"
+
+# Odcisk konfiguracji pusty: mutmut zalozylby zmiane konfiguracji i zebral statystyki od zera.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"config_fingerprint": dict(config_fingerprint),'
+zamien = '"config_fingerprint": {},'
+test = "tests/test_statystyki_mutmuta.py::test_odcisk_konfiguracji_w_statystykach_pochodzi_z_argumentu_a_nie_z_dowodow"
+
+# Obserwowane pliki wpisane na stale.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"watched_file_hashes": {},'
+zamien = '"watched_file_hashes": {"pyproject.toml": "x"},'
+test = "tests/test_statystyki_mutmuta.py::test_statystyki_zapamietuja_commit_dowodow_i_pusta_liste_obserwowanych_plikow"
+
+# Commit statystyk pusty.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"git_commit": dowody[0]["sha"],'
+zamien = '"git_commit": None,'
+test = "tests/test_statystyki_mutmuta.py::test_statystyki_zapamietuja_commit_dowodow_i_pusta_liste_obserwowanych_plikow"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: podmiana clean tests
+# ===========================================================================
+
+# Lista wszystkich testow z dowodow zamiast z runnera joba koncowego.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "wszystkie_testy=runner.list_all_tests().ids,"
+zamien = "wszystkie_testy=set(),"
+test = "tests/test_statystyki_mutmuta.py::test_po_podmianie_z_kompletnymi_dowodami_clean_tests_zwracaja_zero_bez_uruchamiania_testow"
+
+# Testy zmienionych funkcji pominiete.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "testy_zmian=tests,"
+zamien = "testy_zmian=set(),"
+test = "tests/test_statystyki_mutmuta.py::test_podmienione_clean_tests_sprawdzaja_testy_zmienionych_funkcji_przekazane_przez_mutmuta"
+
+# Sha i odcisk zamienione miejscami przy sprawdzeniu.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''sha=sha,
+            odcisk=odcisk,
+            wszystkie_testy=runner.list_all_tests().ids,'''
+zamien = '''sha=odcisk,
+            odcisk=sha,
+            wszystkie_testy=runner.list_all_tests().ids,'''
+test = "tests/test_statystyki_mutmuta.py::test_podmienione_clean_tests_porownuja_sha_i_odcisk_przekazane_przy_podmianie"
+
+# Podmiana zwraca niezerowy kod.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''return 0
+    runner.run_clean_tests = clean_tests_z_dowodami'''
+zamien = '''return 1
+    runner.run_clean_tests = clean_tests_z_dowodami'''
+test = "tests/test_statystyki_mutmuta.py::test_po_podmianie_z_kompletnymi_dowodami_clean_tests_zwracaja_zero_bez_uruchamiania_testow"
+
+# Podmiana nie zostaje zalozona na runnerze.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "runner.run_clean_tests = clean_tests_z_dowodami"
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_po_podmianie_z_kompletnymi_dowodami_clean_tests_zwracaja_zero_bez_uruchamiania_testow"
+
+# Dowody sprawdzane juz przy podmianie, nie przy wywolaniu clean tests.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "runner.run_clean_tests = clean_tests_z_dowodami"
+zamien = """clean_tests_z_dowodami(set())
+    runner.run_clean_tests = clean_tests_z_dowodami"""
+test = "tests/test_statystyki_mutmuta.py::test_podmiana_nie_wola_clean_tests_przy_podmianie_tylko_przy_wywolaniu"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: bramki podkomendy `shard` i komunikat bledu
+# ===========================================================================
+
+# Pusty shard przechodzi (pytest dostalby wszystkie testy).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not podzbior:"
+zamien = "if podzbior:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_bez_zadnego_testu_konczy_sie_kodem_2_i_nie_zapisuje_dowodu"
+
+# Indeks i liczba shardow podane do podzialu odwrotnie.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "podziel_testy(wszystkie, args.indeks, args.liczba)"
+zamien = "podziel_testy(wszystkie, args.liczba, args.indeks)"
+test = "tests/test_statystyki_mutmuta.py::test_shard_zapisuje_dowod_z_testami_swojego_podzbioru_i_mapa_funkcji_tylko_tych_testow[shard_1]"
+
+# Niezerowy kod pytesta (1) przechodzi.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if kod != 0:"
+zamien = "if kod > 1:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_z_oblanym_testem_konczy_sie_kodem_2_i_nie_zapisuje_dowodu"
+
+# Kod pytesta czytany odwrotnie.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if kod != 0:"
+zamien = "if kod == 0:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_z_oblanym_testem_konczy_sie_kodem_2_i_nie_zapisuje_dowodu"
+
+# Blad dziedziny bez prefiksu `blad: `.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = 'print(f"blad: {blad}", file=sys.stderr)'
+zamien = 'print(f"{blad}", file=sys.stderr)'
+test = "tests/test_statystyki_mutmuta.py::test_shard_z_indeksem_poza_zakresem_konczy_sie_kodem_2_z_komunikatem_i_bez_pliku_dowodu"
+
+# Blad dziedziny z kodem 1 zamiast 2.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''print(f"blad: {blad}", file=sys.stderr)
+        return 2'''
+zamien = '''print(f"blad: {blad}", file=sys.stderr)
+        return 1'''
+test = "tests/test_statystyki_mutmuta.py::test_shard_z_indeksem_poza_zakresem_konczy_sie_kodem_2_z_komunikatem_i_bez_pliku_dowodu"
+
+# ===========================================================================
+# .github/workflows/mutation.yml: uzupelnienie (zadanie po scaleniu, kroki dozwolone do porazki)
+# ===========================================================================
+
+# Job po scaleniu czeka na shardy statystyk (na push shardy sa pominiete, wiec job nigdy by nie ruszyl).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = """  mutation-main:
+    if: github.event_name == 'push'"""
+zamien = """  mutation-main:
+    if: github.event_name == 'push'
+    needs: [mutation-statystyki]"""
+test = "tests/test_workflow_mutacje.py::test_zadanie_po_scaleniu_nie_czeka_na_shardy_statystyk"
+
+# Krok shardu dozwolony do porazki: czerwony shard nie oblewa joba shardow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: statystyki mutmuta shardu"
+zamien = "- name: statystyki mutmuta shardu\n        continue-on-error: true"
+test = "tests/test_workflow_mutacje.py::test_zadanie_statystyk_shardow_nie_swieci_na_zielono_mimo_czerwonego_kroku_ani_nie_ukrywa_bledu"
+
+# Krok scalenia dozwolony do porazki.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: scalenie statystyk shardów"
+zamien = "- name: scalenie statystyk shardów\n        continue-on-error: true"
+test = "tests/test_workflow_mutacje.py::test_krok_scalenia_nie_ma_warunku_i_nie_jest_dozwolony_do_porazki"
+
+# Krok scalenia z warunkiem (pomijany po czerwonym kroku, a job zielony bez scalenia).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: scalenie statystyk shardów"
+zamien = "- name: scalenie statystyk shardów\n        if: false"
+test = "tests/test_workflow_mutacje.py::test_krok_scalenia_nie_ma_warunku_i_nie_jest_dozwolony_do_porazki"
+
+# Krok wyniku shardow dozwolony do porazki.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: wynik shardów statystyk mutmuta"
+zamien = "- name: wynik shardów statystyk mutmuta\n        continue-on-error: true"
+test = "tests/test_workflow_mutacje.py::test_krok_wyniku_shardow_jest_pierwszym_krokiem_zadania_mutation_i_nie_ma_warunku"
+
+# Krok wyniku shardow z warunkiem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: wynik shardów statystyk mutmuta"
+zamien = "- name: wynik shardów statystyk mutmuta\n        if: always()"
+test = "tests/test_workflow_mutacje.py::test_krok_wyniku_shardow_jest_pierwszym_krokiem_zadania_mutation_i_nie_ma_warunku"
+
+# ===========================================================================
+# tools/statystyki_mutmuta.py: poprawka (import mutmuta, katalog biezacy, zapis, kolekcja, sortowanie)
+# ===========================================================================
+
+# Brak mutmuta przy samej konfiguracji: ImportError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''from mutmut.configuration import config, reset_config
+        except ImportError as blad_importu:'''
+zamien = '''from mutmut.configuration import config, reset_config
+        except ValueError as blad_importu:'''
+test = "tests/test_statystyki_mutmuta.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_a_nie_wyjatek_importu[tylko_konfiguracja]"
+
+# Brak mutmuta przy pelnym imporcie: ImportError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''from mutmut.state import reset_state, state
+    except ImportError as blad_importu:'''
+zamien = '''from mutmut.state import reset_state, state
+    except ValueError as blad_importu:'''
+test = "tests/test_statystyki_mutmuta.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_a_nie_wyjatek_importu[pelny]"
+
+# Wejscie do nieistniejacego katalogu: OSError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad_katalogu:"
+zamien = "except ValueError as blad_katalogu:"
+test = "tests/test_statystyki_mutmuta.py::test_wejscie_do_katalogu_ktorego_nie_ma_to_blad_narzedzia"
+
+# Katalog biezacy nie wraca po bloku.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "os.chdir(poprzedni)"
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_katalog_biezacy_wraca_po_bloku_w_katalogu_projektu"
+
+# Katalog biezacy nie wraca po wyjatku w bloku (brak `finally`).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''try:
+        yield
+    finally:
+        os.chdir(poprzedni)'''
+zamien = '''yield
+    os.chdir(poprzedni)'''
+test = "tests/test_statystyki_mutmuta.py::test_katalog_biezacy_wraca_takze_gdy_blok_rzuci_wyjatek"
+
+# Runner mutmuta nie wraca do oryginalu po `mutmut-run` (takze po bledzie dowodu).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "mm.glowny.get_mutant_runner = oryginal"
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_po_bledzie_dowodu_mutmut_run_przywraca_runnera_mutmuta_i_katalog_biezacy"
+
+# Wzgledny katalog dowodow w `mutmut-run` czytany po wejsciu do korzenia (inny katalog niz cwd).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''katalog = args.katalog_dowodow.absolute()
+    sha = _sha_commita(korzen)
+    odcisk = odcisk_zrodel(korzen)
+    with _w_katalogu(korzen):
+        try:
+            mm = _mutmut()'''
+zamien = '''katalog = args.katalog_dowodow
+    sha = _sha_commita(korzen)
+    odcisk = odcisk_zrodel(korzen)
+    with _w_katalogu(korzen):
+        try:
+            mm = _mutmut()'''
+test = "tests/test_statystyki_mutmuta.py::test_mutmut_z_dowodami_dziala_gdy_katalog_dowodow_jest_podany_wzglednie_a_korzen_to_inny_katalog"
+
+# `shard`: katalog dowodow zamieniany na bezwzgledny przed wejsciem do korzenia, ale plik dowodu zapisujemy dopiero
+# po wyjsciu z bloku `_w_katalogu`, gdy katalog biezacy jest juz z powrotem pierwotny: wzgledna sciezka daje ten sam plik.
+[[rownowazny]]
+plik = "tools/statystyki_mutmuta.py"
+linia_tekst = "katalog = args.katalog_dowodow.absolute()"
+uzasadnienie = "w `_shard` i `mutmut-run` bezwzgledna sciezka jest wymagana tylko tam, gdzie jest czytana w bloku z chdir (mutmut-run, osobny wiersz); w `_shard` zapis idzie po powrocie katalogu biezacego, wiec wzgledna sciezka wskazuje ten sam plik"
+
+# `korzen` bezwzgledny: kazda funkcja uzywa go z katalogu biezacego pierwotnego (git cwd=korzen, odcisk, zapis
+# mutants/mutmut-stats.json, `_w_katalogu(korzen)`); wnetrze bloku z chdir nie czyta `korzen`.
+[[rownowazny]]
+plik = "tools/statystyki_mutmuta.py"
+linia_tekst = "korzen = args.korzen.absolute()"
+uzasadnienie = "wszystkie uzycia korzenia (git rev-parse z cwd=korzen, odcisk_zrodel, wejscie `_w_katalogu`, zapis mutants/) wykonuja sie przy pierwotnym katalogu biezacym; wewnatrz bloku z chdir korzen nie jest czytany, wiec wzgledna i bezwzgledna sciezka wskazuja to samo"
+
+# `mutmut-run`: zla konfiguracja mutmuta wykryta dopiero przy imporcie mutmuta (ValueError) przestaje byc tlumaczona.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''mm = _mutmut()
+        except (OSError, ValueError) as blad_konfiguracji:'''
+zamien = '''mm = _mutmut()
+        except OSError as blad_konfiguracji:'''
+test = "tests/test_statystyki_mutmuta.py::test_mutmut_run_ze_zla_izolacja_procesow_wykryta_przy_imporcie_mutmuta_to_blad_narzedzia"
+
+# `mutmut-run`: brak zrodel do mutowania wykryty dopiero przy imporcie mutmuta (OSError) przestaje byc tlumaczony.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''mm = _mutmut()
+        except (OSError, ValueError) as blad_konfiguracji:'''
+zamien = '''mm = _mutmut()
+        except ValueError as blad_konfiguracji:'''
+test = "tests/test_statystyki_mutmuta.py::test_mutmut_run_bez_zrodel_do_mutowania_wykryty_przy_imporcie_mutmuta_to_blad_narzedzia"
+
+# `scal`: zapis do zwyklego pliku `mutants`: OSError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''cel.write_text(json.dumps(statystyki, indent=4), encoding="utf-8")
+    except OSError as blad_zapisu:'''
+zamien = '''cel.write_text(json.dumps(statystyki, indent=4), encoding="utf-8")
+    except ValueError as blad_zapisu:'''
+test = "tests/test_statystyki_mutmuta.py::test_scal_gdy_mutants_jest_zwyklym_plikiem_konczy_sie_kodem_2_z_nazwa_pliku_statystyk"
+
+# `shard`: zapis dowodu do zwyklego pliku zamiast katalogu: OSError ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '''cel.write_text(json.dumps(dowod, indent=2), encoding="utf-8")
+    except OSError as blad_zapisu:'''
+zamien = '''cel.write_text(json.dumps(dowod, indent=2), encoding="utf-8")
+    except ValueError as blad_zapisu:'''
+test = "tests/test_statystyki_mutmuta.py::test_shard_gdy_katalog_dowodow_jest_zwyklym_plikiem_konczy_sie_kodem_2_z_nazwa_pliku_dowodu"
+
+# Lista testow, ktorej nie da sie zebrac (blad skladni w tescie): wyjatek mutmuta ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except mm.blad_zebrania_testow as blad:"
+zamien = "except ValueError as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_shard_gdy_testy_nie_daja_sie_zebrac_konczy_sie_kodem_2_z_komunikatem_o_kolekcji"
+
+# Zaleznosci funkcji w dowodzie shardu wyzerowane.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = '"function_dependencies": {k: sorted(v) for k, v in sorted(stan.function_dependencies.items())},'
+zamien = '"function_dependencies": {},'
+test = "tests/test_statystyki_mutmuta.py::test_dowod_shardu_niesie_zaleznosci_funkcji_wywolanych_przez_inne_funkcje"
+
+# Argumenty `shard` sprawdzane dopiero po dotknieciu gita i konfiguracji.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "podziel_testy([], args.indeks, args.liczba)"
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_zly_indeks_shardu_jest_zglaszany_zanim_narzedzie_zajrzy_do_gita_i_konfiguracji"
+
+# Testy funkcji w zlozonych statystykach bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "k: sorted(v) for k, v in sorted(mapa.items())"
+zamien = "k: list(v) for k, v in sorted(mapa.items())"
+test = "tests/test_statystyki_mutmuta.py::test_testy_i_zaleznosci_funkcji_w_zlozonych_statystykach_sa_posortowane_przy_wielu_elementach"
+
+# Funkcje w zlozonych statystykach testow bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "sorted(mapa.items())"
+zamien = "mapa.items()"
+test = "tests/test_statystyki_mutmuta.py::test_funkcje_w_zlozonych_statystykach_sa_posortowane_niezaleznie_od_kolejnosci_w_dowodzie"
+
+# Zaleznosci funkcji w zlozonych statystykach bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "k: sorted(v) for k, v in sorted(zaleznosci.items())"
+zamien = "k: list(v) for k, v in sorted(zaleznosci.items())"
+test = "tests/test_statystyki_mutmuta.py::test_testy_i_zaleznosci_funkcji_w_zlozonych_statystykach_sa_posortowane_przy_wielu_elementach"
+
+# Funkcje w zlozonych statystykach zaleznosci bez sortowania.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "sorted(zaleznosci.items())"
+zamien = "zaleznosci.items()"
+test = "tests/test_statystyki_mutmuta.py::test_funkcje_w_zlozonych_statystykach_sa_posortowane_niezaleznie_od_kolejnosci_w_dowodzie"

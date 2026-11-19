@@ -317,7 +317,10 @@ def _nowe_pliki(wyjscie: str, korzen: Path) -> dict[str, set[int]]:
     return zmiany
 
 
-def _przebieg(baza: str, korzen: Path) -> int:
+def _przebieg(baza: str, korzen: Path, katalog_dowodow: Path | None = None) -> int:
+    # Katalog dowodow sprawdzamy pierwszy: bez niego nie ma po co wolac gita ani mutmuta.
+    if katalog_dowodow is not None and not katalog_dowodow.is_dir():
+        raise BladNarzedzia(f"brak dowodu: katalog dowodow {katalog_dowodow} nie istnieje")
     source_paths = source_paths_z_pyproject(korzen / "pyproject.toml")
 
     merge = uruchom(["git", "merge-base", baza, "HEAD"])
@@ -357,7 +360,17 @@ def _przebieg(baza: str, korzen: Path) -> int:
             print("brak zmienionych funkcji - nie ma czego mutowac", file=sys.stderr)
         return _zakoncz([], poza_zasiegiem)
 
-    bieg = uruchom([sys.executable, "-m", "mutmut", "run", *lista])
+    if katalog_dowodow is None:
+        bieg = uruchom([sys.executable, "-m", "mutmut", "run", *lista])
+    else:
+        bieg = uruchom(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("statystyki_mutmuta.py")),
+                "mutmut-run",
+                "--katalog-dowodow", str(katalog_dowodow), *lista,
+            ]
+        )
     if bieg.returncode != 0:
         if "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
             print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
@@ -405,9 +418,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--baza", default="origin/main", help="baza porownania (merge-base z HEAD)")
     parser.add_argument("--korzen", type=Path, default=Path.cwd(), help="korzen repozytorium")
+    parser.add_argument("--katalog-dowodow", type=Path, default=None,
+                        help="katalog dowodow shardow: clean tests mutmuta zastepuje sprawdzenie dowodow")
     args = parser.parse_args(argv)
     try:
-        return _przebieg(args.baza, args.korzen)
+        return _przebieg(args.baza, args.korzen, args.katalog_dowodow)
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
