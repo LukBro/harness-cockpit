@@ -1613,9 +1613,9 @@ test = "tests/test_statystyki_mutmuta.py::test_brak_mutmuta_w_interpreterze_to_b
 # Brak mutmuta przy pelnym imporcie: ImportError ucieka.
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = '''from mutmut.state import reset_state, state
+szukaj = '''from mutmut.workers.isolation import run_in_fork_with_result
     except ImportError as blad_importu:'''
-zamien = '''from mutmut.state import reset_state, state
+zamien = '''from mutmut.workers.isolation import run_in_fork_with_result
     except ValueError as blad_importu:'''
 test = "tests/test_statystyki_mutmuta.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_a_nie_wyjatek_importu[pelny]"
 
@@ -1721,9 +1721,87 @@ test = "tests/test_statystyki_mutmuta.py::test_shard_gdy_katalog_dowodow_jest_zw
 # Lista testow, ktorej nie da sie zebrac (blad skladni w tescie): wyjatek mutmuta ucieka.
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "except mm.blad_zebrania_testow as blad:"
+szukaj = "except (mm.blad_zebrania_testow, ChildProcessError) as blad:"
 zamien = "except ValueError as blad:"
 test = "tests/test_statystyki_mutmuta.py::test_shard_gdy_testy_nie_daja_sie_zebrac_konczy_sie_kodem_2_z_komunikatem_o_kolekcji"
+
+# Krotka `except` zawezona do wyjatku mutmuta: blad dziecka zbierajacego liste (ChildProcessError) ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (mm.blad_zebrania_testow, ChildProcessError) as blad:"
+zamien = "except mm.blad_zebrania_testow as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_blad_dziecka_zbierajacego_liste_testow_to_kod_2_z_komunikatem_o_kolekcji_i_bez_dowodu"
+
+# Krotka `except` zawezona do ChildProcessError: wyjatek zbierania testow zgloszony przez mutmuta ucieka.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (mm.blad_zebrania_testow, ChildProcessError) as blad:"
+zamien = "except ChildProcessError as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_blad_zbierania_testow_zgloszony_przez_mutmuta_to_kod_2_z_komunikatem_o_kolekcji_i_bez_dowodu"
+
+# Zly typ zamiast ChildProcessError w krotce.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (mm.blad_zebrania_testow, ChildProcessError) as blad:"
+zamien = "except (mm.blad_zebrania_testow, ValueError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_blad_dziecka_zbierajacego_liste_testow_to_kod_2_z_komunikatem_o_kolekcji_i_bez_dowodu"
+
+# Szeroki `except` zamiast dwoch przyczyn: obcy wyjatek tez zamieniany na blad kolekcji.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except (mm.blad_zebrania_testow, ChildProcessError) as blad:"
+zamien = "except Exception as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_inny_wyjatek_z_dziecka_zbierajacego_liste_testow_nie_jest_tlumaczony_na_blad_narzedzia"
+
+# Lista testow zbierana w procesie rodzica zamiast w forkowanym dziecku: druga zbiorka (collect_stats) escapuje
+# backslash w node id drugi raz i pytest konczy sie kodem 4.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "sorted(mm.w_dziecku(lambda: sorted(runner.list_all_tests().ids)))"
+zamien = "sorted(runner.list_all_tests().ids)"
+test = "tests/test_statystyki_mutmuta.py::test_shard_i_mutmut_z_dowodami_przechodza_gdy_identyfikator_testu_zawiera_backslash"
+
+# Pomocnik forkowania podstawiony wywolaniem w procesie rodzica (ten sam skutek co wyzej, inne miejsce w kodzie).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "w_dziecku=run_in_fork_with_result,"
+zamien = "w_dziecku=lambda funkcja: funkcja(),"
+test = "tests/test_statystyki_mutmuta.py::test_shard_i_mutmut_z_dowodami_przechodza_gdy_identyfikator_testu_zawiera_backslash"
+
+# Bufor listy testow: kazde wolanie zbiera od nowa (druga zbiorka w `clean_tests_z_dowodami` ma zescapowane id).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not zapamietany:"
+zamien = "if True:"
+test = "tests/test_statystyki_mutmuta.py::test_lista_wszystkich_testow_jest_zbierana_raz_a_kolejne_wolania_dostaja_ten_sam_wynik[najpierw_lista_testow]"
+
+# Bufor listy testow: pierwsze wolanie nic nie zapamietuje.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if not zapamietany:"
+zamien = "if zapamietany:"
+test = "tests/test_statystyki_mutmuta.py::test_lista_wszystkich_testow_jest_zbierana_raz_a_kolejne_wolania_dostaja_ten_sam_wynik[najpierw_clean_tests]"
+
+# Bufor listy testow: wynik oryginalu nie trafia do bufora.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "zapamietany.append(oryginal())"
+zamien = "zapamietany.append(SimpleNamespace(ids=set()))"
+test = "tests/test_statystyki_mutmuta.py::test_lista_wszystkich_testow_jest_zbierana_raz_a_kolejne_wolania_dostaja_ten_sam_wynik[najpierw_lista_testow]"
+
+# Bufor listy testow: wolanie oddaje swiezy wynik oryginalu zamiast zapamietanego.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return zapamietany[0]"
+zamien = "return oryginal()"
+test = "tests/test_statystyki_mutmuta.py::test_lista_wszystkich_testow_jest_zbierana_raz_a_kolejne_wolania_dostaja_ten_sam_wynik[najpierw_lista_testow]"
+
+# Bufor nie zostaje zalozony na runnerze.
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "runner.list_all_tests = list_all_tests_z_bufora"
+zamien = "pass"
+test = "tests/test_statystyki_mutmuta.py::test_lista_wszystkich_testow_jest_zbierana_raz_a_kolejne_wolania_dostaja_ten_sam_wynik[najpierw_lista_testow]"
 
 # Zaleznosci funkcji w dowodzie shardu wyzerowane.
 [[mutant]]

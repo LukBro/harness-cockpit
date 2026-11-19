@@ -941,8 +941,10 @@ class AtrapaRunnera:
     def __init__(self, ids):
         self.ids = set(ids)
         self.clean_tests_wywolania: list[set[str]] = []
+        self.list_all_tests_wywolania = 0
 
     def list_all_tests(self):
+        self.list_all_tests_wywolania += 1
         return SimpleNamespace(ids=set(self.ids))
 
     def run_clean_tests(self, tests):
@@ -1007,6 +1009,31 @@ def test_podmiana_nie_wola_clean_tests_przy_podmianie_tylko_przy_wywolaniu(sm, t
     sm.podmien_clean_tests(runner, katalog=pusty, sha=SHA, odcisk=ODCISK)
 
     assert runner.clean_tests_wywolania == []
+
+
+@pytest.mark.parametrize(
+    "najpierw_clean_tests",
+    [pytest.param(False, id="najpierw_lista_testow"), pytest.param(True, id="najpierw_clean_tests")],
+)
+def test_lista_wszystkich_testow_jest_zbierana_raz_a_kolejne_wolania_dostaja_ten_sam_wynik(
+    sm, tmp_path, najpierw_clean_tests
+):
+    # Druga zbiorka pytesta w jednym procesie escapuje backslashe w node id drugi raz, wiec lista z pierwszej
+    # zbiorki (mutmut w collect_or_load_stats) ma byc oddawana takze clean tests i kazdemu kolejnemu wolaniu.
+    runner = AtrapaRunnera(T)
+    sm.podmien_clean_tests(runner, katalog=_katalog(tmp_path), sha=SHA, odcisk=ODCISK)
+
+    if najpierw_clean_tests:
+        runner.run_clean_tests(tests={T[1]})
+        pierwsza = runner.list_all_tests()
+    else:
+        pierwsza = runner.list_all_tests()
+        runner.run_clean_tests(tests={T[1]})
+    druga = runner.list_all_tests()
+
+    assert druga is pierwsza
+    assert pierwsza.ids == set(T)
+    assert runner.list_all_tests_wywolania == 1
 
 
 # =================================================================================================
@@ -2005,3 +2032,128 @@ def test_po_bledzie_dowodu_mutmut_run_przywraca_runnera_mutmuta_i_katalog_biezac
     linie = [linia for linia in wynik.stdout.splitlines() if linia.startswith("WYNIK ")]
     assert linie, wynik.stdout + wynik.stderr
     assert json.loads(linie[-1][len("WYNIK ") :]) == {"kod": 2, "runner": True, "cwd": True}
+
+
+# --- identyfikatory testow z backslashem: jedna zbiorka pytesta w procesie rodzica ----------------------------
+
+# Id przypadkow: `a\nb` (znak nowej linii zapisany jako backslash + n) i `zaż\xf3...` (znaki spoza ASCII).
+# Jawne `ids=` (tu `ids=str`) sprawia, ze druga zbiorka pytesta w tym samym procesie escapuje te id po raz drugi;
+# przy domyslnych id (bez `ids=`) obie zbiorki daja to samo i test regresji nie odroznialby poprawki.
+TEST_C_MINI = """\
+import pytest
+
+from pakiet.liczby import dodaj
+
+
+@pytest.mark.parametrize("x", ["a\\nb", "zażółć"], ids=str)
+def test_dodaj_z_backslashem_w_id(x):
+    assert dodaj(1, 1) == 2
+"""
+
+
+def _projekt_z_backslashem_w_id_testu(katalog: Path) -> Path:
+    projekt = _projekt(katalog, git=False)
+    (projekt / "tests" / "test_c.py").write_text(TEST_C_MINI, encoding="utf-8")
+    _git(projekt, "init", "-q")
+    _git(projekt, "add", "-A")
+    _git(projekt, "commit", "-q", "-m", "miniatura z backslashem w id")
+    return projekt
+
+
+def test_shard_i_mutmut_z_dowodami_przechodza_gdy_identyfikator_testu_zawiera_backslash(sm, tmp_path):
+    # Przed poprawka druga zbiorka pytesta w tym samym procesie escapowala backslash w node id drugi raz
+    # (`a\nb` -> `a\\nb`): lista z `list_all_tests` nie pasowala do `collect_stats` (pytest kod 4, "not found").
+    projekt = _projekt_z_backslashem_w_id_testu(tmp_path / "projekt")
+    katalog = projekt / "dowody"
+
+    wynik_shardu = _shard(projekt, 0, 1, katalog)
+    assert wynik_shardu.returncode == 0, wynik_shardu.stdout + wynik_shardu.stderr
+    testy_c = [t for t in _wczytaj_dowod(katalog, 0)["testy"] if t.startswith("tests/test_c.py::")]
+    assert len(testy_c) == 2, testy_c
+    assert "tests/test_c.py::test_dodaj_z_backslashem_w_id[a\\nb]" in testy_c
+    assert _scal(projekt, katalog).returncode == 0
+    przed = _log_testow(projekt)
+
+    wynik = _mutmut_run(projekt, katalog)
+
+    assert wynik.returncode == 0, wynik.stdout + wynik.stderr
+    nowe = _log_testow(projekt)[len(przed) :]
+    assert "''" not in nowe, nowe
+    # Mutanta `dodaj` zabija najpierw test_c (najszybszy, bez wpisu w logu), wiec w logu jest tylko `odejmij`.
+    assert "'pakiet.liczby.x_odejmij__mutmut_1'" in nowe, nowe
+
+
+# --- lista testow z forkowanego dziecka: blad dziecka i blad zbierania -------------------------------------------
+
+
+class BladZebraniaTestowAtrapy(Exception):
+    """Zastepuje `CollectTestsFailedException` mutmuta w atrapie `_mutmut`."""
+
+
+def _atrapa_mutmuta(w_dziecku):
+    def nic(*_argumenty):
+        return None
+
+    runner = SimpleNamespace(list_all_tests=lambda: SimpleNamespace(ids={TEST_A, TEST_B}))
+    return SimpleNamespace(
+        glowny=SimpleNamespace(
+            copy_src_dir=nic,
+            copy_also_copy_files=nic,
+            setup_source_paths=nic,
+            store_lines_covered_by_tests=nic,
+            create_mutants=nic,
+            get_mutant_runner=lambda _liczba: runner,
+        ),
+        config=lambda: SimpleNamespace(dependency_tracking_depth=0),
+        set_mutant_under_test=nic,
+        blad_zebrania_testow=BladZebraniaTestowAtrapy,
+        w_dziecku=w_dziecku,
+    )
+
+
+def _shard_z_atrapa_mutmuta(sm, monkeypatch, tmp_path, w_dziecku, capsys):
+    monkeypatch.setattr(sm, "_mutmut", lambda **_nazwane: _atrapa_mutmuta(w_dziecku))
+    monkeypatch.setattr(sm, "_sha_commita", lambda _korzen: SHA)
+    monkeypatch.setattr(sm, "odcisk_zrodel", lambda _korzen: ODCISK)
+    monkeypatch.chdir(tmp_path)
+    katalog = tmp_path / "dowody"
+
+    kod = sm.main(["shard", "--korzen", str(tmp_path), "--indeks", "0", "--liczba", "2", "--katalog-dowodow", str(katalog)])
+
+    return kod, capsys.readouterr().err.splitlines(), katalog
+
+
+def test_blad_dziecka_zbierajacego_liste_testow_to_kod_2_z_komunikatem_o_kolekcji_i_bez_dowodu(
+    sm, tmp_path, monkeypatch, capsys
+):
+    def dziecko_konczy_sie_bledem(_funkcja):
+        raise ChildProcessError("Child exited with code 1")
+
+    kod, bledy, katalog = _shard_z_atrapa_mutmuta(sm, monkeypatch, tmp_path, dziecko_konczy_sie_bledem, capsys)
+
+    assert kod == 2
+    assert "blad: nie udalo sie zebrac listy testow (pytest --collect-only)" in bledy
+    assert not (katalog / "shard-0.json").exists()
+
+
+def test_blad_zbierania_testow_zgloszony_przez_mutmuta_to_kod_2_z_komunikatem_o_kolekcji_i_bez_dowodu(
+    sm, tmp_path, monkeypatch, capsys
+):
+    def zbieranie_testow_nie_powiodlo_sie(_funkcja):
+        raise BladZebraniaTestowAtrapy("zbieranie")
+
+    kod, bledy, katalog = _shard_z_atrapa_mutmuta(sm, monkeypatch, tmp_path, zbieranie_testow_nie_powiodlo_sie, capsys)
+
+    assert kod == 2
+    assert "blad: nie udalo sie zebrac listy testow (pytest --collect-only)" in bledy
+    assert not (katalog / "shard-0.json").exists()
+
+
+def test_inny_wyjatek_z_dziecka_zbierajacego_liste_testow_nie_jest_tlumaczony_na_blad_narzedzia(
+    sm, tmp_path, monkeypatch, capsys
+):
+    def dziecko_rzuca_obcy_wyjatek(_funkcja):
+        raise KeyError("obcy")
+
+    with pytest.raises(KeyError):
+        _shard_z_atrapa_mutmuta(sm, monkeypatch, tmp_path, dziecko_rzuca_obcy_wyjatek, capsys)

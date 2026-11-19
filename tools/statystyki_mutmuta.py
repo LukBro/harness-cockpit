@@ -303,6 +303,18 @@ def zloz_statystyki(dowody: list[dict[str, Any]], *, config_fingerprint: dict[st
 def podmien_clean_tests(runner: Any, *, katalog: Path, sha: str, odcisk: str) -> None:
     """Zastepuje `run_clean_tests` runnera mutmuta sprawdzeniem dowodow shardow (kod 0 po przejsciu)."""
 
+    # Druga zbiorka pytesta w jednym procesie zmienia node id z backslashem (escapuje je drugi raz),
+    # wiec wynik pierwszego wolania (mutmut w collect_or_load_stats) zapamietujemy i oddajemy dalej.
+    oryginal = runner.list_all_tests
+    zapamietany: list[Any] = []
+
+    def list_all_tests_z_bufora() -> Any:
+        if not zapamietany:
+            zapamietany.append(oryginal())
+        return zapamietany[0]
+
+    runner.list_all_tests = list_all_tests_z_bufora
+
     def clean_tests_z_dowodami(tests: Iterable[str]) -> int:
         sprawdz_dowody_shardow(
             katalog,
@@ -361,6 +373,7 @@ def _mutmut(*, tylko_konfiguracja: bool = False) -> SimpleNamespace:
         from mutmut.mutation.trampoline import set_mutant_under_test
         from mutmut.runners.harness import CollectTestsFailedException
         from mutmut.state import reset_state, state
+        from mutmut.workers.isolation import run_in_fork_with_result
     except ImportError as blad_importu:
         raise BladNarzedzia(
             f"brak mutmuta w interpreterze ({blad_importu}): uruchom interpreterem z mutmut"
@@ -373,6 +386,7 @@ def _mutmut(*, tylko_konfiguracja: bool = False) -> SimpleNamespace:
         state=state,
         set_mutant_under_test=set_mutant_under_test,
         blad_zebrania_testow=CollectTestsFailedException,
+        w_dziecku=run_in_fork_with_result,
     )
 
 
@@ -406,9 +420,11 @@ def _dowod_shardu(args: argparse.Namespace, sha: str, odcisk: str) -> dict[str, 
         raise BladNarzedzia(f"konfiguracja mutmuta: {blad_konfiguracji}") from blad_konfiguracji
     runner = mm.glowny.get_mutant_runner(1)
     mm.set_mutant_under_test("list_all_tests")
+    # Lista testow idzie z forkowanego dziecka: druga zbiorka pytesta w jednym procesie escapuje drugi raz
+    # backslashe w node id (`a\nb` -> `a\\nb`), wiec statystyki ponizej musza byc PIERWSZA zbiorka rodzica.
     try:
-        wszystkie = sorted(runner.list_all_tests().ids)
-    except mm.blad_zebrania_testow as blad:
+        wszystkie = sorted(mm.w_dziecku(lambda: sorted(runner.list_all_tests().ids)))
+    except (mm.blad_zebrania_testow, ChildProcessError) as blad:
         raise BladNarzedzia("nie udalo sie zebrac listy testow (pytest --collect-only)") from blad
     podzbior = podziel_testy(wszystkie, args.indeks, args.liczba)
     if not podzbior:
