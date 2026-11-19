@@ -1,0 +1,65 @@
+# krok 4b audytu procesu: ostrzezenia stan.py bramki
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'if str(k) != "0" and v == "zielony"]'
+zamien = 'if v == "zielony"]'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_zgodne_z_szablonem_nie_daja_ostrzezen"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'in ("sh", "bash", "zsh")'
+zamien = 'in ("sh", "zsh")'
+test = "tests/test_skill_praca_ticketu.py::test_powloka_z_c_daje_ostrzezenie[bash]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = ' and b["argv"][1] == "-c":'
+zamien = ':'
+test = "tests/test_skill_praca_ticketu.py::test_powloka_ze_skryptem_bez_c_nie_daje_ostrzezenia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'x.endswith((".py", ".sh"))'
+zamien = 'x.endswith((".py",))'
+test = "tests/test_skill_praca_ticketu.py::test_skrypt_spoza_repozytorium_daje_ostrzezenie_a_z_repozytorium_nie[.sh]"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = '.startswith(repo + os.sep)'
+zamien = '.startswith(repo)'
+test = "tests/test_skill_praca_ticketu.py::test_sciezka_z_prefiksem_repozytorium_poza_nim_daje_ostrzezenie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'if os.path.isabs(x) and x.endswith'
+zamien = 'if x.endswith'
+test = "tests/test_skill_praca_ticketu.py::test_bramki_zgodne_z_szablonem_nie_daja_ostrzezen"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'for n in sorted(wzor - {b["nazwa"] for b in bramki})]'
+zamien = 'for n in sorted(set())]'
+test = "tests/test_skill_praca_ticketu.py::test_brak_bramki_z_szablonu_daje_ostrzezenie_z_nazwa"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = '''    if repo is None:
+        wynik.append('''
+zamien = '''    if False:
+        wynik.append('''
+test = "tests/test_skill_praca_ticketu.py::test_brak_korzenia_git_to_ostrzezenie_nie_sprawdzono_skryptow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = '''        for o in ostrzezenia_bramek(bramki):
+            print(f"OSTRZEZENIE: {o}", file=sys.stderr)'''
+zamien = '''        for o in []:
+            print(f"OSTRZEZENIE: {o}", file=sys.stderr)'''
+test = "tests/test_skill_praca_ticketu.py::test_kod_porazki_mapowany_na_zielony_daje_ostrzezenie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = '''        wynik.append(f"nie sprawdzono bramek z szablonu: {e}")'''
+zamien = '''        pass'''
+test = "tests/test_skill_praca_ticketu.py::test_brak_szablonu_to_ostrzezenie_nie_sprawdzono_a_nie_cisza"

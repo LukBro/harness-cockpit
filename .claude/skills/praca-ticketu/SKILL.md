@@ -105,7 +105,10 @@ znacznikami). Brak agenta `Explore` -> uproszczoną analizę robisz sam w tym sa
 i opisujesz ją w `log_time` jako "Uproszczona analiza ticketu (bez Researchera)".
 
 Sekcję "Bramki" raportu zapisz jako JSON w katalogu tymczasowym sesji (nie w worktree: zmieniłby skrót
-diffu), potem `stan.py bramki <KEY> <plik>` przepisuje ją do `bramki.json` w katalogu stanu. Narzędzie
+diffu), potem `stan.py bramki <KEY> <plik>` przepisuje ją do `bramki.json` w katalogu stanu. Punkt wyjścia to
+`<SKILL_DIR>/bramki-szablon.json` (te same nazwy bramek; podmieniasz tylko ścieżki interpretera i `ruff`).
+Odstępstwa (brak bramki z szablonu, `sh -c`, skrypt spoza repo, kod porażki mapowany na zielony) `stan.py`
+wypisuje jako `OSTRZEZENIE:` na stderr — przez sprint po audycie 2026-11-19 tylko ostrzega, potem blokuje. Narzędzie
 zapisu pliku tam nie sięga: sesja w worktree ma zapis tylko w swoim drzewie (HAR-169). To jedyne
 miejsce, w którym komendy lintu i testów przechodzą z wiki do wykonania. Sekcja pusta albo brak strony
 `toolchain` -> decyzja człowieka (powód `brak strony toolchain`), bo bez komend nie ma bramki testów.

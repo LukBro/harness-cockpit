@@ -1160,3 +1160,85 @@ def test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia(ep, nadmiar):
     w = ep.skrypt("stan.py", "bramki", KEY, *a)
     assert (w.kod, w.stderr.strip()) == (64, "stan: bramki <KEY> <plik>")
     assert not (ep.kat / "bramki.json").exists()
+
+
+# stan.py bramki w trybie ostrzezen (audyt procesu 2026-11-19, krok 4b): zapis i kod bez zmian, uwagi na stderr
+
+SZABLON = KORZEN / ".claude" / "skills" / "praca-ticketu" / "bramki-szablon.json"
+
+
+def _ostrzezenia(w: Wynik) -> list[str]:
+    return [x for x in w.stderr.splitlines() if x.startswith("OSTRZEZENIE: ")]
+
+
+def _zapisz_bramki(ep, bramki) -> Wynik:
+    w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps(bramki)))
+    assert (w.kod, w.ostatnia) == (0, f"BRAMKI: zapisane={len(bramki)}")
+    assert json.loads((ep.kat / "bramki.json").read_text(encoding="utf-8")) == bramki
+    return w
+
+
+def test_bramki_zgodne_z_szablonem_nie_daja_ostrzezen(ep):
+    assert _ostrzezenia(_zapisz_bramki(ep, json.loads(SZABLON.read_text(encoding="utf-8")))) == []
+
+
+def test_brak_bramki_z_szablonu_daje_ostrzezenie_z_nazwa(ep):
+    bramki = [b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] not in ("mutanty", "warstwy")]
+    assert _ostrzezenia(_zapisz_bramki(ep, bramki)) == [
+        "OSTRZEZENIE: brak bramki z szablonu: mutanty", "OSTRZEZENIE: brak bramki z szablonu: warstwy"]
+
+
+def _z_szablonem(*dodatkowe: dict) -> list[dict]:
+    return json.loads(SZABLON.read_text(encoding="utf-8")) + list(dodatkowe)
+
+
+def test_kod_porazki_mapowany_na_zielony_daje_ostrzezenie(ep):
+    b = {"nazwa": "e2e", "argv": ["pytest"], "kody": {"0": "zielony", "1": "czerwony", "5": "zielony"}}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == [
+        "OSTRZEZENIE: bramka e2e: kod 5 mapowany na zielony"]
+
+
+@pytest.mark.parametrize("powloka", ["sh", "bash", "/bin/zsh"])
+def test_powloka_z_c_daje_ostrzezenie(ep, powloka):
+    b = {"nazwa": "lint2", "argv": [powloka, "-c", "ruff check . || true"]}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == [
+        f"OSTRZEZENIE: bramka lint2: {powloka} -c ukrywa komende przed sprawdzeniem"]
+
+
+def test_powloka_ze_skryptem_bez_c_nie_daje_ostrzezenia(ep):
+    b = {"nazwa": "lokalne", "argv": ["sh", "tools/bramki_lokalne.sh"]}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == []
+
+
+@pytest.mark.parametrize("rozszerzenie", [".py", ".sh"])
+def test_skrypt_spoza_repozytorium_daje_ostrzezenie_a_z_repozytorium_nie(ep, rozszerzenie):
+    obcy = str(ep.pliki / f"bramka{rozszerzenie}")
+    swoj = str(ep.repo / f"bramka{rozszerzenie}")
+    bramki = _z_szablonem({"nazwa": "obca", "argv": ["python", obcy]}, {"nazwa": "swoja", "argv": ["python", swoj]})
+    assert _ostrzezenia(_zapisz_bramki(ep, bramki)) == [f"OSTRZEZENIE: bramka obca: skrypt spoza repozytorium: {obcy}"]
+
+
+def test_sciezka_z_prefiksem_repozytorium_poza_nim_daje_ostrzezenie(ep):
+    obok = str(ep.repo) + "-obok/x.py"  # ten sam poczatek napisu, inny katalog
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "obok", "argv": ["python", obok]}))) == [
+        f"OSTRZEZENIE: bramka obok: skrypt spoza repozytorium: {obok}"]
+
+
+def test_brak_szablonu_to_ostrzezenie_nie_sprawdzono_a_nie_cisza(ep, tmp_path):
+    kopia = tmp_path / "skrypty"
+    kopia.mkdir()
+    shutil.copy(SKRYPTY / "stan.py", kopia / "stan.py")
+    env = dict(ep.env, GIT_DIR=str(ep.repo / ".git"), GIT_WORK_TREE=str(ep.repo))
+    w = _uruchom([PY, "-I", str(kopia / "stan.py"), "bramki", KEY, ep.plik("b.json", json.dumps([BRAMKA_OK]))],
+                 env, "stan.py")
+    assert w.kod == 0
+    assert [x.split(":")[1] for x in _ostrzezenia(w)] == [" nie sprawdzono bramek z szablonu"]
+
+
+def test_brak_korzenia_git_to_ostrzezenie_nie_sprawdzono_skryptow(ep):
+    env = dict(ep.env, GIT_DIR=str(ep.origin))  # repozytorium bare: katalog stanu jest, korzenia drzewa nie ma
+    w = _uruchom([PY, "-I", str(SKRYPTY / "stan.py"), "bramki", KEY,
+                  ep.plik("b.json", json.dumps(_z_szablonem({"nazwa": "obca", "argv": ["python", "/tmp/x.py"]})))],
+                 env, "stan.py")
+    assert w.kod == 0
+    assert _ostrzezenia(w) == ["OSTRZEZENIE: nie sprawdzono skryptow spoza repozytorium: brak korzenia git"]
