@@ -1,0 +1,1164 @@
+# Tabela recznych mutantow HAR-236: tools/mutanty_zmian.py (tryb przyrostowy, --max-children, czasy faz)
+# i tools/bramki_lokalne.sh. Skrypty z tools/ leza poza zasiegiem mutmuta, a skrypty powloki nie sa
+# mutowane wcale, wiec kazda galaz ma tu wiersz: element | mutacja | test, ktory po mutacji oblewa.
+#
+# Wiersze dla fazy `statystyki` (znaczniki `mutmut run` przez `na_linie`) i dla `uruchom` z `na_linie`
+# sa w sekcjach nizej.
+
+# ---------------------------------------------------------------- komunikaty, kolejnosc survivorow, TMPDIR
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'survivory = sorted({*nowe_przezywajace, *(m for ms in z_zapisu.values() for m in ms)})'
+zamien = 'survivory = list({*nowe_przezywajace, *(m for ms in z_zapisu.values() for m in ms)})'
+test = "tests/test_mutanty_zmian.py::test_survivory_z_zapisu_i_z_nowego_przebiegu_sa_wypisane_w_kolejnosci_alfabetycznej"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)'
+zamien = 'print("XXmutmut nie wygenerowal mutantow dla zmienionych funkcjiXX", file=sys.stderr)'
+test = "tests/test_mutanty_zmian.py::test_komunikat_o_braku_mutantow_dla_zmienionych_funkcji_jest_na_stderr_tylko_gdy_ich_brak"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '${TMPDIR:-/tmp}/bramki_lokalne.XXXXXX'
+zamien = '${TMPDIR:-/tmq}/bramki_lokalne.XXXXXX'
+test = "tests/test_bramki_lokalne.py::test_bez_tmpdir_katalog_logow_jest_tworzony_przez_mktemp_pod_tmp"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "w '${TMPDIR:-/tmp}'"
+zamien = "w '${TMPDIR:-/tmq}'"
+test = "tests/test_bramki_lokalne.py::test_nieudany_mktemp_bez_tmpdir_ma_w_komunikacie_katalog_tmp_i_nic_nie_startuje"
+
+# ---------------------------------------------------------------- przerwij(): drugi sygnal, wait, KILL, straznik
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "  trap '' TERM INT"
+zamien = "  true"
+test = "tests/test_bramki_lokalne.py::test_drugi_sygnal_w_trakcie_sprzatania_nie_zmienia_kodu_wyjscia_i_nie_zostawia_procesow"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '[ -z "$PID_TESTY" ] || wait "$PID_TESTY" 2>/dev/null'
+zamien = 'true'
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '[ -z "$PID_MUTANTY" ] || wait "$PID_MUTANTY" 2>/dev/null'
+zamien = 'true'
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[mutanty]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'kill -KILL -- "-$PID_TESTY" "-$PID_MUTANTY" 2>/dev/null || true'
+zamien = 'true'
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy]"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'kill -KILL -- "-$straznik" 2>/dev/null || true'
+zamien = 'true'
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy]"
+
+# ---------------------------------------------------------------- tools/mutanty_zmian.py: odcisk funkcji
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'tekst = "\n".join(fizyczne[start - 1 : koniec])'
+zamien = 'tekst = "\n".join(fizyczne[start : koniec])'
+test = "tests/test_mutanty_zmian.py::test_zmiana_samego_dekoratora_metody_mutuje_te_metode_ponownie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'tekst = "\n".join(fizyczne[start - 1 : koniec])'
+zamien = 'tekst = "\n".join(fizyczne[start - 1 : koniec - 1])'
+test = "tests/test_mutanty_zmian.py::test_zmiana_jednej_z_dwoch_funkcji_mutuje_tylko_ja"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'return hashlib.sha256(tekst.encode("utf-8")).hexdigest()'
+zamien = 'return hashlib.sha256(b"").hexdigest()'
+test = "tests/test_mutanty_zmian.py::test_zmiana_jednej_z_dwoch_funkcji_mutuje_tylko_ja"
+
+# ---------------------------------------------------------------- odcisk testow
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '["git", "ls-files", "-z", "-co", "--exclude-standard", "--", "tests"]'
+zamien = '["git", "ls-files", "-z", "-c", "--exclude-standard", "--", "tests"]'
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_lub_konfiguracji_miedzy_przebiegami_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '["git", "ls-files", "-z", "-co", "--exclude-standard", "--", "tests"]'
+zamien = '["git", "ls-files", "-co", "--exclude-standard", "--", "tests"]'
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_lub_konfiguracji_miedzy_przebiegami_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if lista.returncode != 0:'
+zamien = 'if False:'
+test = "tests/test_mutanty_zmian.py::test_blad_git_ls_files_dla_testow_daje_kod_2_i_nie_woła_mutmuta"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'for sciezka in sorted({s for s in lista.stdout.split("\0") if s} | {"pyproject.toml"}):'
+zamien = 'for sciezka in sorted({s for s in lista.stdout.split("\0") if s}):'
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_lub_konfiguracji_miedzy_przebiegami_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''        except FileNotFoundError:
+            continue  # sledzony'''
+zamien = '''        except ZeroDivisionError:
+            continue  # sledzony'''
+test = "tests/test_mutanty_zmian.py::test_plik_testow_z_listy_gita_usuniety_z_dysku_nie_przerywa_przebiegu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''        except OSError as blad:
+            raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
+        skrot.update('''
+zamien = '''        except ZeroDivisionError as blad:
+            raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
+        skrot.update('''
+test = "tests/test_mutanty_zmian.py::test_katalog_zamiast_pliku_na_liscie_testow_to_kod_2_a_nie_traceback"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'skrot.update(sciezka.encode("utf-8") + b"\0" + hashlib.sha256(tresc).digest())'
+zamien = 'skrot.update(hashlib.sha256(tresc).digest())'
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_lub_konfiguracji_miedzy_przebiegami_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'skrot.update(sciezka.encode("utf-8") + b"\0" + hashlib.sha256(tresc).digest())'
+zamien = 'skrot.update(sciezka.encode("utf-8") + b"\0")'
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_lub_konfiguracji_miedzy_przebiegami_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'for sciezka in sorted({s for s in lista.stdout.split("\0") if s} | {"pyproject.toml"}):'
+zamien = 'for sciezka in ({s for s in lista.stdout.split("\0") if s} | {"pyproject.toml"}):'
+test = "tests/test_mutanty_zmian.py::test_odcisk_testow_nie_zalezy_od_kolejnosci_plikow_ani_ziarna_hasha_tylko_od_posortowanych_sciezek"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '["git", "ls-files", "-z", "-co", "--exclude-standard", "--", "tests"]'
+zamien = '["git", "ls-files", "-z", "-co", "--", "tests"]'
+test = "tests/test_mutanty_zmian.py::test_plik_ignorowany_przez_git_pod_tests_nie_psuje_trybu_przyrostowego"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if do_mutowania and not survivory and not poza_zasiegiem:'
+zamien = 'if not survivory and not poza_zasiegiem:'
+test = "tests/test_mutanty_zmian.py::test_przebieg_przyrostowy_bez_zmutowanych_funkcji_nie_twierdzi_ze_nie_ma_przezywajacych"
+
+# ---------------------------------------------------------------- walidacja i wczytanie zapisu
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not isinstance(zapis, dict):'
+zamien = 'if False:'
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_przebiegu_daje_pelny_przebieg_a_nie_blad_ani_sukces_bez_dowodu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if type(wersja) is not int or wersja != WERSJA_ZAPISU:'
+zamien = 'if wersja != WERSJA_ZAPISU:'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if type(wersja) is not int or wersja != WERSJA_ZAPISU:'
+zamien = 'if type(wersja) is not int:'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not isinstance(zapis.get("odcisk_testow"), str) or not isinstance(funkcje, dict):'
+zamien = 'if not isinstance(funkcje, dict):'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not isinstance(zapis.get("odcisk_testow"), str) or not isinstance(funkcje, dict):'
+zamien = 'if not isinstance(zapis.get("odcisk_testow"), str):'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''        isinstance(wpis, dict)
+        and isinstance(wpis.get("odcisk"), str)'''
+zamien = '''        isinstance(wpis.get("odcisk"), str)'''
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'and isinstance(wpis.get("odcisk"), str)'
+zamien = 'and True'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'and isinstance(wpis.get("przezywajace"), list)'
+zamien = 'and True'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'and all(isinstance(m, str) for m in wpis["przezywajace"])'
+zamien = 'and True'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'except (OSError, ValueError, RecursionError):'
+zamien = 'except (ValueError, RecursionError):'
+test = "tests/test_mutanty_zmian.py::test_zapis_bedacy_katalogiem_daje_pelny_przebieg_i_kod_2_z_komunikatem_bez_pliku_tymczasowego"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'except (OSError, ValueError, RecursionError):'
+zamien = 'except (OSError, RecursionError):'
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_przebiegu_daje_pelny_przebieg_a_nie_blad_ani_sukces_bez_dowodu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'except (OSError, ValueError, RecursionError):'
+zamien = 'except (OSError, ValueError):'
+test = "tests/test_mutanty_zmian.py::test_nieczytelny_zapis_przebiegu_daje_pelny_przebieg_a_nie_blad_ani_sukces_bez_dowodu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'return zapis if _poprawny_zapis(zapis) else None'
+zamien = 'return zapis'
+test = "tests/test_mutanty_zmian.py::test_kazde_uszkodzenie_struktury_zapisu_daje_pelny_przebieg"
+
+# ---------------------------------------------------------------- atomowy zapis
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'os.replace(tymczasowy, plik)'
+zamien = 'plik.write_text(tresc + "\n", encoding="utf-8")'
+test = "tests/test_mutanty_zmian.py::test_zapis_idzie_przez_plik_tymczasowy_w_tym_samym_katalogu_i_os_replace"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'plik.parent.mkdir(parents=True, exist_ok=True)'
+zamien = 'plik.parent.mkdir(parents=False, exist_ok=True)'
+test = "tests/test_mutanty_zmian.py::test_przebieg_zapisuje_wersje_calkowita_odcisk_testow_i_odciski_funkcji_w_katalogu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'plik.parent.mkdir(parents=True, exist_ok=True)'
+zamien = 'plik.parent.mkdir(parents=True, exist_ok=False)'
+test = "tests/test_mutanty_zmian.py::test_niezmieniony_kod_i_testy_w_kolejnym_przebiegu_nie_wola_mutmuta_i_daja_kod_0"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '    tymczasowy = plik.with_name(f"{plik.name}.{os.getpid()}.tmp")'
+zamien = '    tymczasowy = plik'
+test = "tests/test_mutanty_zmian.py::test_zapis_idzie_przez_plik_tymczasowy_w_tym_samym_katalogu_i_os_replace"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'tymczasowy.unlink(missing_ok=True)'
+zamien = 'pass'
+test = "tests/test_mutanty_zmian.py::test_zapis_bedacy_katalogiem_daje_pelny_przebieg_i_kod_2_z_komunikatem_bez_pliku_tymczasowego"
+
+[[rownowazny]]
+plik = "tools/mutanty_zmian.py"
+linia_tekst = "tymczasowy.unlink(missing_ok=True)"
+uzasadnienie = "wariant missing_ok=False rzuca FileNotFoundError, ktory jest OSError i jest polykany przez wewnetrzny except OSError: pass; zadne wejscie nie odroznia obu wersji"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    except OSError as blad:
+        try:'''
+zamien = '''    except ZeroDivisionError as blad:
+        try:'''
+test = "tests/test_mutanty_zmian.py::test_katalog_zapisu_pod_zwyklym_plikiem_to_kod_2_z_komunikatem"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'except OSError:  # sprzatanie nie moze przerwac tlumaczenia bledu'
+zamien = 'except ZeroDivisionError:  # sprzatanie nie moze przerwac tlumaczenia bledu'
+test = "tests/test_mutanty_zmian.py::test_katalog_zapisu_pod_zwyklym_plikiem_to_kod_2_z_komunikatem"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'nie da sie zapisac przebiegu'
+zamien = 'XXnie da sie zapisac przebieguXX'
+test = "tests/test_mutanty_zmian.py::test_katalog_zapisu_pod_zwyklym_plikiem_to_kod_2_z_komunikatem"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '{"wersja": WERSJA_ZAPISU, "odcisk_testow": odcisk, "funkcje": funkcje},'
+zamien = '{"wersja": WERSJA_ZAPISU, "odcisk_testow": odcisk, "inne": funkcje},'
+test = "tests/test_mutanty_zmian.py::test_niezmieniony_kod_i_testy_w_kolejnym_przebiegu_nie_wola_mutmuta_i_daja_kod_0"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'WERSJA_ZAPISU = 1'
+zamien = 'WERSJA_ZAPISU = True'
+test = "tests/test_mutanty_zmian.py::test_przebieg_zapisuje_wersje_calkowita_odcisk_testow_i_odciski_funkcji_w_katalogu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'PLIK_ZAPISU = "przebieg.json"'
+zamien = 'PLIK_ZAPISU = "inny.json"'
+test = "tests/test_mutanty_zmian.py::test_przebieg_zapisuje_wersje_calkowita_odcisk_testow_i_odciski_funkcji_w_katalogu"
+
+[[rownowazny]]
+plik = "tools/mutanty_zmian.py"
+linia_tekst = "ensure_ascii=False,"
+uzasadnienie = "zapis jest czytany wylacznie przez json.loads, ktory z \\uXXXX i ze znakiem wprost zwraca ten sam napis; zadne wejscie programu nie czyta surowych bajtow zapisu"
+
+[[rownowazny]]
+plik = "tools/mutanty_zmian.py"
+linia_tekst = "sort_keys=True,"
+uzasadnienie = "zapis jest czytany jako slownik, wiec kolejnosc kluczy w pliku nie zmienia zadnego wyniku"
+
+# ---------------------------------------------------------------- wybor funkcji do mutacji vs z zapisu
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if zapis is None or zapis["odcisk_testow"] != odcisk_testow_teraz:'
+zamien = 'if zapis is None:'
+test = "tests/test_mutanty_zmian.py::test_zmiana_testow_lub_konfiguracji_miedzy_przebiegami_daje_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if zapis is None or zapis["odcisk_testow"] != odcisk_testow_teraz:'
+zamien = 'if zapis["odcisk_testow"] != odcisk_testow_teraz:'
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystkie_funkcje"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '        return lista, {}'
+zamien = '        return [], {}'
+test = "tests/test_mutanty_zmian.py::test_pierwszy_przebieg_bez_zapisu_mutuje_wszystkie_funkcje"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'poprzednie.get(w, {}).get("odcisk") != odciski[w]'
+zamien = 'poprzednie.get(w, {}).get("odcisk") == odciski[w]'
+test = "tests/test_mutanty_zmian.py::test_zmiana_jednej_z_dwoch_funkcji_mutuje_tylko_ja"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'poprzednie.get(w, {}).get("odcisk") != odciski[w]'
+zamien = 'poprzednie[w].get("odcisk") != odciski[w]'
+test = "tests/test_mutanty_zmian.py::test_nowa_funkcja_w_pliku_jest_mutowana_a_niezmieniona_nie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'for w in lista if w not in do_mutowania}'
+zamien = 'for w in lista if w in do_mutowania}'
+test = "tests/test_mutanty_zmian.py::test_przezywajacy_mutant_w_niezmienionej_funkcji_nadal_daje_kod_1_i_jest_wypisany"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'lista = sorted(odciski)'
+zamien = 'lista = list(odciski)'
+test = "tests/test_mutanty_zmian.py::test_wzorce_sa_osobnymi_argumentami_po_mutmut_run"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    if plik_zapisu is not None:
+        odcisk_testow_teraz = odcisk_testow(korzen)'''
+zamien = '''    if False:
+        odcisk_testow_teraz = odcisk_testow(korzen)'''
+test = "tests/test_mutanty_zmian.py::test_niezmieniony_kod_i_testy_w_kolejnym_przebiegu_nie_wola_mutmuta_i_daja_kod_0"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not lista and plik_zapisu is None:'
+zamien = 'if not lista:'
+test = "tests/test_mutanty_zmian.py::test_zapis_przebiegu_powstaje_po_kodzie_0_1_i_3"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '    if do_mutowania:'
+zamien = '    if True:'
+test = "tests/test_mutanty_zmian.py::test_niezmieniony_kod_i_testy_w_kolejnym_przebiegu_nie_wola_mutmuta_i_daja_kod_0"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    if plik_zapisu is not None:
+        funkcje = {'''
+zamien = '''    if False:
+        funkcje = {'''
+test = "tests/test_mutanty_zmian.py::test_zapis_przebiegu_powstaje_po_kodzie_0_1_i_3"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if w in z_zapisu'
+zamien = 'if w not in z_zapisu'
+test = "tests/test_mutanty_zmian.py::test_przezywajacy_mutant_zmienionej_funkcji_znika_gdy_nowy_przebieg_go_zabija"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'else [m for m in nowe_przezywajace if fnmatch.fnmatchcase(m, w)]'
+zamien = 'else [m for m in nowe_przezywajace]'
+test = "tests/test_mutanty_zmian.py::test_survivor_jednej_funkcji_nie_trafia_do_zapisu_drugiej"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'nowe_przezywajace = przezywajace(wyniki.stdout, do_mutowania)'
+zamien = 'nowe_przezywajace = przezywajace(wyniki.stdout, lista)'
+test = "tests/test_mutanty_zmian.py::test_survivor_z_nieaktualnych_wynikow_mutmuta_o_niezmienionej_funkcji_nie_liczy_sie"
+
+# ---------------------------------------------------------------- --max-children
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '        if max_children is not None:'
+zamien = '        if True:'
+test = "tests/test_mutanty_zmian.py::test_bez_flagi_max_children_mutmut_run_jej_nie_dostaje"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'polecenie += ["--max-children", str(max_children)]'
+zamien = 'polecenie += ["--max-children", "8"]'
+test = "tests/test_mutanty_zmian.py::test_liczba_dzieci_mutmuta_trafia_do_mutmut_run_przed_albo_miedzy_wzorcami"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'polecenie += ["--max-children", str(max_children)]'
+zamien = 'pass'
+test = "tests/test_mutanty_zmian.py::test_liczba_dzieci_mutmuta_trafia_do_mutmut_run_przed_albo_miedzy_wzorcami"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:'
+zamien = 'if not tekst.isdigit() or int(tekst) < 1:'
+test = "tests/test_mutanty_zmian.py::test_liczba_dzieci_inna_niz_calkowita_od_jednego_to_kod_2_i_mutmut_nie_rusza"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:'
+zamien = 'if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 0:'
+test = "tests/test_mutanty_zmian.py::test_liczba_dzieci_inna_niz_calkowita_od_jednego_to_kod_2_i_mutmut_nie_rusza"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 1:'
+zamien = 'if not (tekst.isascii() and tekst.isdigit()) or int(tekst) < 2:'
+test = "tests/test_mutanty_zmian.py::test_najmniejsza_dozwolona_liczba_dzieci_to_jeden"
+
+# ---------------------------------------------------------------- czasy faz
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")'
+zamien = 'FAZY = ("statystyki", "mutanty", "wyniki")'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")'
+zamien = 'FAZY = ("wybor-funkcji", "mutanty", "wyniki")'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")'
+zamien = 'FAZY = ("wybor-funkcji", "statystyki", "wyniki")'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")'
+zamien = 'FAZY = ("wybor-funkcji", "statystyki", "mutanty")'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'FAZY = ("wybor-funkcji", "statystyki", "mutanty", "wyniki")'
+zamien = 'FAZY = ("wyniki", "mutanty", "statystyki", "wybor-funkcji")'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'sekundy = self.fazy.get(faza)'
+zamien = 'sekundy = self.fazy.get(faza, 0.0)'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'wartosc = "brak pomiaru" if sekundy is None else f"{sekundy:.1f} s"'
+zamien = 'wartosc = "brak pomiaru" if sekundy is not None else f"{sekundy:.1f} s"'
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'self.fazy[faza] = time.monotonic() - od'
+zamien = 'self.fazy[faza] = time.monotonic() + od'
+test = "tests/test_mutanty_zmian.py::test_faza_wynikow_ma_zmierzony_czas_z_wywolania_mutmut_results"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'czasy.zmierz("wybor-funkcji", czasy.start)'
+zamien = 'czasy.zmierz("wybor-funkcji", time.monotonic())'
+test = "tests/test_mutanty_zmian.py::test_fazy_wyboru_funkcji_i_mutantow_mierza_czas_od_startu_i_z_wywolania_mutmut_run"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'czasy.zmierz_bieg(start)'
+zamien = 'czasy.zmierz("mutanty", start)'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'czasy.zmierz_bieg(start)'
+zamien = 'pass'
+test = "tests/test_mutanty_zmian.py::test_fazy_wyboru_funkcji_i_mutantow_mierza_czas_od_startu_i_z_wywolania_mutmut_run"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'bieg = uruchom([*polecenie, *do_mutowania], na_linie=czasy.na_linie)'
+zamien = 'bieg = uruchom([*polecenie, *do_mutowania])'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'self.zmierz("mutanty", od if self.koniec_statystyk is None else self.koniec_statystyk)'
+zamien = 'self.zmierz("mutanty", od)'
+test = "tests/test_mutanty_zmian.py::test_mutanty_licza_sie_od_konca_statystyk_a_nie_od_startu_mutmuta"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'self.zmierz("mutanty", od if self.koniec_statystyk is None else self.koniec_statystyk)'
+zamien = 'self.zmierz("mutanty", od if self.koniec_statystyk is not None else self.koniec_statystyk)'
+test = "tests/test_mutanty_zmian.py::test_bez_zadnych_znacznikow_statystyki_to_brak_pomiaru_a_mutanty_licza_caly_bieg"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'self.zmierz("mutanty", od if self.koniec_statystyk is None else self.koniec_statystyk)'
+zamien = 'self.zmierz("xmutanty", od if self.koniec_statystyk is None else self.koniec_statystyk)'
+test = "tests/test_mutanty_zmian.py::test_mutanty_licza_sie_od_pierwszego_znacznika_testow_do_konca_procesu"
+
+# ---------------------------------------------------------------- statystyki: znaczniki i pomiar
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ZNACZNIK_STATYSTYK = "Running stats"'
+zamien = 'ZNACZNIK_STATYSTYK = "XXRunning statsXX"'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests", "Running mutation testing")'
+zamien = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running mutation testing",)'
+test = "tests/test_mutanty_zmian.py::test_koniec_statystyk_to_pierwszy_znacznik_a_kolejne_znaczniki_konca_sa_ignorowane"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests", "Running mutation testing")'
+zamien = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests",)'
+test = "tests/test_mutanty_zmian.py::test_koniec_statystyk_to_tez_znacznik_mutacji_gdy_nie_bylo_czystych_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests", "Running mutation testing")'
+zamien = 'ZNACZNIKI_KONCA_STATYSTYK = ("XXRunning clean testsXX", "Running mutation testing")'
+test = "tests/test_mutanty_zmian.py::test_koniec_statystyk_to_pierwszy_znacznik_a_kolejne_znaczniki_konca_sa_ignorowane"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests", "Running mutation testing")'
+zamien = 'ZNACZNIKI_KONCA_STATYSTYK = ("Running clean tests", "XXRunning mutation testingXX")'
+test = "tests/test_mutanty_zmian.py::test_koniec_statystyk_to_tez_znacznik_mutacji_gdy_nie_bylo_czystych_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if self.koniec_statystyk is not None:'
+zamien = 'if False:'
+test = "tests/test_mutanty_zmian.py::test_koniec_statystyk_to_pierwszy_znacznik_a_kolejne_znaczniki_konca_sa_ignorowane"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if self.koniec_statystyk is not None:'
+zamien = 'if self.koniec_statystyk is None:'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:'
+zamien = 'if True and self.start_statystyk is None:'
+test = "tests/test_mutanty_zmian.py::test_bez_znacznika_statystyk_ta_faza_to_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:'
+zamien = 'if ZNACZNIK_STATYSTYK not in linia and self.start_statystyk is None:'
+test = "tests/test_mutanty_zmian.py::test_bez_znacznika_statystyk_ta_faza_to_brak_pomiaru_a_nie_zero"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'elif any(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):'
+zamien = 'elif True:'
+test = "tests/test_mutanty_zmian.py::test_linia_bez_znacznika_nie_konczy_statystyk"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'elif any(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):'
+zamien = 'elif all(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):'
+test = "tests/test_mutanty_zmian.py::test_koniec_statystyk_to_tez_znacznik_mutacji_gdy_nie_bylo_czystych_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'elif any(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):'
+zamien = 'if any(znacznik in linia for znacznik in ZNACZNIKI_KONCA_STATYSTYK):'
+test = "tests/test_mutanty_zmian.py::test_linia_z_obydwoma_znacznikami_zaczyna_statystyki_ale_ich_nie_konczy"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if self.start_statystyk is not None and self.koniec_statystyk is not None:'
+zamien = 'if self.start_statystyk is not None or self.koniec_statystyk is not None:'
+test = "tests/test_mutanty_zmian.py::test_znacznik_statystyk_bez_znacznika_konca_to_brak_pomiaru_statystyk"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if self.start_statystyk is not None and self.koniec_statystyk is not None:'
+zamien = 'if self.start_statystyk is None and self.koniec_statystyk is not None:'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if self.start_statystyk is not None and self.koniec_statystyk is not None:'
+zamien = 'if self.start_statystyk is not None and self.koniec_statystyk is None:'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'self.fazy["statystyki"] = self.koniec_statystyk - self.start_statystyk'
+zamien = 'self.fazy["statystyki"] = self.koniec_statystyk + self.start_statystyk'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'self.fazy["statystyki"] = self.koniec_statystyk - self.start_statystyk'
+zamien = 'self.fazy["xstatystyki"] = self.koniec_statystyk - self.start_statystyk'
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_czas_miedzy_znacznikiem_statystyk_a_pierwszym_znacznikiem_testow"
+
+# ---------------------------------------------------------------- uruchom z `na_linie`
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if na_linie is None:'
+zamien = 'if na_linie is not None:'
+test = "tests/test_mutanty_zmian.py::test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '            na_linie(linia)'
+zamien = '            pass'
+test = "tests/test_mutanty_zmian.py::test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '            zebrane.append(linia)'
+zamien = '            pass'
+test = "tests/test_mutanty_zmian.py::test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''            except OSError as blad:
+                raise BladNarzedzia(f"nie da sie odczytac wyjscia'''
+zamien = '''            except ZeroDivisionError as blad:
+                raise BladNarzedzia(f"nie da sie odczytac wyjscia'''
+test = "tests/test_mutanty_zmian.py::test_blad_odczytu_strumienia_to_blad_narzedzia_z_pelnym_komunikatem_a_proces_jest_zabity"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'nie da sie odczytac wyjscia'
+zamien = 'XXnie da sie odczytac wyjsciaXX'
+test = "tests/test_mutanty_zmian.py::test_blad_odczytu_strumienia_to_blad_narzedzia_z_pelnym_komunikatem_a_proces_jest_zabity"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''            try:
+                linia = proces.stdout.readline()
+            except OSError as blad:
+                raise BladNarzedzia(f"nie da sie odczytac wyjscia {argv[0]}: {blad}") from blad
+            if not linia:
+                break
+            zebrane.append(linia)
+            na_linie(linia)'''
+zamien = '''            try:
+                linia = proces.stdout.readline()
+                if not linia:
+                    break
+                zebrane.append(linia)
+                na_linie(linia)
+            except OSError as blad:
+                raise BladNarzedzia(f"nie da sie odczytac wyjscia {argv[0]}: {blad}") from blad'''
+test = "tests/test_mutanty_zmian.py::test_oserror_z_na_linie_nie_dostaje_etykiety_bledu_odczytu_wyjscia"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '            if not linia:'
+zamien = '            if linia:'
+test = "tests/test_mutanty_zmian.py::test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '        proces.stdout.close()'
+zamien = '        pass'
+test = "tests/test_mutanty_zmian.py::test_po_uruchom_z_na_linie_strumien_wyjscia_procesu_jest_zamkniety"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    except OSError as blad:
+        raise BladNarzedzia(f"nie da sie uruchomic {argv[0]}: {blad}") from blad
+    zebrane'''
+zamien = '''    except ZeroDivisionError as blad:
+        raise BladNarzedzia(f"nie da sie uruchomic {argv[0]}: {blad}") from blad
+    zebrane'''
+test = "tests/test_mutanty_zmian.py::test_uruchom_z_na_linie_brak_binarki_to_blad_narzedzia_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''        raise BladNarzedzia(f"nie da sie uruchomic {argv[0]}: {blad}") from blad
+    zebrane'''
+zamien = '''        raise BladNarzedzia(f"XXnie da sie uruchomic {argv[0]}: {blad}") from blad
+    zebrane'''
+test = "tests/test_mutanty_zmian.py::test_uruchom_z_na_linie_brak_binarki_to_blad_narzedzia_z_pelnym_komunikatem"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '    if proces.poll() is None:'
+zamien = '    if False:'
+test = "tests/test_mutanty_zmian.py::test_wyjatek_z_na_linie_zabija_proces_i_go_zbiera_zanim_pojdzie_dalej"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '        proces.kill()'
+zamien = '        pass'
+test = "tests/test_mutanty_zmian.py::test_wyjatek_z_na_linie_zabija_proces_i_go_zbiera_zanim_pojdzie_dalej"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''            proces.kill()
+            proces.wait()'''
+zamien = '''            proces.kill()'''
+test = "tests/test_mutanty_zmian.py::test_blad_z_na_linie_przechodzi_jako_oryginalny_wyjatek_a_proces_jest_zabity_i_zebrany"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''            stderr=subprocess.STDOUT,
+            text=True,'''
+zamien = '''            stderr=subprocess.DEVNULL,
+            text=True,'''
+test = "tests/test_mutanty_zmian.py::test_uruchom_z_na_linie_laczy_stderr_ze_stdout_i_zwraca_pusty_stderr"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''            stderr=subprocess.STDOUT,
+            text=True,'''
+zamien = '''            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            text=True,'''
+test = "tests/test_mutanty_zmian.py::test_uruchom_z_na_linie_nie_otwiera_nowej_sesji_wiec_sygnal_do_grupy_zabija_i_mutmuta"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '            errors="replace",'
+zamien = '            errors="strict",'
+test = "tests/test_mutanty_zmian.py::test_uruchom_z_na_linie_nie_wywala_sie_na_bajtach_spoza_utf8"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'return subprocess.CompletedProcess(argv, kod, stdout="".join(zebrane), stderr="")'
+zamien = 'return subprocess.CompletedProcess(argv, kod, stdout="", stderr="")'
+test = "tests/test_mutanty_zmian.py::test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'return subprocess.CompletedProcess(argv, kod, stdout="".join(zebrane), stderr="")'
+zamien = 'return subprocess.CompletedProcess(argv, kod, stdout="".join(zebrane), stderr="XX")'
+test = "tests/test_mutanty_zmian.py::test_uruchom_bez_na_linie_zwraca_wyjscie_jak_dotad_a_z_na_linie_wola_ja_w_trakcie_procesu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'kod = proces.wait()'
+zamien = 'kod = 0'
+test = "tests/test_mutanty_zmian.py::test_uruchom_z_na_linie_laczy_stderr_ze_stdout_i_zwraca_pusty_stderr"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'czasy.zmierz("wyniki", start)'
+zamien = 'czasy.zmierz("mutanty", start)'
+test = "tests/test_mutanty_zmian.py::test_faza_wynikow_ma_zmierzony_czas_z_wywolania_mutmut_results"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    finally:
+        czasy.wypisz()'''
+zamien = '''    finally:
+        pass'''
+test = "tests/test_mutanty_zmian.py::test_bez_zmienionych_funkcji_zmierzony_jest_tylko_wybor_a_pozostale_fazy_to_brak_pomiaru"
+
+# ---------------------------------------------------------------- tools/bramki_lokalne.sh: wartosci i walidacja
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'blad() { echo "BLAD: $*" >&2; exit 2; }'
+zamien = 'blad() { echo "BLAD: $*" >&2; exit 1; }'
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_kod_2_z_jednym_komunikatem_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'blad() { echo "BLAD: $*" >&2; exit 2; }'
+zamien = 'blad() { echo "BLAD: $*"; exit 2; }'
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_kod_2_z_jednym_komunikatem_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'PY="${PYTHON:-python}"'
+zamien = 'PY="python"'
+test = "tests/test_bramki_lokalne.py::test_mutanty_ida_przez_interpreter_z_python_z_liczba_dzieci_osiem_albo_ze_zmiennej"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'PY="${PYTHON:-python}"'
+zamien = 'PY="${PYTHON:-pythonx}"'
+test = "tests/test_bramki_lokalne.py::test_bez_zmiennej_python_mutanty_ida_przez_python_z_path"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'DZIECI="${COCKPIT_MUTMUT_DZIECI:-8}"'
+zamien = 'DZIECI="${COCKPIT_MUTMUT_DZIECI:-4}"'
+test = "tests/test_bramki_lokalne.py::test_mutanty_ida_przez_interpreter_z_python_z_liczba_dzieci_osiem_albo_ze_zmiennej"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "*[!0-9]*) blad"
+zamien = "*[!0-9]*) echo"
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_kod_2_z_jednym_komunikatem_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '[ "$DZIECI" -ge 1 ] ||'
+zamien = '[ "$DZIECI" -ge 0 ] ||'
+test = "tests/test_bramki_lokalne.py::test_zla_liczba_dzieci_mutmuta_to_kod_2_z_jednym_komunikatem_i_nic_nie_startuje"
+
+[[rownowazny]]
+plik = "tools/bramki_lokalne.sh"
+linia_tekst = "''|*[!0-9]*)"
+uzasadnienie = "pusta wartosc nie dociera do case: ${COCKPIT_MUTMUT_DZIECI:-8} zamienia pusty napis na 8, wiec wejscia z pustym DZIECI nie ma"
+
+[[rownowazny]]
+plik = "tools/bramki_lokalne.sh"
+linia_tekst = 'cd "$(dirname "${BASH_SOURCE[0]}")/.." || blad "nie udalo sie przejsc do korzenia repozytorium"'
+uzasadnienie = "cd nie zawodzi dla katalogu nadrzednego skryptu, ktory istnieje, skoro skrypt dziala; wejscia, na ktorym cd zawiedzie, nie ma"
+
+# ---------------------------------------------------------------- katalog logow
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'mkdir -p "$KAT" || blad'
+zamien = 'mkdir -p "$KAT" 2>/dev/null || true'
+test = "tests/test_bramki_lokalne.py::test_katalog_logow_ktorego_nie_da_sie_utworzyc_to_kod_2_z_sciezka_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '[ -w "$KAT" ] || blad'
+zamien = '[ -w "$KAT" ] || true'
+test = "tests/test_bramki_lokalne.py::test_istniejacy_katalog_logow_bez_prawa_zapisu_to_kod_2_i_nic_nie_startuje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '|| blad "nie udalo sie utworzyc katalogu tymczasowego'
+zamien = '|| true "nie udalo sie utworzyc katalogu tymczasowego'
+test = "tests/test_bramki_lokalne.py::test_nieistniejacy_tmpdir_bez_katalogu_w_zmiennej_to_kod_2_z_komunikatem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'KAT="$(mktemp -d "${TMPDIR:-/tmp}/bramki_lokalne.XXXXXX")"'
+zamien = 'KAT="$(mktemp -d "/tmp/bramki_lokalne.XXXXXX")"'
+test = "tests/test_bramki_lokalne.py::test_bez_katalogu_w_zmiennej_logi_trafiaja_do_nowego_katalogu_pod_tmpdir"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  *) KAT="$PWD/$KAT" ;;'
+zamien = '  *) ;;'
+test = "tests/test_bramki_lokalne.py::test_wzgledny_katalog_logow_jest_liczony_od_biezacego_katalogu_a_nie_od_korzenia_repo"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'echo "logi: $KAT" >&2'
+zamien = 'echo "logi: $KAT"'
+test = "tests/test_bramki_lokalne.py::test_testy_i_mutanty_zapisuja_wyniki_do_osobnych_plikow_w_katalogu_logow"
+
+# ---------------------------------------------------------------- start bramek
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '/.." || blad'
+zamien = '/." || blad'
+test = "tests/test_bramki_lokalne.py::test_testy_ida_domyslnie_przez_pytest_q_n_4_z_korzenia_repo"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'TESTY="${COCKPIT_BRAMKI_TESTY:-pytest -q -n 4}"'
+zamien = 'TESTY="${COCKPIT_BRAMKI_TESTY:-pytest -q}"'
+test = "tests/test_bramki_lokalne.py::test_testy_ida_domyslnie_przez_pytest_q_n_4_z_korzenia_repo"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'sh -c "trap : TERM; $TESTY" < /dev/null'
+zamien = 'sh -c "trap : TERM; $TESTY"'
+test = "tests/test_bramki_lokalne.py::test_bramki_nie_dziedzicza_standardowego_wejscia_skryptu"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'sh -c "trap : TERM; $TESTY" <'
+zamien = '$TESTY <'
+test = "tests/test_bramki_lokalne.py::test_komenda_testow_ze_zmiennej_idzie_przez_powloke_z_argumentami_i_cytowaniem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '"$KAT/testy.log" 2>&1 &'
+zamien = '"$KAT/testy.log" &'
+test = "tests/test_bramki_lokalne.py::test_testy_i_mutanty_zapisuja_wyniki_do_osobnych_plikow_w_katalogu_logow"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'env -u COCKPIT_TEST_DATABASE_URL -u COCKPIT_WYMAGAJ_BAZY'
+zamien = 'env -u COCKPIT_WYMAGAJ_BAZY'
+test = "tests/test_bramki_lokalne.py::test_mutanty_nie_dostaja_adresu_bazy_ani_wymogu_bazy_a_reszta_srodowiska_zostaje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'env -u COCKPIT_TEST_DATABASE_URL -u COCKPIT_WYMAGAJ_BAZY'
+zamien = 'env -u COCKPIT_TEST_DATABASE_URL'
+test = "tests/test_bramki_lokalne.py::test_mutanty_nie_dostaja_adresu_bazy_ani_wymogu_bazy_a_reszta_srodowiska_zostaje"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '"$PY" tools/mutanty_zmian.py --max-children "$DZIECI" "$@"'
+zamien = '"$PY" tools/mutanty_zmian.py --max-children "$DZIECI"'
+test = "tests/test_bramki_lokalne.py::test_argumenty_skryptu_trafiaja_do_mutanty_zmian_po_max_children"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '"$PY" tools/mutanty_zmian.py --max-children "$DZIECI" "$@"'
+zamien = '"$PY" tools/mutanty_zmian.py "$@"'
+test = "tests/test_bramki_lokalne.py::test_mutanty_ida_przez_interpreter_z_python_z_liczba_dzieci_osiem_albo_ze_zmiennej"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '< /dev/null > "$KAT/mutanty.stdout"'
+zamien = '> "$KAT/mutanty.stdout"'
+test = "tests/test_bramki_lokalne.py::test_bramki_nie_dziedzicza_standardowego_wejscia_skryptu"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '2> "$KAT/mutanty.stderr" &'
+zamien = '2> /dev/null &'
+test = "tests/test_bramki_lokalne.py::test_testy_i_mutanty_zapisuja_wyniki_do_osobnych_plikow_w_katalogu_logow"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '''wait "$PID_TESTY"
+KOD_TESTOW=$?'''
+zamien = 'KOD_TESTOW=$?'
+test = "tests/test_bramki_lokalne.py::test_skrypt_czeka_na_obie_bramki_takze_gdy_jedna_konczy_sie_wyraznie_pozniej"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '''wait "$PID_MUTANTY"
+KOD_MUTANTOW=$?'''
+zamien = 'KOD_MUTANTOW=$?'
+test = "tests/test_bramki_lokalne.py::test_skrypt_czeka_na_obie_bramki_takze_gdy_jedna_konczy_sie_wyraznie_pozniej"
+
+# ---------------------------------------------------------------- grupy procesow i przerwanie
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '''set -m
+trap 'przerwij 143' TERM'''
+zamien = '''set +m
+trap 'przerwij 143' TERM'''
+test = "tests/test_bramki_lokalne.py::test_kazda_bramka_ma_wlasna_grupe_procesow_rozna_od_grupy_skryptu"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 143' TERM"
+zamien = "trap - TERM"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_obie_grupy_procesow_z_ich_dziecmi"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 130' INT"
+zamien = "trap - INT"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_obie_grupy_procesow_z_ich_dziecmi"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 143' TERM"
+zamien = "trap 'przerwij 0' TERM"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_obie_grupy_procesow_z_ich_dziecmi"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = "trap 'przerwij 130' INT"
+zamien = "trap 'przerwij 0' INT"
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_obie_grupy_procesow_z_ich_dziecmi"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'kill -TERM -- "-$pid"'
+zamien = 'kill -CONT -- "-$pid"'
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_obie_grupy_procesow_z_ich_dziecmi"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '( sleep 10; kill -KILL'
+zamien = '( sleep 10; true'
+test = "tests/test_bramki_lokalne.py::test_bramka_ignorujaca_sigterm_jest_dobita_po_straznikowi_a_skrypt_konczy_sie_kodem_143"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  exit "$1"'
+zamien = '  exit 0'
+test = "tests/test_bramki_lokalne.py::test_przerwanie_bramek_zabija_obie_grupy_procesow_z_ich_dziecmi"
+
+# ---------------------------------------------------------------- kod wyjscia
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'echo "testy: $KOD_TESTOW"'
+zamien = 'echo "testy: 0"'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'echo "mutanty: $KOD_MUTANTOW"'
+zamien = 'echo "mutanty: 0"'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  0|1|3) ;;'
+zamien = '  1|3) ;;'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  0|1|3) ;;'
+zamien = '  0|3) ;;'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  0|1|3) ;;'
+zamien = '  0|1) ;;'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '*) echo "bramki: 2"; exit 2 ;;'
+zamien = '*) echo "bramki: 2"; exit 1 ;;'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '*) echo "bramki: 2"; exit 2 ;;'
+zamien = '*) echo "bramki: 1"; exit 2 ;;'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'if [ "$KOD_TESTOW" -ne 0 ] || [ "$KOD_MUTANTOW" -eq 1 ]; then'
+zamien = 'if [ "$KOD_TESTOW" -ne 0 ] && [ "$KOD_MUTANTOW" -eq 1 ]; then'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'if [ "$KOD_TESTOW" -ne 0 ] || [ "$KOD_MUTANTOW" -eq 1 ]; then'
+zamien = 'if [ "$KOD_MUTANTOW" -eq 1 ]; then'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'if [ "$KOD_TESTOW" -ne 0 ] || [ "$KOD_MUTANTOW" -eq 1 ]; then'
+zamien = 'if [ "$KOD_TESTOW" -ne 0 ]; then'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'elif [ "$KOD_MUTANTOW" -eq 3 ]; then'
+zamien = 'elif [ "$KOD_MUTANTOW" -eq 4 ]; then'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  KOD=1'
+zamien = '  KOD=0'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  KOD=3'
+zamien = '  KOD=0'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = '  KOD=0'
+zamien = '  KOD=1'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'exit "$KOD"'
+zamien = 'exit 0'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'echo "bramki: $KOD"'
+zamien = 'echo "bramki: 0"'
+test = "tests/test_bramki_lokalne.py::test_kod_bramek_wynika_z_kodow_testow_i_mutantow_a_stdout_ma_trzy_linie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if ZNACZNIK_STATYSTYK in linia and self.start_statystyk is None:"
+zamien = "if ZNACZNIK_STATYSTYK in linia:"
+test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_cala_faze_gdy_mutmut_odswieza_znacznik_wielokrotnie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = """        return _przebieg(
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+        )
+    except BladNarzedzia as blad:
+        print(f"blad: {blad}", file=sys.stderr)
+        return 2
+    finally:
+        czasy.wypisz()
+"""
+zamien = """        kod = _przebieg(
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+        )
+        czasy.wypisz()
+        return kod
+    except BladNarzedzia as blad:
+        print(f"blad: {blad}", file=sys.stderr)
+        return 2
+"""
+test = "tests/test_mutanty_zmian.py::test_czasy_faz_trafiaja_na_stderr_gdy_mutmut_run_konczy_sie_bledem"
+
+[[mutant]]
+plik = "tools/bramki_lokalne.sh"
+szukaj = 'sh -c "trap : TERM; $TESTY"'
+zamien = 'sh -c "$TESTY"'
+test = "tests/test_bramki_lokalne.py::test_skrypt_po_przerwaniu_czeka_na_lidera_i_dobija_wnuka_ignorujacego_sigterm[testy_komenda_zlozona]"

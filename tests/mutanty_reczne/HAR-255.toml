@@ -354,15 +354,15 @@ test = "tests/test_workflow_mutacje.py::test_dowod_shardu_jest_wgrywany_jako_art
 # Flaga z domyslnym katalogiem: bez flagi tez idzie opakowanie.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = 'parser.add_argument("--katalog-dowodow", type=Path, default=None,'
-zamien = 'parser.add_argument("--katalog-dowodow", type=Path, default=Path("dowody"),'
+szukaj = '"--katalog-dowodow", type=Path, default=None,'
+zamien = '"--katalog-dowodow", type=Path, default=Path("dowody"),'
 test = "tests/test_mutanty_zmian.py::test_bez_katalogu_dowodow_mutmut_biegnie_zwyklym_run_z_oryginalnymi_clean_tests"
 
 # Flaga przeczytana, ale niepodana do `_przebieg`.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = "return _przebieg(args.baza, args.korzen, args.katalog_dowodow)"
-zamien = "return _przebieg(args.baza, args.korzen)"
+szukaj = "args.od_przebiegu, args.katalog_dowodow"
+zamien = "args.od_przebiegu"
 test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
 
 # Katalog dowodow, ktory nie istnieje, przechodzi bez bledu.
@@ -410,14 +410,14 @@ test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_pr
 # Opakowanie bez katalogu dowodow z flagi.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = '"--katalog-dowodow", str(katalog_dowodow), '
-zamien = '"--katalog-dowodow", "dowody", '
+szukaj = "str(katalog_dowodow),"
+zamien = '"dowody",'
 test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
 
 # Opakowanie bez flagi `--katalog-dowodow`.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = '"--katalog-dowodow", str(katalog_dowodow), '
+szukaj = "str(katalog_dowodow),"
 zamien = ""
 test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
 

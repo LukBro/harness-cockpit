@@ -122,7 +122,11 @@ def main(a):
         else:   # runda sprzed migawek: pelna ocena jest surowsza, nie lagodniejsza
             print(f"prompt_krytyka: brak migawki rundy {r} - pełna ocena bez zamrożenia zakresu", file=sys.stderr)
     else:
-        zakres = "wszyscy agenci z `przydzial`"
+        # 2026-11-19 wlasciciel: poprawki szly na raty (HAR-181, HAR-256 - nowe odjecia w kazdej rundzie)
+        zakres = ("wszyscy agenci z `przydzial`.\nPEŁNA LISTA: to jedyna pełna ocena - kolejne rundy mają zamrożony "
+                  "zakres. Wypisz WSZYSTKIE wady, które widzisz, także po odjęciach, które już dają NEEDS WORK; nie "
+                  "przerywaj po pierwszych. Dla każdego zmienionego elementu przejdź rubrykę i "
+                  "`.ai/qa/ksztalty-mutantow.md` do końca, żeby poprawka naprawiła listę w jednej rundzie.")
     tresc = SZABLON.format(key=key, tytul=(st.get("ticket") or {}).get("title", ""), rubryka=op["--rubryka"],
                            stan=stan, raporty=op.get("--raporty", "brak osobnego pliku - raporty w stanie"),
                            zakres=zakres, sha=st["baseline"]["sha"])
