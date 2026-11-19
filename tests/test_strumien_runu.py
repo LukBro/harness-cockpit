@@ -537,7 +537,7 @@ async def test_historia_strumienia_runu_idzie_rosnaco_po_seq_niezaleznie_od_kole
     assert [e.seq for e in zwrocone] == [1, 2, 3]
 
 
-def test_naglowek_wznowienia_rowny_najwiekszej_liczbie_int32_jest_przyjety_a_wiekszy_odrzucony():
+def test_naglowek_wznowienia_rowny_najwiekszemu_numerowi_zdarzenia_jest_przyjety_a_o_jeden_wiekszy_odrzucony():
     from cockpit.api.app import _po_seq
 
     # 2**31 - 1 to ostatni numer, ktory miesci sie w kolumnie seq; 2**31 juz nie (jak brak naglowka)
@@ -545,12 +545,28 @@ def test_naglowek_wznowienia_rowny_najwiekszej_liczbie_int32_jest_przyjety_a_wie
     assert _po_seq("2147483648") is None
 
 
-async def test_naglowek_wiekszy_od_int32_o_jeden_oddaje_cala_historie(swiat, monkeypatch):
+async def test_naglowek_o_jeden_wiekszy_od_najwiekszego_numeru_zdarzenia_oddaje_cala_historie(
+    swiat, monkeypatch
+):
     monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
     await _zapisz(swiat, [1, 2, 3])
     klient = await _zalogowany(swiat)
 
     odebrane = await _odbierz(swiat, klient, 3, {"Last-Event-ID": "2147483648"})
+
+    assert [i for i, _ in odebrane] == ["1", "2", "3"]
+
+
+@pytest.mark.parametrize("naglowek", ["1" * 4301, "0" * 4400 + "7"])
+async def test_naglowek_wznowienia_z_ponad_czterema_tysiacami_cyfr_oddaje_cala_historie_a_nie_blad_serwera(
+    swiat, monkeypatch, naglowek
+):
+    """Zamiana tak dlugiego napisu na liczbe rzuca ValueError w Pythonie (500), a klient ma dostac 200."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    await _zapisz(swiat, [1, 2, 3])
+    klient = await _zalogowany(swiat)
+
+    odebrane = await _odbierz(swiat, klient, 3, {"Last-Event-ID": naglowek})
 
     assert [i for i, _ in odebrane] == ["1", "2", "3"]
 
@@ -589,22 +605,129 @@ async def test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tyl
         ("1", "hist-1"), ("2", "hist-2"), ("3", "hist-3"), ("4", "zywe-4"), ("5", "zywe-5")]
 
 
-async def test_zdarzenia_na_zywo_poza_kolejnoscia_seq_docieraja_oba_i_dokladnie_raz(
+def _po_odczycie_historii(monkeypatch, po_pierwszym_odczycie):
+    """Podmienia `zdarzenia_runu`: po PIERWSZYM odczycie (historia) wola `po_pierwszym_odczycie`,
+    kazdy kolejny odczyt (dociagniecie dziury) idzie prosto do bazy. Zwraca liste wywolan."""
+    prawdziwa = uslugi.zdarzenia_runu
+    wywolania: list[int | None] = []
+
+    async def podmieniona(s, run, po_seq=None):
+        wynik = await prawdziwa(s, run, po_seq)
+        wywolania.append(po_seq)
+        if len(wywolania) == 1:
+            await po_pierwszym_odczycie(run)
+        return wynik
+
+    monkeypatch.setattr(uslugi, "zdarzenia_runu", podmieniona)
+    return wywolania
+
+
+async def test_zdarzenia_na_zywo_poza_kolejnoscia_seq_docieraja_rosnaco_i_dokladnie_raz(
     swiat, monkeypatch
 ):
-    """Dwoch rownoleglych piszacych: szyna oddaje 4 przed 3; mniejszy numer nie ginie."""
+    """Dwoch rownoleglych piszacych: szyna oddaje 4 przed 3; id ramek rosna, kazde zdarzenie raz."""
     monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
     await _zapisz(swiat, [1, 2])
+
+    async def po_historii(run):
+        # 3 i 4 sa juz w bazie (zapis idzie w kolejnosci seq); szyna oddaje je odwrotnie
+        await _zapisz(swiat, [3, 4])
+        for seq in (4, 3, 4, 3):
+            await bus.publish_event(run.id, {"seq": seq, "kind": "log", "text": f"zywe-{seq}"})
+        await bus.publish_event(run.id, {"seq": 5, "kind": "log", "text": "zywe-5"})
+
+    _po_odczycie_historii(monkeypatch, po_historii)
     klient = await _zalogowany(swiat)
 
-    async def na_zywo():
-        for seq in (4, 3, 4, 3, 5):
-            await bus.publish_event(swiat.run_a, {"seq": seq, "kind": "log", "text": f"zywe-{seq}"})
+    odebrane = await _odbierz(swiat, klient, 3, {"Last-Event-ID": "2"})
 
-    odebrane = await _odbierz(swiat, klient, 3, {"Last-Event-ID": "2"}, na_zywo)
+    # 3 i 4 z bazy (dziura dociagnieta przy zdarzeniu 4), potem zywe 5; 5 dowodzi braku duplikatow
+    assert [(i, z["text"]) for i, z in odebrane] == [
+        ("3", "hist-3"), ("4", "hist-4"), ("5", "zywe-5")]
 
-    # 3 i 4 (oba > Last-Event-ID) po razie, w kolejnosci z szyny; 5 dowodzi braku duplikatow
-    assert [i for i, _ in odebrane] == ["4", "3", "5"]
+
+async def test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba(
+    swiat, monkeypatch
+):
+    """Na szynie jest tylko 5; zdarzenie 4 istnieje wylacznie w bazie i musi dojsc przed 5."""
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    await _zapisz(swiat, [1, 2, 3])
+
+    async def po_historii(run):
+        await _zapisz(swiat, [4])
+        await bus.publish_event(run.id, {"seq": 5, "kind": "log", "text": "zywe-5"})
+
+    _po_odczycie_historii(monkeypatch, po_historii)
+    klient = await _zalogowany(swiat)
+
+    odebrane = await _odbierz(swiat, klient, 5)
+
+    assert [(i, z["text"]) for i, z in odebrane] == [
+        ("1", "hist-1"), ("2", "hist-2"), ("3", "hist-3"), ("4", "hist-4"), ("5", "zywe-5")]
+
+
+async def test_kolejne_zdarzenia_na_zywo_bez_dziury_nie_odczytuja_bazy_poza_historia(
+    swiat, monkeypatch
+):
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    await _zapisz(swiat, [1, 2])
+
+    async def po_historii(run):
+        for seq in (3, 4):
+            await bus.publish_event(run.id, {"seq": seq, "kind": "log", "text": f"zywe-{seq}"})
+
+    wywolania = _po_odczycie_historii(monkeypatch, po_historii)
+    klient = await _zalogowany(swiat)
+
+    odebrane = await _odbierz(swiat, klient, 4)
+
+    assert [(i, z["text"]) for i, z in odebrane] == [
+        ("1", "hist-1"), ("2", "hist-2"), ("3", "zywe-3"), ("4", "zywe-4")]
+    assert wywolania == [None]  # tylko historia; zdarzenie o nastepnym numerze nie dociaga z bazy
+
+
+async def test_rozlaczenie_klienta_w_trakcie_dociagania_dziury_konczy_strumien_bez_dalszych_ramek(
+    swiat, monkeypatch
+):
+    monkeypatch.setattr(settings, "sesja_kontrola_s", DLUGI_LIMIT_KONTROLI_S)
+    from cockpit.api.app import run_stream
+
+    await _zapisz(swiat, [1, 2])
+    tenant = await _tenant_runu(swiat, swiat.run_a)
+    async with swiat.maker() as s:
+        identyfikator, _ = await sesje.utworz(s, swiat.wlasciciel_a)
+    stan = {"rozlaczony": False}
+
+    async def is_disconnected() -> bool:
+        return stan["rozlaczony"]
+
+    prawdziwa = uslugi.zdarzenia_runu
+    odczyty: list[int] = []
+
+    async def z_dziura(s, run, po_seq=None):
+        wynik = await prawdziwa(s, run, po_seq)
+        odczyty.append(1)
+        if len(odczyty) == 1:  # historia przeczytana: 3 i 4 trafiaja do bazy, na szynie tylko 5
+            await _zapisz(swiat, [3, 4])
+            await bus.publish_event(run.id, {"seq": 5, "kind": "log", "text": "zywe-5"})
+        else:  # dociagniecie dziury przeczytane: klient znika, zanim zdarzenia pojda dalej
+            stan["rozlaczony"] = True
+        return wynik
+
+    monkeypatch.setattr(uslugi, "zdarzenia_runu", z_dziura)
+    odpowiedz = await run_stream(
+        swiat.run_a, SimpleNamespace(is_disconnected=is_disconnected),
+        k=Kontekst(user_id=swiat.wlasciciel_a.id, tenant_id=tenant, rola=RolaWZespole.owner),
+        identyfikator=identyfikator, last_event_id=None)
+
+    async def zbierz():
+        return [ramka["id"] async for ramka in odpowiedz.body_iterator]
+
+    ids = await asyncio.wait_for(zbierz(), LIMIT_CZEKANIA_S)
+
+    assert ids == ["1", "2"]  # historia poszla; po rozlaczeniu ani 3, 4 z dziury, ani zywe 5
+    assert len(odczyty) == 2
+    assert not bus._run_subscribers.get(swiat.run_a)
 
 
 async def test_strumien_rozlaczonego_klienta_nie_odtwarza_historii_i_oddaje_subskrypcje(

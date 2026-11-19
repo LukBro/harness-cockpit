@@ -24,6 +24,7 @@ from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Event, RolaWZespole, Run, RunStatus
+from cockpit.services import runs as uslugi
 from cockpit.services import sesje
 from cockpit.settings import Settings, settings
 from sesja_testowa import zaloguj_klienta, zaloz_czlonka, zaloz_runnera, zaloz_wlasciciela
@@ -571,6 +572,34 @@ async def test_strumien_z_minionym_oknem_przed_pierwszym_obrotem_kontroluje_sesj
     assert nazwa == "run"
     assert json.loads(dane)["text"] == "po-skoku"
     assert len(wywolania) == 2
+
+
+async def test_odczyt_historii_dluzszy_niz_okno_kontroli_nie_odracza_kontroli_sesji_o_kolejne_okno(
+    swiat, monkeypatch
+):
+    """Okno liczy sie od subskrypcji: po wolnym odczycie historii kontrola jest juz nalezna."""
+    okno_s = 10
+    monkeypatch.setattr(settings, "sesja_kontrola_s", okno_s)
+    czas = {"teraz": 0.0}
+    modul_app = importlib.import_module("cockpit.api.app")
+    monkeypatch.setattr(modul_app, "time", SimpleNamespace(monotonic=lambda: czas["teraz"]))
+    prawdziwa = uslugi.zdarzenia_runu
+
+    async def wolny_odczyt(s, run, po_seq=None):
+        wynik = await prawdziwa(s, run, po_seq)
+        czas["teraz"] += 3 * okno_s  # odczyt trwal dluzej niz okno
+        await _wyloguj_wszedzie(swiat, swiat.wlasciciel)
+        return wynik
+
+    monkeypatch.setattr(uslugi, "zdarzenia_runu", wolny_odczyt)
+    klient = await _zalogowany(swiat, swiat.wlasciciel)
+
+    async with klient.stream("GET", _sciezka(swiat)) as odp:
+        async with aclosing(_zdarzenia_sse(odp)) as strumien:
+            # okno liczone po odczycie dalaby czekanie ok. 10 s na kolejke, wiec limit 5 s oblewa
+            nazwa, _ = await _nastepne(strumien)
+
+    assert nazwa == "sesja_wygasla"
 
 
 # --- reszta okna do nastepnej kontroli -----------------------------------------------------------

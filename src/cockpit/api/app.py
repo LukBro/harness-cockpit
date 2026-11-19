@@ -411,6 +411,9 @@ def _po_seq(naglowek: str | None) -> int | None:
     # isascii: isdecimal() przyjmuje tez cyfry spoza ASCII, a int() je zjada
     if naglowek is None or not (naglowek.isascii() and naglowek.isdecimal()):
         return None
+    # dlugosc przed int(): powyzej 4300 cyfr int() rzuca ValueError (limit konwersji Pythona)
+    if len(naglowek) > len(str(2**31 - 1)):
+        return None
     n = int(naglowek)
     return n if n <= 2**31 - 1 else None
 
@@ -441,15 +444,17 @@ async def run_stream(
             ostatnia = time.monotonic()
             # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
             # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
-            # a duplikat odcina `wyslane`. Sesja zamknieta przed czekaniem na kolejke.
+            # a duplikat odcina `ostatni_seq`. Sesja zamknieta przed czekaniem na kolejke.
             # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
-            wyslane: set[int] = set()
+            # id ramki rosnie monotonicznie (Last-Event-ID wznawia bez dziur i duplikatow);
+            # seq zapisu idzie pod blokada wiersza runu, wiec kolejnosc commitow = kolejnosc seq.
+            ostatni_seq = po_seq or 0
             async with db_session.SessionLocal() as s3:
                 historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
             for h in historia:
                 if await request.is_disconnected():
                     return
-                wyslane |= {h.seq}
+                ostatni_seq = h.seq
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
             while True:
                 if await request.is_disconnected():
@@ -487,12 +492,20 @@ async def run_stream(
                     ostatnia = time.monotonic()
                 if ev is None:
                     continue
-                # Poza kolejnoscia (6 przed 5 przy dwoch rownoleglych ingest) mniejszy numer
-                # nie moze zginac, wiec odcinamy zbiorem wyslanych, a nie jedna liczba.
-                if ev["seq"] in wyslane or (po_seq is not None and ev["seq"] <= po_seq):
-                    continue
-                wyslane |= {ev["seq"]}
-                yield _ramka_runu(ev)
+                # seq <= ostatni_seq pomija koncowy warunek (duplikat lub zdarzenie z historii)
+                if ev["seq"] > ostatni_seq + 1:
+                    # Dziura (np. 5 przed 4 przy rownoleglych ingest): dociagamy z bazy
+                    # i wysylamy rosnaco, zeby id nie cofalo sie po wznowieniu.
+                    async with db_session.SessionLocal() as s4:
+                        luka = await uslugi.zdarzenia_runu(s4, run_ref, ostatni_seq)
+                    for h in luka:
+                        if await request.is_disconnected():
+                            return
+                        ostatni_seq = h.seq
+                        yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+                if ev["seq"] > ostatni_seq:
+                    ostatni_seq = ev["seq"]
+                    yield _ramka_runu(ev)
         finally:
             if q is not None:
                 bus.unsubscribe_run(run_id, q)

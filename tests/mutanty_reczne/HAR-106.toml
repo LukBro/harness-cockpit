@@ -4,35 +4,38 @@
 
 # --- run_stream: gen() ---
 
+# Numer zdarzenia z historii nie wchodzi do `ostatni_seq`: zdarzenie z szyny o numerze z historii
+# wygladaloby na dziure i historia poszlaby drugi raz.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = "                wyslane |= {h.seq}\n"
-zamien = "                pass\n"
+szukaj = """                ostatni_seq = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+            while True:
+"""
+zamien = """                pass
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+            while True:
+"""
 test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
 
+# Start licznika bez Last-Event-ID i z nim.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = 'ev["seq"] <= po_seq'
-zamien = 'ev["seq"] < po_seq'
+szukaj = "ostatni_seq = po_seq or 0"
+zamien = "ostatni_seq = 0"
 test = "tests/test_strumien_runu.py::test_wznowiony_strumien_bez_nowych_zdarzen_w_bazie_nie_oddaje_duplikatu_numeru_klienta"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = '(po_seq is not None and ev["seq"] <= po_seq)'
-zamien = "False"
-test = "tests/test_strumien_runu.py::test_wznowiony_strumien_bez_nowych_zdarzen_w_bazie_nie_oddaje_duplikatu_numeru_klienta"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = '(po_seq is not None and ev["seq"]'
-zamien = '(ev["seq"]'
+szukaj = "ostatni_seq = po_seq or 0"
+zamien = "ostatni_seq = po_seq"
 test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = "                wyslane |= {ev[\"seq\"]}\n"
-zamien = "                pass\n"
-test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
+szukaj = "ostatni_seq = po_seq or 0"
+zamien = "ostatni_seq = po_seq or 1"
+test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"
 
 # Zdarzenie z szyny z podmienionym numerem: id ramki przestaje byc rowne seq.
 [[mutant]]
@@ -41,18 +44,140 @@ szukaj = "ev = await q.get()"
 zamien = 'ev = (await q.get()) | {"seq": -1}'
 test = "tests/test_strumien_runu.py::test_wznowiony_strumien_runu_nie_powtarza_zdarzen_ktore_klient_juz_ma"
 
-# Powrot do jednej liczby `ostatnio`: mniejszy numer z szyny ginie.
+# Dziura w numerach: bez dociagania z bazy zdarzenie 4, ktorego nie ma na szynie, ginie.
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = 'if ev["seq"] in wyslane or'
-zamien = 'if (wyslane and ev["seq"] <= max(wyslane)) or'
-test = "tests/test_strumien_runu.py::test_zdarzenia_na_zywo_poza_kolejnoscia_seq_docieraja_oba_i_dokladnie_raz"
+szukaj = 'if ev["seq"] > ostatni_seq + 1:'
+zamien = "if False:"
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = 'if ev["seq"] in wyslane or'
-zamien = "if"
+szukaj = 'if ev["seq"] > ostatni_seq + 1:'
+zamien = 'if ev["seq"] > ostatni_seq + 2:'
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba"
+
+# Nastepny numer to nie dziura: zdarzenie o ostatni_seq + 1 nie kosztuje odczytu z bazy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = 'if ev["seq"] > ostatni_seq + 1:'
+zamien = 'if ev["seq"] > ostatni_seq:'
+test = "tests/test_strumien_runu.py::test_kolejne_zdarzenia_na_zywo_bez_dziury_nie_odczytuja_bazy_poza_historia"
+
+# Dociagniecie od poczatku zamiast od ostatniego numeru: historia poszlaby drugi raz.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "zdarzenia_runu(s4, run_ref, ostatni_seq)"
+zamien = "zdarzenia_runu(s4, run_ref, None)"
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba"
+
+# Dociagniecie dziury: bez odczytu z bazy, bez petli i bez wyslania ramki zdarzenie 4 z bazy ginie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                    async with db_session.SessionLocal() as s4:
+                        luka = await uslugi.zdarzenia_runu(s4, run_ref, ostatni_seq)
+"""
+zamien = """                    luka = []
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "for h in luka:"
+zamien = "for h in []:"
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                        yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+                if ev["seq"] > ostatni_seq:
+"""
+zamien = """                        continue
+                if ev["seq"] > ostatni_seq:
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_z_dziura_w_numerach_dociaga_brakujace_z_bazy_przed_soba"
+
+# Dociagniete zdarzenia nie przesuwaja ostatni_seq: zdarzenie 4 z szyny poszloby drugi raz.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                        ostatni_seq = h.seq
+"""
+zamien = """                        pass
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenia_na_zywo_poza_kolejnoscia_seq_docieraja_rosnaco_i_dokladnie_raz"
+
+# Zdarzenie z szyny, ktore dociagniecie dziury juz wyslalo, nie idzie drugi raz.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                if ev["seq"] > ostatni_seq:
+                    ostatni_seq = ev["seq"]
+"""
+zamien = """                if True:
+                    ostatni_seq = ev["seq"]
+"""
+test = "tests/test_strumien_runu.py::test_zdarzenia_na_zywo_poza_kolejnoscia_seq_docieraja_rosnaco_i_dokladnie_raz"
+
+# Zywe zdarzenie nie przesuwa ostatni_seq: powtorzone 4 poszloby drugi raz.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                    ostatni_seq = ev["seq"]
+"""
+zamien = """                    pass
+"""
 test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
+
+# Rozlaczenie w trakcie dociagania dziury (wariant z historii jest nizej).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """                        if await request.is_disconnected():
+                            return
+"""
+zamien = """                        if await request.is_disconnected():
+                            pass
+"""
+test = "tests/test_strumien_runu.py::test_rozlaczenie_klienta_w_trakcie_dociagania_dziury_konczy_strumien_bez_dalszych_ramek"
+
+# Okno kontroli sesji liczone od konca odczytu historii zamiast od subskrypcji (linia przesunieta
+# tuz przed `while True:`).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = """            # Okno kontroli liczymy od subskrypcji, przed odczytem historii (ten oddaje petle).
+            ostatnia = time.monotonic()
+            # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
+            # a duplikat odcina `ostatni_seq`. Sesja zamknieta przed czekaniem na kolejke.
+            # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
+            # id ramki rosnie monotonicznie (Last-Event-ID wznawia bez dziur i duplikatow);
+            # seq zapisu idzie pod blokada wiersza runu, wiec kolejnosc commitow = kolejnosc seq.
+            ostatni_seq = po_seq or 0
+            async with db_session.SessionLocal() as s3:
+                historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
+            for h in historia:
+                if await request.is_disconnected():
+                    return
+                ostatni_seq = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+            while True:
+"""
+zamien = """            # Okno kontroli liczymy od subskrypcji, przed odczytem historii (ten oddaje petle).
+            # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
+            # a duplikat odcina `ostatni_seq`. Sesja zamknieta przed czekaniem na kolejke.
+            # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
+            # id ramki rosnie monotonicznie (Last-Event-ID wznawia bez dziur i duplikatow);
+            # seq zapisu idzie pod blokada wiersza runu, wiec kolejnosc commitow = kolejnosc seq.
+            ostatni_seq = po_seq or 0
+            async with db_session.SessionLocal() as s3:
+                historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
+            for h in historia:
+                if await request.is_disconnected():
+                    return
+                ostatni_seq = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+            ostatnia = time.monotonic()
+            while True:
+"""
+test = "tests/test_sesja_a_strumien.py::test_odczyt_historii_dluzszy_niz_okno_kontroli_nie_odracza_kontroli_sesji_o_kolejne_okno"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
@@ -72,25 +197,27 @@ szukaj = """            q = bus.subscribe_run(run_id)
             ostatnia = time.monotonic()
             # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
             # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
-            # a duplikat odcina `wyslane`. Sesja zamknieta przed czekaniem na kolejke.
+            # a duplikat odcina `ostatni_seq`. Sesja zamknieta przed czekaniem na kolejke.
             # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
-            wyslane: set[int] = set()
+            # id ramki rosnie monotonicznie (Last-Event-ID wznawia bez dziur i duplikatow);
+            # seq zapisu idzie pod blokada wiersza runu, wiec kolejnosc commitow = kolejnosc seq.
+            ostatni_seq = po_seq or 0
             async with db_session.SessionLocal() as s3:
                 historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
             for h in historia:
                 if await request.is_disconnected():
                     return
-                wyslane |= {h.seq}
+                ostatni_seq = h.seq
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
 """
 zamien = """            ostatnia = time.monotonic()
-            wyslane: set[int] = set()
+            ostatni_seq = po_seq or 0
             async with db_session.SessionLocal() as s3:
                 historia = await uslugi.zdarzenia_runu(s3, run_ref, po_seq)
             for h in historia:
                 if await request.is_disconnected():
                     return
-                wyslane |= {h.seq}
+                ostatni_seq = h.seq
                 yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
             q = bus.subscribe_run(run_id)
 """
@@ -156,13 +283,20 @@ test = "tests/test_strumien_runu.py::test_niepoprawny_naglowek_wznowienia_to_cal
 plik = "src/cockpit/api/app.py"
 szukaj = "n <= 2**31 - 1"
 zamien = "n <= 2**32"
-test = "tests/test_strumien_runu.py::test_naglowek_wiekszy_od_int32_o_jeden_oddaje_cala_historie"
+test = "tests/test_strumien_runu.py::test_naglowek_o_jeden_wiekszy_od_najwiekszego_numeru_zdarzenia_oddaje_cala_historie"
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
 szukaj = "n <= 2**31 - 1"
 zamien = "n < 2**31 - 1"
-test = "tests/test_strumien_runu.py::test_naglowek_wznowienia_rowny_najwiekszej_liczbie_int32_jest_przyjety_a_wiekszy_odrzucony"
+test = "tests/test_strumien_runu.py::test_naglowek_wznowienia_rowny_najwiekszemu_numerowi_zdarzenia_jest_przyjety_a_o_jeden_wiekszy_odrzucony"
+
+# Dlugi naglowek odrzucany przed int(): powyzej 4300 cyfr int() rzuca ValueError (500).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "if len(naglowek) > len(str(2**31 - 1)):"
+zamien = "if False:"
+test = "tests/test_strumien_runu.py::test_naglowek_wznowienia_z_ponad_czterema_tysiacami_cyfr_oddaje_cala_historie_a_nie_blad_serwera"
 
 # --- _ramka_runu ---
 
@@ -224,18 +358,8 @@ test = "tests/test_strumien_runu.py::test_strumien_runu_bez_naglowka_oddaje_cala
 
 [[mutant]]
 plik = "src/cockpit/api/app.py"
-szukaj = """                if ev["seq"] in wyslane or (po_seq is not None and ev["seq"] <= po_seq):
-                    continue
+szukaj = """                    yield _ramka_runu(ev)
 """
-zamien = """                if ev["seq"] in wyslane or (po_seq is not None and ev["seq"] <= po_seq):
-                    pass
-"""
-test = "tests/test_strumien_runu.py::test_zdarzenie_na_zywo_o_numerze_z_historii_lub_powtorzone_dociera_tylko_raz"
-
-[[mutant]]
-plik = "src/cockpit/api/app.py"
-szukaj = """                yield _ramka_runu(ev)
-"""
-zamien = """                continue
+zamien = """                    continue
 """
 test = "tests/test_strumien_runu.py::test_zdarzenie_z_szyny_dociera_do_klienta_gdy_strumien_nie_trzyma_polaczenia"
