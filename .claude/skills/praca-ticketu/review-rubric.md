@@ -14,17 +14,16 @@ decyzja jest zawsze jednoznaczna (85 zalicza, 80 nie).
 
 | Naruszenie | Odjecie | Uwagi |
 |---|---|---|
-| Zapis do DB bez `db.commit()` | -30 | patrz zasady projektu ponizej |
 | Naruszenie reguly z `.claude/rules/*` | -25 za regule | reguly czytaj na starcie review |
-| Brak testu dla nowego kodu | -20 | tylko gdy projekt ma testy - wg toolchainu z Twojego promptu, patrz zasady projektu ponizej (pkt 4) |
+| Brak testu dla nowego kodu | -25 | tylko gdy projekt ma testy - wg toolchainu z Twojego promptu, patrz zasady projektu ponizej (pkt 4) |
 | Kryterium akceptacji niezrealizowane | -15 za kryterium | liste kryteriow masz w prompcie; zrealizowane = widoczne w git diff LUB potwierdzone w raporcie developera albo Team Managera (kryteria poza repo: wiki, konfiguracja, "testy przechodza"). Stan odhaczen w systemie IGNORUJ (developerzy odhaczaja swoje, resztki domyka Team Manager po review) |
 | Brak obslugi bledu na granicy systemu | -10 | user input, zewnetrzne API, storage |
-| Zmiana pliku poza przydzialem agenta | -10 za plik | przydzial masz w prompcie: lista zespolu z zakresem per agent (kilku developerow) ALBO `ZAKRES PRACY DEV` jednego developera - uzyj tego, ktore dostales. Wykryj przez `git diff --stat <BASELINE_SHA>` + `git status --porcelain` (nowe pliki sa untracked). Nie da sie przypisac agentowi -> NIE odejmuj nikomu, odnotuj jako naruszenie w raporcie - decyzje podejmie Team Manager |
-| Naruszenie STOP CONDITIONS | -10 za naruszenie | liste STOP CONDITIONS masz w prompcie (kontrakt autonomii). Agent zrobil cos z tej listy (np. migracja, nowa zaleznosc, plik z "Nie ruszac") BEZ zgloszenia `STOP:` w raporcie -> odejmij. Zglosil i dostal zgode Team Managera -> nie odejmuj. Jedna operacja pasujaca tez do "plik poza przydzialem" -> tylko jedno odjecie |
+| Zmiana pliku poza przydzialem agenta | UWAGA, 0 pkt | przydzial masz w prompcie: lista zespolu z zakresem per agent (kilku developerow) ALBO `ZAKRES PRACY DEV` jednego developera - uzyj tego, ktore dostales. Wykryj przez `git diff --stat <BASELINE_SHA>` + `git status --porcelain` (nowe pliki sa untracked). Nie da sie przypisac agentowi -> NIE odejmuj nikomu, odnotuj jako naruszenie w raporcie - decyzje podejmie Team Manager. Wpisz jako `UWAGA (plik poza przydzialem, bez blokady)` - nie obniza oceny ani nie blokuje APPROVED (audyt procesu 2026-11-19: formalnosci raportu to 15 z 48 odjec i 4 rundy bez wady w kodzie) |
+| Naruszenie STOP CONDITIONS | UWAGA, 0 pkt | liste STOP CONDITIONS masz w prompcie (kontrakt autonomii). Agent zrobil cos z tej listy (np. migracja, nowa zaleznosc, plik z "Nie ruszac") BEZ zgloszenia `STOP:` w raporcie -> wpisz `UWAGA (STOP bez zgloszenia, bez blokady)`; Team Manager decyduje, czy zmiana wchodzi. Zglosil i dostal zgode Team Managera -> bez uwagi. Jedna operacja pasujaca tez do "plik poza przydzialem" -> jedna uwaga |
 | Over-engineering | -10 | abstrakcja bez 3 realnych uzyc, przedwczesny feature flag |
 | Niezgodnosc z konwencja sasiedniego pliku | -5 | nazewnictwo, gestosc komentarzy, idiom |
 | Komentarz opisujacy CO robi kod | -5 | komentarze tylko o WHY |
-| Test przechodzi na mutancie chronionego kodu (usunięty ORDER BY/filtr, odwrócona wartość domyślna, asercja na echo wejścia) | -20 | krytyk podaje mutanta, który przeżył; patrz `.claude/rules/test-kills-mutant.md` |
+| Test przechodzi na mutancie chronionego kodu (usunięty ORDER BY/filtr, odwrócona wartość domyślna, asercja na echo wejścia) | -25 | krytyk podaje mutanta, który przeżył; patrz `.claude/rules/test-odroznia-regule.md` |
 
 
 ### Wiersze TYLKO gdy TRYB = defekt
@@ -32,16 +31,14 @@ decyzja jest zawsze jednoznaczna (85 zalicza, 80 nie).
 | Naruszenie | Odjecie | Uwagi |
 |---|---|---|
 | Fix bez nazwanego mechanizmu | -20 | raport developera nie wskazuje przyczyny jako plik:linia + jedno zdanie "dlaczego to daje ten symptom", albo fix jest w innym miejscu niz dowod z researchu (o ile research byl i masz go w prompcie) bez wyjasnienia. Symptom zniknal != przyczyna usunieta |
-| Brak testu regresyjnego dla defektu | -20 | test ma przechodzic przez sciezke kodu wskazana jako przyczyna, nie tylko sprawdzac symptom. W trybie defektu ZASTEPUJE ogolny wiersz "brak testu dla nowego kodu" - nie sumuj obu. Projekt bez testow -> zamiast testu wymagane sa zapisane kroki reprodukcji wykonane przed i po fixie (raport Team Managera) |
+| Brak testu regresyjnego dla defektu | -25 | test ma przechodzic przez sciezke kodu wskazana jako przyczyna, nie tylko sprawdzac symptom. W trybie defektu ZASTEPUJE ogolny wiersz "brak testu dla nowego kodu" - nie sumuj obu. Projekt bez testow -> zamiast testu wymagane sa zapisane kroki reprodukcji wykonane przed i po fixie (raport Team Managera) |
 | Klasa bledu niesprawdzona | -5 | research w prompcie (raport Researchera albo mini-research Team Managera) wskazal inne wystapienia tego samego wzorca, developer ich nie sprawdzil ani nie odnotowal, ze sa poza zakresem. Zadnego researchu w prompcie -> pomin ten wiersz |
 
 W trybie `zmiana` te trzy wiersze pomijasz w calosci. TRYB masz w prompcie.
 
 Odjecia sumuja sie MIEDZY roznymi wadami. Jedna wada punktowana RAZ: gdy pasuje
-do kilku wierszy (np. brak `db.commit()` to takze naruszenie reguly
-`.claude/rules/db-commit.md`), zastosuj tylko najwyzsze odjecie. Wiersze
-specyficzne dla stacku (np. `db.commit()`) pomijasz w projektach, ktorych nie
-dotycza. Ocena moze spasc ponizej zera - wtedy raportuj `0/100`.
+do kilku wierszy (np. przezywajacy mutant to takze naruszenie reguly
+`.claude/rules/test-odroznia-regule.md`), zastosuj tylko najwyzsze odjecie. Ocena moze spasc ponizej zera - wtedy raportuj `0/100`.
 
 Lintu i testow NIE punktujesz - to osobny gate przed review, dostajesz kod PO
 zielonym wyniku. Wynik "pominiete za zgoda uzytkownika" -> ocen normalnie i zaznacz
@@ -110,9 +107,10 @@ Sztywny, jedna linia na agenta:
 ```
 **Code Review**
 
-<agent-1>: 100 -30 (services/pipelines.py:142 zapis bez db.commit) -20 (brak testu dla create_job) = 50/100
-  -> NEEDS WORK: dodaj commit po db.add, dopisz test jednostkowy dla create_job
-  REGULA: Kazdy db.add()/db.delete() w serwisie konczy sie await db.commit() w tym samym serwisie.
+<agent-1>: 100 -25 (services/runs.py:142 odczyt statusu i zapis bez blokady wiersza) -25 (brak testu dla zakoncz_run) = 50/100
+  UWAGA (tools/x.py poza przydzialem, bez blokady)
+  -> NEEDS WORK: warunek w UPDATE ... WHERE status, dopisz test dwoch przeplecionych zapisow
+  REGULA: Odczyt stanu i zapis zalezny od niego ida w jednej transakcji z blokada albo warunkiem w zapisie.
 
 <agent-2>: 100 -5 (templates/board.html:88 niezgodnosc z konwencja sasiednich plikow) = 95/100
   -> APPROVED
