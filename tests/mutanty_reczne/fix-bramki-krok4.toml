@@ -1,0 +1,7 @@
+# Krok 4 planu z audytu procesu (2026-11-19): jedna lista sciezek wrazliwych (alembic.ini jak w straz-sciezek.yml).
+
+[[mutant]]
+plik = "tools/oddaj_pr.sh"
+szukaj = " \"alembic.ini\")"
+zamien = ")"
+test = "tests/test_narzedzia_sesji.py::test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny[alembic.ini]"

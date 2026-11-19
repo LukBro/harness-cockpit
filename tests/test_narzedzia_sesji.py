@@ -1293,6 +1293,7 @@ def test_oddanie_brudny_plik_z_listy_dozwolonych_nie_blokuje_ale_inny_brudny_pli
         ".claude/settings.json",
         ".claude/hooks/straznik.py",
         "src/runner/secrets.py",
+        "alembic.ini",
     ],
 )
 def test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny(oddanie, sciezka):
