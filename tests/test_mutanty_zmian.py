@@ -785,6 +785,7 @@ class _Srodowisko:
             "diff": "",
             "nowe_rc": 0,
             "nowe": "",
+            "nowe_poza_zasiegiem_rc": 0,  # `ls-files` nowych plikow w katalogach poza zasiegiem mutmuta
             "run_rc": 0,
             "run_out": "",
             "run_err": "",
@@ -838,6 +839,8 @@ class _Srodowisko:
                 self._pliki_testow(argv) + self.u["tests_dodatkowe"],
                 "fatal: ls-files tests",
             )
+        if argv[:2] == ["git", "ls-files"] and "tests/mutanty_reczne/" in argv:
+            return self._wynik(argv, self.u["nowe_poza_zasiegiem_rc"], self.u["nowe"], "fatal: ls-files poza")
         if argv[:2] == ["git", "ls-files"]:
             return self._wynik(argv, self.u["nowe_rc"], self.u["nowe"], "fatal: ls-files")
         if argv[1:3] == ["-m", "mutmut"] and argv[3] == "run":
@@ -3171,3 +3174,34 @@ def test_nieudane_pobranie_listy_zmienionych_plikow_daje_ostrzezenie_a_nie_kod_2
     s = _Srodowisko(nazwy_rc=128)
     assert _main(monkeypatch, tmp_path, s) == 0
     assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem" in capsys.readouterr().err
+
+
+def test_nieudane_pobranie_nowych_plikow_poza_zasiegiem_daje_ostrzezenie_a_nie_kod_2(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(nowe_poza_zasiegiem_rc=128, zmienione_pliki="tools/x.py\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    bledy = capsys.readouterr().err.splitlines()
+    assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: fatal: ls-files poza" in bledy
+    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" not in bledy
+
+
+def test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_tabel(monkeypatch, tmp_path):
+    s = _Srodowisko()
+    _main(monkeypatch, tmp_path, s)
+    nowe = [w for w in s.wywolania if w[:2] == ["git", "ls-files"] and "tests/mutanty_reczne/" in w]
+    assert nowe == [
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "tools/",
+            "cicd/",
+            "web/",
+            ".claude/skills/",
+            ".claude/hooks/",
+            "tests/mutanty_reczne/",
+        ]
+    ]

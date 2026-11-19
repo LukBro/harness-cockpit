@@ -84,3 +84,27 @@ plik = "tools/mutanty_zmian.py"
 szukaj = "    pliki = nazwy.stdout.splitlines() + nowe.stdout.splitlines()"
 zamien = "    pliki = nazwy.stdout.splitlines()"
 test = "tests/test_mutanty_zmian.py::test_nowa_niezacommitowana_tabela_recznych_mutantow_tez_wylacza_ostrzezenie"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "\"tests/mutanty_reczne/\"])\n    if nowe.returncode != 0:"
+zamien = "\"tests/mutanty_reczne/\"])\n    if False:"
+test = "tests/test_mutanty_zmian.py::test_nieudane_pobranie_nowych_plikow_poza_zasiegiem_daje_ostrzezenie_a_nie_kod_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "*PREFIKSY_POZA_ZASIEGIEM,\n                    \"tests/mutanty_reczne/\"])"
+zamien = "*PREFIKSY_POZA_ZASIEGIEM])"
+test = "tests/test_mutanty_zmian.py::test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_tabel"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "\"ls-files\", \"--others\", \"--exclude-standard\", \"--\", *PREFIKSY_POZA_ZASIEGIEM"
+zamien = "\"ls-files\", \"--exclude-standard\", \"--\", *PREFIKSY_POZA_ZASIEGIEM"
+test = "tests/test_mutanty_zmian.py::test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_tabel"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "\"--others\", \"--exclude-standard\", \"--\", *PREFIKSY_POZA_ZASIEGIEM"
+zamien = "\"--others\", \"--\", *PREFIKSY_POZA_ZASIEGIEM"
+test = "tests/test_mutanty_zmian.py::test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_tabel"
