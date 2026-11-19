@@ -516,8 +516,15 @@ def _przebieg(
     katalog_dowodow: Path | None = None,
 ) -> int:
     # Katalog dowodow sprawdzamy pierwszy: bez niego nie ma po co wolac gita ani mutmuta.
-    if katalog_dowodow is not None and not katalog_dowodow.is_dir():
-        raise BladNarzedzia(f"brak dowodu: katalog dowodow {katalog_dowodow} nie istnieje")
+    if katalog_dowodow is not None:
+        try:
+            jest_katalogiem = katalog_dowodow.is_dir()
+        except OSError as blad_stat:
+            raise BladNarzedzia(
+                f"brak dowodu: katalog dowodow {katalog_dowodow}: nie da sie sprawdzic: {blad_stat}"
+            ) from blad_stat
+        if not jest_katalogiem:
+            raise BladNarzedzia(f"brak dowodu: katalog dowodow {katalog_dowodow} nie istnieje")
     source_paths = source_paths_z_pyproject(korzen / "pyproject.toml")
 
     merge = uruchom(["git", "merge-base", baza, "HEAD"])

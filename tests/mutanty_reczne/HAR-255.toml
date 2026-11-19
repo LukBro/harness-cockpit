@@ -368,30 +368,37 @@ test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_pr
 # Katalog dowodow, ktory nie istnieje, przechodzi bez bledu.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = "if katalog_dowodow is not None and not katalog_dowodow.is_dir():"
-zamien = "if katalog_dowodow is not None and katalog_dowodow.is_dir():"
+szukaj = "if not jest_katalogiem:"
+zamien = "if jest_katalogiem:"
 test = "tests/test_mutanty_zmian.py::test_katalog_dowodow_ktory_nie_istnieje_to_kod_2_z_brakiem_dowodu_bez_wolania_gita_i_mutmuta"
 
 # Kontrola katalogu bez warunku obecnosci flagi: pada na None.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = "if katalog_dowodow is not None and not katalog_dowodow.is_dir():"
-zamien = "if not katalog_dowodow.is_dir():"
+szukaj = "if katalog_dowodow is not None:\n        try:"
+zamien = "if True:\n        try:"
 test = "tests/test_mutanty_zmian.py::test_bez_katalogu_dowodow_mutmut_biegnie_zwyklym_run_z_oryginalnymi_clean_tests"
 
 # Kazdy podany katalog traktowany jak brakujacy.
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = "if katalog_dowodow is not None and not katalog_dowodow.is_dir():"
-zamien = "if katalog_dowodow is not None:"
+szukaj = "if not jest_katalogiem:"
+zamien = "if True:"
 test = "tests/test_mutanty_zmian.py::test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run"
 
 # Zwykly plik zamiast katalogu przechodzi (is_dir -> exists).
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = "not katalog_dowodow.is_dir():"
-zamien = "not katalog_dowodow.exists():"
+szukaj = "jest_katalogiem = katalog_dowodow.is_dir()"
+zamien = "jest_katalogiem = katalog_dowodow.exists()"
 test = "tests/test_mutanty_zmian.py::test_zwykly_plik_zamiast_katalogu_dowodow_to_kod_2_z_brakiem_dowodu"
+
+# Katalog dowodow, ktorego is_dir rzuca OSError (brak praw): wyjatek ucieka (zly typ w `except`).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "except OSError as blad_stat:"
+zamien = "except () as blad_stat:"
+test = "tests/test_mutanty_zmian.py::test_katalog_dowodow_ktorego_nie_da_sie_sprawdzic_to_kod_2_z_brakiem_dowodu_bez_wolania_gita_i_mutmuta"
 
 # Wybor polecenia odwrocony.
 [[mutant]]
@@ -479,7 +486,7 @@ test = "tests/test_statystyki_mutmuta.py::test_shard_dostaje_co_trzeci_test_z_po
 plik = "tools/statystyki_mutmuta.py"
 szukaj = "return sorted(set(testy))[indeks::liczba]"
 zamien = "return list(set(testy))[indeks::liczba]"
-test = "tests/test_statystyki_mutmuta.py::test_shard_dostaje_co_trzeci_test_z_posortowanej_listy_niezaleznie_od_kolejnosci_wejscia[shard_1]"
+test = "tests/test_statystyki_mutmuta.py::test_shard_dostaje_co_trzeci_test_z_posortowanej_listy_niezaleznie_od_kolejnosci_wejscia"
 
 # ===========================================================================
 # tools/statystyki_mutmuta.py: odcisk zrodel i konfiguracji
@@ -892,16 +899,23 @@ test = "tests/test_statystyki_mutmuta.py::test_dowody_jedenastu_shardow_sa_zwroc
 # Katalog dowodow, ktory nie istnieje, przechodzi.
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "if not katalog.is_dir():"
-zamien = "if katalog.is_dir():"
+szukaj = "if not jest_katalogiem:"
+zamien = "if jest_katalogiem:"
 test = "tests/test_statystyki_mutmuta.py::test_katalog_dowodow_ktory_nie_istnieje_to_brak_dowodu"
 
 # Zwykly plik zamiast katalogu przechodzi.
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "if not katalog.is_dir():"
-zamien = "if not katalog.exists():"
+szukaj = "jest_katalogiem = katalog.is_dir()"
+zamien = "jest_katalogiem = katalog.exists()"
 test = "tests/test_statystyki_mutmuta.py::test_zwykly_plik_zamiast_katalogu_dowodow_to_brak_dowodu"
+
+# Katalog dowodow, ktorego is_dir rzuca OSError (brak praw): wyjatek ucieka (zly typ w `except`).
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad_stat:"
+zamien = "except () as blad_stat:"
+test = "tests/test_statystyki_mutmuta.py::test_katalog_dowodow_ktorego_nie_da_sie_sprawdzic_to_brak_dowodu_z_nazwa_katalogu"
 
 # Pusty katalog przechodzi.
 [[mutant]]
@@ -990,30 +1004,30 @@ test = "tests/test_statystyki_mutmuta.py::test_shard_bez_zadnego_testu_z_kodem_z
 # Odczyt pliku: katalog zamiast pliku (OSError) nie jest tlumaczony.
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
-zamien = "except (UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+szukaj = "except (OSError, RecursionError, ValueError) as blad:"
+zamien = "except (RecursionError, ValueError) as blad:"
 test = "tests/test_statystyki_mutmuta.py::test_katalog_zamiast_pliku_dowodu_to_brak_dowodu_z_nazwa_pliku"
 
-# Odczyt pliku: bajty spoza UTF-8 nie sa tlumaczone.
+# Odczyt pliku: ValueError zawezone do JSONDecodeError (bajty spoza UTF-8 = UnicodeDecodeError uciekaja).
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
+szukaj = "except (OSError, RecursionError, ValueError) as blad:"
 zamien = "except (OSError, RecursionError, json.JSONDecodeError) as blad:"
 test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_plik_dowodu_to_brak_dowodu_z_nazwa_pliku[bajty_spoza_utf8]"
 
 # Odczyt pliku: gleboko zagniezdzony JSON (RecursionError) nie jest tlumaczony.
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
-zamien = "except (OSError, UnicodeDecodeError, json.JSONDecodeError) as blad:"
+szukaj = "except (OSError, RecursionError, ValueError) as blad:"
+zamien = "except (OSError, ValueError) as blad:"
 test = "tests/test_statystyki_mutmuta.py::test_dowod_z_gleboko_zagniezdzonym_json_to_brak_dowodu_a_nie_wyjatek_rekurencji"
 
-# Odczyt pliku: uszkodzony JSON nie jest tlumaczony.
+# Odczyt pliku: ValueError usuniete z krotki (uszkodzony JSON, bajty spoza UTF-8, liczba ponad limit cyfr uciekaja).
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
-szukaj = "except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:"
-zamien = "except (OSError, UnicodeDecodeError, RecursionError) as blad:"
-test = "tests/test_statystyki_mutmuta.py::test_nieczytelny_plik_dowodu_to_brak_dowodu_z_nazwa_pliku[uszkodzony_json]"
+szukaj = "except (OSError, RecursionError, ValueError) as blad:"
+zamien = "except (OSError, RecursionError) as blad:"
+test = "tests/test_statystyki_mutmuta.py::test_dowod_z_liczba_ponad_limit_cyfr_to_brak_dowodu_a_nie_wyjatek_konwersji"
 
 # Dowod niebedacy obiektem przechodzi.
 [[mutant]]

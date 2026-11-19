@@ -186,7 +186,9 @@ def _wczytaj_plik_dowodu(plik: Path) -> dict[str, Any]:
     """Jeden plik `shard-<n>.json`: dowod o poprawnym ksztalcie pol."""
     try:
         dane = json.loads(plik.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, RecursionError, json.JSONDecodeError) as blad:
+    # WHY: UnicodeDecodeError i JSONDecodeError to podklasy ValueError; ValueError obejmuje tez
+    # liczbe powyzej 4300 cyfr (limit konwersji int w Pythonie 3.11+), ktora inaczej uciekalaby tracebackiem.
+    except (OSError, RecursionError, ValueError) as blad:
         raise BladDowodu(f"{plik.name}: nie da sie odczytac: {blad}") from blad
     if not isinstance(dane, dict):
         raise BladDowodu(f"{plik.name}: oczekiwano obiektu JSON")
@@ -206,7 +208,11 @@ def _wczytaj_plik_dowodu(plik: Path) -> dict[str, Any]:
 
 def wczytaj_dowody(katalog: Path, *, sha: str, odcisk: str) -> list[dict[str, Any]]:
     """Dowody wszystkich shardow wedlug numeru; kazdy brak albo niezgodnosc to `BladDowodu`."""
-    if not katalog.is_dir():
+    try:
+        jest_katalogiem = katalog.is_dir()
+    except OSError as blad_stat:
+        raise BladDowodu(f"katalog dowodow {katalog}: nie da sie sprawdzic: {blad_stat}") from blad_stat
+    if not jest_katalogiem:
         raise BladDowodu(f"katalog dowodow {katalog} nie istnieje")
     try:
         pliki = sorted(katalog.iterdir())

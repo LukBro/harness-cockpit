@@ -2034,6 +2034,29 @@ def test_zwykly_plik_zamiast_katalogu_dowodow_to_kod_2_z_brakiem_dowodu(monkeypa
     assert f"blad: brak dowodu: katalog dowodow {plik} nie istnieje" in capsys.readouterr().err.splitlines()
 
 
+def test_katalog_dowodow_ktorego_nie_da_sie_sprawdzic_to_kod_2_z_brakiem_dowodu_bez_wolania_gita_i_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    katalog = tmp_path / "dowody-bez-dostepu"
+    katalog.mkdir()
+    oryginal = Path.is_dir
+
+    def is_dir_z_odmowa(self, *args, **kwargs):
+        if self == katalog:
+            raise PermissionError(13, "Permission denied")
+        return oryginal(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir_z_odmowa)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 2
+    assert s.wywolania == []
+    assert any(
+        linia.startswith(f"blad: brak dowodu: katalog dowodow {katalog}: nie da sie sprawdzic: ")
+        for linia in capsys.readouterr().err.splitlines()
+    )
+
+
 def test_brak_dowodu_zgloszony_przez_opakowanie_daje_kod_2_z_trescia_na_stderr_i_bez_czytania_wynikow(
     monkeypatch, tmp_path, capsys
 ):

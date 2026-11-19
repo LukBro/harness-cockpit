@@ -1643,6 +1643,29 @@ def test_dowod_z_gleboko_zagniezdzonym_json_to_brak_dowodu_a_nie_wyjatek_rekuren
     assert _blad(sm, lambda: _wczytaj(sm, katalog)).startswith("brak dowodu: shard-0.json: nie da sie odczytac: ")
 
 
+def test_dowod_z_liczba_ponad_limit_cyfr_to_brak_dowodu_a_nie_wyjatek_konwersji(sm, tmp_path):
+    katalog = _katalog(tmp_path, bez=(0,))
+    (katalog / "shard-0.json").write_text('{"indeks": ' + "9" * 5000 + "}", encoding="utf-8")
+
+    assert _blad(sm, lambda: _wczytaj(sm, katalog)).startswith("brak dowodu: shard-0.json: nie da sie odczytac: ")
+
+
+def test_katalog_dowodow_ktorego_nie_da_sie_sprawdzic_to_brak_dowodu_z_nazwa_katalogu(sm, tmp_path, monkeypatch):
+    katalog = _katalog(tmp_path)
+    oryginal = Path.is_dir
+
+    def is_dir_z_odmowa(self, *args, **kwargs):
+        if self == katalog:
+            raise PermissionError(13, "Permission denied")
+        return oryginal(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir_z_odmowa)
+
+    komunikat = _blad(sm, lambda: _wczytaj(sm, katalog))
+
+    assert komunikat.startswith(f"brak dowodu: katalog dowodow {katalog}: nie da sie sprawdzic: ")
+
+
 def test_sekcja_tool_niebedaca_tabela_to_brak_sekcji_mutmut(sm, tmp_path):
     pyproject = _zapisz_pyproject(tmp_path, 'tool = "x"\n')
 
