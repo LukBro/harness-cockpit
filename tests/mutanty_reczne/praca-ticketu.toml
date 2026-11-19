@@ -789,3 +789,9 @@ plik = ".claude/skills/praca-ticketu/scripts/werdykt.py"
 szukaj = "AttributeError,\n            subprocess.TimeoutExpired) as e:"
 zamien = "AttributeError) as e:"
 test = "tests/test_skill_praca_ticketu.py::test_zawieszony_git_przy_odczycie_stanu_to_brak_werdyktu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "        zakres = (\"wszyscy agenci z `przydzial`.\\nPEŁNA LISTA: to jedyna pełna ocena - kolejne rundy mają zamrożony \""
+zamien = "        zakres = (\"wszyscy agenci z `przydzial`.\\n: to jedyna pełna ocena - kolejne rundy mają zamrożony \""
+test = "tests/test_skill_praca_ticketu.py::test_pierwsza_ocena_kaze_wypisac_pelna_liste_wad_a_ponowna_nie"
