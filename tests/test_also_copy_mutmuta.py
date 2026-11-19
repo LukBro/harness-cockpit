@@ -25,7 +25,10 @@ def _pokryte() -> list[str]:
 
 
 def _sledzone_korzenie() -> set[str]:
-    pliki = uruchom_i_zbierz(["git", "ls-files"], cwd=KORZEN, capture_output=True, text=True, check=True,
+    # pod mutmutem KORZEN to mutants/ (w .gitignore) - liste plikow bierzemy z korzenia repozytorium gita
+    gora = uruchom_i_zbierz(["git", "rev-parse", "--show-toplevel"], cwd=KORZEN, capture_output=True, text=True,
+                            check=True, timeout=60).stdout.strip()
+    pliki = uruchom_i_zbierz(["git", "ls-files"], cwd=gora, capture_output=True, text=True, check=True,
                              timeout=60).stdout.split()
     assert pliki, "git ls-files nic nie zwrocil - brak dowodu"
     return {p.split("/")[0] for p in pliki} | {"/".join(p.split("/")[:2]) for p in pliki if p.startswith(".claude/")}
