@@ -1095,6 +1095,19 @@ def test_pierwsza_ocena_nie_ma_zamrozonego_zakresu(ep):
     assert "ZAMROŻONY ZAKRES" not in (ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8")
 
 
+def test_pierwsza_ocena_kaze_wypisac_pelna_liste_wad_a_ponowna_nie(ep):
+    # poprawki szly na raty: pierwsza (pelna) ocena ma podac wszystkie wady, ponowna ma zamrozony zakres
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
+    assert "PEŁNA LISTA" in (ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8")
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA), "--tylko", "backend").kod == 0
+    assert "PEŁNA LISTA" not in (ep.kat / "krytyk-prompt-2.md").read_text(encoding="utf-8")
+
+
 # stan.py bramki: sesja w worktree nie zapisze bramki.json narzędziem pliku (HAR-169)
 
 
