@@ -203,9 +203,10 @@ def _wynik(argv, kod=0, out=b""):
 @pytest.fixture
 def ssh(mod, monkeypatch):
     """subprocess.run w shard_zdalny: git odpowiada sam, drugie ssh (skrypt shardu) wg `stan`."""
-    stan = {"skrypt": (0, b""), "wyjatek": None, "bundle_kod": None, "ssh": 0}
+    stan = {"skrypt": (0, b""), "wyjatek": None, "bundle_kod": None, "ssh": 0, "argv": []}
 
     def run(argv, **kw):
+        stan["argv"].append(argv)
         if argv[0] == "git":
             if argv[1] == "merge-base":
                 return _wynik(argv, 0 if stan["bundle_kod"] is None else 1)
@@ -250,6 +251,13 @@ def test_shard_zdalny_ktorego_nie_da_sie_uruchomic_to_porazka(mod, ssh, tmp_path
     assert _zdalny(mod, tmp_path) is False
 
 
+def test_shard_zdalny_nie_czeka_na_haslo_ssh(mod, ssh, tmp_path):
+    _zdalny(mod, tmp_path)
+    wywolania = [a for a in ssh["argv"] if a[0] == "ssh"]
+    assert len(wywolania) == 2
+    assert all(a[1:3] == ["-o", "BatchMode=yes"] for a in wywolania)
+
+
 def test_shard_zdalny_z_nieudanym_bundlem_to_porazka(mod, ssh, tmp_path):
     ssh["bundle_kod"] = 128
     assert _zdalny(mod, tmp_path) is False
@@ -258,7 +266,7 @@ def test_shard_zdalny_z_nieudanym_bundlem_to_porazka(mod, ssh, tmp_path):
 
 @pytest.fixture
 def lokalny(mod, monkeypatch, tmp_path):
-    stan = {"kod": 0, "dowod": True, "wyjatek": None}
+    stan = {"kod": 0, "dowod": True, "wyjatek": None, "rmtree": []}
 
     def odtworz(korzen, cel, sha, dane):
         if stan["wyjatek"] is not None:
@@ -271,6 +279,7 @@ def lokalny(mod, monkeypatch, tmp_path):
 
     monkeypatch.setattr(mod, "odtworz", odtworz)
     monkeypatch.setattr(mod.subprocess, "run", run)
+    monkeypatch.setattr(mod.shutil, "rmtree", lambda p, **kw: stan["rmtree"].append(p))
 
     def wywolaj():
         with open(tmp_path / "log", "w") as log:
@@ -281,6 +290,16 @@ def lokalny(mod, monkeypatch, tmp_path):
 def test_shard_lokalny_z_dowodem_to_sukces(lokalny):
     stan, wywolaj = lokalny
     assert wywolaj() is True
+
+
+def test_shard_lokalny_bez_katalogu_kopii_to_porazka(mod, lokalny, monkeypatch):
+    stan, wywolaj = lokalny
+
+    def mkdtemp(**kw):
+        raise OSError("pelny dysk")
+    monkeypatch.setattr(mod.tempfile, "mkdtemp", mkdtemp)
+    assert wywolaj() is False
+    assert stan["rmtree"] == []
 
 
 @pytest.mark.parametrize("kod,dowod", [(0, False), (1, True)], ids=["bez-pliku-dowodu", "kod-niezerowy"])
@@ -385,8 +404,8 @@ def test_domyslnie_cztery_shardy_wzgledem_origin_main(mod, przebieg, repo, monke
     assert sorted(przebieg["lokalne"]) == [0, 1, 2, 3]
 
 
-@pytest.mark.parametrize("argv", [[], ["--baza", "x"], ["--liczba", "0", "--"], ["--liczba", "x", "--"]],
-                         ids=["puste", "bez-separatora", "zero-shardow", "liczba-napis"])
+@pytest.mark.parametrize("argv", [[], ["--baza", "x"], ["--liczba", "0", "--"], ["--liczba", "x", "--"], ["--liczba"]],
+                         ids=["puste", "bez-separatora", "zero-shardow", "liczba-napis", "liczba-bez-wartosci"])
 def test_zle_wywolanie_to_blad_uzycia(mod, przebieg, argv):
     assert mod.main(argv) == 64
 
@@ -412,3 +431,28 @@ def test_katalog_dowodow_ktorego_nie_da_sie_utworzyc_to_brak_dowodu(mod, przebie
     monkeypatch.setattr(mod.tempfile, "mkdtemp", mkdtemp)
     assert mod.main(["--liczba", "2", "--", "--baza", "baza"]) == 2
     assert przebieg["lokalne"] == [] and przebieg["uruchom"] == []
+
+
+def test_log_shardu_ktorego_nie_da_sie_otworzyc_to_brak_dowodu(mod, przebieg, monkeypatch):
+    import builtins
+
+    def otworz(sciezka, *a, **kw):
+        if Path(sciezka).name.startswith("shard-"):
+            raise OSError("brak praw")
+        return builtins.open(sciezka, *a, **kw)
+    monkeypatch.setattr(mod, "open", otworz, raising=False)
+    assert mod.main(["--liczba", "2", "--", "--baza", "baza"]) == 2
+    assert przebieg["lokalne"] == [] and przebieg["uruchom"] == []
+
+
+def test_git_ponad_limit_czasu_to_brak_dowodu(mod, przebieg, monkeypatch):
+    def zmienia(korzen, baza):
+        raise mod.subprocess.TimeoutExpired("git", 300)
+    monkeypatch.setattr(mod, "zmienia_zrodla_mutmuta", zmienia)
+    assert mod.main(["--", "--baza", "baza"]) == 2
+    assert przebieg["uruchom"] == []
+
+
+def test_baza_bez_wartosci_to_brak_dowodu_bez_tracebacku(mod, przebieg):
+    # bez wartosci po --baza liczymy wzgledem origin/main; repo testowe go nie ma
+    assert mod.main(["--", "--baza"]) == 2

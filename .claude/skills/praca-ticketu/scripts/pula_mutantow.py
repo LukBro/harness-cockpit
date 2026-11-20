@@ -119,8 +119,9 @@ def odtworz(korzen: Path, cel: Path, sha: str, dane: bytes) -> None:
 
 
 def shard_lokalny(korzen: Path, sha: str, dane: bytes, indeks: int, liczba: int, dowody: Path, log) -> bool:
-    kopia = Path(tempfile.mkdtemp(prefix=f"pula-shard{indeks}-"))
+    kopia = None
     try:
+        kopia = Path(tempfile.mkdtemp(prefix=f"pula-shard{indeks}-"))
         odtworz(korzen, kopia / "repo", sha, dane)
         r = subprocess.run([sys.executable, "tools/statystyki_mutmuta.py", "shard", "--indeks", str(indeks),
                             "--liczba", str(liczba), "--katalog-dowodow", str(dowody)],
@@ -130,7 +131,8 @@ def shard_lokalny(korzen: Path, sha: str, dane: bytes, indeks: int, liczba: int,
         print(f"PULA shard {indeks} lokalnie: {e}", file=log, flush=True)
         return False
     finally:
-        shutil.rmtree(kopia, ignore_errors=True)
+        if kopia is not None:
+            shutil.rmtree(kopia, ignore_errors=True)
 
 
 def skrypt_zdalny(m: dict, praca: str, sha: str, indeks: int, liczba: int) -> str:
@@ -218,7 +220,7 @@ def main(argv: list[str]) -> int:
     except BladPuli as e:
         print(f"pula_mutantow: {e}", file=sys.stderr)
         return 64
-    except (OSError, RuntimeError, KeyError, ValueError) as e:
+    except (OSError, subprocess.SubprocessError, RuntimeError, KeyError, ValueError) as e:
         print(f"pula_mutantow: brak dowodu: {e}", file=sys.stderr)
         return 2
     if not potrzebne:
@@ -229,7 +231,12 @@ def main(argv: list[str]) -> int:
     def jeden(indeks: int) -> tuple[bool, str]:
         """(czy jest dowod, gdzie policzony)."""
         m = przydzial[indeks]
-        with open(dowody / f"shard-{indeks}.log", "w", encoding="utf-8") as log:
+        try:
+            log = open(dowody / f"shard-{indeks}.log", "w", encoding="utf-8")
+        except OSError as e:
+            print(f"PULA shard {indeks}: log shardu: {e}", file=sys.stderr, flush=True)
+            return False, "lokalnie"
+        with log:
             if m is not None:
                 if shard_zdalny(korzen, m, sha, dane, indeks, liczba, dowody, log):
                     return True, m["ssh"]
