@@ -127,7 +127,8 @@ Bez odjec -> `100/100, APPROVED`. Nie zanizaj "dla zasady".
 
 **Ponowna ocena po poprawce** (prompt z `ZAMROŻONY ZAKRES`): odejmujesz tylko za
 nienaprawione odjecie z poprzedniego werdyktu, wade w kodzie dopisanym albo
-zmienionym od poprzedniego diffu i naruszenie przydzialu. Wada w kodzie bez zmian,
+zmienionym od poprzedniego diffu; plik poza przydzialem to nadal UWAGA (bez blokady),
+0 pkt. Wada w kodzie bez zmian,
 ktorej poprzedni werdykt nie wskazal, to linia pod ocena agenta, bez odjecia:
 
 ```
