@@ -3171,9 +3171,19 @@ def test_plik_inny_niz_toml_w_katalogu_tabel_nie_zastepuje_tabeli_recznych_mutan
 def test_nieudane_pobranie_listy_zmienionych_plikow_daje_ostrzezenie_a_nie_kod_2(
     monkeypatch, tmp_path, capsys
 ):
-    s = _Srodowisko(nazwy_rc=128)
+    # nowy plik w tools/ dalby ostrzezenie, gdyby po bledzie sprawdzanie szlo dalej
+    s = _Srodowisko(nazwy_rc=128, nowe="tools/x.py\n")
     assert _main(monkeypatch, tmp_path, s) == 0
-    assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem" in capsys.readouterr().err
+    bledy = capsys.readouterr().err.splitlines()
+    assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: fatal: name-only" in bledy
+    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" not in bledy
+
+
+def test_zmienione_pliki_poza_zasiegiem_liczone_wzgledem_bazy_bez_zewnetrznego_diffu(monkeypatch, tmp_path):
+    s = _Srodowisko()
+    _main(monkeypatch, tmp_path, s)
+    nazwy = [w for w in s.wywolania if w[:2] == ["git", "diff"] and "--name-only" in w]
+    assert nazwy == [["git", "diff", "--name-only", "--no-ext-diff", "abc123"]]
 
 
 def test_nieudane_pobranie_nowych_plikow_poza_zasiegiem_daje_ostrzezenie_a_nie_kod_2(
