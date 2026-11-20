@@ -11,6 +11,7 @@ Skrypty są poza `source_paths` mutmuta - gałęzie kodów wyjścia chroni tabel
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -1242,3 +1243,61 @@ def test_brak_korzenia_git_to_ostrzezenie_nie_sprawdzono_skryptow(ep):
                  env, "stan.py")
     assert w.kod == 0
     assert _ostrzezenia(w) == ["OSTRZEZENIE: nie sprawdzono skryptow spoza repozytorium: brak korzenia git"]
+
+
+@pytest.mark.parametrize("tresc", ["{", "[{}]", "[1]"], ids=["zly-json", "bez-nazwy", "element-nie-obiekt"])
+def test_nieczytelny_szablon_to_ostrzezenie_nie_sprawdzono_a_nie_wywrocony_zapis(ep, tmp_path, tresc):
+    kopia = tmp_path / "skrypty"
+    kopia.mkdir()
+    shutil.copy(SKRYPTY / "stan.py", kopia / "stan.py")
+    (tmp_path / "bramki-szablon.json").write_text(tresc, encoding="utf-8")  # SZABLON_BRAMEK = skrypty/..
+    env = dict(ep.env, GIT_DIR=str(ep.repo / ".git"), GIT_WORK_TREE=str(ep.repo))
+    w = _uruchom([PY, "-I", str(kopia / "stan.py"), "bramki", KEY, ep.plik("b.json", json.dumps([BRAMKA_OK]))],
+                 env, "stan.py")
+    assert (w.kod, w.ostatnia) == (0, "BRAMKI: zapisane=1")
+    assert [x.split(":")[1] for x in _ostrzezenia(w)] == [" nie sprawdzono bramek z szablonu"]
+
+
+@pytest.mark.parametrize("kody", [["zielony"], "zielony"])
+def test_kody_nie_bedace_obiektem_to_ostrzezenie_nie_sprawdzono_mapowania(ep, kody):
+    b = {"nazwa": "e2e", "argv": ["pytest"], "kody": kody}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == [
+        "OSTRZEZENIE: bramka e2e: kody nie sa obiektem - nie sprawdzono mapowania kodow"]
+
+
+def test_sama_powloka_bez_argumentow_nie_daje_ostrzezenia(ep):
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "p", "argv": ["sh"]}))) == []
+
+
+def test_sciezka_z_bajtem_zerowym_to_ostrzezenie_a_bramki_zapisane(ep):
+    zla = "/x\x00.py"
+    # tresc bledu ValueError zalezy od wersji Pythona i systemu - sprawdzamy tylko prefiks
+    ostrzezenia = _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "z", "argv": ["python", zla]})))
+    assert len(ostrzezenia) == 1
+    assert ostrzezenia[0].startswith(f"OSTRZEZENIE: bramka z: nie sprawdzono skryptu {zla!r}: ")
+
+
+def _modul_stan():
+    spec = importlib.util.spec_from_file_location("stan_w_procesie", SKRYPTY / "stan.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _rzuc(wyjatek):
+    def run(*_a, **_k):
+        raise wyjatek
+    return run
+
+
+@pytest.mark.parametrize("run", [
+    _rzuc(OSError("brak gita")),
+    _rzuc(subprocess.TimeoutExpired("git", 30)),
+    lambda *_a, **_k: subprocess.CompletedProcess([], 128, "/repo\n", ""),
+    lambda *_a, **_k: subprocess.CompletedProcess([], 0, "\n", ""),
+], ids=["oserror", "limit-czasu", "kod-bledu-z-wyjsciem", "puste-wyjscie"])
+def test_nieudane_ustalenie_korzenia_git_to_ostrzezenie_nie_sprawdzono_skryptow(monkeypatch, run):
+    mod = _modul_stan()
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    bramki = _z_szablonem({"nazwa": "obca", "argv": ["python", "/tmp/x.py"]})
+    assert mod.ostrzezenia_bramek(bramki) == ["nie sprawdzono skryptow spoza repozytorium: brak korzenia git"]

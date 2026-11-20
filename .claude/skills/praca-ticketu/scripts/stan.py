@@ -90,15 +90,24 @@ def ostrzezenia_bramek(bramki):
         wynik.append("nie sprawdzono skryptow spoza repozytorium: brak korzenia git")
     for b in bramki:
         n = b["nazwa"]
-        kody = b.get("kody") if isinstance(b.get("kody"), dict) else {}
+        kody = b.get("kody", {})
+        if not isinstance(kody, dict):
+            wynik.append(f"bramka {n}: kody nie sa obiektem - nie sprawdzono mapowania kodow")
+            kody = {}
         wynik += [f"bramka {n}: kod {k} mapowany na zielony" for k, v in kody.items()
                   if str(k) != "0" and v == "zielony"]
         if len(b["argv"]) > 1 and os.path.basename(b["argv"][0]) in ("sh", "bash", "zsh") and b["argv"][1] == "-c":
             wynik.append(f"bramka {n}: {b['argv'][0]} -c ukrywa komende przed sprawdzeniem")
-        if repo is not None:
-            wynik += [f"bramka {n}: skrypt spoza repozytorium: {x}" for x in b["argv"][1:]
-                      if os.path.isabs(x) and x.endswith((".py", ".sh"))
-                      and not os.path.realpath(x).startswith(repo + os.sep)]
+        for x in b["argv"][1:] if repo is not None else []:
+            if not (os.path.isabs(x) and x.endswith((".py", ".sh"))):
+                continue
+            try:
+                poza = not os.path.realpath(x).startswith(repo + os.sep)
+            except ValueError as e:  # bajt zerowy w sciezce - ostrzezenie, nie wywrocony zapis
+                wynik.append(f"bramka {n}: nie sprawdzono skryptu {x!r}: {e}")
+                continue
+            if poza:
+                wynik.append(f"bramka {n}: skrypt spoza repozytorium: {x}")
     return wynik
 
 
