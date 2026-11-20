@@ -18,16 +18,20 @@ i nazwy literalnie (sesja w worktree odrzuca `$VAR`, `$(...)`, `&&`, pipe).
 
 ## Push (MONOLYNX_AUTOPUSH=true i commit się odbył)
 
+W harness-cockpit push robi `tools/oddaj_pr.sh` razem z PR (sekcja niżej). Gdzie indziej
 `git push -u origin <branch>`. Nigdy `--force`. Przy `AUTOPUSH=false` nie pushujesz nawet cudzych commitów.
 
 ## PR / MR (MONOLYNX_AUTOMR=true i push się odbył)
 
 Branch docelowy: `MONOLYNX_MR_TARGET`, inaczej `baza` ze stanu.
 
-- GitHub (remote `github.com`; harness-cockpit):
-  `gh pr create --base <baza> --head <branch> --title "<KEY>: <tytuł>" --body-file <plik opisu>`
+- GitHub (remote `github.com`; harness-cockpit): wyłącznie
+  `bash tools/oddaj_pr.sh --tytul "<KEY>: <tytuł>" --tresc <plik opisu>` (push i PR razem; sprawdza autora,
+  brak współautora, czyste drzewo i ścieżki wrażliwe). Liczby w opisie (wiersze tabeli, testy, linie `STOP:`)
+  wklejasz z wyjścia `python tools/liczby_raportu.py`, nie z pamięci (audyt 2026-11-19: 15 z 48 odjęć
+  strażnika to liczby i STOP w raporcie).
 - GitLab: `glab mr create --title '<KEY>: <tytuł>' --description '<podsumowanie>' --yes --source-branch <branch> --target-branch <baza>`
   oraz tryb `pełny przebieg: ci` - sekcja "Pipeline merge requesta" w `commit-mr.md` (bez zmian).
 
 Brak narzędzia, błąd albo brak pushu -> PR nie powstaje; powód do podsumowania. Sesja nie czeka na CI
-i go nie naprawia - czerwone CI naprawia `/monolynx:mr-queue`.
+i go nie naprawia - czerwone CI wraca do sesji przez wznowienie dyspozytora albo rework strażnika.
