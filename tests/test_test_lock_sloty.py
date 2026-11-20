@@ -209,3 +209,21 @@ def test_slot_ktorego_nie_da_sie_otworzyc_to_blad_bez_uruchomienia_komendy(repo)
     assert w.returncode == 64
     assert w.stderr.startswith("test_lock:")
     assert not znacznik.exists()
+
+
+def test_czekanie_na_slot_spi_najwyzej_odstep_prob_i_nigdy_poza_limit_czasu(tmp_path, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("test_lock_uspienie", TEST_LOCK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # start (termin 10), proba w t=1, sen; proba w t=9.99, a termin mija przed snem (t=10.5); koniec
+    czasy = iter([0.0, 1.0, 1.0, 9.99, 10.5, 11.0])
+    sny: list[float] = []
+    monkeypatch.setattr(mod, "_try_lock", lambda _fd: False)
+    monkeypatch.setattr(mod.time, "monotonic", lambda: next(czasy))
+    monkeypatch.setattr(mod.time, "sleep", sny.append)
+    plik = tmp_path / "slot"
+    plik.write_text("")
+    with open(plik, "rb") as f:
+        assert mod._acquire_slot([f.fileno()], 10) is None
+    assert sny == [mod.ODSTEP_PROB_S, 0.0]
