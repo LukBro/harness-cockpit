@@ -1,0 +1,175 @@
+# Pula maszyn dla bramki mutantow (audyt procesu 2026-11-20): pula_mutantow.py i --max-children w mutmut-run.
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "            if i < 1:"
+zamien = "            if i < 0:"
+test = "tests/test_pula_mutantow.py::test_shard_zero_zostaje_lokalnie_nawet_gdy_maszyna_chce_wiecej"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "            wynik[i] = m\n            i -= 1"
+zamien = "            wynik[i] = m\n            i -= 2"
+test = "tests/test_pula_mutantow.py::test_maszyna_zdalna_bierze_shardy_od_konca"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except FileNotFoundError:\n        return []"
+zamien = "    except FileNotFoundError:\n        raise BladPuli('brak')"
+test = "tests/test_pula_mutantow.py::test_bez_pliku_puli_wszystkie_shardy_liczy_sie_lokalnie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, UnicodeDecodeError, ValueError) as e:\n        raise BladPuli"
+zamien = "    except (UnicodeDecodeError, ValueError) as e:\n        raise BladPuli"
+test = "tests/test_pula_mutantow.py::test_nieczytelna_pula_to_blad_konfiguracji"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "and not isinstance(m[k], bool) and m[k] >= 1"
+zamien = "and m[k] >= 1"
+test = "tests/test_pula_mutantow.py::test_zla_pula_to_blad_konfiguracji"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'return any(p.startswith(z.rstrip("/") + "/") or p == z'
+zamien = 'return any(p.startswith(z.rstrip("/")) or p == z'
+test = "tests/test_pula_mutantow.py::test_plik_o_nazwie_zaczynajacej_sie_jak_katalog_zrodel_nie_potrzebuje_statystyk"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'return any(p.startswith(z.rstrip("/") + "/") or p == z'
+zamien = 'return any(p.startswith(z.rstrip("/") + "/")'
+test = "tests/test_pula_mutantow.py::test_zrodlo_mutmuta_bedace_plikiem_potrzebuje_statystyk"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = '    pliki += _git(korzen, "ls-files", "--others", "--exclude-standard").split("\n")'
+zamien = '    pliki += []'
+test = "tests/test_pula_mutantow.py::test_nowy_niesledzony_plik_w_zrodlach_potrzebuje_statystyk"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = '        lata = _git(korzen, "diff", "--binary", "--no-ext-diff", "HEAD", binary=True)'
+zamien = '        lata = b""'
+test = "tests/test_pula_mutantow.py::test_kopia_dla_shardu_ma_ten_sam_commit_zmiany_i_nowe_pliki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = '                tar.add(korzen / p, arcname=f"nowe/{p}")'
+zamien = '                pass'
+test = "tests/test_pula_mutantow.py::test_kopia_dla_shardu_ma_ten_sam_commit_zmiany_i_nowe_pliki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'subprocess.run(["git", "-C", str(cel), "checkout", "-q", "--detach", sha], check=True, timeout=600)'
+zamien = 'subprocess.run(["git", "-C", str(cel), "checkout", "-q", "--detach", "HEAD~0"], check=True, timeout=600)'
+test = "tests/test_pula_mutantow.py::test_kopia_dla_shardu_staje_na_wskazanym_commicie_nie_na_glowie_repozytorium"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'f"  [ $k != {KOD_ZAJETY} ] && break 2",'
+zamien = 'f"  break 2",'
+test = "tests/test_pula_mutantow.py::test_skrypt_zdalny_czeka_na_wolny_slot_maszyny"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "f\"while :; do for s in $(seq 0 {m['sloty'] - 1}); do\","
+zamien = "f\"while :; do for s in $(seq 0 {m['sloty']}); do\","
+test = "tests/test_pula_mutantow.py::test_skrypt_zdalny_czeka_na_wolny_slot_maszyny"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'f"flock {k}/repo.lock git -C {k}/repo fetch -q origin || exit 3",'
+zamien = 'f"git -C {k}/repo fetch -q origin || exit 3",'
+test = "tests/test_pula_mutantow.py::test_skrypt_zdalny_odtwarza_zmiany_i_nowe_pliki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "{q(m['obraz'])}"
+zamien = "{m['obraz']}"
+test = "tests/test_pula_mutantow.py::test_skrypt_zdalny_cytuje_obraz_kontenera"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = '                    return True, m["ssh"]'
+zamien = '                    return True, "lokalnie"'
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_ktory_zawiodl_liczy_sie_lokalnie_i_tak_jest_raportowany"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "            return shard_lokalny(korzen, sha, dane, indeks, liczba, dowody, log), \"lokalnie\""
+zamien = "            return False, \"lokalnie\""
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_ktory_zawiodl_liczy_sie_lokalnie_i_tak_jest_raportowany"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    if not all(ok for ok, _ in wyniki):\n        return 2"
+zamien = "    if False:\n        return 2"
+test = "tests/test_pula_mutantow.py::test_shard_bez_dowodu_to_brak_dowodu_bez_mutantow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "str(dowody)], korzen) != 0:\n        return 2"
+zamien = "str(dowody)], korzen) != 0:\n        pass"
+test = "tests/test_pula_mutantow.py::test_nieudane_scalenie_to_brak_dowodu_bez_mutantow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = '    return uruchom([*mutanty, "--katalog-dowodow", str(dowody)], korzen)'
+zamien = '    return uruchom(mutanty, korzen)'
+test = "tests/test_pula_mutantow.py::test_wszystkie_shardy_i_mutanty_z_dowodami_po_scaleniu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    if not potrzebne:"
+zamien = "    if False:"
+test = "tests/test_pula_mutantow.py::test_zmiana_poza_zrodlami_idzie_wprost_do_mutantow_bez_shardow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'if "--baza" in reszta[:-1] else "origin/main"'
+zamien = 'if "--baza" in reszta[:-1] else "main"'
+test = "tests/test_pula_mutantow.py::test_domyslnie_cztery_shardy_wzgledem_origin_main"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    liczba = 4\n"
+zamien = "    liczba = 3\n"
+test = "tests/test_pula_mutantow.py::test_domyslnie_cztery_shardy_wzgledem_origin_main"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'if not argv or argv[0] != "--" or liczba < 1:'
+zamien = 'if not argv or argv[0] != "--":'
+test = "tests/test_pula_mutantow.py::test_zle_wywolanie_to_blad_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except BladPuli as e:\n        print(f\"pula_mutantow: {e}\", file=sys.stderr)\n        return 64"
+zamien = "    except BladPuli as e:\n        print(f\"pula_mutantow: {e}\", file=sys.stderr)\n        return 2"
+test = "tests/test_pula_mutantow.py::test_zla_pula_to_blad_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, RuntimeError, KeyError, ValueError) as e:"
+zamien = "    except (OSError, KeyError, ValueError) as e:"
+test = "tests/test_pula_mutantow.py::test_nieznana_baza_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
+szukaj = 'pula_mutantow.py", "--liczba", "4", "--",'
+zamien = 'pula_mutantow.py", "--liczba", "2", "--",'
+test = "tests/test_pula_mutantow.py::test_szablon_liczy_mutanty_przez_pule_czterech_shardow"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "            mm.glowny._run(tuple(args.wzorce), args.max_children)"
+zamien = "            mm.glowny._run(tuple(args.wzorce), None)"
+test = "tests/test_statystyki_mutmuta.py::test_mutmut_run_przekazuje_mutmutowi_liczbe_procesow_z_mutanty_zmian"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = 'f"git clone -q --no-checkout {k}/repo $D/repo'
+zamien = 'f"git clone -q --shared --no-checkout {k}/repo $D/repo'
+test = "tests/test_pula_mutantow.py::test_skrypt_zdalny_liczy_wskazany_shard_na_commicie_kopii"

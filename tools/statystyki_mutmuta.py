@@ -511,7 +511,7 @@ def _mutmut_run(args: argparse.Namespace) -> int:
 
         mm.glowny.get_mutant_runner = runner_z_dowodami
         try:
-            mm.glowny._run(tuple(args.wzorce), None)
+            mm.glowny._run(tuple(args.wzorce), args.max_children)
         finally:
             mm.glowny.get_mutant_runner = oryginal
     return 0
@@ -533,6 +533,7 @@ def main(argv: list[str] | None = None) -> int:
             podparser.add_argument("--indeks", type=int, required=True, help="numer shardu od 0")
             podparser.add_argument("--liczba", type=int, required=True, help="liczba shardow")
         if nazwa == "mutmut-run":
+            podparser.add_argument("--max-children", type=int, default=None, help="procesy mutmuta (mutanty_zmian.py)")
             podparser.add_argument("wzorce", nargs="+", help="wzorce mutantow mutmuta")
     args = parser.parse_args(argv)
     try:

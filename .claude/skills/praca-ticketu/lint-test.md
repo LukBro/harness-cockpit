@@ -266,6 +266,11 @@ zajmuja ok. 4 rdzenie (pomiar kroku 0 audytu, 2026-11-20).
 Zajeta blokada to kolejka: skrypt czeka, az poprzedni przebieg sie skonczy.
 Lint NIE idzie przez blokade.
 
+Bramka `mutanty` idzie przez `scripts/pula_mutantow.py`: statystyki mutmuta w 4 shardach naraz,
+czesc na maszynach z `<git-common-dir>/monolynx/pula.json` (serwer: Browar przez tunel, kontener
+Ubuntu 24.04), reszta lokalnie; shard zdalny, ktory zawiodl, liczy sie lokalnie. Pomiar 2026-11-20:
+bramka 11 min zamiast ok. 25 min samych statystyk, load1 serwera sr. 2,0 zamiast 6,5.
+
 - **`<katalog skilla>`** to absolutna sciezka wpisana DOSLOWNIE - bez `$VAR`,
   `~` i `$(...)`. To samo ograniczenie co `"$PWD"` w komendzie worktree: sesja
   w worktree odrzuca wartosci liczone w locie.

@@ -3,7 +3,7 @@
  {"nazwa": "warstwy", "argv": ["python", "tools/check_layers.py"], "timeout": 300},
  {"nazwa": "testy", "argv": ["python", ".claude/skills/praca-ticketu/scripts/test_lock.py", "--sloty", "2", "--timeout",
   "3600", "--", "python", "tools/testy.py", "--bez-postepu", "600", "-q", "-n", "4"], "timeout": 9000},
- {"nazwa": "mutanty", "argv": ["python", "tools/mutanty_zmian.py", "--baza", "origin/main", "--max-children", "4",
-  "--od-przebiegu", "{KATALOG_STANU}/mutanty"],
+ {"nazwa": "mutanty", "argv": ["python", ".claude/skills/praca-ticketu/scripts/pula_mutantow.py", "--liczba", "4", "--",
+  "--baza", "origin/main", "--max-children", "4", "--od-przebiegu", "{KATALOG_STANU}/mutanty"],
   "timeout": 7200, "kody": {"0": "zielony", "1": "czerwony", "3": "reczne"}}
 ]

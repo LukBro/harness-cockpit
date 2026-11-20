@@ -2157,3 +2157,19 @@ def test_inny_wyjatek_z_dziecka_zbierajacego_liste_testow_nie_jest_tlumaczony_na
 
     with pytest.raises(KeyError):
         _shard_z_atrapa_mutmuta(sm, monkeypatch, tmp_path, dziecko_rzuca_obcy_wyjatek, capsys)
+
+
+@pytest.mark.parametrize("argumenty, oczekiwane", [(["--max-children", "3"], 3), ([], None)],
+                         ids=["z-limitem", "bez-limitu"])
+def test_mutmut_run_przekazuje_mutmutowi_liczbe_procesow_z_mutanty_zmian(sm, tmp_path, monkeypatch, argumenty,
+                                                                        oczekiwane):
+    # mutanty_zmian.py z dowodami i --max-children wolal mutmut-run z ta flaga, ktorej parser nie znal (kod 2)
+    wywolania = []
+    glowny = SimpleNamespace(get_mutant_runner=lambda *a, **k: None,
+                             _run=lambda wzorce, dzieci: wywolania.append((wzorce, dzieci)))
+    monkeypatch.setattr(sm, "_sha_commita", lambda k: "x")
+    monkeypatch.setattr(sm, "odcisk_zrodel", lambda k: "x")
+    monkeypatch.setattr(sm, "_mutmut", lambda: SimpleNamespace(glowny=glowny))
+    kod = sm.main(["mutmut-run", "--korzen", str(tmp_path), "--katalog-dowodow", str(tmp_path), *argumenty, "w.*"])
+    assert kod == 0
+    assert wywolania == [(("w.*",), oczekiwane)]
