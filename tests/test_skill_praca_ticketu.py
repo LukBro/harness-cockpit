@@ -550,6 +550,14 @@ def test_zielone_bramki_zapisuja_wynik_ze_skrotem_diffu(ep):
     assert (zapis["wynik"], zapis["kod"], len(zapis["skrot_diffu"])) == ("zielony", 0, 16)
 
 
+def test_katalog_stanu_w_argv_bramki_zamieniany_na_katalog_epizodu(ep):
+    ep.stan_bazowy()
+    skrypt = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_text('x')"
+    ep.bramki([{"nazwa": "lint", "argv": [PY, "-c", skrypt, "{KATALOG_STANU}/znacznik"]}])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert (Path(ep.log("lint")).parent / "znacznik").read_text() == "x"
+
+
 def test_czerwona_bramka_daje_kod_poprawki(ep):
     ep.stan_bazowy()
     ep.bramki([BRAMKA_OK, {"nazwa": "testy", "argv": _wyjscie(1)}])
@@ -1097,6 +1105,23 @@ def test_prompt_krytyka_kaze_wpisac_plik_poza_przydzialem_jako_uwage_bez_odjecia
     tresc = " ".join((ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8").split())
     assert "pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem, bez blokady) - bez odjęcia punktów; o wejściu zmiany decyduje Team Manager." in tresc
     assert "odjęcie z rubryki" not in tresc
+
+
+def test_prompt_krytyka_kaze_liczyc_mutanty_przyrostowo_od_zapisu_bramki(ep):
+    # krok 6 audytu: krytyk nie powtarza pelnego mutmuta, tylko liczy od zapisu przebiegu bramki w katalogu stanu
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
+    tresc = " ".join((ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8").split())
+    assert f"`python tools/mutanty_zmian.py --baza origin/main --od-przebiegu {ep.kat / 'mutanty'}`" in tresc
+    assert "Kod wyjścia inny niż `bramki.mutanty.kod` w stanie" in tresc
+    assert "`python tools/mutanty_reczne.py --sprawdz-wszystkie`" in tresc
+
+
+def test_szablon_mutantow_zapisuje_przebieg_w_katalogu_stanu_tam_gdzie_szuka_krytyk():
+    b = next(b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] == "mutanty")
+    assert b["argv"][b["argv"].index("--od-przebiegu") + 1] == "{KATALOG_STANU}/mutanty"
 
 
 def test_ponowna_ocena_nie_odejmuje_za_plik_poza_przydzialem(ep):
