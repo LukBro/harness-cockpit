@@ -173,3 +173,69 @@ plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
 szukaj = 'f"git clone -q --no-checkout {k}/repo $D/repo'
 zamien = 'f"git clone -q --shared --no-checkout {k}/repo $D/repo'
 test = "tests/test_pula_mutantow.py::test_skrypt_zdalny_liczy_wskazany_shard_na_commicie_kopii"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "        if r.returncode != 0 or not r.stdout:"
+zamien = "        if not r.stdout:"
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_bez_dowodu_to_porazka_bez_pliku_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "        if r.returncode != 0 or not r.stdout:"
+zamien = "        if r.returncode != 0:"
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_bez_dowodu_to_porazka_bez_pliku_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "        (dowody / f\"shard-{indeks}.json\").write_bytes(r.stdout)"
+zamien = "        pass"
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_z_dowodem_na_wyjsciu_zapisuje_dowod"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError, RuntimeError) as e:"
+zamien = "    except (subprocess.SubprocessError, RuntimeError) as e:"
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_ktorego_nie_da_sie_uruchomic_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError, RuntimeError) as e:"
+zamien = "    except (OSError, RuntimeError) as e:"
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_ktorego_nie_da_sie_uruchomic_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError, RuntimeError) as e:"
+zamien = "    except (OSError, subprocess.SubprocessError) as e:"
+test = "tests/test_pula_mutantow.py::test_shard_zdalny_z_nieudanym_bundlem_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "        return r.returncode == 0 and (dowody / f\"shard-{indeks}.json\").is_file()"
+zamien = "        return r.returncode == 0"
+test = "tests/test_pula_mutantow.py::test_shard_lokalny_bez_dowodu_albo_z_bledem_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "        return r.returncode == 0 and (dowody / f\"shard-{indeks}.json\").is_file()"
+zamien = "        return (dowody / f\"shard-{indeks}.json\").is_file()"
+test = "tests/test_pula_mutantow.py::test_shard_lokalny_bez_dowodu_albo_z_bledem_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+zamien = "    except (subprocess.SubprocessError,) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+test = "tests/test_pula_mutantow.py::test_shard_lokalny_ktorego_kopii_nie_da_sie_zrobic_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+zamien = "    except (OSError,) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+test = "tests/test_pula_mutantow.py::test_shard_lokalny_ktorego_kopii_nie_da_sie_zrobic_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, RuntimeError, KeyError, ValueError) as e:"
+zamien = "    except (RuntimeError, KeyError, ValueError) as e:"
+test = "tests/test_pula_mutantow.py::test_katalog_dowodow_ktorego_nie_da_sie_utworzyc_to_brak_dowodu"

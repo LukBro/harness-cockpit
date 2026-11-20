@@ -203,13 +203,18 @@ def main(argv: list[str]) -> int:
         print("pula_mutantow: uzycie: [--liczba N>=1] -- <argumenty mutanty_zmian.py>", file=sys.stderr)
         return 64
     reszta = argv[1:]
-    korzen = Path(_git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     mutanty = [sys.executable, "tools/mutanty_zmian.py", *reszta]
     baza = reszta[reszta.index("--baza") + 1] if "--baza" in reszta[:-1] else "origin/main"
     try:
+        korzen = Path(_git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
         zdalne = wczytaj_pule(Path(_git(korzen, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
                               / "monolynx" / "pula.json")
         potrzebne = zmienia_zrodla_mutmuta(korzen, baza)
+        if potrzebne:
+            sha = _git(korzen, "rev-parse", "HEAD").strip()
+            dane = paczka(korzen)
+            # poza kopia robocza: plik nieśledzony zmienilby skrot diffu bramki
+            dowody = Path(tempfile.mkdtemp(prefix="pula-dowody-"))
     except BladPuli as e:
         print(f"pula_mutantow: {e}", file=sys.stderr)
         return 64
@@ -219,10 +224,6 @@ def main(argv: list[str]) -> int:
     if not potrzebne:
         print("PULA: diff nie dotyka zrodel mutmuta - bez statystyk", flush=True)
         return uruchom(mutanty, korzen)
-    sha = _git(korzen, "rev-parse", "HEAD").strip()
-    dane = paczka(korzen)
-    # poza kopia robocza: plik nieśledzony zmienilby skrot diffu bramki
-    dowody = Path(tempfile.mkdtemp(prefix="pula-dowody-"))
     przydzial = plan(liczba, zdalne)
 
     def jeden(indeks: int) -> tuple[bool, str]:

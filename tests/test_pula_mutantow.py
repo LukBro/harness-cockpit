@@ -193,6 +193,111 @@ def test_skrypt_zdalny_cytuje_obraz_kontenera(mod):
     assert "'obraz;rm'" in mod.skrypt_zdalny(m, "praca1", "abc123", 1, 4)
 
 
+# --- prawdziwe shardy: wykrycie porazki ----------------------------------------------------------
+
+def _wynik(argv, kod=0, out=b""):
+    import subprocess
+    return subprocess.CompletedProcess(argv, kod, out, b"")
+
+
+@pytest.fixture
+def ssh(mod, monkeypatch):
+    """subprocess.run w shard_zdalny: git odpowiada sam, drugie ssh (skrypt shardu) wg `stan`."""
+    stan = {"skrypt": (0, b""), "wyjatek": None, "bundle_kod": None, "ssh": 0}
+
+    def run(argv, **kw):
+        if argv[0] == "git":
+            if argv[1] == "merge-base":
+                return _wynik(argv, 0 if stan["bundle_kod"] is None else 1)
+            return _wynik(argv, stan["bundle_kod"] or 0)
+        stan["ssh"] += 1
+        if stan["ssh"] == 1:
+            return _wynik(argv)
+        if stan["wyjatek"] is not None:
+            raise stan["wyjatek"]
+        return _wynik(argv, *stan["skrypt"])
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    return stan
+
+
+def _zdalny(mod, tmp_path):
+    import io
+    import tarfile
+    bufor = io.BytesIO()
+    tarfile.open(fileobj=bufor, mode="w").close()
+    with open(tmp_path / "log", "w") as log:
+        return mod.shard_zdalny(tmp_path, _maszyna("browar", 2), "a" * 40, bufor.getvalue(), 3, 4, tmp_path, log)
+
+
+def test_shard_zdalny_z_dowodem_na_wyjsciu_zapisuje_dowod(mod, ssh, tmp_path):
+    ssh["skrypt"] = (0, b'{"dowod": 1}')
+    assert _zdalny(mod, tmp_path) is True
+    assert (tmp_path / "shard-3.json").read_bytes() == b'{"dowod": 1}'
+
+
+@pytest.mark.parametrize("skrypt", [(1, b'{"dowod": 1}'), (0, b"")], ids=["kod-niezerowy", "puste-wyjscie"])
+def test_shard_zdalny_bez_dowodu_to_porazka_bez_pliku_dowodu(mod, ssh, tmp_path, skrypt):
+    ssh["skrypt"] = skrypt
+    assert _zdalny(mod, tmp_path) is False
+    assert not (tmp_path / "shard-3.json").exists()
+
+
+@pytest.mark.parametrize("wyjatek", [
+    __import__("subprocess").TimeoutExpired("ssh", 1), FileNotFoundError("ssh")], ids=["limit-czasu", "brak-ssh"])
+def test_shard_zdalny_ktorego_nie_da_sie_uruchomic_to_porazka(mod, ssh, tmp_path, wyjatek):
+    ssh["wyjatek"] = wyjatek
+    assert _zdalny(mod, tmp_path) is False
+
+
+def test_shard_zdalny_z_nieudanym_bundlem_to_porazka(mod, ssh, tmp_path):
+    ssh["bundle_kod"] = 128
+    assert _zdalny(mod, tmp_path) is False
+    assert ssh["ssh"] == 0
+
+
+@pytest.fixture
+def lokalny(mod, monkeypatch, tmp_path):
+    stan = {"kod": 0, "dowod": True, "wyjatek": None}
+
+    def odtworz(korzen, cel, sha, dane):
+        if stan["wyjatek"] is not None:
+            raise stan["wyjatek"]
+
+    def run(argv, **kw):
+        if stan["dowod"]:
+            (tmp_path / "shard-1.json").write_text("{}")
+        return _wynik(argv, stan["kod"])
+
+    monkeypatch.setattr(mod, "odtworz", odtworz)
+    monkeypatch.setattr(mod.subprocess, "run", run)
+
+    def wywolaj():
+        with open(tmp_path / "log", "w") as log:
+            return mod.shard_lokalny(tmp_path, "a" * 40, b"", 1, 4, tmp_path, log)
+    return stan, wywolaj
+
+
+def test_shard_lokalny_z_dowodem_to_sukces(lokalny):
+    stan, wywolaj = lokalny
+    assert wywolaj() is True
+
+
+@pytest.mark.parametrize("kod,dowod", [(0, False), (1, True)], ids=["bez-pliku-dowodu", "kod-niezerowy"])
+def test_shard_lokalny_bez_dowodu_albo_z_bledem_to_porazka(lokalny, kod, dowod):
+    stan, wywolaj = lokalny
+    stan["kod"], stan["dowod"] = kod, dowod
+    assert wywolaj() is False
+
+
+@pytest.mark.parametrize("wyjatek", [
+    OSError("dysk"), __import__("subprocess").CalledProcessError(1, "git")], ids=["blad-dysku", "blad-gita"])
+def test_shard_lokalny_ktorego_kopii_nie_da_sie_zrobic_to_porazka(lokalny, wyjatek):
+    stan, wywolaj = lokalny
+    stan["wyjatek"] = wyjatek
+    assert wywolaj() is False
+
+
 # --- przebieg bramki ----------------------------------------------------------------------------
 
 @pytest.fixture
@@ -299,3 +404,11 @@ def test_nieznana_baza_to_brak_dowodu(mod, przebieg):
 def test_szablon_liczy_mutanty_przez_pule_czterech_shardow():
     b = next(x for x in json.loads(SZABLON.read_text()) if x["nazwa"] == "mutanty")
     assert b["argv"][:5] == ["python", ".claude/skills/praca-ticketu/scripts/pula_mutantow.py", "--liczba", "4", "--"]
+
+
+def test_katalog_dowodow_ktorego_nie_da_sie_utworzyc_to_brak_dowodu(mod, przebieg, monkeypatch):
+    def mkdtemp(**kw):
+        raise OSError("pelny dysk")
+    monkeypatch.setattr(mod.tempfile, "mkdtemp", mkdtemp)
+    assert mod.main(["--liczba", "2", "--", "--baza", "baza"]) == 2
+    assert przebieg["lokalne"] == [] and przebieg["uruchom"] == []
