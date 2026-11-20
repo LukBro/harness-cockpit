@@ -63,6 +63,10 @@ Zmiany: `git diff {sha} -- <pliki agenta>` oraz nowe pliki z `git status --porce
 Plik zmieniony poza przydziałem i poza pliki_tm/pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem,
 bez blokady) - bez odjęcia punktów; o wejściu zmiany decyduje Team Manager.
 Lint i testy są zielone dla bieżącego diffu (pole bramki w stanie) - nie uruchamiasz ich i ich nie punktujesz.
+Mutanty: nie powtarzasz pełnego mutmuta. Uruchom `python tools/mutanty_zmian.py --baza origin/main --od-przebiegu
+{przebieg}` - mutmut liczy tylko funkcje zmienione od przebiegu bramki, resztę bierze z jej zapisu (brak zapisu =
+pełny przebieg). Kod wyjścia inny niż `bramki.mutanty.kod` w stanie albo przeżywający mutant, którego nie ma w logu
+bramki, to podmieniony wynik (-25, falszywie-zielone). Do tego `python tools/mutanty_reczne.py --sprawdz-wszystkie`.
 
 Odpowiedź: wyłącznie blok **Code Review** w formacie z rubryki, linia `<agent>: 100 ... = X/100` dla każdego
 ocenianego agenta, linia REGULA przy każdym NEEDS WORK.
@@ -131,7 +135,7 @@ def main(a):
                   "`.ai/qa/ksztalty-mutantow.md` do końca, żeby poprawka naprawiła listę w jednej rundzie.")
     tresc = SZABLON.format(key=key, tytul=(st.get("ticket") or {}).get("title", ""), rubryka=op["--rubryka"],
                            stan=stan, raporty=op.get("--raporty", "brak osobnego pliku - raporty w stanie"),
-                           zakres=zakres, sha=st["baseline"]["sha"])
+                           zakres=zakres, sha=st["baseline"]["sha"], przebieg=os.path.join(kat, "mutanty"))
     out = os.path.join(kat, f"krytyk-prompt-{n}.md")
     with open(out, "w", encoding="utf-8") as f:
         f.write(tresc)

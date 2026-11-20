@@ -260,6 +260,9 @@ python3 <katalog skilla>/scripts/test_lock.py -- <komenda testow>
 
 Skrypt bierze blokade na pliku `<git-common-dir>/monolynx/test.lock`, wspolnym
 dla glownego checkoutu i wszystkich worktree, i dopiero potem uruchamia komende.
+Z `--sloty N` blokada staje sie semaforem: naraz biegnie najwyzej N komend
+(pliki `test.lock.0..N-1`). Na serwerze 8 vCPU: 2 sloty, bo pelne testy `-n 4`
+zajmuja ok. 4 rdzenie (pomiar kroku 0 audytu, 2026-11-20).
 Zajeta blokada to kolejka: skrypt czeka, az poprzedni przebieg sie skonczy.
 Lint NIE idzie przez blokade.
 
