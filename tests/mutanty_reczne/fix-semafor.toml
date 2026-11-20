@@ -127,3 +127,15 @@ plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
 szukaj = '"--max-children", "4"]'
 zamien = '"--max-children", "8"]'
 test = "tests/test_test_lock_sloty.py::test_szablon_ogranicza_dzieci_mutmuta_do_czterech"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = "        if sloty == 1:\n            slot = 0"
+zamien = "        if False:\n            slot = 0"
+test = "tests/test_test_lock_sloty.py::test_jeden_slot_czeka_w_kolejce_blokady_a_nie_odpytuje_slotow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = "                os.close(f)\n            raise\n"
+zamien = "                os.close(f)\n"
+test = "tests/test_test_lock_sloty.py::test_slot_ktorego_nie_da_sie_otworzyc_to_blad_bez_uruchomienia_komendy"

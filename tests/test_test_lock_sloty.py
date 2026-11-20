@@ -184,3 +184,28 @@ def test_limit_bramki_testow_obejmuje_czekanie_na_slot_i_sam_przebieg():
 def test_szablon_ogranicza_dzieci_mutmuta_do_czterech():
     argv = _bramka_z_szablonu("mutanty")["argv"]
     assert argv[argv.index("--max-children") + 1] == "4"
+
+
+def test_jeden_slot_czeka_w_kolejce_blokady_a_nie_odpytuje_slotow(repo, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("test_lock_jeden_slot", TEST_LOCK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def odpytywanie(*_a, **_k):
+        raise AssertionError("jeden slot nie odpytuje slotow")
+
+    monkeypatch.setattr(mod, "_acquire_slot", odpytywanie)
+    monkeypatch.chdir(repo)
+    assert mod.main(["--sloty", "1", "--", sys.executable, "-c", "pass"]) == 0
+
+
+def test_slot_ktorego_nie_da_sie_otworzyc_to_blad_bez_uruchomienia_komendy(repo):
+    (repo / ".git" / "monolynx").mkdir(parents=True, exist_ok=True)
+    (repo / ".git" / "monolynx" / "test.lock.1").mkdir()
+    znacznik = repo.parent / "uruchomiono"
+    w = _lock(repo, "--sloty", "2", "--", sys.executable, "-c",
+              f"import pathlib; pathlib.Path({str(znacznik)!r}).touch()")
+    assert w.returncode == 64
+    assert w.stderr.startswith("test_lock:")
+    assert not znacznik.exists()
