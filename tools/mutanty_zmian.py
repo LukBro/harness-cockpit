@@ -507,6 +507,32 @@ def _wybierz_do_mutowania(
     return do_mutowania, {w: poprzednie[w]["przezywajace"] for w in lista if w not in do_mutowania}
 
 
+PREFIKSY_POZA_ZASIEGIEM = ("tools/", "cicd/", "web/", ".claude/skills/", ".claude/hooks/")
+
+
+def _ostrzez_o_zmianach_bez_tabeli(sha: str) -> None:
+    """Tryb samych ostrzezen: kod wyjscia i stdout bez zmian; nieznany stan to tez ostrzezenie."""
+    nazwy = uruchom(["git", "diff", "--name-only", "--no-ext-diff", sha])
+    if nazwy.returncode != 0:
+        print(f"OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: {nazwy.stderr.strip()}", file=sys.stderr)
+        return
+    # nowe, jeszcze niezacommitowane pliki (sesja puszcza bramki przed commitem): tabela i zmiany w tools/ itd.
+    nowe = uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", *PREFIKSY_POZA_ZASIEGIEM,
+                    "tests/mutanty_reczne/"])
+    if nowe.returncode != 0:
+        print(f"OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: {nowe.stderr.strip()}", file=sys.stderr)
+        return
+    pliki = nazwy.stdout.splitlines() + nowe.stdout.splitlines()
+    if any(fnmatch.fnmatchcase(p, "tests/mutanty_reczne/*.toml") for p in pliki):
+        return
+    for plik in pliki:
+        if plik.startswith(PREFIKSY_POZA_ZASIEGIEM):
+            print(
+                f"OSTRZEZENIE: zmiana poza zasiegiem mutmuta bez tabeli recznych mutantow: {plik}",
+                file=sys.stderr,
+            )
+
+
 def _przebieg(
     baza: str,
     korzen: Path,
@@ -546,6 +572,7 @@ def _przebieg(
     if nowe.returncode != 0:
         raise BladNarzedzia(f"git ls-files nie powiodl sie: {nowe.stderr.strip()}")
 
+    _ostrzez_o_zmianach_bez_tabeli(sha)
     zmiany = zmienione_linie(roznica.stdout)
     for sciezka, linie in _nowe_pliki(nowe.stdout, korzen).items():
         zmiany.setdefault(sciezka, set()).update(linie)
@@ -594,6 +621,10 @@ def _przebieg(
             nowe_przezywajace = przezywajace(wyniki.stdout, do_mutowania)
         elif "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
             print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
+            print(
+                f"OSTRZEZENIE: brak dowodu: {len(do_mutowania)} zmienionych funkcji bez mutantow",
+                file=sys.stderr,
+            )
         else:
             raise BladNarzedzia(f"mutmut run zakonczyl sie bledem:\n{_koncowka(bieg)}")
 
