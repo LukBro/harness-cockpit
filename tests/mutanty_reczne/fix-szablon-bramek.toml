@@ -146,3 +146,9 @@ plik = ".claude/skills/praca-ticketu/scripts/stan.py"
 szukaj = 'for x in b["argv"] if repo is not None else []:'
 zamien = 'for x in b["argv"][1:] if repo is not None else []:'
 test = "tests/test_skill_praca_ticketu.py::test_skrypt_spoza_repozytorium_jako_pierwszy_element_argv_daje_ostrzezenie"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/stan.py"
+szukaj = 'in sorted(wzor - {b["nazwa"] for b in bramki})]'
+zamien = 'in list(wzor - {b["nazwa"] for b in bramki})]'
+test = "tests/test_skill_praca_ticketu.py::test_brakujace_bramki_z_szablonu_wymienione_alfabetycznie"

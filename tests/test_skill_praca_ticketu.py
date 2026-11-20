@@ -1315,6 +1315,17 @@ def _modul_stan():
     return mod
 
 
+def test_brakujace_bramki_z_szablonu_wymienione_alfabetycznie(monkeypatch, tmp_path):
+    # 12 nazw: kolejnosc zbioru napisow zalezy od ziarna haszowania, zgodna z alfabetyczna z szansa 1/12!
+    nazwy = [f"bramka-{c}" for c in "lkjihgfedcba"]
+    szablon = tmp_path / "szablon.json"
+    szablon.write_text(json.dumps([{"nazwa": n, "argv": ["true"]} for n in nazwy]), encoding="utf-8")
+    mod = _modul_stan()
+    monkeypatch.setattr(mod, "SZABLON_BRAMEK", str(szablon))
+    braki = [w for w in mod.ostrzezenia_bramek([]) if w.startswith("brak bramki z szablonu: ")]
+    assert braki == [f"brak bramki z szablonu: {n}" for n in sorted(nazwy)]
+
+
 def _rzuc(wyjatek):
     def run(*_a, **_k):
         raise wyjatek
