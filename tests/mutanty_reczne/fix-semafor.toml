@@ -124,6 +124,6 @@ test = "tests/test_test_lock_sloty.py::test_limit_bramki_testow_obejmuje_czekani
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
-szukaj = '"--max-children", "4"]'
-zamien = '"--max-children", "8"]'
+szukaj = '"--max-children", "4",'
+zamien = '"--max-children", "8",'
 test = "tests/test_test_lock_sloty.py::test_szablon_ogranicza_dzieci_mutmuta_do_czterech"
