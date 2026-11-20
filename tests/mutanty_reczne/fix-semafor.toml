@@ -103,3 +103,27 @@ plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
 szukaj = '        fd = fds[slot]'
 zamien = '        fd = fds[0]'
 test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
+szukaj = '"--sloty", "2", "--timeout",'
+zamien = '"--sloty", "3", "--timeout",'
+test = "tests/test_test_lock_sloty.py::test_szablon_puszcza_pelne_testy_przez_semafor_dwoch_slotow"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
+szukaj = '"3600", "--", "python", "tools/testy.py"'
+zamien = '"5400", "--", "python", "tools/testy.py"'
+test = "tests/test_test_lock_sloty.py::test_limit_bramki_testow_obejmuje_czekanie_na_slot_i_sam_przebieg"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
+szukaj = '"timeout": 9000}'
+zamien = '"timeout": 5400}'
+test = "tests/test_test_lock_sloty.py::test_limit_bramki_testow_obejmuje_czekanie_na_slot_i_sam_przebieg"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
+szukaj = '"--max-children", "4"]'
+zamien = '"--max-children", "8"]'
+test = "tests/test_test_lock_sloty.py::test_szablon_ogranicza_dzieci_mutmuta_do_czterech"

@@ -1,6 +1,7 @@
 """Semafor test_lock.py --sloty (audyt procesu 2026-11-19, krok 7): najwyzej N ciezkich komend naraz."""
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -155,3 +156,31 @@ def test_timeout_nadal_ograniczony_do_doby_takze_ze_slotami(repo):
     r = _lock(repo, "--sloty", "2", "--timeout", "86401", "--", "true")
     assert r.returncode == 64
     assert "86400" in r.stderr
+
+
+SZABLON = KORZEN / ".claude" / "skills" / "praca-ticketu" / "bramki-szablon.json"
+
+
+def _bramka_z_szablonu(nazwa: str) -> dict:
+    return next(b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] == nazwa)
+
+
+def test_szablon_puszcza_pelne_testy_przez_semafor_dwoch_slotow():
+    # pomiar kroku 0: pytest -n 4 zajmuje ok. 4 z 8 rdzeni serwera
+    b = _bramka_z_szablonu("testy")
+    i = b["argv"].index("--")
+    assert b["argv"][:i] == ["python", ".claude/skills/praca-ticketu/scripts/test_lock.py", "--sloty", "2",
+                             "--timeout", "3600"]
+    assert (KORZEN / b["argv"][1]).is_file()
+    assert b["argv"][i + 1:i + 3] == ["python", "tools/testy.py"]
+
+
+def test_limit_bramki_testow_obejmuje_czekanie_na_slot_i_sam_przebieg():
+    b = _bramka_z_szablonu("testy")
+    czekanie = int(b["argv"][b["argv"].index("--timeout") + 1])
+    assert b["timeout"] - czekanie >= 5400  # dotychczasowy limit samych testow
+
+
+def test_szablon_ogranicza_dzieci_mutmuta_do_czterech():
+    argv = _bramka_z_szablonu("mutanty")["argv"]
+    assert argv[argv.index("--max-children") + 1] == "4"
