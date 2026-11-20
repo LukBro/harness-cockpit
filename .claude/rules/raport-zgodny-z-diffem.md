@@ -18,4 +18,4 @@ pokrycie reguły, której nikt nie chroni (HAR-52, HAR-54).
 
 - Raport wymienia test, plik albo cytat, którego nie ma w diffie lub w źródle = **-25**.
 - Liczba w raporcie inna niż w pliku albo opis zmiany, której nie ma w diffie = **-25**.
-- Zmiana pliku spoza przydziału bez `STOP:` = **-10**.
+- Zmiana pliku spoza przydziału bez `STOP:` = `UWAGA (bez blokady)`, 0 pkt — decyduje Team Manager.
