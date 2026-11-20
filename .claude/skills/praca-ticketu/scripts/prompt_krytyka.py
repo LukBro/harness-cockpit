@@ -60,7 +60,8 @@ Przeczytaj, w tej kolejności:
 
 Zakres oceny: {zakres}
 Zmiany: `git diff {sha} -- <pliki agenta>` oraz nowe pliki z `git status --porcelain` (przeczytaj w całości).
-Plik zmieniony poza przydziałem i poza pliki_tm/pliki_sprzed_startu to odjęcie z rubryki.
+Plik zmieniony poza przydziałem i poza pliki_tm/pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem,
+bez blokady) - bez odjęcia punktów; o wejściu zmiany decyduje Team Manager.
 Lint i testy są zielone dla bieżącego diffu (pole bramki w stanie) - nie uruchamiasz ich i ich nie punktujesz.
 
 Odpowiedź: wyłącznie blok **Code Review** w formacie z rubryki, linia `<agent>: 100 ... = X/100` dla każdego

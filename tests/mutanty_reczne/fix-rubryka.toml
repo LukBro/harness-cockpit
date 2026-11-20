@@ -1,0 +1,7 @@
+# krok 5 audytu procesu: plik poza przydzialem to UWAGA w prompcie krytyka
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem,"
+zamien = "pliki_sprzed_startu to odjęcie z rubryki (plik poza przydziałem,"
+test = "tests/test_skill_praca_ticketu.py::test_prompt_krytyka_kaze_wpisac_plik_poza_przydzialem_jako_uwage_bez_odjecia"

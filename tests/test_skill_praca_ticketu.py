@@ -1087,6 +1087,17 @@ def test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna(ep, brakujacy):
     assert w.stderr.strip() == "prompt_krytyka: brak migawki rundy 1 - pełna ocena bez zamrożenia zakresu"
 
 
+
+def test_prompt_krytyka_kaze_wpisac_plik_poza_przydzialem_jako_uwage_bez_odjecia(ep):
+    # rubryka po audycie 2026-11-19: formalnosci to UWAGA, nie odjecie (prompt nie moze mowic inaczej)
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
+    tresc = " ".join((ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8").split())
+    assert "pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem, bez blokady) - bez odjęcia punktów" in tresc
+    assert "odjęcie z rubryki" not in tresc
+
 def test_pierwsza_ocena_nie_ma_zamrozonego_zakresu(ep):
     ep.stan_bazowy()
     ep.bramki([BRAMKA_OK])

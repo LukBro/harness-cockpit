@@ -25,7 +25,8 @@ w prompcie ścieżkę do tego pliku i parametry:
 Zanim zrobisz cokolwiek z listy `kontrakt.stop_przed` w stanie, przerwij i zakończ raport linią
 `STOP: <powód>`. Zawsze STOP przy: pliku spoza przydziału, sprzeczności ticketu z kodem, wiki albo
 raportem Researchera, kodzie z brancha innego ticketu (nigdy merge, pull, cherry-pick, rebase).
-Zrobienie czegoś z listy bez `STOP:` krytyk punktuje jak zmianę poza przydziałem.
+Zrobienie czegoś z listy bez `STOP:` krytyk odnotuje jako UWAGA (bez blokady), a o wejściu zmiany
+decyduje Team Manager.
 
 ## Changelog i wersja (gdy projekt ma changelog wydań)
 
