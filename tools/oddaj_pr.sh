@@ -22,7 +22,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 OCZEKIWANY_EMAIL="lukaszbrowar@gmail.com"
 OCZEKIWANA_NAZWA="LukBro"
-SCIEZKI_WRAZLIWE=(".github/" "pyproject.toml" "alembic/versions/" "CLAUDE.md" ".claude/settings" ".claude/hooks/" "src/runner/secrets.py")
+SCIEZKI_WRAZLIWE=(".github/" "pyproject.toml" "alembic/versions/" "CLAUDE.md" ".claude/settings" ".claude/hooks/" "src/runner/secrets.py" "alembic.ini")
 
 TYTUL=""
 TRESC=""
