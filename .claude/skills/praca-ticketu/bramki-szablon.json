@@ -1,0 +1,7 @@
+[
+ {"nazwa": "lint", "argv": ["ruff", "check", "."], "timeout": 600},
+ {"nazwa": "warstwy", "argv": ["python", "tools/check_layers.py"], "timeout": 300},
+ {"nazwa": "testy", "argv": ["python", "tools/testy.py", "--bez-postepu", "600", "-q", "-n", "4"], "timeout": 5400},
+ {"nazwa": "mutanty", "argv": ["python", "tools/mutanty_zmian.py", "--baza", "origin/main"], "timeout": 7200,
+  "kody": {"0": "zielony", "1": "czerwony", "3": "reczne"}}
+]
