@@ -1244,6 +1244,12 @@ def test_skrypt_spoza_repozytorium_daje_ostrzezenie_a_z_repozytorium_nie(ep, roz
     assert _ostrzezenia(_zapisz_bramki(ep, bramki)) == [f"OSTRZEZENIE: bramka obca: skrypt spoza repozytorium: {obcy}"]
 
 
+def test_skrypt_spoza_repozytorium_jako_pierwszy_element_argv_daje_ostrzezenie(ep):
+    obcy = str(ep.pliki / "bramka.sh")  # skrypt uruchamiany bezposrednio, bez interpretera
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "obca", "argv": [obcy]}))) == [
+        f"OSTRZEZENIE: bramka obca: skrypt spoza repozytorium: {obcy}"]
+
+
 def test_sciezka_z_prefiksem_repozytorium_poza_nim_daje_ostrzezenie(ep):
     obok = str(ep.repo) + "-obok/x.py"  # ten sam poczatek napisu, inny katalog
     assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "obok", "argv": ["python", obok]}))) == [

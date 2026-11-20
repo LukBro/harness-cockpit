@@ -98,7 +98,7 @@ def ostrzezenia_bramek(bramki):
                   if str(k) != "0" and v == "zielony"]
         if len(b["argv"]) > 1 and os.path.basename(b["argv"][0]) in ("sh", "bash", "zsh") and b["argv"][1] == "-c":
             wynik.append(f"bramka {n}: {b['argv'][0]} -c ukrywa komende przed sprawdzeniem")
-        for x in b["argv"][1:] if repo is not None else []:
+        for x in b["argv"] if repo is not None else []:
             if not (os.path.isabs(x) and x.endswith((".py", ".sh"))):
                 continue
             try:
