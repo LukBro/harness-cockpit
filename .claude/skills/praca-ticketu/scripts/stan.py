@@ -68,6 +68,49 @@ def wczytaj(key):
     return p, d
 
 
+SZABLON_BRAMEK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bramki-szablon.json")
+
+
+def ostrzezenia_bramek(bramki):
+    """Tryb ostrzezen (audyt 2026-11-19, krok 4b): zapis bez zmian, uwagi na stderr."""
+    wynik = []
+    try:
+        with open(SZABLON_BRAMEK, encoding="utf-8") as f:
+            wzor = {b["nazwa"] for b in json.load(f)}
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        wynik.append(f"nie sprawdzono bramek z szablonu: {e}")
+        wzor = set()
+    wynik += [f"brak bramki z szablonu: {n}" for n in sorted(wzor - {b["nazwa"] for b in bramki})]
+    try:
+        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=30)
+        repo = os.path.realpath(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
+    except (OSError, subprocess.TimeoutExpired):
+        repo = None
+    if repo is None:
+        wynik.append("nie sprawdzono skryptow spoza repozytorium: brak korzenia git")
+    for b in bramki:
+        n = b["nazwa"]
+        kody = b.get("kody", {})
+        if not isinstance(kody, dict):
+            wynik.append(f"bramka {n}: kody nie sa obiektem - nie sprawdzono mapowania kodow")
+            kody = {}
+        wynik += [f"bramka {n}: kod {k} mapowany na zielony" for k, v in kody.items()
+                  if str(k) != "0" and v == "zielony"]
+        if len(b["argv"]) > 1 and os.path.basename(b["argv"][0]) in ("sh", "bash", "zsh") and b["argv"][1] == "-c":
+            wynik.append(f"bramka {n}: {b['argv'][0]} -c ukrywa komende przed sprawdzeniem")
+        for x in b["argv"] if repo is not None else []:
+            if not (os.path.isabs(x) and x.endswith((".py", ".sh"))):
+                continue
+            try:
+                poza = not os.path.realpath(x).startswith(repo + os.sep)
+            except ValueError as e:  # bajt zerowy w sciezce - ostrzezenie, nie wywrocony zapis
+                wynik.append(f"bramka {n}: nie sprawdzono skryptu {x!r}: {e}")
+                continue
+            if poza:
+                wynik.append(f"bramka {n}: skrypt spoza repozytorium: {x}")
+    return wynik
+
+
 def zapisz(p, d):
     tmp = p + ".tmp"
     try:
@@ -196,6 +239,8 @@ def main(a):
                 and all(isinstance(x, str) for x in b["argv"])     # subprocess.run przyjmuje tylko napisy
                 for b in bramki):
             blad(2, "bramki muszą być niepustą listą {nazwa, argv}")
+        for o in ostrzezenia_bramek(bramki):
+            print(f"OSTRZEZENIE: {o}", file=sys.stderr)
         zapisz(os.path.join(os.path.dirname(p), "bramki.json"), bramki)
         print(f"BRAMKI: zapisane={len(bramki)}")
         return 0

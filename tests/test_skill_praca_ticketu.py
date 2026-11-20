@@ -11,6 +11,7 @@ Skrypty są poza `source_paths` mutmuta - gałęzie kodów wyjścia chroni tabel
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -1185,3 +1186,160 @@ def test_bramki_przy_zlej_liczbie_argumentow_to_blad_uzycia(ep, nadmiar):
     w = ep.skrypt("stan.py", "bramki", KEY, *a)
     assert (w.kod, w.stderr.strip()) == (64, "stan: bramki <KEY> <plik>")
     assert not (ep.kat / "bramki.json").exists()
+
+
+# stan.py bramki w trybie ostrzezen (audyt procesu 2026-11-19, krok 4b): zapis i kod bez zmian, uwagi na stderr
+
+SZABLON = KORZEN / ".claude" / "skills" / "praca-ticketu" / "bramki-szablon.json"
+
+
+def _ostrzezenia(w: Wynik) -> list[str]:
+    return [x for x in w.stderr.splitlines() if x.startswith("OSTRZEZENIE: ")]
+
+
+def _zapisz_bramki(ep, bramki) -> Wynik:
+    w = ep.skrypt("stan.py", "bramki", KEY, ep.plik("b.json", json.dumps(bramki)))
+    assert (w.kod, w.ostatnia) == (0, f"BRAMKI: zapisane={len(bramki)}")
+    assert json.loads((ep.kat / "bramki.json").read_text(encoding="utf-8")) == bramki
+    return w
+
+
+def test_bramki_zgodne_z_szablonem_nie_daja_ostrzezen(ep):
+    assert _ostrzezenia(_zapisz_bramki(ep, json.loads(SZABLON.read_text(encoding="utf-8")))) == []
+
+
+def test_brak_bramki_z_szablonu_daje_ostrzezenie_z_nazwa(ep):
+    bramki = [b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] not in ("mutanty", "warstwy")]
+    assert _ostrzezenia(_zapisz_bramki(ep, bramki)) == [
+        "OSTRZEZENIE: brak bramki z szablonu: mutanty", "OSTRZEZENIE: brak bramki z szablonu: warstwy"]
+
+
+def _z_szablonem(*dodatkowe: dict) -> list[dict]:
+    return json.loads(SZABLON.read_text(encoding="utf-8")) + list(dodatkowe)
+
+
+def test_kod_porazki_mapowany_na_zielony_daje_ostrzezenie(ep):
+    b = {"nazwa": "e2e", "argv": ["pytest"], "kody": {"0": "zielony", "1": "czerwony", "5": "zielony"}}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == [
+        "OSTRZEZENIE: bramka e2e: kod 5 mapowany na zielony"]
+
+
+@pytest.mark.parametrize("powloka", ["sh", "bash", "/bin/zsh"])
+def test_powloka_z_c_daje_ostrzezenie(ep, powloka):
+    b = {"nazwa": "lint2", "argv": [powloka, "-c", "ruff check . || true"]}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == [
+        f"OSTRZEZENIE: bramka lint2: {powloka} -c ukrywa komende przed sprawdzeniem"]
+
+
+def test_powloka_ze_skryptem_bez_c_nie_daje_ostrzezenia(ep):
+    b = {"nazwa": "lokalne", "argv": ["sh", "tools/bramki_lokalne.sh"]}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == []
+
+
+@pytest.mark.parametrize("rozszerzenie", [".py", ".sh"])
+def test_skrypt_spoza_repozytorium_daje_ostrzezenie_a_z_repozytorium_nie(ep, rozszerzenie):
+    obcy = str(ep.pliki / f"bramka{rozszerzenie}")
+    swoj = str(ep.repo / f"bramka{rozszerzenie}")
+    bramki = _z_szablonem({"nazwa": "obca", "argv": ["python", obcy]}, {"nazwa": "swoja", "argv": ["python", swoj]})
+    assert _ostrzezenia(_zapisz_bramki(ep, bramki)) == [f"OSTRZEZENIE: bramka obca: skrypt spoza repozytorium: {obcy}"]
+
+
+def test_skrypt_spoza_repozytorium_jako_pierwszy_element_argv_daje_ostrzezenie(ep):
+    obcy = str(ep.pliki / "bramka.sh")  # skrypt uruchamiany bezposrednio, bez interpretera
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "obca", "argv": [obcy]}))) == [
+        f"OSTRZEZENIE: bramka obca: skrypt spoza repozytorium: {obcy}"]
+
+
+def test_sciezka_z_prefiksem_repozytorium_poza_nim_daje_ostrzezenie(ep):
+    obok = str(ep.repo) + "-obok/x.py"  # ten sam poczatek napisu, inny katalog
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "obok", "argv": ["python", obok]}))) == [
+        f"OSTRZEZENIE: bramka obok: skrypt spoza repozytorium: {obok}"]
+
+
+def test_brak_szablonu_to_ostrzezenie_nie_sprawdzono_a_nie_cisza(ep, tmp_path):
+    kopia = tmp_path / "skrypty"
+    kopia.mkdir()
+    shutil.copy(SKRYPTY / "stan.py", kopia / "stan.py")
+    env = dict(ep.env, GIT_DIR=str(ep.repo / ".git"), GIT_WORK_TREE=str(ep.repo))
+    w = _uruchom([PY, "-I", str(kopia / "stan.py"), "bramki", KEY, ep.plik("b.json", json.dumps([BRAMKA_OK]))],
+                 env, "stan.py")
+    assert w.kod == 0
+    assert [x.split(":")[1] for x in _ostrzezenia(w)] == [" nie sprawdzono bramek z szablonu"]
+
+
+def test_brak_korzenia_git_to_ostrzezenie_nie_sprawdzono_skryptow(ep):
+    env = dict(ep.env, GIT_DIR=str(ep.origin))  # repozytorium bare: katalog stanu jest, korzenia drzewa nie ma
+    w = _uruchom([PY, "-I", str(SKRYPTY / "stan.py"), "bramki", KEY,
+                  ep.plik("b.json", json.dumps(_z_szablonem({"nazwa": "obca", "argv": ["python", "/tmp/x.py"]})))],
+                 env, "stan.py")
+    assert w.kod == 0
+    assert _ostrzezenia(w) == ["OSTRZEZENIE: nie sprawdzono skryptow spoza repozytorium: brak korzenia git"]
+
+
+@pytest.mark.parametrize("tresc", ["{", "[{}]", "[1]"], ids=["zly-json", "bez-nazwy", "element-nie-obiekt"])
+def test_nieczytelny_szablon_to_ostrzezenie_nie_sprawdzono_a_nie_wywrocony_zapis(ep, tmp_path, tresc):
+    kopia = tmp_path / "skrypty"
+    kopia.mkdir()
+    shutil.copy(SKRYPTY / "stan.py", kopia / "stan.py")
+    (tmp_path / "bramki-szablon.json").write_text(tresc, encoding="utf-8")  # SZABLON_BRAMEK = skrypty/..
+    env = dict(ep.env, GIT_DIR=str(ep.repo / ".git"), GIT_WORK_TREE=str(ep.repo))
+    w = _uruchom([PY, "-I", str(kopia / "stan.py"), "bramki", KEY, ep.plik("b.json", json.dumps([BRAMKA_OK]))],
+                 env, "stan.py")
+    assert (w.kod, w.ostatnia) == (0, "BRAMKI: zapisane=1")
+    assert [x.split(":")[1] for x in _ostrzezenia(w)] == [" nie sprawdzono bramek z szablonu"]
+
+
+@pytest.mark.parametrize("kody", [["zielony"], "zielony"])
+def test_kody_nie_bedace_obiektem_to_ostrzezenie_nie_sprawdzono_mapowania(ep, kody):
+    b = {"nazwa": "e2e", "argv": ["pytest"], "kody": kody}
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem(b))) == [
+        "OSTRZEZENIE: bramka e2e: kody nie sa obiektem - nie sprawdzono mapowania kodow"]
+
+
+def test_sama_powloka_bez_argumentow_nie_daje_ostrzezenia(ep):
+    assert _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "p", "argv": ["sh"]}))) == []
+
+
+def test_sciezka_z_bajtem_zerowym_to_ostrzezenie_a_bramki_zapisane(ep):
+    zla = "/x\x00.py"
+    # tresc bledu ValueError zalezy od wersji Pythona i systemu - sprawdzamy tylko prefiks
+    ostrzezenia = _ostrzezenia(_zapisz_bramki(ep, _z_szablonem({"nazwa": "z", "argv": ["python", zla]})))
+    assert len(ostrzezenia) == 1
+    assert ostrzezenia[0].startswith(f"OSTRZEZENIE: bramka z: nie sprawdzono skryptu {zla!r}: ")
+
+
+def _modul_stan():
+    spec = importlib.util.spec_from_file_location("stan_w_procesie", SKRYPTY / "stan.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_brakujace_bramki_z_szablonu_wymienione_alfabetycznie(monkeypatch, tmp_path):
+    # 12 nazw: kolejnosc zbioru napisow zalezy od ziarna haszowania, zgodna z alfabetyczna z szansa 1/12!
+    nazwy = [f"bramka-{c}" for c in "lkjihgfedcba"]
+    szablon = tmp_path / "szablon.json"
+    szablon.write_text(json.dumps([{"nazwa": n, "argv": ["true"]} for n in nazwy]), encoding="utf-8")
+    mod = _modul_stan()
+    monkeypatch.setattr(mod, "SZABLON_BRAMEK", str(szablon))
+    braki = [w for w in mod.ostrzezenia_bramek([]) if w.startswith("brak bramki z szablonu: ")]
+    assert braki == [f"brak bramki z szablonu: {n}" for n in sorted(nazwy)]
+
+
+def _rzuc(wyjatek):
+    def run(*_a, **_k):
+        raise wyjatek
+    return run
+
+
+@pytest.mark.parametrize("run", [
+    _rzuc(OSError("brak gita")),
+    _rzuc(subprocess.TimeoutExpired("git", 30)),
+    lambda *_a, **_k: subprocess.CompletedProcess([], 128, "/repo\n", ""),
+    lambda *_a, **_k: subprocess.CompletedProcess([], 0, "\n", ""),
+], ids=["oserror", "limit-czasu", "kod-bledu-z-wyjsciem", "puste-wyjscie"])
+def test_nieudane_ustalenie_korzenia_git_to_ostrzezenie_nie_sprawdzono_skryptow(monkeypatch, run):
+    mod = _modul_stan()
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    bramki = _z_szablonem({"nazwa": "obca", "argv": ["python", "/tmp/x.py"]})
+    assert mod.ostrzezenia_bramek(bramki) == ["nie sprawdzono skryptow spoza repozytorium: brak korzenia git"]
