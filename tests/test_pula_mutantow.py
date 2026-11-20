@@ -94,6 +94,13 @@ def test_zla_pula_to_blad_konfiguracji(mod, tmp_path, tresc):
         mod.wczytaj_pule(p)
 
 
+def test_pula_z_niepoprawnym_json_to_blad_konfiguracji(mod, tmp_path):
+    p = tmp_path / "pula.json"
+    p.write_text("{zly")
+    with pytest.raises(mod.BladPuli):
+        mod.wczytaj_pule(p)
+
+
 def test_nieczytelna_pula_to_blad_konfiguracji(mod, tmp_path):
     p = tmp_path / "pula.json"
     p.mkdir()
@@ -302,6 +309,16 @@ def test_shard_lokalny_bez_katalogu_kopii_to_porazka(mod, lokalny, monkeypatch):
     assert stan["rmtree"] == []
 
 
+def test_shard_lokalny_z_dowiazaniem_poza_repo_to_porazka(mod, repo, tmp_path):
+    import os
+    (repo / "src" / "a" / "x.py").write_text("x = 2\n")
+    os.symlink("/etc/hosts", repo / "src" / "a" / "link")
+    with open(tmp_path / "log", "w") as log:
+        assert mod.shard_lokalny(repo, _git(repo, "rev-parse", "HEAD").strip(), mod.paczka(repo), 1, 4,
+                                 tmp_path, log) is False
+    assert "PULA shard 1 lokalnie" in (tmp_path / "log").read_text()
+
+
 @pytest.mark.parametrize("kod,dowod", [(0, False), (1, True)], ids=["bez-pliku-dowodu", "kod-niezerowy"])
 def test_shard_lokalny_bez_dowodu_albo_z_bledem_to_porazka(lokalny, kod, dowod):
     stan, wywolaj = lokalny
@@ -456,3 +473,15 @@ def test_git_ponad_limit_czasu_to_brak_dowodu(mod, przebieg, monkeypatch):
 def test_baza_bez_wartosci_to_brak_dowodu_bez_tracebacku(mod, przebieg):
     # bez wartosci po --baza liczymy wzgledem origin/main; repo testowe go nie ma
     assert mod.main(["--", "--baza"]) == 2
+
+
+def test_pyproject_bez_sekcji_mutmuta_to_brak_dowodu(mod, przebieg, repo):
+    (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    assert mod.main(["--", "--baza", "baza"]) == 2
+    assert przebieg["uruchom"] == []
+
+
+def test_pyproject_z_blednym_toml_to_brak_dowodu(mod, przebieg, repo):
+    (repo / "pyproject.toml").write_text("[tool.mutmut\n")
+    assert mod.main(["--", "--baza", "baza"]) == 2
+    assert przebieg["uruchom"] == []

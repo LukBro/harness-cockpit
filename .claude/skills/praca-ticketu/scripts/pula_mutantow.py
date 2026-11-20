@@ -54,7 +54,7 @@ def wczytaj_pule(plik: Path) -> list[dict]:
         dane = json.loads(plik.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
-    except (OSError, UnicodeDecodeError, ValueError) as e:
+    except (OSError, ValueError) as e:  # ValueError obejmuje UnicodeDecodeError i JSONDecodeError
         raise BladPuli(f"{plik}: {e}") from e
     zdalne = dane.get("zdalne") if isinstance(dane, dict) else None
     if not isinstance(zdalne, list):
@@ -127,7 +127,7 @@ def shard_lokalny(korzen: Path, sha: str, dane: bytes, indeks: int, liczba: int,
                             "--liczba", str(liczba), "--katalog-dowodow", str(dowody)],
                            cwd=kopia / "repo", stdout=log, stderr=subprocess.STDOUT, timeout=LIMIT_SHARDU_S)
         return r.returncode == 0 and (dowody / f"shard-{indeks}.json").is_file()
-    except (OSError, subprocess.SubprocessError) as e:
+    except (OSError, subprocess.SubprocessError, tarfile.TarError) as e:
         print(f"PULA shard {indeks} lokalnie: {e}", file=log, flush=True)
         return False
     finally:

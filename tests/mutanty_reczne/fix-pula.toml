@@ -20,8 +20,8 @@ test = "tests/test_pula_mutantow.py::test_bez_pliku_puli_wszystkie_shardy_liczy_
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
-szukaj = "    except (OSError, UnicodeDecodeError, ValueError) as e:\n        raise BladPuli"
-zamien = "    except (UnicodeDecodeError, ValueError) as e:\n        raise BladPuli"
+szukaj = "    except (OSError, ValueError) as e:  # ValueError"
+zamien = "    except (ValueError,) as e:  # ValueError"
 test = "tests/test_pula_mutantow.py::test_nieczytelna_pula_to_blad_konfiguracji"
 
 [[mutant]]
@@ -224,14 +224,14 @@ test = "tests/test_pula_mutantow.py::test_shard_lokalny_bez_dowodu_albo_z_bledem
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
-szukaj = "    except (OSError, subprocess.SubprocessError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
-zamien = "    except (subprocess.SubprocessError,) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+szukaj = "    except (OSError, subprocess.SubprocessError, tarfile.TarError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+zamien = "    except (subprocess.SubprocessError, tarfile.TarError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
 test = "tests/test_pula_mutantow.py::test_shard_lokalny_ktorego_kopii_nie_da_sie_zrobic_to_porazka"
 
 [[mutant]]
 plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
-szukaj = "    except (OSError, subprocess.SubprocessError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
-zamien = "    except (OSError,) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+szukaj = "    except (OSError, subprocess.SubprocessError, tarfile.TarError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+zamien = "    except (OSError, tarfile.TarError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
 test = "tests/test_pula_mutantow.py::test_shard_lokalny_ktorego_kopii_nie_da_sie_zrobic_to_porazka"
 
 [[mutant]]
@@ -281,3 +281,27 @@ plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
 szukaj = "ssh = [\"ssh\", \"-o\", \"BatchMode=yes\", "
 zamien = "ssh = [\"ssh\", "
 test = "tests/test_pula_mutantow.py::test_shard_zdalny_nie_czeka_na_haslo_ssh"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, ValueError) as e:  # ValueError"
+zamien = "    except (OSError,) as e:  # ValueError"
+test = "tests/test_pula_mutantow.py::test_pula_z_niepoprawnym_json_to_blad_konfiguracji"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError, tarfile.TarError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+zamien = "    except (OSError, subprocess.SubprocessError) as e:\n        print(f\"PULA shard {indeks} lokalnie"
+test = "tests/test_pula_mutantow.py::test_shard_lokalny_z_dowiazaniem_poza_repo_to_porazka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError, RuntimeError, KeyError, ValueError) as e:"
+zamien = "    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as e:"
+test = "tests/test_pula_mutantow.py::test_pyproject_bez_sekcji_mutmuta_to_brak_dowodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/pula_mutantow.py"
+szukaj = "    except (OSError, subprocess.SubprocessError, RuntimeError, KeyError, ValueError) as e:"
+zamien = "    except (OSError, subprocess.SubprocessError, RuntimeError, KeyError) as e:"
+test = "tests/test_pula_mutantow.py::test_pyproject_z_blednym_toml_to_brak_dowodu"
