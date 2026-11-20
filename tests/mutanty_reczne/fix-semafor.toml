@@ -1,0 +1,105 @@
+# Krok 7 audytu procesu 2026-11-19: semafor test_lock.py --sloty N
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'if not 1 <= wartosc <= MAX_SLOTY:'
+zamien = 'if not 0 <= wartosc <= MAX_SLOTY:'
+test = "tests/test_test_lock_sloty.py::test_liczba_slotow_poza_zakresem_to_blad_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'if not 1 <= wartosc <= MAX_SLOTY:'
+zamien = 'if not 1 <= wartosc < MAX_SLOTY:'
+test = "tests/test_test_lock_sloty.py::test_najwieksza_liczba_slotow_jest_dozwolona"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'MAX_SLOTY = 64'
+zamien = 'MAX_SLOTY = 65'
+test = "tests/test_test_lock_sloty.py::test_liczba_slotow_poza_zakresem_to_blad_uzycia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '            sloty = wartosc'
+zamien = '            sloty = 1'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'if argv[index] not in ("--timeout", "--sloty"):'
+zamien = 'if argv[index] not in ("--timeout",):'
+test = "tests/test_test_lock_sloty.py::test_sloty_to_osobne_pliki_blokady"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'if argv[index] == "--sloty":'
+zamien = 'if argv[index] != "--sloty":'
+test = "tests/test_test_lock_sloty.py::test_timeout_nadal_ograniczony_do_doby_takze_ze_slotami"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'sciezki = [path] if sloty == 1 else'
+zamien = 'sciezki = [path + ".0"] if sloty == 1 else'
+test = "tests/test_test_lock_sloty.py::test_jeden_slot_to_dotychczasowa_blokada_na_pliku_test_lock"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '[f"{path}.{i}" for i in range(sloty)]'
+zamien = '[f"{path}.{i}" for i in range(1)]'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '                return i'
+zamien = '                return 0'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '''        if time.monotonic() >= koniec:
+            return None'''
+zamien = '''        if time.monotonic() >= koniec + 5:
+            return None'''
+test = "tests/test_test_lock_sloty.py::test_timeout_zero_przy_zajetych_slotach_nie_czeka_i_nie_uruchamia_komendy"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '            pierwsza = False'
+zamien = '            pass'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '        if pierwsza:'
+zamien = '        if False:'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = 'holders = ",".join(_read_holder(fd) for fd in fds)'
+zamien = 'holders = _read_holder(fds[0])'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '(f" slot={slot}" if sloty > 1 else "")'
+zamien = '(f" slot={slot}" if sloty > 0 else "")'
+test = "tests/test_test_lock_sloty.py::test_jeden_slot_to_dotychczasowa_blokada_na_pliku_test_lock"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '(f" slot={slot}" if sloty > 1 else "")'
+zamien = '""'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '            slot = 0 if _acquire(fds[0], timeout) else None'
+zamien = '            slot = 0'
+test = "tests/test_test_lock_sloty.py::test_jawny_jeden_slot_blokuje_drugi_przebieg"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = '        fd = fds[slot]'
+zamien = '        fd = fds[0]'
+test = "tests/test_test_lock_sloty.py::test_dwa_przebiegi_dostaja_rozne_sloty_a_trzeci_czeka"
