@@ -1088,6 +1088,31 @@ def test_ponowna_ocena_bez_migawki_poprzedniej_rundy_jest_pelna(ep, brakujacy):
     assert w.stderr.strip() == "prompt_krytyka: brak migawki rundy 1 - pełna ocena bez zamrożenia zakresu"
 
 
+def test_prompt_krytyka_kaze_wpisac_plik_poza_przydzialem_jako_uwage_bez_odjecia(ep):
+    # rubryka po audycie 2026-11-19: formalnosci to UWAGA, nie odjecie (prompt nie moze mowic inaczej)
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
+    tresc = " ".join((ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8").split())
+    assert "pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem, bez blokady) - bez odjęcia punktów; o wejściu zmiany decyduje Team Manager." in tresc
+    assert "odjęcie z rubryki" not in tresc
+
+
+def test_ponowna_ocena_nie_odejmuje_za_plik_poza_przydzialem(ep):
+    # sciezka --tylko z migawka (ZAMROZONY ZAKRES) mowi to samo co rubryka: plik poza przydzialem to UWAGA
+    ep.stan_bazowy()
+    ep.bramki([BRAMKA_OK])
+    assert _werdykt(ep, WERDYKT_NEEDS_WORK).kod == 1
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA), "--tylko", "backend").kod == 0
+    tresc = " ".join((ep.kat / "krytyk-prompt-2.md").read_text(encoding="utf-8").split())
+    assert "ZAMROŻONY ZAKRES" in tresc
+    assert "naruszenie przydziału" not in tresc
+    assert "plik poza przydziałem w iteracji też wpisz jako UWAGA (bez blokady), bez odjęcia." in tresc
+    assert "zmieniła. Plik poza przydziałem to UWAGA (bez blokady), bez odjęcia." in tresc
+
+
 def test_pierwsza_ocena_nie_ma_zamrozonego_zakresu(ep):
     ep.stan_bazowy()
     ep.bramki([BRAMKA_OK])
