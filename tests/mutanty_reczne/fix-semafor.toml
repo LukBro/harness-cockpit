@@ -139,3 +139,15 @@ plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
 szukaj = "                os.close(f)\n            raise\n"
 zamien = "                os.close(f)\n"
 test = "tests/test_test_lock_sloty.py::test_slot_ktorego_nie_da_sie_otworzyc_to_blad_bez_uruchomienia_komendy"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = "time.sleep(min(ODSTEP_PROB_S, max(0.0, koniec - time.monotonic())))"
+zamien = "time.sleep(max(0.0, koniec - time.monotonic()))"
+test = "tests/test_test_lock_sloty.py::test_czekanie_na_slot_spi_najwyzej_odstep_prob_i_nigdy_poza_limit_czasu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/test_lock.py"
+szukaj = "time.sleep(min(ODSTEP_PROB_S, max(0.0, koniec - time.monotonic())))"
+zamien = "time.sleep(min(ODSTEP_PROB_S, koniec - time.monotonic()))"
+test = "tests/test_test_lock_sloty.py::test_czekanie_na_slot_spi_najwyzej_odstep_prob_i_nigdy_poza_limit_czasu"
