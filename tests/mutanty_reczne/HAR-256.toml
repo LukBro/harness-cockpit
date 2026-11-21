@@ -1,0 +1,950 @@
+# Tabela recznych mutantow HAR-256: tryb `--dotkniete` w tools/testy.py -- zbior WYZWALACZE,
+# warunki pelnego przebiegu (brak/uszkodzona baza, brak odcisku, wersje zaleznosci) i warunek
+# "brak dowodu" przy niepustym diffie .py. Kazde `szukaj` wystepuje w pliku dokladnie raz.
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"conftest.py": ("conftest.py", "tests"),'
+zamien = '"conftest.py": ("conftest.py",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_conftest_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"pyproject.toml": ("pyproject.toml",),'
+zamien = '"pyproject.toml": ("pyproject.toml.x",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_pyproject_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"alembic": ("alembic",),'
+zamien = '"alembic": ("alembic.x",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_migracji_alembic_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '".cockpit": (".cockpit",),'
+zamien = '".cockpit": (".cockpit.x",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_konfiguracji_cockpit_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"deploy": ("deploy",),'
+zamien = '"deploy": ("deploy.x",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_plikow_deploy_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"web/openapi.json": ("web/openapi.json",),'
+zamien = '"web/openapi.json": ("web/openapi.json.x",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_openapi_frontu_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not baza.is_file():"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_brak_bazy_testmona_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    if not _baza_zdrowa(baza):"
+zamien = "    if _baza_zdrowa(baza):"
+test = "tests/test_narzedzia_sesji.py::test_uszkodzona_baza_testmona_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not isinstance(zapisany, dict):"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_brak_odcisku_wyzwalaczy_wymusza_pelny_przebieg"
+
+# zmiana wersji istniejacej zaleznosci: mutant widzi tylko nazwy
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "sorted(wersje.items())"
+zamien = "sorted(wersje)"
+test = "tests/test_narzedzia_sesji.py::test_zmiana_wersji_zaleznosci_wymusza_pelny_przebieg"
+
+# dodanie zaleznosci: mutant widzi tylko nazwy znane z odcisku
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "sorted(wersje.items())"
+zamien = 'sorted(w for w in wersje.items() if w[0] in ("pytest", "ruamel.yaml"))'
+test = "tests/test_narzedzia_sesji.py::test_dodanie_zaleznosci_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "        if zmienione:"
+zamien = "        if False:"
+test = "tests/test_narzedzia_sesji.py::test_zero_wybranych_testow_przy_niepustym_diffie_py_to_blad_brak_dowodu_a_nie_sukces"
+
+# gałąź pustego diffu: kod 5 -> 0. Zabije ją tylko test z `assert kod == 0` (obecny dopuszcza 0 i 5).
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '        kod = 0  # pusty diff .py: nic do sprawdzenia, kod 5 pytesta ("no tests ran") nie jest bledem'
+zamien = "        pass"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_zadnych_testow_i_bez_diffu_py_konczy_dotkniete_kodem_0_a_nie_5_pytesta"
+
+# conftest.py w korzeniu repo: usuniecie elementu krotki
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"conftest.py": ("conftest.py", "tests"),'
+zamien = '"conftest.py": ("tests",),'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_conftest_w_korzeniu_wymusza_pelny_przebieg"
+
+# filtr plikow w tests/: tylko conftest.py liczy sie do odcisku
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'nazwa != "conftest.py" or p == "conftest.py"'
+zamien = "True"
+test = "tests/test_narzedzia_sesji.py::test_zmiana_zwyklego_testu_w_katalogu_tests_nie_wymusza_pelnego_przebiegu"
+
+# baza bez tabel jest uszkodzona
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "fetchone()[0] > 0"
+zamien = "fetchone()[0] >= 0"
+test = "tests/test_narzedzia_sesji.py::test_baza_testmona_bez_ani_jednej_tabeli_jest_uznana_za_uszkodzona"
+
+# --- runda 2: galezie bledow i brak dowodu; kazdy wiersz usuwa jedna galaz albo jeden element ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if wynik.returncode != 0:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_diff_w_repozytorium_bez_commita_to_blad_brak_dowodu_a_nie_pusta_lista_zmian"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "except (OSError, subprocess.TimeoutExpired) as blad:"
+zamien = "except (subprocess.TimeoutExpired,) as blad:"
+test = "tests/test_narzedzia_sesji.py::test_git_ktorego_nie_da_sie_uruchomic_to_blad_brak_dowodu_przy_odczycie_diffu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "except (OSError, subprocess.TimeoutExpired) as blad:"
+zamien = "except (OSError,) as blad:"
+test = "tests/test_narzedzia_sesji.py::test_git_diff_przekraczajacy_limit_czasu_to_blad_brak_dowodu_przy_odczycie_diffu"
+
+# filtr rozszerzenia: plik .txt w diffie nie jest zmiana kodu
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "return [n for n in wynik.stdout.split(\"\\0\") if n.endswith(\".py\")]"
+zamien = "return [n for n in wynik.stdout.split(\"\\0\")]"
+test = "tests/test_narzedzia_sesji.py::test_zmienione_pliki_to_tylko_te_z_rozszerzeniem_py"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'raise BladNarzedzia("brak dowodu: pelny przebieg bez podsumowania z liczba testow")'
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_pelny_przebieg_bez_podsumowania_z_liczba_testow_to_blad_brak_dowodu_a_nie_zielony_wynik"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if kod not in (0, 5):"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_czerwony_przebieg_bez_podsumowania_zwraca_kod_pytesta_a_nie_blad_brak_dowodu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if baza.is_relative_to(cwd.resolve()):"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_baza_testmona_wewnatrz_repozytorium_to_blad_narzedzia_a_nie_przebieg"
+
+# po zmianie wyzwalacza testmon ma zebrac wszystkie testy, nie zero
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'tryb = "--testmon-noselect" if powod else "--testmon"'
+zamien = 'tryb = "--testmon"'
+test = "tests/test_narzedzia_sesji.py::test_zmiana_pyproject_po_zbudowaniu_bazy_uruchamia_wszystkie_testy_a_nie_zero"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "baza.unlink()"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_uszkodzona_baza_jest_usuwana_i_odbudowana_a_przebieg_pelny_konczy_sie_kodem_0"
+
+# odcisk zapisywany tylko po zielonym przebiegu
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if kod == 0:"
+zamien = "if True:"
+test = "tests/test_narzedzia_sesji.py::test_przebieg_z_czerwonym_testem_nie_zapisuje_odcisku_wiec_nastepny_przebieg_jest_pelny"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "raise BladNarzedzia(f\"nie mozna utworzyc katalogu bazy testmona {baza.parent}: {blad}\") from blad"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_katalog_bazy_testmona_ktorego_nie_da_sie_utworzyc_to_blad_narzedzia_z_nazwa_katalogu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "raise BladNarzedzia(f\"nie mozna usunac uszkodzonej bazy testmona {baza}: {blad}\") from blad"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_uszkodzonej_bazy_testmona_ktorej_nie_da_sie_usunac_to_blad_narzedzia_a_baza_zostaje"
+
+# odcisk: element krotki except i strażnik typu
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "except (OSError, ValueError):"
+zamien = "except (OSError,):"
+test = "tests/test_narzedzia_sesji.py::test_odcisk_ktorego_nie_da_sie_odczytac_jako_json_wymusza_pelny_przebieg_a_nie_traceback"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "except (OSError, ValueError):"
+zamien = "except (ValueError,):"
+test = "tests/test_narzedzia_sesji.py::test_brak_odcisku_wyzwalaczy_wymusza_pelny_przebieg"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not isinstance(zapisany, dict):"
+zamien = "if zapisany is None:"
+test = "tests/test_narzedzia_sesji.py::test_odcisk_ktory_nie_jest_slownikiem_wymusza_pelny_przebieg_a_nie_traceback"
+
+# podsumowanie pytesta
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'elif rodzaj == "deselected":'
+zamien = "elif False:"
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_z_jednym_ostrzezeniem_i_pominietymi_to_zero_wybranych_i_szesc_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "elif rodzaj not in RODZAJE_IGNOROWANE:"
+zamien = "elif False:"
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_z_nieznanym_rodzajem_to_blad_brak_dowodu_a_nie_pominiecie_liczby"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"passed", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"failed", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"error", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"errors", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"skipped", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"xfailed", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = ', "xpassed"'
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"warning", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_nie_liczy_ostrzezen_i_ponowien_jako_wybranych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"warnings", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_nie_liczy_ostrzezen_i_ponowien_jako_wybranych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = '"rerun", '
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_nie_liczy_ostrzezen_i_ponowien_jako_wybranych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = ', "reruns"'
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_nie_liczy_ostrzezen_i_ponowien_jako_wybranych"
+
+# przegladanie wyzwalaczy
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'podkatalogi[:] = [p for p in podkatalogi if p != "__pycache__"]'
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_plik_w_pycache_migracji_nie_zmienia_odcisku_a_zwykly_plik_migracji_tak"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "os.walk(cel, onerror=_blad_katalogu)"
+zamien = "os.walk(cel)"
+test = "tests/test_narzedzia_sesji.py::test_nieczytelny_katalog_migracji_to_blad_narzedzia_a_nie_pusty_odcisk"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'raise BladNarzedzia(f"nie mozna przejrzec katalogu wyzwalaczy: {blad}") from blad'
+zamien = "return"
+test = "tests/test_narzedzia_sesji.py::test_nieczytelny_katalog_migracji_to_blad_narzedzia_a_nie_pusty_odcisk"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'raise BladNarzedzia(f"nie mozna sprawdzic wyzwalacza {cel}: {blad}") from blad'
+zamien = "katalog_czy_plik = (False, False)"
+test = "tests/test_narzedzia_sesji.py::test_wyzwalacz_ktorego_nie_da_sie_sprawdzic_to_blad_narzedzia_z_nazwa_sciezki"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'raise BladNarzedzia(f"nie mozna odczytac wyzwalacza {plik}: {blad}") from blad'
+zamien = 'tresc = b""'
+test = "tests/test_narzedzia_sesji.py::test_nieczytelny_plik_wyzwalacza_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'raise BladNarzedzia(f"nie mozna zapisac odcisku wyzwalaczy: {blad}") from blad'
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_odcisku_nie_da_sie_zapisac_gdy_katalog_bazy_nie_istnieje_to_blad_narzedzia"
+
+# --- runda 3: nazwa pliku w skrocie, kolejnosc, pelne komunikaty bledow, zdrowa baza ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = 'skrot.update(str(plik.relative_to(korzen)).encode() + b"\0" + tresc + b"\0")'
+zamien = 'skrot.update(tresc + b"\0")'
+test = "tests/test_narzedzia_sesji.py::test_przeniesiona_migracja_o_tej_samej_tresci_zmienia_odcisk_bo_nazwa_pliku_wchodzi_do_skrotu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "return sorted(wynik)"
+zamien = "return wynik"
+test = "tests/test_narzedzia_sesji.py::test_kolejnosc_przegladania_katalogow_nie_zmienia_odcisku_wyzwalaczy"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if baza.is_file() and not _baza_zdrowa(baza):"
+zamien = "if baza.is_file():"
+test = "tests/test_narzedzia_sesji.py::test_zdrowa_baza_testmona_przezywa_pelny_przebieg_po_zmianie_wyzwalacza_i_nie_jest_usuwana"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "katalogu wyzwalaczy: {blad}"
+zamien = "katalogu wyzwalaczy"
+test = "tests/test_narzedzia_sesji.py::test_nieczytelny_katalog_migracji_to_blad_narzedzia_a_nie_pusty_odcisk"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "sprawdzic wyzwalacza {cel}: {blad}"
+zamien = "sprawdzic wyzwalacza: {blad}"
+test = "tests/test_narzedzia_sesji.py::test_wyzwalacz_ktorego_nie_da_sie_sprawdzic_to_blad_narzedzia_z_nazwa_sciezki"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "sprawdzic wyzwalacza {cel}: {blad}"
+zamien = "sprawdzic wyzwalacza {cel}"
+test = "tests/test_narzedzia_sesji.py::test_wyzwalacz_ktorego_nie_da_sie_sprawdzic_to_blad_narzedzia_z_nazwa_sciezki"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "odczytac wyzwalacza {plik}: {blad}"
+zamien = "odczytac wyzwalacza: {blad}"
+test = "tests/test_narzedzia_sesji.py::test_nieczytelny_plik_wyzwalacza_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "odczytac wyzwalacza {plik}: {blad}"
+zamien = "odczytac wyzwalacza {plik}"
+test = "tests/test_narzedzia_sesji.py::test_nieczytelny_plik_wyzwalacza_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "odcisku wyzwalaczy: {blad}"
+zamien = "odcisku wyzwalaczy"
+test = "tests/test_narzedzia_sesji.py::test_odcisku_nie_da_sie_zapisac_gdy_katalog_bazy_nie_istnieje_to_blad_narzedzia"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "bazy testmona {baza.parent}: {blad}"
+zamien = "bazy testmona: {blad}"
+test = "tests/test_narzedzia_sesji.py::test_katalog_bazy_testmona_ktorego_nie_da_sie_utworzyc_to_blad_narzedzia_z_nazwa_katalogu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "bazy testmona {baza.parent}: {blad}"
+zamien = "bazy testmona {baza.parent}"
+test = "tests/test_narzedzia_sesji.py::test_katalog_bazy_testmona_ktorego_nie_da_sie_utworzyc_to_blad_narzedzia_z_nazwa_katalogu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "uszkodzonej bazy testmona {baza}: {blad}"
+zamien = "uszkodzonej bazy testmona: {blad}"
+test = "tests/test_narzedzia_sesji.py::test_uszkodzonej_bazy_testmona_ktorej_nie_da_sie_usunac_to_blad_narzedzia_a_baza_zostaje"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "uszkodzonej bazy testmona {baza}: {blad}"
+zamien = "uszkodzonej bazy testmona {baza}"
+test = "tests/test_narzedzia_sesji.py::test_uszkodzonej_bazy_testmona_ktorej_nie_da_sie_usunac_to_blad_narzedzia_a_baza_zostaje"
+
+# --- runda 4: addopts projektu, e2e, opcje wylaczajace selekcje, komunikat testmona ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "wlasne = [\"-o\", \"addopts=\"]"
+zamien = "wlasne = []"
+test = "tests/test_narzedzia_sesji.py::test_addopts_projektu_z_wyborem_znacznikow_nie_wylacza_selekcji_dotknietych_testow"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "wlasne.append(\"--ignore=tests/e2e\")"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_katalog_e2e_jest_pomijany_przy_pelnym_przebiegu_dotknietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if (cwd / \"tests\" / \"e2e\").is_dir():"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_katalog_e2e_jest_pomijany_przy_pelnym_przebiegu_dotknietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "markexpr|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "keyword|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "lf|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "|last-failed"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(?:=.*)?"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "|.*\\.py::.*"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[km]"
+zamien = "[k]"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[km]"
+zamien = "[m]"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(argument {argument!r}) - uruchom bez niego"
+zamien = "(argument)"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "    if not powod:\n        poprzedni = \"\""
+zamien = "    if True:\n        poprzedni = \"\""
+test = "tests/test_narzedzia_sesji.py::test_te_same_argumenty_w_pelnym_przebiegu_sa_dozwolone_bo_nie_ma_selekcji"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not powod and dezaktywacje:"
+zamien = "if dezaktywacje:"
+test = "tests/test_narzedzia_sesji.py::test_komunikat_o_wylaczeniu_selekcji_w_pelnym_przebiegu_nie_jest_bledem_bo_noselect_robi_to_celowo"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not powod and dezaktywacje:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_testmon_ktory_sam_wylaczyl_selekcje_to_blad_brak_dowodu_z_jego_powodem"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(?:selection|collection)"
+zamien = "(?:selection)"
+test = "tests/test_narzedzia_sesji.py::test_testmon_ktory_sam_wylaczyl_selekcje_to_blad_brak_dowodu_z_jego_powodem"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(?:selection|collection)"
+zamien = "(?:collection)"
+test = "tests/test_narzedzia_sesji.py::test_testmon_ktory_sam_wylaczyl_selekcje_to_blad_brak_dowodu_z_jego_powodem"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = ".strip(' ,')"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_testmon_ktory_sam_wylaczyl_selekcje_to_blad_brak_dowodu_z_jego_powodem"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if not powod and dezaktywacje:"
+zamien = "if not powod:"
+test = "tests/test_narzedzia_sesji.py::test_wyjscie_bez_komunikatu_o_wylaczeniu_selekcji_nie_jest_bledem"
+
+[[rownowazny]]
+plik = "tools/testy.py"
+linia_tekst = 'if (cwd / "tests" / "e2e").is_dir():'
+uzasadnienie = "Zastapienie warunku przez `True` dodaje `--ignore=tests/e2e` takze, gdy katalogu nie ma, a pytest ignoruje `--ignore` na nieistniejaca sciezke (nie zbiera nic z niej i nie zglasza bledu), wiec zadne wejscie nie odroznia wersji z `is_dir()` od `True`; wariant `if False:` (brak `--ignore` przy istniejacym katalogu) ma osobny wiersz mutanta z testem test_katalog_e2e_jest_pomijany_przy_pelnym_przebiegu_dotknietych."
+
+# --- runda 5: pominiete zmierzone osobnym przebiegiem collect-only (measured_or_null) ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "pominiete: int | None = None"
+zamien = "pominiete: int | None = 0"
+test = "tests/test_narzedzia_sesji.py::test_podsumowanie_z_zerem_pominietych_to_zero_a_bez_wzmianki_o_pominietych_to_brak_pomiaru"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "liczby = (0, None)"
+zamien = "liczby = (0, 0)"
+test = "tests/test_narzedzia_sesji.py::test_przebieg_bez_wybranych_testow_i_bez_zmian_py_liczy_wszystkie_testy_jako_pominiete"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if pominiete is None:"
+zamien = "if False:"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if pominiete is None:"
+zamien = "if True:"
+test = "tests/test_narzedzia_sesji.py::test_deselected_w_podsumowaniu_to_zmierzone_pominiete_bez_dodatkowego_przebiegu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "0 if powod else _liczba_pominietych("
+zamien = "_liczba_pominietych("
+test = "tests/test_narzedzia_sesji.py::test_pelny_przebieg_nic_nie_pomija_wiec_nie_liczy_pominietych_osobnym_przebiegiem"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "0 if powod else _liczba_pominietych("
+zamien = "0 if True else _liczba_pominietych("
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if kod != (5 if brak_testow else 0) or wszystkie is None or wszystkie < wybrane:"
+zamien = "if wszystkie is None or wszystkie < wybrane:"
+test = "tests/test_narzedzia_sesji.py::test_collect_only_z_kodem_bledu_to_blad_brak_dowodu_mimo_poprawnej_linii"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if kod != (5 if brak_testow else 0) or wszystkie is None or wszystkie < wybrane:"
+zamien = "if kod != (5 if brak_testow else 0) or wszystkie < wybrane:"
+test = "tests/test_narzedzia_sesji.py::test_collect_only_bez_linii_z_liczba_testow_to_blad_brak_dowodu_a_nie_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if kod != (5 if brak_testow else 0) or wszystkie is None or wszystkie < wybrane:"
+zamien = "if kod != (5 if brak_testow else 0) or wszystkie is None:"
+test = "tests/test_narzedzia_sesji.py::test_collect_only_z_mniejsza_liczba_testow_niz_wybrane_to_blad_brak_dowodu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if kod != (5 if brak_testow else 0) or wszystkie is None or wszystkie < wybrane:"
+zamien = "if kod != (5 if brak_testow else 0) or wszystkie is None or wszystkie <= wybrane:"
+test = "tests/test_narzedzia_sesji.py::test_collect_only_liczba_testow_jest_brana_z_ostatniej_linii_w_kazdym_formacie"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "return wszystkie - wybrane"
+zamien = "return wszystkie"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "tests? collected"
+zamien = "tests collected"
+test = "tests/test_narzedzia_sesji.py::test_collect_only_z_jednym_testem_w_liczbie_pojedynczej_jest_liczony"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "tests? collected(?: in [\\d.]+s)?"
+zamien = "tests? collected"
+test = "tests/test_narzedzia_sesji.py::test_collect_only_liczba_testow_jest_brana_z_ostatniej_linii_w_kazdym_formacie"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "\"--collect-only\", "
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "\"-q\", *wlasne, *_argumenty_do_zliczania(argumenty)"
+zamien = "*wlasne, *_argumenty_do_zliczania(argumenty)"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "\"-q\", *wlasne, *_argumenty_do_zliczania(argumenty)"
+zamien = "\"-q\", *_argumenty_do_zliczania(argumenty)"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "*_argumenty_do_zliczania(argumenty)"
+zamien = "*argumenty"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "-q+|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "-v+|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "-n\\w+|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "-p\\S+|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "|--numprocesses=\\S+"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "{\"-n\", \"-p\", \"--numprocesses\"}"
+zamien = "{\"-p\", \"--numprocesses\"}"
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "{\"-n\", \"-p\", \"--numprocesses\"}"
+zamien = "{\"-n\", \"--numprocesses\"}"
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "{\"-n\", \"-p\", \"--numprocesses\"}"
+zamien = "{\"-n\", \"-p\"}"
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "pomin = True"
+zamien = "pomin = False"
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "elif argument in _Z_WARTOSCIA_ZLICZANIA:"
+zamien = "elif False:"
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "elif not _BEZ_WARTOSCI_ZLICZANIA.fullmatch(argument):"
+zamien = "elif True:"
+test = "tests/test_narzedzia_sesji.py::test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci"
+
+# --- runda 6: projekt bez testow (no tests collected, kod 5) ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(5 if brak_testow else 0)"
+zamien = "0"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(5 if brak_testow else 0)"
+zamien = "(4 if brak_testow else 0)"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(5 if brak_testow else 0)"
+zamien = "5"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "brak_testow = False"
+zamien = "brak_testow = True"
+test = "tests/test_narzedzia_sesji.py::test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "wszystkie, brak_testow = 0, True"
+zamien = "wszystkie, brak_testow = 0, False"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "wszystkie, brak_testow = 0, True"
+zamien = "wszystkie, brak_testow = 1, True"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "no tests collected(?: in [\\d.]+s)?"
+zamien = "no tests collected"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "no tests collected(?: in [\\d.]+s)?"
+zamien = "no tests collected(?: in [\\d.]+s)"
+test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[qvxsldfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hvxsldfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqxsldfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqvsldfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqvxldfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqvxsdfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqvxsldf]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[km].*"
+zamien = "[km]"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "-[hqvxsldfV]*[km].*|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+
+# --- runda 7: kontrakt dezaktywacje, -z w diffie, luki werdyktu ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "Path(os.environ.get(\"TESTMON_DATAFILE\") or domyslna).resolve()"
+zamien = "Path(os.environ.get(\"TESTMON_DATAFILE\") or domyslna)"
+test = "tests/test_narzedzia_sesji.py::test_wzgledna_sciezka_bazy_testmona_jest_rozwiazywana_i_wykrywana_jako_lezaca_w_repozytorium"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "baza.is_relative_to(cwd.resolve())"
+zamien = "baza.is_relative_to(cwd)"
+test = "tests/test_narzedzia_sesji.py::test_korzen_podany_przez_dowiazanie_symboliczne_nie_ukrywa_bazy_lezacej_w_repozytorium"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "surowa.decode(\"utf-8\", errors=\"replace\")"
+zamien = "surowa.decode(\"utf-8\")"
+test = "tests/test_narzedzia_sesji.py::test_wyjscie_pytesta_spoza_utf8_nie_przerywa_czytnika_a_podsumowanie_jest_odczytane"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "del ogon[:-40]"
+zamien = "del ogon[:-400]"
+test = "tests/test_narzedzia_sesji.py::test_komunikat_o_wylaczeniu_selekcji_sprzed_ostatnich_40_linii_jest_zapamietany_w_locie"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if trafienie and dezaktywacje is not None and not dezaktywacje:"
+zamien = "if trafienie and dezaktywacje is not None:"
+test = "tests/test_narzedzia_sesji.py::test_komunikat_o_wylaczeniu_selekcji_sprzed_ostatnich_40_linii_jest_zapamietany_w_locie"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if trafienie and dezaktywacje is not None and not dezaktywacje:"
+zamien = "if trafienie and not dezaktywacje:"
+test = "tests/test_narzedzia_sesji.py::test_czytnik_wyjscia_bez_listy_dezaktywacji_nie_pada_na_komunikacie_testmona"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "if d.metadata[\"Name\"]}"
+zamien = "}"
+test = "tests/test_narzedzia_sesji.py::test_dystrybucja_bez_nazwy_w_metadanych_jest_pomijana_w_odcisku_zaleznosci_a_nie_bledem"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "args=(proc.stdout, stan, ogon, dezaktywacje)"
+zamien = "args=(proc.stdout, stan, ogon)"
+test = "tests/test_narzedzia_sesji.py::test_komunikat_o_wylaczeniu_selekcji_z_prawdziwego_przebiegu_trafia_do_bledu_brak_dowodu"
+
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "\"diff\", \"--name-only\", \"-z\", \"HEAD\""
+zamien = "\"diff\", \"--name-only\", \"HEAD\""
+test = "tests/test_narzedzia_sesji.py::test_plik_py_ze_znakiem_spoza_ascii_w_diffie_jest_zmiana_a_nie_ukryta_przez_cytowanie_sciezki"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "wynik.stdout.split(\"\\0\")"
+zamien = "wynik.stdout.splitlines()"
+test = "tests/test_narzedzia_sesji.py::test_plik_py_ze_znakiem_spoza_ascii_w_diffie_jest_zmiana_a_nie_ukryta_przez_cytowanie_sciezki"
+
+# --- runda 8: PYTEST_ADDOPTS, -d/-f w sklejonych opcjach, nazwy plikow w diffie ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqvxslfV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "[hqvxsldfV]*"
+zamien = "[hqvxsldV]*"
+test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "os.environ.pop(\"PYTEST_ADDOPTS\", None)"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_pytest_addopts_z_otoczenia_nie_wylacza_selekcji_dotknietych_testow"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "errors=\"replace\","
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_nazwa_zmienionego_pliku_z_bajtem_spoza_utf8_nie_przerywa_odczytu_diffu"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "encoding=\"utf-8\","
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_nazwa_zmienionego_pliku_py_ze_znakiem_spoza_ascii_jest_czytana_jako_utf8_niezaleznie_od_locale"
+
+# --- runda 9: addopts ustawiany argumentem ---
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "-oaddopts=.*|"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "|--override-ini=addopts=.*"
+zamien = ""
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(\"-o\", \"--override-ini\")"
+zamien = "(\"--override-ini\",)"
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "(\"-o\", \"--override-ini\")"
+zamien = "(\"-o\",)"
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith(\"addopts=\")"
+zamien = "poprzedni in _OPCJE_NADPISANIA_INI and True"
+test = "tests/test_narzedzia_sesji.py::test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith(\"addopts=\")"
+zamien = "argument.startswith(\"addopts=\")"
+test = "tests/test_narzedzia_sesji.py::test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith(\"addopts=\")"
+zamien = "False"
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "poprzedni = argument"
+zamien = "pass"
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "poprzedni = \"\""
+zamien = "poprzedni = \"-o\""
+test = "tests/test_narzedzia_sesji.py::test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja"
+
+[[mutant]]
+plik = "tools/testy.py"
+szukaj = "selekcje testmona ({argument!r})"
+zamien = "selekcje testmona ({argument})"
+test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
