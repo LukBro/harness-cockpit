@@ -20,9 +20,12 @@ Samodzielne wywolanie to `f(...)` oraz `await f(...)`. Przebieg kontrolny (testy
 idzie na `ast.unparse(ast.parse(zrodlo))`, czyli tym samym tekstem co mutanty. `SyntaxError`,
 `ValueError`, `RecursionError` i `MemoryError` z `ast.parse` oraz `RecursionError` i `MemoryError`
 z `ast.unparse` to blad narzedzia (kod 2). Tak samo wzorzec `re.compile`, ktory przyjmuje `re`,
-a narzedzie nie umie go rozebrac (np. nawias w komentarzu `(?x)`): `plik:linia: nie umiem rozebrac
-wzorca`, nigdy `zbadano 0`. Wzorzec odrzucony przez `re.compile` (`re.error`, `OverflowError`)
-nie ma mutantow regex.
+a narzedzie nie umie go rozebrac (np. nawias w komentarzu `(?x)`, flaga `re.VERBOSE` albo flagi
+nieodczytywalne z wywolania, grupa z `|` nierozpoznanego rodzaju, np. warunkowa `(?(1)a|b)`):
+`plik:linia: nie umiem rozebrac wzorca`, nigdy `zbadano 0`. Wzorce bajtowe (`rb"..."`) sa
+rozbierane jak tekstowe; oryginal i mutanty sa kompilowane z flagami z wywolania (drugi argument
+albo `flags=`). Wzorzec odrzucony przez `re.compile` (`re.error`, `OverflowError`) nie ma mutantow
+regex.
 `zbadano 0` (kod 0) to jawna galaz: diff dotyka funkcji albo stalej, ale zaden rozpoznawany
 ksztalt nie daje mutanta; ksztalty spoza KSZTALTY nie sa objete bramka.
 Mutant, ktory przy uruchomieniu testow daje kod pytesta inny niz 0/1 (np. blad importu po
@@ -86,7 +89,8 @@ def _tekst(wezel: ast.AST) -> str:
 
 # --- wyrazenia regularne ---------------------------------------------------------------------
 
-PREFIKS_GRUPY = re.compile(r"\((?:\?(?:P<\w+>|<[=!]|[=!:]|[a-zA-Z]+(?:-[a-zA-Z]+)?:|-[a-zA-Z]+:)|(?!\?))")
+PREFIKS_GRUPY = re.compile(r"\((?:\?(?:P<\w+>|<[=!]|[=!:>]|[a-zA-Z]+(?:-[a-zA-Z]+)?:|-[a-zA-Z]+:)|(?!\?))")
+FLAGI_GLOBALNE = re.compile(r"(?:\(\?[aiLmsux]+\))*")
 
 
 class _NiepoprawnyWzorzec(Exception):
@@ -152,22 +156,36 @@ def _dopisz_alternatywy(alternatywy: list[tuple[int, int]], poczatek: int, kresk
             alternatywy.append((granice[k], koniec))
 
 
-def _warianty_wzorca(wzorzec: str) -> list[tuple[str, str]]:
+def _skompiluj(wzorzec: str, bajtowy: bool, flagi: int) -> None:
+    """`re.compile` z tymi samymi flagami co w kodzie (bez DEBUG, ktory pisze na stdout)."""
+    re.compile(wzorzec.encode("latin-1") if bajtowy else wzorzec, flagi & ~re.DEBUG)
+
+
+def _warianty_wzorca(wzorzec: str | bytes, flagi: int = 0) -> list[tuple[str, str | bytes]]:
     """(opis, nowy wzorzec) dla kazdej kotwicy, elementu klasy znakow i alternatywy (takze poza grupa).
 
-    Wzorzec, ktorego `re.compile` nie przyjmuje, nie ma mutantow (`[]`). Wzorzec poprawny dla
-    `re.compile`, ktorego nie da sie rozebrac (np. nawias w komentarzu `(?x)`), rzuca
-    `_NiepoprawnyWzorzec` - to blad narzedzia, nie "zero mutantow".
+    Wzorzec bajtowy jest rozbierany jak tekstowy (znaki latin-1 1:1), a mutanty wracaja jako bajty.
+    Oryginal i mutanty sa kompilowane z `flagi` z wywolania `re.compile`.
+    Wzorzec, ktorego `re.compile` nie przyjmuje (`re.error`, `OverflowError`), nie ma mutantow (`[]`).
+    Wzorzec poprawny dla `re.compile`, ktorego nie da sie rozebrac (np. nawias w komentarzu `(?x)`,
+    grupa z `|` nierozpoznanego rodzaju, np. warunkowa), rzuca `_NiepoprawnyWzorzec` - to blad
+    narzedzia, nie "zero mutantow". Tak samo flagi niezgodne z wzorcem (`ValueError`).
     """
+    bajtowy = isinstance(wzorzec, bytes)
+    if bajtowy:
+        wzorzec = wzorzec.decode("latin-1")
     try:
-        re.compile(wzorzec)
+        _skompiluj(wzorzec, bajtowy, flagi)
     except (re.error, OverflowError):
         return []
+    except ValueError as blad:
+        raise _NiepoprawnyWzorzec(f"flagi niezgodne z wzorcem: {blad}") from blad
     kotwice: list[int] = []
     elementy: list[tuple[int, int]] = []
     # grupa: [indeks pierwszego znaku zawartosci albo None dla nieobslugiwanej, indeksy `|`];
-    # dolna ramka to niejawna grupa calego wzorca (alternatywy poza nawiasami)
-    stos: list[list] = [[0, []]]
+    # dolna ramka to niejawna grupa calego wzorca (alternatywy poza nawiasami); zaczyna sie za
+    # globalnymi flagami z poczatku wzorca, wiec usuniecie pierwszej alternatywy ich nie rusza
+    stos: list[list] = [[FLAGI_GLOBALNE.match(wzorzec).end(), []]]
     alternatywy: list[tuple[int, int]] = []
     i = 0
     while i < len(wzorzec):
@@ -194,8 +212,9 @@ def _warianty_wzorca(wzorzec: str) -> list[tuple[str, str]]:
                 _dopisz_alternatywy(alternatywy, poczatek, kreski, i)
             i += 1
         elif znak == "|":
-            if stos[-1][0] is not None:
-                stos[-1][1].append(i)
+            if stos[-1][0] is None:
+                raise _NiepoprawnyWzorzec(f"alternatywy w grupie nierozpoznanego rodzaju (znak {i})")
+            stos[-1][1].append(i)
             i += 1
         else:
             if znak in "^$":
@@ -204,7 +223,7 @@ def _warianty_wzorca(wzorzec: str) -> list[tuple[str, str]]:
     if len(stos) != 1:
         raise _NiepoprawnyWzorzec("niezamknieta grupa")
     if stos[0][1]:
-        _dopisz_alternatywy(alternatywy, 0, stos[0][1], len(wzorzec))
+        _dopisz_alternatywy(alternatywy, stos[0][0], stos[0][1], len(wzorzec))
 
     warianty: list[tuple[str, str]] = []
     for indeks in kotwice:
@@ -223,11 +242,11 @@ def _warianty_wzorca(wzorzec: str) -> list[tuple[str, str]]:
         if nowy in widziane:
             continue
         try:
-            re.compile(nowy)
+            _skompiluj(nowy, bajtowy, flagi)
         except (re.error, OverflowError):
             continue  # np. pusta klasa `[]`: mutant nie istnieje, nie liczy sie do `zbadano`
         widziane.add(nowy)
-        wynik.append((opis, nowy))
+        wynik.append((opis, nowy.encode("latin-1") if bajtowy else nowy))
     return wynik
 
 
@@ -371,8 +390,48 @@ def _usuwalne_wywolanie(wezel: ast.AST) -> ast.expr | None:
     return None
 
 
-def _wzorzec_re_compile(wezel: ast.AST) -> ast.Constant | None:
-    if not isinstance(wezel, ast.Call) or not wezel.args:
+def _wartosc_flag(wyrazenie: ast.expr) -> int:
+    """Wartosc flagi z kodu: liczba, `re.NAZWA` albo ich suma bitowa `|`; reszta to `_NiepoprawnyWzorzec`."""
+    if isinstance(wyrazenie, ast.Constant) and isinstance(wyrazenie.value, int) and not isinstance(
+        wyrazenie.value, bool
+    ):
+        return wyrazenie.value
+    if (
+        isinstance(wyrazenie, ast.Attribute)
+        and isinstance(wyrazenie.value, ast.Name)
+        and wyrazenie.value.id == "re"
+        and wyrazenie.attr in re.RegexFlag.__members__
+    ):
+        return int(re.RegexFlag.__members__[wyrazenie.attr])
+    if isinstance(wyrazenie, ast.BinOp) and isinstance(wyrazenie.op, ast.BitOr):
+        return _wartosc_flag(wyrazenie.left) | _wartosc_flag(wyrazenie.right)
+    raise _NiepoprawnyWzorzec(f"nie umiem odczytac flag re.compile: {_tekst(wyrazenie)}")
+
+
+def _flagi_wywolania(wezel: ast.Call) -> int:
+    """Flagi przekazane w `re.compile(wzorzec, flagi)` albo `flags=`; `re.VERBOSE` to blad narzedzia."""
+    przekazane: list[ast.expr] = list(wezel.args[1:])
+    for slowo in wezel.keywords:
+        if slowo.arg == "pattern":
+            continue  # wzorzec podany nazwanie czyta `_wzorzec_re_compile`
+        if slowo.arg != "flags":
+            raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (nieznany argument nazwany)")
+        przekazane.append(slowo.value)
+    if any(isinstance(p, ast.Starred) for p in przekazane) or len(przekazane) > 1:
+        raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (gwiazdka albo wiele flag)")
+    flagi = _wartosc_flag(przekazane[0]) if przekazane else 0
+    if flagi & re.VERBOSE:
+        raise _NiepoprawnyWzorzec("flaga re.VERBOSE zmienia skladnie wzorca, narzedzie jej nie obsluguje")
+    return flagi
+
+
+def _wzorzec_re_compile(wezel: ast.AST) -> tuple[ast.Constant, int] | None:
+    """(literal wzorca tekstowego albo bajtowego, flagi z wywolania) dla `re.compile(literal, ...)`.
+
+    Wzorzec podany jako `pattern=` jest czytany jak pierwszy argument pozycyjny; `pattern=` razem
+    z argumentem pozycyjnym i kazdy nieznany argument nazwany (takze `**kw`) to `_NiepoprawnyWzorzec`.
+    """
+    if not isinstance(wezel, ast.Call):
         return None
     funkcja = wezel.func
     if not (
@@ -382,13 +441,29 @@ def _wzorzec_re_compile(wezel: ast.AST) -> ast.Constant | None:
         and funkcja.value.id == "re"
     ):
         return None
-    pierwszy = wezel.args[0]
-    if isinstance(pierwszy, ast.Constant) and isinstance(pierwszy.value, str):
-        return pierwszy
+    linia = wezel.lineno
+    try:
+        nazwane = [s for s in wezel.keywords if s.arg == "pattern"]
+        if nazwane and wezel.args:
+            raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (pattern= razem z argumentem pozycyjnym)")
+        if nazwane:
+            pierwszy = nazwane[0].value
+        elif wezel.args:
+            pierwszy = wezel.args[0]
+        else:
+            pierwszy = None
+        if isinstance(pierwszy, ast.Constant) and isinstance(pierwszy.value, (str, bytes)):
+            linia = pierwszy.lineno
+            return pierwszy, _flagi_wywolania(wezel)
+        if any(s.arg not in ("flags", "pattern") for s in wezel.keywords):
+            raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (nieznany argument nazwany)")
+    except _NiepoprawnyWzorzec as blad:
+        blad.linia = linia
+        raise
     return None
 
 
-def _zamiary_regex(stala: ast.Constant) -> list[_Zamiar]:
+def _zamiary_regex(stala: ast.Constant, flagi: int) -> list[_Zamiar]:
     zamiary: list[_Zamiar] = []
     oryginal = stala.value
 
@@ -404,7 +479,7 @@ def _zamiary_regex(stala: ast.Constant) -> list[_Zamiar]:
         return zastosuj
 
     try:
-        warianty = _warianty_wzorca(oryginal)
+        warianty = _warianty_wzorca(oryginal, flagi)
     except _NiepoprawnyWzorzec as blad:
         blad.linia = stala.lineno
         raise
@@ -431,9 +506,9 @@ def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> list[_Zamiar]:
                 zamiary += _usuniecia_elementow(wezel, "kolekcja", rodzaj)
         if w_funkcji:
             zamiary += _zamiary_instrukcji(wezel)
-        stala = _wzorzec_re_compile(wezel)
-        if stala is not None:
-            zamiary += _zamiary_regex(stala)
+        wzorzec = _wzorzec_re_compile(wezel)
+        if wzorzec is not None:
+            zamiary += _zamiary_regex(*wzorzec)
         for pole, wartosc in ast.iter_fields(wezel):
             dzieci = (
                 [(indeks, dziecko) for indeks, dziecko in enumerate(wartosc)]
@@ -662,6 +737,11 @@ def _zmiany(korzen: Path, baza: str) -> dict[str, set[int]]:
     return {s: numery for s, numery in zmiany.items() if s.endswith(".py") and s.startswith("src/")}
 
 
+def _linie_zrodla(zrodlo: str) -> list[str]:
+    """Linie zrodla numerowane jak w AST: dziela tylko `\\n`, `\\r\\n` i `\\r` (nie `str.splitlines()`)."""
+    return re.split(r"\r\n|\n|\r", zrodlo)
+
+
 def _wycisza(wpis: mutanty_reczne.Rownowazny, mutant: Mutant, tekst_linii: str) -> bool:
     """Wpis `[[rownowazny]]` wycisza mutanta tylko po plik + linia ORAZ `kształt: <nazwa>` w uzasadnieniu.
 
@@ -717,7 +797,7 @@ def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
 
     zglaszane = []
     for mutant in przezyly:
-        tekst_linii = zrodla[mutant.plik].splitlines()[mutant.linia - 1].strip()
+        tekst_linii = _linie_zrodla(zrodla[mutant.plik])[mutant.linia - 1].strip()
         if not any(_wycisza(r, mutant, tekst_linii) for r in rownowazne):
             zglaszane.append(mutant)
     if zglaszane:
