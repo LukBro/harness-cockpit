@@ -1,0 +1,1202 @@
+# Tabela recznych mutantow HAR-181: zapis skilli i workflow z UI. Elementy, ktorych
+# mutmut nie mutuje: trasy z dekoratorami (app.py), pola i stale modeli (schematy.py), stale
+# modulow i krotki `except`, kolejnosc zapisow, blokady wierszy, wpis mapy operacji runnera.
+# Kazde `szukaj` wystepuje w pliku dokladnie raz. Krotki `except` w `_zbuduj_workflow` (4 elementy)
+# i `_BLEDY_KONSTRUKCJI_YAML` (3) maja po jednym wierszu na usuwany element.
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.put(\"/api/skills/{skill_id}\", response_model=SkillSzczegoly,"
+zamien = "@app.put(\"/api/skills/{skill_id}\", response_model=ListaSkilli,"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def zapisz_skill("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def zapisz_skill("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def zapisz_skill(\n    skill_id: str,"
+zamien = "async def zapisz_skill(\n    skill_id: int,"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: ZapisSkilla,"
+zamien = "    body: NowySkill,"
+test = "tests/test_kontrakt_api.py::test_trasy_zapisu_definicji_biora_cialo_z_wlasciwego_modelu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: ZapisSkilla,\n    project: str = Query(max_length=36),"
+zamien = "    body: ZapisSkilla,\n    project: str = Query(max_length=37),"
+test = "tests/test_kontrakt_api.py::test_nowe_trasy_definicji_maja_wymagany_parametr_projektu_z_limitem_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera"
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera"
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera"
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera"
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)   # przed zapytaniem: viewer nie budzi runnera"
+test = "tests/test_dostep_http.py::test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera\n    return await skille_api.zapisz_skill("
+zamien = "pass   # przed zapytaniem: viewer nie budzi runnera\n    return await skille_api.zapisz_skill("
+test = "tests/test_dostep_http.py::test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, body.scope, body.frontmatter, body.brief,"
+zamien = "s, '', project, skill_id, body.scope, body.frontmatter, body.brief,"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, body.scope, body.frontmatter, body.brief,"
+zamien = "s, k.tenant_id, project, skill_id, 'project', body.frontmatter, body.brief,"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_globalnego_trafia_do_rejestru_domowego_runnera_a_repo_zostaje"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, skill_id, body.scope, body.frontmatter, body.brief,"
+zamien = "s, k.tenant_id, project, skill_id, body.scope, body.brief, body.frontmatter,"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project, skill_id, body.scope, body.frontmatter, body.brief,\n        bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "project, skill_id, body.scope, body.frontmatter, body.brief,\n        frozenset(), bus.zapytaj)"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project, skill_id, body.scope, body.frontmatter, body.brief,\n        bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "project, skill_id, body.scope, body.frontmatter, body.brief,\n        bus.connected_runner_ids(), None)"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.post(\"/api/skills\", response_model=SkillSzczegoly,"
+zamien = "@app.post(\"/api/skills\", response_model=ListaSkilli,"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422), status_code=201)"
+zamien = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422), status_code=200)"
+test = "tests/test_kontrakt_api.py::test_dodanie_skilla_odpowiada_kodem_201_a_zapis_skilla_i_workflow_200"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422), status_code=201)\nasync def dodaj_skill("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422), status_code=201)\nasync def dodaj_skill("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def dodaj_skill(\n    body: NowySkill,"
+zamien = "async def dodaj_skill(\n    body: ZapisSkilla,"
+test = "tests/test_kontrakt_api.py::test_trasy_zapisu_definicji_biora_cialo_z_wlasciwego_modelu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: NowySkill,\n    project: str = Query(max_length=36),"
+zamien = "    body: NowySkill,\n    project: str = Query(max_length=37),"
+test = "tests/test_kontrakt_api.py::test_nowe_trasy_definicji_maja_wymagany_parametr_projektu_z_limitem_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.dodaj_skill("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.dodaj_skill("
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.dodaj_skill("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.dodaj_skill("
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_projektu_powstaje_w_nieistniejacym_katalogu_i_odpowiedz_to_201_ze_szczegolami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.dodaj_skill("
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)\n    return await skille_api.dodaj_skill("
+test = "tests/test_dostep_http.py::test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await skille_api.dodaj_skill("
+zamien = "pass\n    return await skille_api.dodaj_skill("
+test = "tests/test_dostep_http.py::test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, body.id, body.scope, body.frontmatter, body.brief,"
+zamien = "s, '', project, body.id, body.scope, body.frontmatter, body.brief,"
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_projektu_powstaje_w_nieistniejacym_katalogu_i_odpowiedz_to_201_ze_szczegolami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, body.id, body.scope, body.frontmatter, body.brief,"
+zamien = "s, k.tenant_id, project, body.id, 'project', body.frontmatter, body.brief,"
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_globalny_powstaje_w_rejestrze_domowym_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, body.id, body.scope, body.frontmatter, body.brief,"
+zamien = "s, k.tenant_id, project, 'x', body.scope, body.frontmatter, body.brief,"
+test = "tests/test_skille_zapis_api.py::test_dodanie_skilla_o_bezpiecznym_id_tworzy_plik_w_katalogu_o_tej_nazwie"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project, body.id, body.scope, body.frontmatter, body.brief,\n        bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "project, body.id, body.scope, body.frontmatter, body.brief,\n        frozenset(), bus.zapytaj)"
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_projektu_powstaje_w_nieistniejacym_katalogu_i_odpowiedz_to_201_ze_szczegolami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "project, body.id, body.scope, body.frontmatter, body.brief,\n        bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "project, body.id, body.scope, body.frontmatter, body.brief,\n        bus.connected_runner_ids(), None)"
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_projektu_powstaje_w_nieistniejacym_katalogu_i_odpowiedz_to_201_ze_szczegolami"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"/api/skills/{skill_id}\", usun_skill, methods=[\"DELETE\"], status_code=204,"
+zamien = "\"/api/skills/{skill_id}\", usun_skill, methods=[\"DELETE\"], status_code=200,"
+test = "tests/test_kontrakt_api.py::test_lista_wylaczen_204_zgadza_sie_z_rzeczywistoscia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"/api/skills/{skill_id}\", usun_skill, methods=[\"DELETE\"], status_code=204,"
+zamien = "\"/api/skills/{skill_id}\", usun_skill, methods=[\"GET\"], status_code=204,"
+test = "tests/test_skille_zapis_api.py::test_usuniecie_skilla_projektu_kasuje_tylko_jego_plik_skilla_i_odpowiada_204"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "\"/api/skills/{skill_id}\", usun_skill, methods=[\"DELETE\"], status_code=204,"
+zamien = "\"/api/skills/{skill_id}\", szczegoly_skilla, methods=[\"DELETE\"], status_code=204,"
+test = "tests/test_skille_zapis_api.py::test_usuniecie_skilla_projektu_kasuje_tylko_jego_plik_skilla_i_odpowiada_204"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "app.add_api_route(\n    \"/api/skills/{skill_id}\""
+zamien = "app.add_api_route(\n    \"/api/skills/{skill_id}/x\""
+test = "tests/test_skille_zapis_api.py::test_usuniecie_skilla_projektu_kasuje_tylko_jego_plik_skilla_i_odpowiada_204"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "response_model=None, responses=odpowiedzi_bledow(401, 403, 404, 409, 422))"
+zamien = "response_model=None, responses=odpowiedzi_bledow(401, 404, 409, 422))"
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.get(\"/api/workflows\", response_model=list[WorkflowNaLiscie],"
+zamien = "@app.get(\"/api/workflows\", response_model=list[OdpowiedzWalidacji],"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def lista_workflow("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def lista_workflow("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def lista_workflow(\n    project: str = Query(max_length=36),"
+zamien = "async def lista_workflow(\n    project: str = Query(max_length=37),"
+test = "tests/test_kontrakt_api.py::test_nowe_trasy_definicji_maja_wymagany_parametr_projektu_z_limitem_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.lista_workflow("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.lista_workflow("
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.lista_workflow("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.lista_workflow("
+test = "tests/test_workflowy_api.py::test_lista_workflow_projektu_ma_nazwe_liczbe_krokow_i_liczbe_bledow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.lista_workflow("
+zamien = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.lista_workflow("
+test = "tests/test_workflowy_api.py::test_obserwator_zespolu_widzi_liste_i_walidacje_workflow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.lista_workflow(\n        s, k.tenant_id, project, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.lista_workflow(\n        s, '', project, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_lista_workflow_projektu_ma_nazwe_liczbe_krokow_i_liczbe_bledow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.lista_workflow(\n        s, k.tenant_id, project, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.lista_workflow(\n        s, k.tenant_id, project, frozenset(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_lista_workflow_projektu_ma_nazwe_liczbe_krokow_i_liczbe_bledow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.lista_workflow(\n        s, k.tenant_id, project, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.lista_workflow(\n        s, k.tenant_id, project, bus.connected_runner_ids(), None)"
+test = "tests/test_workflowy_api.py::test_lista_workflow_projektu_ma_nazwe_liczbe_krokow_i_liczbe_bledow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.put(\"/api/workflows/{name}\", response_model=OdpowiedzWalidacji,"
+zamien = "@app.put(\"/api/workflows/{name}\", response_model=WorkflowNaLiscie,"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def zapisz_workflow("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def zapisz_workflow("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def zapisz_workflow(\n    name: str,"
+zamien = "async def zapisz_workflow(\n    name: int,"
+test = "tests/test_workflowy_api.py::test_zapis_workflow_przez_runnera_zachowuje_komentarze_cudzyslowy_i_kolejnosc_kluczy_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: ZapisWorkflowu,"
+zamien = "    body: ZapisSkilla,"
+test = "tests/test_kontrakt_api.py::test_trasy_zapisu_definicji_biora_cialo_z_wlasciwego_modelu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    body: ZapisWorkflowu,\n    project: str = Query(max_length=36),"
+zamien = "    body: ZapisWorkflowu,\n    project: str = Query(max_length=37),"
+test = "tests/test_kontrakt_api.py::test_nowe_trasy_definicji_maja_wymagany_parametr_projektu_z_limitem_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.zapisz("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.zapisz("
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.zapisz("
+zamien = "    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.zapisz("
+test = "tests/test_workflowy_api.py::test_zapis_workflow_przez_runnera_zachowuje_komentarze_cudzyslowy_i_kolejnosc_kluczy_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.zapisz("
+zamien = "dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.zapisz("
+test = "tests/test_dostep_http.py::test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.zapisz("
+zamien = "pass\n    return await workflowy_api.zapisz("
+test = "tests/test_dostep_http.py::test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, '', project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, name, body.tresc, frozenset(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), None)"
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, 'x', body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, project, name, '', bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "@app.get(\"/api/workflows/{name}/validate\", response_model=OdpowiedzWalidacji,"
+zamien = "@app.get(\"/api/workflows/{name}/validate\", response_model=WorkflowNaLiscie,"
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "responses=odpowiedzi_bledow(401, 403, 404, 409, 422))\nasync def waliduj_workflow("
+zamien = "responses=odpowiedzi_bledow(401, 404, 409, 422))\nasync def waliduj_workflow("
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def waliduj_workflow(\n    name: str,"
+zamien = "async def waliduj_workflow(\n    name: int,"
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    name: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+zamien = "    name: str,\n    project: str = Query(max_length=37),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+test = "tests/test_kontrakt_api.py::test_nowe_trasy_definicji_maja_wymagany_parametr_projektu_z_limitem_36_znakow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    name: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+zamien = "    name: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(get_session),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+test = "tests/test_dostep_http.py::test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "    name: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(get_session),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+zamien = "    name: str,\n    project: str = Query(max_length=36),\n    k: Kontekst = Depends(kontekst_sesji),\n    s: AsyncSession = Depends(kontekst_sesji),\n) -> Any:\n    dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "dostep.wymagaj(k, Uprawnienie.podglad)\n    return await workflowy_api.waliduj("
+zamien = "dostep.wymagaj(k, Uprawnienie.edycja_definicji)\n    return await workflowy_api.waliduj("
+test = "tests/test_workflowy_api.py::test_obserwator_zespolu_widzi_liste_i_walidacje_workflow"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.waliduj(\n        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.waliduj(\n        s, '', project, name, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.waliduj(\n        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.waliduj(\n        s, k.tenant_id, project, name, frozenset(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.waliduj(\n        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.waliduj(\n        s, k.tenant_id, project, name, bus.connected_runner_ids(), None)"
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "workflowy_api.waliduj(\n        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "workflowy_api.waliduj(\n        s, k.tenant_id, project, 'x', bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "ZakresZapisuSkilla = Literal[\"project\", \"global\"]"
+zamien = "ZakresZapisuSkilla = Literal[\"project\"]"
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "ZakresZapisuSkilla = Literal[\"project\", \"global\"]"
+zamien = "ZakresZapisuSkilla = Literal[\"project\"]"
+test = "tests/test_kontrakt_api.py::test_usuniecie_skilla_wymaga_zakresu_project_albo_global_w_zapytaniu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "LIMIT_POLA_SKILLA = (512 * 1024 - len(\"---\\n---\\n\")) // 8"
+zamien = "LIMIT_POLA_SKILLA = (512 * 1024 - len(\"---\\n---\\n\")) // 4"
+test = "tests/test_kontrakt_api.py::test_pole_zapisywanego_skilla_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "LIMIT_POLA_SKILLA = (512 * 1024 - len(\"---\\n---\\n\")) // 8"
+zamien = "LIMIT_POLA_SKILLA = (512 * 1024 + len(\"---\\n---\\n\")) // 8"
+test = "tests/test_kontrakt_api.py::test_pole_zapisywanego_skilla_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class ZapisSkilla(BaseModel):"
+zamien = "class ZapisSkilla(SkillSzczegoly):"
+test = "tests/test_kontrakt_api.py::test_cialo_zapisu_definicji_wymaga_wszystkich_pol_i_zabrania_obcych"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "model_config = ConfigDict(extra=\"forbid\")\n\n    scope: ZakresZapisuSkilla"
+zamien = "model_config = ConfigDict(extra=\"allow\")\n\n    scope: ZakresZapisuSkilla"
+test = "tests/test_kontrakt_api.py::test_cialo_zapisu_definicji_wymaga_wszystkich_pol_i_zabrania_obcych"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    scope: ZakresZapisuSkilla"
+zamien = "    scope: str"
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    frontmatter: str = Field(max_length=LIMIT_POLA_SKILLA)"
+zamien = "    frontmatter: str"
+test = "tests/test_kontrakt_api.py::test_pole_zapisywanego_skilla_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    brief: str = Field(max_length=LIMIT_POLA_SKILLA)"
+zamien = "    brief: str"
+test = "tests/test_kontrakt_api.py::test_pole_zapisywanego_skilla_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class NowySkill(ZapisSkilla):"
+zamien = "class NowySkill(SkillSzczegoly):"
+test = "tests/test_kontrakt_api.py::test_cialo_zapisu_definicji_wymaga_wszystkich_pol_i_zabrania_obcych"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    id: str   # nazwa katalogu skilla; wzorzec bezpiecznej nazwy sprawdza serwis"
+zamien = "    id: int   # nazwa katalogu skilla; wzorzec bezpiecznej nazwy sprawdza serwis"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class ZapisWorkflowu(BaseModel):"
+zamien = "class ZapisWorkflowu(SkillSzczegoly):"
+test = "tests/test_kontrakt_api.py::test_cialo_zapisu_definicji_wymaga_wszystkich_pol_i_zabrania_obcych"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "model_config = ConfigDict(extra=\"forbid\")\n\n    tresc: str"
+zamien = "model_config = ConfigDict(extra=\"allow\")\n\n    tresc: str"
+test = "tests/test_kontrakt_api.py::test_cialo_zapisu_definicji_wymaga_wszystkich_pol_i_zabrania_obcych"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    tresc: str = Field(max_length=LIMIT_TRESCI_WORKFLOWU)"
+zamien = "    tresc: str"
+test = "tests/test_kontrakt_api.py::test_tresc_zapisywanego_workflow_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "LIMIT_TRESCI_WORKFLOWU = 512 * 1024 // 4"
+zamien = "LIMIT_TRESCI_WORKFLOWU = 512 * 1024 // 5"
+test = "tests/test_kontrakt_api.py::test_tresc_zapisywanego_workflow_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "LIMIT_TRESCI_WORKFLOWU = 512 * 1024 // 4"
+zamien = "LIMIT_TRESCI_WORKFLOWU = 512 * 1023 // 4"
+test = "tests/test_kontrakt_api.py::test_tresc_zapisywanego_workflow_ma_limit_zmieszczony_w_limicie_odczytu_runnera"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class WorkflowNaLiscie(BaseModel):"
+zamien = "class WorkflowNaLiscie(SkillSzczegoly):"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class WorkflowNaLiscie(BaseModel):\n    name: str"
+zamien = "class WorkflowNaLiscie(BaseModel):\n    name: int"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    liczba_krokow: int"
+zamien = "    liczba_krokow: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    liczba_bledow: int"
+zamien = "    liczba_bledow: str"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class ProblemKroku(BaseModel):"
+zamien = "class ProblemKroku(SkillSzczegoly):"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "poziom: Literal[\"blad\", \"ostrzezenie\"]"
+zamien = "poziom: Literal[\"blad\"]"
+test = "tests/test_kontrakt_api.py::test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    krok: str | None   # null = problem calego pliku"
+zamien = "    krok: str   # null = problem calego pliku"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    komunikat: str\n\n\nclass OdpowiedzWalidacji(BaseModel):"
+zamien = "    komunikat: int\n\n\nclass OdpowiedzWalidacji(BaseModel):"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class OdpowiedzWalidacji(BaseModel):\n    problemy: list[ProblemKroku]"
+zamien = "class OdpowiedzWalidacji(SkillSzczegoly):\n    problemy: list[ProblemKroku]"
+test = "tests/test_kontrakt_api.py::test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "    problemy: list[ProblemKroku]"
+zamien = "    problemy: list[str]"
+test = "tests/test_kontrakt_api.py::test_pole_listowe_modelu_wskazuje_model_elementu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "run_startuje_ze: Literal[\"HEAD\"]"
+zamien = "run_startuje_ze: Literal[\"HEAD\", \"INNY\"]"
+test = "tests/test_kontrakt_api.py::test_odpowiedz_walidacji_workflow_ma_zamkniete_wartosci_stanu_startu_runu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "stan: Literal[\"kopia robocza\"]"
+zamien = "stan: Literal[\"inny\"]"
+test = "tests/test_kontrakt_api.py::test_odpowiedz_walidacji_workflow_ma_zamkniete_wartosci_stanu_startu_runu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "logger = logging.getLogger(__name__)"
+zamien = "logger = logging.getLogger(\"inny\")"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_przy_nieudanym_odswiezeniu_katalogu_zostaje_na_dysku_a_przyczyna_trafia_do_logu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[a-z0-9][A-Za-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Z0-9][A-Za-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z][A-Za-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][a-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,64}\")"
+test = "tests/test_workflowy_api.py::test_zla_nazwa_workflow_ma_na_zapisie_i_walidacji_opis_wzorca_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_zla_nazwa_workflow_ma_na_zapisie_i_walidacji_opis_wzorca_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9.][A-Za-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_zla_nazwa_workflow_ma_na_zapisie_i_walidacji_opis_wzorca_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9-][A-Za-z0-9_.-]{0,63}\")"
+test = "tests/test_workflowy_api.py::test_zla_nazwa_workflow_ma_na_zapisie_i_walidacji_opis_wzorca_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\")"
+zamien = "WZORZEC_BEZPIECZNEJ_NAZWY = re.compile(r\"[A-Za-z0-9][A-Za-z0-9_.-]{1,63}\")"
+test = "tests/test_workflowy_api.py::test_bezpieczna_nazwa_workflow_jest_przyjeta_a_plik_powstaje_pod_ta_nazwa"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "if not WZORZEC_BEZPIECZNEJ_NAZWY.fullmatch(nazwa):"
+zamien = "if not WZORZEC_BEZPIECZNEJ_NAZWY.match(nazwa):"
+test = "tests/test_skille_zapis_api.py::test_dodanie_skilla_o_id_niebedacym_bezpieczna_nazwa_katalogu_to_422_i_nic_nie_powstaje"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "KOMUNIKAT_BRAK_PLIKU = \"sciezka nie istnieje\""
+zamien = "KOMUNIKAT_BRAK_PLIKU = \"sciezka nie ma\""
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_projektu_powstaje_w_nieistniejacym_katalogu_i_odpowiedz_to_201_ze_szczegolami"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_PODKATALOG_ZAPISU = {\"project\": \".cockpit/skills\", \"global\": \"~/.cockpit/skills\"}"
+zamien = "_PODKATALOG_ZAPISU = {\"project\": \".cockpit/skillz\", \"global\": \"~/.cockpit/skills\"}"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_PODKATALOG_ZAPISU = {\"project\": \".cockpit/skills\", \"global\": \"~/.cockpit/skills\"}"
+zamien = "_PODKATALOG_ZAPISU = {\"project\": \".cockpit/skills\", \"global\": \"~/.cockpit/skillz\"}"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_globalnego_trafia_do_rejestru_domowego_runnera_a_repo_zostaje"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_PODKATALOG_ZAPISU = {\"project\": \".cockpit/skills\", \"global\": \"~/.cockpit/skills\"}"
+zamien = "_PODKATALOG_ZAPISU = {\"projekt\": \".cockpit/skills\", \"global\": \"~/.cockpit/skills\"}"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_projektu_sklada_plik_z_frontmattera_i_briefu_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_ZAKRES_BEZ_KATALOGU = {\"project\": \"lokalny\", \"global\": \"globalny\"}"
+zamien = "_ZAKRES_BEZ_KATALOGU = {\"project\": \"x\", \"global\": \"globalny\"}"
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_przy_nieudanym_odswiezeniu_katalogu_ma_zakres_zapisu_a_nie_blad"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_ZAKRES_BEZ_KATALOGU = {\"project\": \"lokalny\", \"global\": \"globalny\"}"
+zamien = "_ZAKRES_BEZ_KATALOGU = {\"project\": \"lokalny\", \"global\": \"x\"}"
+test = "tests/test_skille_zapis_api.py::test_nowy_skill_przy_nieudanym_odswiezeniu_katalogu_ma_zakres_zapisu_a_nie_blad"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    except UnicodeEncodeError:\n        raise BlednySkill("
+zamien = "    except KeyError:\n        raise BlednySkill("
+test = "tests/test_skille_zapis_api.py::test_skill_z_samotnym_surogatem_to_blad_skilla_zanim_serwis_dotknie_bazy_albo_runnera"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "            return False\n        raise\n    return True"
+zamien = "            return False\n        return False\n    return True"
+test = "tests/test_skille_zapis_api.py::test_nieudany_odczyt_pliku_skilla_przed_zapisem_to_409_z_komunikatem_runnera_bez_zapisu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    except StanNiemozliwy:\n        logger.warning("
+zamien = "    except KeyError:\n        logger.warning("
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_przy_nieudanym_odswiezeniu_katalogu_zostaje_na_dysku_a_przyczyna_trafia_do_logu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "exc_info=True)\n        await s.commit()"
+zamien = "exc_info=True)\n        pass"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_konczy_transakcje_tak_samo_gdy_katalog_nie_dal_sie_odswiezyc"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        select(Runner).where(Runner.id == runner_id, Runner.tenant_id == tenant_id)\n        .with_for_update())).scalar_one_or_none()"
+zamien = "        select(Runner).where(Runner.id == runner_id, Runner.tenant_id == tenant_id)\n        )).scalar_one_or_none()"
+test = "tests/test_skille_zapis_api.py::test_zapis_i_usuniecie_skilla_blokuja_wiersz_projektu_i_wiersz_runnera_w_postgresql"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    await projekty.zapisz_plik_projektu(s, tenant_id, projekt, wzgledna, tekst, polaczone, wyslij)\n    odswiezono = await _odswiez_po_zapisie(s, tenant_id, projekt, polaczone, wyslij)\n"
+zamien = "    odswiezono = await _odswiez_po_zapisie(s, tenant_id, projekt, polaczone, wyslij)\n    await projekty.zapisz_plik_projektu(s, tenant_id, projekt, wzgledna, tekst, polaczone, wyslij)\n"
+test = "tests/test_skille_zapis_api.py::test_po_zapisie_lista_skilli_od_razu_pokazuje_nowe_dane_bez_recznego_odswiezania"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    await projekty.usun_plik_projektu(\n        s, tenant_id, projekt, _sciezka_skilla(zakres, skill_id), polaczone, wyslij)\n    await _odswiez_po_zapisie(s, tenant_id, projekt, polaczone, wyslij)\n"
+zamien = "    await _odswiez_po_zapisie(s, tenant_id, projekt, polaczone, wyslij)\n    await projekty.usun_plik_projektu(\n        s, tenant_id, projekt, _sciezka_skilla(zakres, skill_id), polaczone, wyslij)\n"
+test = "tests/test_skille_zapis_api.py::test_po_usunieciu_lokalnego_skilla_globalny_o_tym_samym_id_jest_znow_widoczny_jako_globalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "if nowy is True and istnieje:"
+zamien = "if nowy is False and istnieje:"
+test = "tests/test_skille_zapis_api.py::test_dodanie_skilla_o_zajetym_id_w_projekcie_to_409_a_stary_plik_zostaje_bajt_w_bajt"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "if nowy is False and not istnieje:"
+zamien = "if nowy is True and not istnieje:"
+test = "tests/test_skille_zapis_api.py::test_zapis_skilla_ktorego_nie_ma_w_zakresie_to_404_a_plik_nie_powstaje"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "        except BaseException:   # tymczasowy"
+zamien = "        except KeyError:   # tymczasowy"
+test = "tests/test_operacje_plikowe.py::test_brak_miejsca_na_dysku_przy_zapisie_daje_blad_dysku_a_stary_plik_i_katalog_zostaja"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError, IndexError)"
+zamien = "_BLEDY_KONSTRUKCJI_YAML = (AttributeError, IndexError)"
+test = "tests/test_skille_zapis_api.py::test_dodanie_skilla_ze_zlym_tagiem_we_frontmatterze_to_422_a_plik_nie_powstaje"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError, IndexError)"
+zamien = "_BLEDY_KONSTRUKCJI_YAML = (AttributeError, IndexError)"
+test = "tests/test_skille_zapis_api.py::test_udany_zapis_skilla_przy_innym_skillu_ze_zlym_tagiem_w_katalogu_runnera_zostaje_na_dysku_a_cache_czeka"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError, IndexError)"
+zamien = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, IndexError)"
+test = "tests/test_skille_zapis_api.py::test_dodanie_skilla_ze_zlym_tagiem_we_frontmatterze_to_422_a_plik_nie_powstaje"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError, IndexError)"
+zamien = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, IndexError)"
+test = "tests/test_skille_zapis_api.py::test_udany_zapis_skilla_przy_innym_skillu_ze_zlym_tagiem_w_katalogu_runnera_zostaje_na_dysku_a_cache_czeka"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError, IndexError)"
+zamien = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError)"
+test = "tests/test_skille_zapis_api.py::test_dodanie_skilla_ze_zlym_tagiem_we_frontmatterze_to_422_a_plik_nie_powstaje"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError, IndexError)"
+zamien = "_BLEDY_KONSTRUKCJI_YAML = (KeyError, AttributeError)"
+test = "tests/test_skille_zapis_api.py::test_udany_zapis_skilla_przy_innym_skillu_ze_zlym_tagiem_w_katalogu_runnera_zostaje_na_dysku_a_cache_czeka"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if zakres == \"global\":\n        await _zablokuj_runnera("
+zamien = "    if zakres == \"project\":\n        await _zablokuj_runnera("
+test = "tests/test_skille_zapis_api.py::test_zapis_globalny_blokuje_wiersz_runnera_dodatkowo_przed_zapisem_a_lokalny_tylko_przy_odswiezeniu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        await _zablokuj_runnera(s, tenant_id, projekt.runner_id)\n    return projekt"
+zamien = "        pass\n    return projekt"
+test = "tests/test_skille_zapis_api.py::test_zapis_globalny_blokuje_wiersz_runnera_dodatkowo_przed_zapisem_a_lokalny_tylko_przy_odswiezeniu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    frontmatter_pliku, brief_pliku = podziel_skill(tekst, skill_id)"
+zamien = "    frontmatter_pliku, brief_pliku = frontmatter, brief"
+test = "tests/test_skille_zapis_api.py::test_frontmatter_z_linia_zamykajaca_ze_spacja_jest_w_odpowiedzi_podzielony_tak_jak_w_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "_odpowiedz(wczytanie + waliduj_workflow(workflow, rejestr, Path(dom)))"
+zamien = "_odpowiedz(waliduj_workflow(workflow, rejestr, Path(dom)) + wczytanie)"
+test = "tests/test_workflowy_api.py::test_odpowiedz_na_zapis_workflow_ma_problemy_wczytania_przed_problemami_walidatora"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "return workflow, problemy + waliduj_workflow(workflow, rejestr, Path(dom))"
+zamien = "return workflow, waliduj_workflow(workflow, rejestr, Path(dom)) + problemy"
+test = "tests/test_workflowy_api.py::test_krok_bez_skilla_z_pliku_i_nieznany_skill_to_dwa_bledy_najpierw_ten_z_wczytania"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if len(bajty) > LIMIT_PLIKU_SKILLA_B:"
+zamien = "    if len(tekst) > LIMIT_PLIKU_SKILLA_B:"
+test = "tests/test_skille_zapis_api.py::test_plik_skilla_z_wielobajtowych_znakow_ponad_512_kb_w_bajtach_to_niespojne_dane_choc_znakow_jest_mniej"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if \"\\0\" in tekst:"
+zamien = "    if False:"
+test = "tests/test_skille_zapis_api.py::test_bajt_nul_w_briefie_to_422_z_opisem_a_plik_na_dysku_sie_nie_zmienia"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        return skill_z_tekstu(tresc, skill_id, scisle=True) is not None"
+zamien = "        return True"
+test = "tests/test_skille_zapis_api.py::test_niepoprawny_plik_domowy_o_tym_id_nie_czyni_zapisu_lokalnego_nadpisanym_zgodnie_z_lista_i_get"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    except (BlednySkill, *_BLEDY_KONSTRUKCJI_YAML) as e:"
+zamien = "    except BlednySkill as e:"
+test = "tests/test_skille_zapis_api.py::test_niepoprawny_plik_domowy_o_tym_id_nie_czyni_zapisu_lokalnego_nadpisanym_zgodnie_z_lista_i_get"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    except (BlednySkill, *_BLEDY_KONSTRUKCJI_YAML) as e:"
+zamien = "    except _BLEDY_KONSTRUKCJI_YAML as e:"
+test = "tests/test_skille_zapis_api.py::test_niepoprawny_plik_domowy_o_tym_id_nie_czyni_zapisu_lokalnego_nadpisanym_zgodnie_z_lista_i_get"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "traktuje jak brak: %s\", skill_id, komunikat)\n            return False"
+zamien = "traktuje jak brak: %s\", skill_id, komunikat)\n            raise"
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        if komunikat == KOMUNIKAT_BRAK_PLIKU:\n            return False"
+zamien = "        if komunikat != KOMUNIKAT_BRAK_PLIKU:\n            return False"
+test = "tests/test_skille_zapis_api.py::test_brak_globalnego_pliku_skilla_nie_zostawia_ostrzezenia_o_nieczytelnym_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "KATALOG_WORKFLOW = \".cockpit/workflows\""
+zamien = "KATALOG_WORKFLOW = \".cockpit/workflowz\""
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "ROZSZERZENIE = \".yaml\""
+zamien = "ROZSZERZENIE = \".yml\""
+test = "tests/test_workflowy_api.py::test_zapis_workflow_idzie_do_runnera_projektu_z_bezwzgledna_sciezka_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "RUN_STARTUJE_ZE = \"HEAD\""
+zamien = "RUN_STARTUJE_ZE = \"WORKTREE\""
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "STAN_PLIKU = \"kopia robocza\""
+zamien = "STAN_PLIKU = \"commit\""
+test = "tests/test_workflowy_api.py::test_poprawny_workflow_ma_pusta_liste_problemow_i_informacje_skad_startuje_run"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "if not skille_api.WZORZEC_BEZPIECZNEJ_NAZWY.fullmatch(nazwa):"
+zamien = "if not skille_api.WZORZEC_BEZPIECZNEJ_NAZWY.match(nazwa):"
+test = "tests/test_workflowy_api.py::test_zla_nazwa_workflow_ma_na_zapisie_i_walidacji_opis_wzorca_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "    except ValueError:   # brak (None)"
+zamien = "    except KeyError:   # brak (None)"
+test = "tests/test_workflowy_api.py::test_rejestr_pomija_skill_z_problemem_i_skill_bez_roli_z_ich_powodami"
+
+[[mutant]]
+plik = "src/cockpit/services/workflowy_api.py"
+szukaj = "    dom, _ = await _katalog_runnera(s, tenant_id, projekt, polaczone, wyslij)\n    rejestr = _rejestr(await skille_api.wiersze_skilli(s, projekt), projekt, dom)\n    await projekty.zapisz_plik_projektu(\n        s, tenant_id, projekt, _sciezka_workflow(nazwa), tresc, polaczone, wyslij)\n"
+zamien = "    await projekty.zapisz_plik_projektu(\n        s, tenant_id, projekt, _sciezka_workflow(nazwa), tresc, polaczone, wyslij)\n    dom, _ = await _katalog_runnera(s, tenant_id, projekt, polaczone, wyslij)\n    rejestr = _rejestr(await skille_api.wiersze_skilli(s, projekt), projekt, dom)\n"
+test = "tests/test_workflowy_api.py::test_zly_ksztalt_katalogu_runnera_przy_zapisie_to_409_a_plik_nie_jest_zapisany"
+
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = "    except (ValueError, IndexError, KeyError, AttributeError):"
+zamien = "    except (IndexError, KeyError, AttributeError):"
+test = "tests/test_workflow_model.py::test_wartosc_ze_zlym_tagiem_yaml_to_problem_yaml_a_nie_wyjatek_biblioteki"
+
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = "    except (ValueError, IndexError, KeyError, AttributeError):"
+zamien = "    except (ValueError, KeyError, AttributeError):"
+test = "tests/test_workflow_model.py::test_wartosc_ze_zlym_tagiem_yaml_to_problem_yaml_a_nie_wyjatek_biblioteki"
+
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = "    except (ValueError, IndexError, KeyError, AttributeError):"
+zamien = "    except (ValueError, IndexError, AttributeError):"
+test = "tests/test_workflow_model.py::test_wartosc_ze_zlym_tagiem_yaml_to_problem_yaml_a_nie_wyjatek_biblioteki"
+
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = "    except (ValueError, IndexError, KeyError, AttributeError):"
+zamien = "    except (ValueError, IndexError, KeyError):"
+test = "tests/test_workflow_model.py::test_wartosc_ze_zlym_tagiem_yaml_to_problem_yaml_a_nie_wyjatek_biblioteki"
+
+[[mutant]]
+plik = "src/cockpit/services/workflow.py"
+szukaj = "    except UnicodeEncodeError:\n        return None, [Problem(None, BLAD_ODCZYTU,"
+zamien = "    except KeyError:\n        return None, [Problem(None, BLAD_ODCZYTU,"
+test = "tests/test_workflow_model.py::test_tekst_z_samotnym_surogatem_nie_jest_poprawnym_utf8_i_daje_jeden_problem_odczytu"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "    \"delete_file\": delete_file,\n"
+zamien = ""
+test = "tests/test_operacje_zapis_usuwanie.py::test_runner_zna_operacje_usuniecia_pliku"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "    \"delete_file\": delete_file,"
+zamien = "    \"delete_file\": write_file,"
+test = "tests/test_operacje_zapis_usuwanie.py::test_usuniecie_pliku_w_projekcie_usuwa_go_z_dysku_a_sasiednie_pliki_i_katalog_zostaja"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "    cel = _rozwiaz(Zakres.z_konfiguracji(), sciezka, do_zapisu=True)\n    try:\n        if utworz_katalogi:\n            # dopiero po sprawdzeniu zakresu (HAR-181): odmowa nie zostawia po sobie katalogow\n            os.makedirs(cel.parent, exist_ok=True)\n"
+zamien = "    if utworz_katalogi:\n        os.makedirs(os.path.dirname(sciezka), exist_ok=True)\n    cel = _rozwiaz(Zakres.z_konfiguracji(), sciezka, do_zapisu=True)\n    try:\n"
+test = "tests/test_operacje_zapis_usuwanie.py::test_katalogi_nie_powstaja_poza_zakresem_runnera"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "return {\"projekty\": projekty, \"dom\": str(dom)}"
+zamien = "return {\"projekty\": projekty, \"dom\": str(None)}"
+test = "tests/test_operacje_zapis_usuwanie.py::test_katalog_definicji_oddaje_katalog_domowy_runnera_ustawiony_w_tescie"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    projekt = await _projekt_do_zapisu(s, tenant_id, project_id, zakres)\n    wzgledna = _sciezka_skilla(zakres, skill_id)\n    istnieje = await _plik_istnieje(s, tenant_id, projekt, wzgledna, polaczone, wyslij)\n"
+zamien = "    projekt = await _projekt_do_zapisu(s, tenant_id, project_id, \"project\")\n    wzgledna = _sciezka_skilla(zakres, skill_id)\n    istnieje = await _plik_istnieje(s, tenant_id, projekt, wzgledna, polaczone, wyslij)\n    if zakres == \"global\":\n        await _zablokuj_runnera(s, tenant_id, projekt.runner_id)\n"
+test = "tests/test_skille_zapis_api.py::test_zapis_globalny_blokuje_wiersz_runnera_przed_pytaniem_runnera_o_istnienie_id"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    ksztalt = _sprawdz_ksztalt(wynik)"
+zamien = "    ksztalt = wynik[\"projekty\"]"
+test = "tests/test_skille_zapis_api.py::test_zly_ksztalt_katalogu_po_zapisie_skilla_zostawia_cache_innych_projektow_i_zapis_zostaje"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = "        if stat.S_ISDIR(os.stat(cel).st_mode):\n            raise BladOperacji(\"to_katalog\", \"sciezka jest katalogiem\")\n        os.unlink(cel)"
+zamien = "        os.unlink(cel)"
+test = "tests/test_operacje_zapis_usuwanie.py::test_usuniecie_katalogu_jest_odmowione_jako_katalog_takze_gdy_system_odpowiada_eperm_zamiast_eisdir"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    return \"nadpisany\" if jest_globalny else _ZAKRES_BEZ_KATALOGU[\"project\"]"
+zamien = "    return _ZAKRES_BEZ_KATALOGU[\"project\"]"
+test = "tests/test_skille_zapis_api.py::test_zakres_nadpisany_wynika_z_dysku_runnera_takze_gdy_katalog_sie_nie_odswiezyl"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    return \"nadpisany\" if jest_globalny else _ZAKRES_BEZ_KATALOGU[\"project\"]"
+zamien = "    return \"nadpisany\""
+test = "tests/test_skille_zapis_api.py::test_zakres_lokalny_gdy_na_dysku_runnera_nie_ma_globalnego_skilla_o_tym_id"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    jest_globalny = zakres == \"project\" and await _jest_skill_globalny("
+zamien = "    jest_globalny = zakres == \"global\" and await _jest_skill_globalny("
+test = "tests/test_skille_zapis_api.py::test_zakres_nadpisany_wynika_z_dysku_runnera_takze_gdy_katalog_sie_nie_odswiezyl"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    jest_globalny = zakres == \"project\" and await _jest_skill_globalny("
+zamien = "    jest_globalny = await _jest_skill_globalny("
+test = "tests/test_skille_zapis_api.py::test_zapis_czyta_plik_globalny_tylko_przy_zakresie_lokalnym_bo_globalny_juz_sprawdzono"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if len(bajty) > LIMIT_PLIKU_SKILLA_B:"
+zamien = "    if len(bajty) >= LIMIT_PLIKU_SKILLA_B:"
+test = "tests/test_skille_zapis_api.py::test_plik_skilla_ponad_512_kb_w_bajtach_to_niespojne_dane_z_opisem"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if len(bajty) > LIMIT_PLIKU_SKILLA_B:"
+zamien = "    if len(bajty) > LIMIT_PLIKU_SKILLA_B * 2:"
+test = "tests/test_skille_zapis_api.py::test_plik_skilla_ponad_512_kb_w_bajtach_to_niespojne_dane_z_opisem"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "LIMIT_PLIKU_SKILLA_B = DOMYSLNY_LIMIT_ODCZYTU_KB * 1024"
+zamien = "LIMIT_PLIKU_SKILLA_B = DOMYSLNY_LIMIT_ODCZYTU_KB * 1000"
+test = "tests/test_skille_zapis_api.py::test_plik_skilla_ponad_512_kb_w_bajtach_to_niespojne_dane_z_opisem"
+
+# ---- runda 5: odmowa o samym pliku domowym, awaria runnera, zakres z wiersza katalogu ----------
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_PREFIKS_ODMOWY_ZA_DUZY = \"plik jest wiekszy niz limit \""
+zamien = "_PREFIKS_ODMOWY_ZA_DUZY = \"plik jest wiekszy niz limitu \""
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_PREFIKS_ODMOWY_ZA_DUZY = \"plik jest wiekszy niz limit \""
+zamien = "_PREFIKS_ODMOWY_ZA_DUZY = \"\""
+test = "tests/test_skille_zapis_api.py::test_awaria_runnera_przy_odczycie_pliku_domowego_to_blad_a_nie_zapis_lokalnego_skilla"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "            or komunikat.startswith(_PREFIKS_ODMOWY_ZA_DUZY))"
+zamien = "            or False)"
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "\"sciezka jest katalogiem\", \"plik nie jest tekstem UTF-8\","
+zamien = "\"plik nie jest tekstem UTF-8\","
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = ", \"plik nie jest tekstem UTF-8\","
+zamien = ","
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    \"plik nie jest tekstem (zawiera bajt NUL)\", \"brak uprawnien do pliku lub katalogu\","
+zamien = "    \"brak uprawnien do pliku lub katalogu\","
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = ", \"brak uprawnien do pliku lub katalogu\","
+zamien = ","
+test = "tests/test_skille_zapis_api.py::test_odmowa_runnera_o_pliku_domowym_to_nie_globalny_a_powod_trafia_do_logu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    \"sciezka nie jest zwyklym plikiem\", \"element sciezki nie jest katalogiem\","
+zamien = "    \"element sciezki nie jest katalogiem\","
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = ", \"element sciezki nie jest katalogiem\","
+zamien = ","
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    \"blad dysku przy operacji na pliku\","
+zamien = "    \"inny komunikat\","
+test = "tests/test_skille_zapis_api.py::test_odmowa_runnera_o_pliku_domowym_to_nie_globalny_a_powod_trafia_do_logu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    except PlikPozaZakresem as e:"
+zamien = "    except KeyboardInterrupt as e:"
+test = "tests/test_skille_zapis_api.py::test_domowy_skill_bedacy_dowiazaniem_poza_zakres_runnera_nie_blokuje_zapisu_projektu_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "poza zakresem, traktuje jak brak: %s\", skill_id, e)\n        return False"
+zamien = "poza zakresem, traktuje jak brak: %s\", skill_id, e)\n        return True"
+test = "tests/test_skille_zapis_api.py::test_domowy_skill_bedacy_dowiazaniem_poza_zakres_runnera_nie_blokuje_zapisu_projektu_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "logger.warning(\"globalny skill '%s' poza zakresem, traktuje jak brak: %s\", skill_id, e)"
+zamien = "pass"
+test = "tests/test_skille_zapis_api.py::test_domowy_skill_bedacy_dowiazaniem_poza_zakres_runnera_nie_blokuje_zapisu_projektu_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        if komunikat == KOMUNIKAT_BRAK_PLIKU:\n            return False"
+zamien = "        if komunikat == KOMUNIKAT_BRAK_PLIKU:\n            return True"
+test = "tests/test_skille_zapis_api.py::test_brak_globalnego_pliku_skilla_nie_zostawia_ostrzezenia_o_nieczytelnym_pliku"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "traktuje jak brak: %s\", skill_id, komunikat)\n            return False"
+zamien = "traktuje jak brak: %s\", skill_id, komunikat)\n            return True"
+test = "tests/test_skille_zapis_api.py::test_odmowa_runnera_o_pliku_domowym_to_nie_globalny_a_powod_trafia_do_logu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "logger.warning(\n                \"globalny skill '%s' nieczytelny, traktuje jak brak: %s\", skill_id, komunikat)"
+zamien = "pass"
+test = "tests/test_skille_zapis_api.py::test_odmowa_runnera_o_pliku_domowym_to_nie_globalny_a_powod_trafia_do_logu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "logger.warning(\"globalny skill '%s' niepoprawny, traktuje jak brak: %s\", skill_id, e)"
+zamien = "pass"
+test = "tests/test_skille_zapis_api.py::test_niepoprawny_plik_domowy_o_tym_id_nie_czyni_zapisu_lokalnego_nadpisanym_zgodnie_z_lista_i_get"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        raise   # offline, limit czasu, za duza odpowiedz, zly ksztalt, inna awaria: fail-closed"
+zamien = "        return False"
+test = "tests/test_skille_zapis_api.py::test_awaria_runnera_przy_odczycie_pliku_domowego_to_blad_a_nie_zapis_lokalnego_skilla"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        if _odmowa_dotyczy_pliku(komunikat):"
+zamien = "        if True:"
+test = "tests/test_skille_zapis_api.py::test_awaria_runnera_przy_odczycie_pliku_domowego_to_blad_a_nie_zapis_lokalnego_skilla"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        if _odmowa_dotyczy_pliku(komunikat):"
+zamien = "        if False:"
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    wzgledna = _sciezka_skilla(\"global\", skill_id)"
+zamien = "    wzgledna = _sciezka_skilla(\"project\", skill_id)"
+test = "tests/test_skille_zapis_api.py::test_zakres_lokalny_gdy_na_dysku_runnera_nie_ma_globalnego_skilla_o_tym_id"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    zakres_katalogu = await _zakres_z_katalogu(s, projekt, skill_id) if odswiezono else None"
+zamien = "    zakres_katalogu = await _zakres_z_katalogu(s, projekt, skill_id)"
+test = "tests/test_skille_zapis_api.py::test_przy_nieodswiezonym_katalogu_zakres_w_odpowiedzi_wynika_z_dysku_a_nie_ze_starego_wiersza"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if zakres_katalogu is None:\n        zakres_katalogu = _zakres_w_katalogu(zakres, jest_globalny)"
+zamien = "    if False:\n        zakres_katalogu = _zakres_w_katalogu(zakres, jest_globalny)"
+test = "tests/test_skille_zapis_api.py::test_zapisany_skill_z_nazwa_dluzsza_niz_200_znakow_ktorej_katalog_nie_przyjmuje_ma_zakres_z_dysku"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    if zakres_katalogu is None:\n        zakres_katalogu = _zakres_w_katalogu(zakres, jest_globalny)"
+zamien = "    if True:\n        zakres_katalogu = _zakres_w_katalogu(zakres, jest_globalny)"
+test = "tests/test_skille_zapis_api.py::test_domowy_skill_z_nazwa_dluzsza_niz_200_znakow_nie_czyni_zapisu_nadpisanym_zgodnie_z_lista_i_get"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        _zapytanie_skilli(projekt).where(Definicja.klucz == skill_id)\n        .with_only_columns(Definicja.zakres))).scalar_one_or_none()"
+zamien = "        _zapytanie_skilli(projekt)\n        .with_only_columns(Definicja.zakres))).scalar_one_or_none()"
+test = "tests/test_skille_zapis_api.py::test_zapisany_skill_dostaje_zakres_swojego_id_a_nie_innego_skilla_projektu"
+
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "        .with_only_columns(Definicja.zakres))).scalar_one_or_none()"
+zamien = "        .with_only_columns(Definicja.klucz))).scalar_one_or_none()"
+test = "tests/test_skille_zapis_api.py::test_zapisany_skill_dostaje_zakres_swojego_id_a_nie_innego_skilla_projektu"
+
+# caly zbior (linie otwierajaca i zamykajaca tez): pusty zbior nie rozpoznaje zadnej odmowy o pliku
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "_ODMOWY_DOTYCZACE_PLIKU = frozenset({\n    \"sciezka jest katalogiem\", \"plik nie jest tekstem UTF-8\",\n    \"plik nie jest tekstem (zawiera bajt NUL)\", \"brak uprawnien do pliku lub katalogu\",\n    \"sciezka nie jest zwyklym plikiem\", \"element sciezki nie jest katalogiem\",\n    \"blad dysku przy operacji na pliku\",\n})"
+zamien = "_ODMOWY_DOTYCZACE_PLIKU = frozenset()"
+test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
