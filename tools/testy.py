@@ -303,14 +303,29 @@ def powod_pelnego_przebiegu(korzen: Path, baza: Path, *, wersje: Mapping[str, st
 
 
 # Teksty testmona 2.3.0 (testmon/configure.py, `_formulate_deactivation`): "<co> automatically deactivated because
-# <powod>" dla collection i selection. Naglowek ginie pod `-q`, wiec dodatkowo sprawdzamy argumenty (`_wylaczaja`).
+# <powod>" dla collection i selection. Naglowek ginie pod `-q`, wiec decyzje podejmuje sonda parsera (`_powody_bez_selekcji`);
+# ten wzorzec lapie komunikat z wyjscia przebiegu jako siatke dolna.
 DEZAKTYWACJA_TESTMONA = re.compile(r"(?:selection|collection) automatically deactivated because [^\n]*")
-# opcje, przy ktorych testmon sam wylacza selekcje (`_get_noselect_reasons`): -k, -m, --lf, test wskazany jako plik.py::nazwa
-# `-k`/`-m` takze sklejone z flagami bez wartosci (`-qkfoo`, `-vm`); litery po k/m to juz wartosc opcji
-_WYLACZAJA_SELEKCJE = re.compile(r"-[hqvxsldfV]*[km].*|--(?:markexpr|keyword|lf|last-failed)(?:=.*)?|.*\.py::.*")
-# ustawienie addopts z linii polecen: ostatnie `-o` wygrywa z wlasnym `-o addopts=` narzedzia i moze wylaczyc selekcje po cichu
-_ADDOPTS_W_ARGUMENCIE = re.compile(r"-oaddopts=.*|--override-ini=addopts=.*")
-_OPCJE_NADPISANIA_INI = ("-o", "--override-ini")
+LIMIT_SONDY = 120.0
+ZNACZNIK_SONDY = "SONDA-POWODY:"
+# Sonda: TEN SAM parser, ktory zobaczy realny przebieg (`_pytest.config._prepareconfig` rozwija `@plik`, skladnie `-qo x=y`,
+# `-o`/`--override-ini` i ini), i ta sama funkcja testmona, ktora decyduje o selekcji. Skrypt nie zgaduje po formie argumentow.
+_SKRYPT_SONDY = f"""
+import json, sys
+from _pytest.config import _prepareconfig
+from testmon.configure import _get_noselect_reasons, _get_notestmon_reasons
+config = _prepareconfig(sys.argv[1:])
+opcje = vars(config.option)
+print({ZNACZNIK_SONDY!r} + json.dumps({{
+    "noselect": _get_noselect_reasons(opcje),
+    "notestmon": _get_notestmon_reasons(opcje),
+    "forceselect": bool(opcje.get("testmon_forceselect")),
+    "keyword": opcje.get("keyword") or None,
+    "markexpr": opcje.get("markexpr") or None,
+    "lf": bool(opcje.get("lf")),
+    "recznie": [str(a) for a in (opcje.get("file_or_dir") or []) if "::" in str(a)],
+}}))
+"""
 RODZAJE_WYBRANYCH = frozenset({"passed", "failed", "error", "errors", "skipped", "xfailed", "xpassed"})
 RODZAJE_IGNOROWANE = frozenset({"warning", "warnings", "rerun", "reruns"})
 
@@ -394,6 +409,77 @@ def _zmienione_py(cwd: Path) -> list[str]:
     return [n for n in wynik.stdout.split("\0") if n.endswith(".py")]
 
 
+def _powody_bez_selekcji(argumenty_pytesta: list[str], cwd: Path) -> list[str]:
+    """Powody, dla ktorych testmon wylaczy selekcje przy tych argumentach (pusta lista = selekcja dziala).
+
+    Decyduje parser pytesta i `testmon.configure._get_noselect_reasons` w podprocesie z `cwd` = korzen (ini, rootdir i
+    wtyczki jak w realnym przebiegu); kazdy blad sondy to brak dowodu, nigdy "selekcja dziala"."""
+    try:
+        wynik = subprocess.run(
+            [sys.executable, "-c", _SKRYPT_SONDY, *argumenty_pytesta],
+            cwd=cwd,
+            env=dict(os.environ),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=LIMIT_SONDY,
+        )
+    except subprocess.TimeoutExpired as blad:
+        raise BladNarzedzia(f"brak dowodu: sonda parsera pytesta przekroczyla limit {LIMIT_SONDY:g} s: {blad}") from blad
+    except OSError as blad:
+        raise BladNarzedzia(f"brak dowodu: nie udalo sie uruchomic sondy parsera pytesta: {blad}") from blad
+    if wynik.returncode != 0:
+        szczegoly = (wynik.stderr.strip().splitlines() or ["brak komunikatu"])[-1]
+        raise BladNarzedzia(f"brak dowodu: sonda parsera pytesta zakonczyla sie kodem {wynik.returncode}: {szczegoly}")
+    odpowiedzi = [wiersz[len(ZNACZNIK_SONDY) :] for wiersz in wynik.stdout.splitlines() if wiersz.startswith(ZNACZNIK_SONDY)]
+    if len(odpowiedzi) != 1:
+        raise BladNarzedzia(f"brak dowodu: sonda parsera pytesta nie podala powodow (odpowiedzi: {len(odpowiedzi)})")
+    try:
+        werdykt = json.loads(odpowiedzi[0])
+    except ValueError as blad:
+        raise BladNarzedzia(f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedzi[0]!r}") from blad
+    try:
+        powody = werdykt["noselect"]
+        wylaczony = werdykt["notestmon"]
+        forceselect = werdykt["forceselect"]
+        keyword = werdykt["keyword"]
+        markexpr = werdykt["markexpr"]
+        lf = werdykt["lf"]
+        recznie = werdykt["recznie"]
+    except (KeyError, TypeError) as blad:
+        raise BladNarzedzia(f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedzi[0]!r}") from blad
+    if (
+        not isinstance(powody, list)
+        or not all(p is None or isinstance(p, str) for p in powody)
+        or not (wylaczony is None or isinstance(wylaczony, str))
+        or not isinstance(forceselect, bool)
+        or not (keyword is None or isinstance(keyword, str))
+        or not (markexpr is None or isinstance(markexpr, str))
+        or not isinstance(lf, bool)
+        or not isinstance(recznie, list)
+        or not all(isinstance(s, str) for s in recznie)
+    ):
+        raise BladNarzedzia(f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedzi[0]!r}")
+    selektory = [
+        *([f"-k {keyword}"] if keyword else []),
+        *([f"-m {markexpr}"] if markexpr else []),
+        *(["--lf"] if lf else []),
+        *recznie,
+    ]
+    # `--no-testmon` daje pusta liste noselect, ale `_get_notestmon_reasons` wylacza testmona calkiem (pelny przebieg)
+    if wylaczony:
+        raise BladNarzedzia(f"brak dowodu: testmon wylaczony ({wylaczony}) - uruchom bez tych argumentow")
+    # `--testmon-forceselect` zwraca [] przed sprawdzeniem selektorow, a selektor pytesta odsiewa testy dalej
+    if forceselect and selektory:
+        raise BladNarzedzia(
+            f"brak dowodu: --testmon-forceselect z selektorem pytesta ({', '.join(selektory)}) - uruchom bez tych argumentow"
+        )
+    # None to powod bez tekstu (`--testmon-noselect` podany jawnie w argumentach)
+    return [p if p is not None else "--testmon-noselect" for p in powody]
+
+
 def uruchom_dotkniete(argumenty_pytesta: list[str], limit: float, cwd: Path) -> int:
     domyslna = Path.home() / ".cache" / "cockpit-testy" / hashlib.sha1(str(cwd).encode()).hexdigest()[:12] / ".testmondata"
     baza = Path(os.environ.get("TESTMON_DATAFILE") or domyslna).resolve()
@@ -415,21 +501,18 @@ def uruchom_dotkniete(argumenty_pytesta: list[str], limit: float, cwd: Path) -> 
             except OSError as blad:
                 raise BladNarzedzia(f"nie mozna usunac uszkodzonej bazy testmona {baza}: {blad}") from blad
     tryb = "--testmon-noselect" if powod else "--testmon"
-    if not powod:
-        poprzedni = ""
-        for argument in argumenty_pytesta:
-            if _WYLACZAJA_SELEKCJE.fullmatch(argument):
-                raise BladNarzedzia(f"brak dowodu: testmon wylaczyl selekcje (argument {argument!r}) - uruchom bez niego")
-            if _ADDOPTS_W_ARGUMENCIE.fullmatch(argument) or (
-                poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith("addopts=")
-            ):
-                raise BladNarzedzia(f"brak dowodu: argument ustawia addopts, co wylacza selekcje testmona ({argument!r})")
-            poprzedni = argument
     # `-m` z addopts wylacza selekcje testmona (uruchamia wszystko), wiec addopts kasujemy, a e2e pomijamy sciezka.
     # `--ignore` tylko dla istniejacego katalogu: w mini-repo bez niego opcja bylaby bezsensowna.
     wlasne = ["-o", "addopts="]
     if (cwd / "tests" / "e2e").is_dir():
         wlasne.append("--ignore=tests/e2e")
+    if not powod:
+        # Decyzja "czy testmon wylaczy selekcje" pochodzi z parsera pytesta i testmona (sonda na tych samych argumentach
+        # i w tej samej kolejnosci co realny przebieg), nie z dopasowania tekstu argumentow: forma opcji (`-qo`, `-o=`,
+        # `@plik`) nie ma znaczenia. Pelny przebieg (`--testmon-noselect`) nie potrzebuje sondy: nic nie selekcjonuje.
+        powody = _powody_bez_selekcji([tryb, *wlasne, *argumenty_pytesta], cwd)
+        if powody:
+            raise BladNarzedzia(f"brak dowodu: testmon wylaczyl selekcje ({powody[0]}) - uruchom bez tych argumentow")
     ogon: list[str] = []
     dezaktywacje: list[str] = []
     kod = uruchom([tryb, *wlasne, *argumenty_pytesta], limit, cwd, ogon, dezaktywacje)
