@@ -9,6 +9,7 @@ wolal `gh pr create`. Procesy ida przez `tests/procesy.py`.
 """
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -1178,50 +1179,36 @@ def _nie_uruchamiaj(*_argumenty, **_nazwane):
     raise AssertionError("pytest nie powinien byc uruchomiony")
 
 
+# Powody podaje sonda (parser pytesta + `_get_noselect_reasons` testmona), nie dopasowanie tekstu argumentow.
 @pytest.mark.parametrize(
-    ("argumenty", "winowajca"),
+    ("argumenty", "powod"),
     [
-        (["-k", "dodawanie"], "-k"),
-        (["-m", "e2e"], "-m"),
-        (["-kdodawanie"], "-kdodawanie"),
-        (["-mslow"], "-mslow"),
-        (["-qkdodawanie"], "-qkdodawanie"),
-        (["-vm", "e2e"], "-vm"),
-        (["-hqkfoo"], "-hqkfoo"),
-        (["-hk"], "-hk"),
-        (["-qk"], "-qk"),
-        (["-vk"], "-vk"),
-        (["-xk"], "-xk"),
-        (["-sk"], "-sk"),
-        (["-lk"], "-lk"),
-        (["-Vk"], "-Vk"),
-        (["-dkdodawanie"], "-dkdodawanie"),
-        (["-fkx"], "-fkx"),
-        (["-qdkfoo"], "-qdkfoo"),
-        (["-q", "-k", "x"], "-k"),
-        (["--lf"], "--lf"),
-        (["--last-failed"], "--last-failed"),
-        (["--markexpr", "x"], "--markexpr"),
-        (["--markexpr=x"], "--markexpr=x"),
-        (["--keyword", "x"], "--keyword"),
-        (["--keyword=x"], "--keyword=x"),
-        (["tests/test_mini.py::test_x"], "tests/test_mini.py::test_x"),
+        (["-k", "dodawanie"], "-k was used"),
+        (["-m", "e2e"], "-m was used"),
+        (["-kdodawanie"], "-k was used"),
+        (["-mslow"], "-m was used"),
+        (["-qkdodawanie"], "-k was used"),
+        (["-vm", "e2e"], "-m was used"),
+        (["-q", "-k", "x"], "-k was used"),
+        (["--lf"], "--lf was used"),
+        (["--last-failed"], "--lf was used"),
+        (["tests/test_mini.py::test_x"], "you selected tests manually"),
     ],
 )
 def test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest(
-    monkeypatch, tmp_path, argumenty, winowajca
+    monkeypatch, tmp_path, argumenty, powod
 ):
     repo, baza = _repo_ze_zdrowa_baza(tmp_path)
     monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
     monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
     with pytest.raises(testy_py.BladNarzedzia) as blad:
         testy_py.uruchom_dotkniete(argumenty, 5.0, repo)
-    assert str(blad.value) == f"brak dowodu: testmon wylaczyl selekcje (argument {winowajca!r}) - uruchom bez niego"
+    assert str(blad.value) == f"brak dowodu: testmon wylaczyl selekcje ({powod}) - uruchom bez tych argumentow"
 
 
 @pytest.mark.parametrize(
     "argumenty",
-    [["-q"], ["-v"], ["-qv"], ["-x"], ["-s"], ["-rA"], ["-W", "ignore"], ["-p", "x"], ["-n", "4"], ["tests/a.py"]],
+    [["-q"], ["-v"], ["-qv"], ["-x"], ["-s"], ["-rA"], ["-W", "ignore"], ["-n", "4"], ["tests/a.py"]],
 )
 def test_argumenty_niewylaczajace_selekcji_nie_sa_bledem_w_trybie_z_selekcja(monkeypatch, tmp_path, argumenty):
     repo, baza = _repo_ze_zdrowa_baza(tmp_path)
@@ -1677,24 +1664,22 @@ def test_nazwa_zmienionego_pliku_py_ze_znakiem_spoza_ascii_jest_czytana_jako_utf
 
 
 @pytest.mark.parametrize(
-    ("argumenty", "winowajca"),
+    "argumenty",
     [
-        (["-oaddopts=-kfoo"], "-oaddopts=-kfoo"),
-        (["--override-ini=addopts=-kfoo"], "--override-ini=addopts=-kfoo"),
-        (["-o", "addopts=-kfoo"], "addopts=-kfoo"),
-        (["--override-ini", "addopts=-kfoo"], "addopts=-kfoo"),
-        (["-q", "-o", "addopts=-kfoo"], "addopts=-kfoo"),
+        ["-oaddopts=-kfoo"],
+        ["--override-ini=addopts=-kfoo"],
+        ["-o", "addopts=-kfoo"],
+        ["--override-ini", "addopts=-kfoo"],
+        ["-q", "-o", "addopts=-kfoo"],
     ],
 )
-def test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest(monkeypatch, tmp_path, argumenty, winowajca):
+def test_argument_ustawiajacy_addopts_z_opcja_k_to_blad_brak_dowodu_zanim_ruszy_pytest(monkeypatch, tmp_path, argumenty):
     repo, baza = _repo_ze_zdrowa_baza(tmp_path)
     monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
     monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
     with pytest.raises(testy_py.BladNarzedzia) as blad:
         testy_py.uruchom_dotkniete(argumenty, 5.0, repo)
-    assert str(blad.value) == (
-        f"brak dowodu: argument ustawia addopts, co wylacza selekcje testmona ({winowajca!r})"
-    )
+    assert str(blad.value) == "brak dowodu: testmon wylaczyl selekcje (-k was used) - uruchom bez tych argumentow"
 
 
 @pytest.mark.parametrize(
@@ -1730,9 +1715,607 @@ def test_addopts_z_linii_polecen_w_prawdziwym_przebiegu_dotknietych_to_blad_brak
     assert kod == 0, wyjscie + bledy
     kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", "-o", "addopts=-kfoo", baza=baza)
     assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
-    assert (
-        "BLAD: brak dowodu: argument ustawia addopts, co wylacza selekcje testmona ('addopts=-kfoo')" in bledy
+    assert "BLAD: brak dowodu: testmon wylaczyl selekcje (-k was used) - uruchom bez tych argumentow" in bledy
+
+
+# --- HAR-257: forma opcji nie ma znaczenia, decyduje to, co pytest naprawde zrobi z argumentami -------
+# Testy ida przez prawdziwy pytest i prawdziwy testmon w mini-projekcie. Po zmianie TYLKO `pomnoz` poprawna selekcja to
+# dwa testy mnozenia (wybrane 2, pominiete 6). Wylaczona selekcja (np. `-k odejmowanie`) pokazalaby inne testy z takimi
+# samymi liczbami - dlatego sprawdzamy, KTORE testy ruszyly, a nie same liczby.
+
+def _po_zmianie_pomnoz(tmp_path: Path, *argumenty: str, srodowisko: dict[str, str] | None = None):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    _zapisz(repo, "mini.py", MINI_KOD.replace("return a * b", "return b * a"))
+    return _testy_dotkniete(repo, *argumenty, baza=baza, srodowisko=srodowisko)
+
+
+def _nie_jest_zielone_z_wylaczona_selekcja(kod: int, wyjscie: str, bledy: str) -> None:
+    """Dozwolone: blad uzycia / brak dowodu (kod 2) albo jawny pelny przebieg. Zabronione: kod 0 z liczbami selekcji."""
+    if kod == testy_py.KOD_BLEDU:
+        assert "BLAD: brak dowodu:" in bledy, wyjscie + bledy
+    else:
+        assert kod == 0 and "testy.py: pelny przebieg" in wyjscie, (
+            f"kod {kod} bez pelnego przebiegu, a selekcje wylaczyl argument:\n{wyjscie}{bledy}"
+        )
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        ["-q", "-o=addopts=-kodejmowanie"],
+        ["-qo", "addopts=-kodejmowanie"],
+        ["-vo", "addopts=-kodejmowanie"],
+        ["-xo", "addopts=-kodejmowanie"],
+        ["-so=addopts=-kodejmowanie"],
+        ["-q", "--override-ini", "addopts=-kodejmowanie"],
+    ],
+)
+def test_forma_argumentu_wylaczajacego_selekcje_dotknietych_nie_daje_zielonego_wyniku_z_liczbami_selekcji(tmp_path, argumenty):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, *argumenty)
+    _nie_jest_zielone_z_wylaczona_selekcja(kod, wyjscie, bledy)
+
+
+@pytest.mark.parametrize("linie", [["-o", "addopts=-kodejmowanie"], ["-k", "odejmowanie"], ["-qo", "addopts=-kodejmowanie"]])
+def test_argumenty_wczytane_z_pliku_wylaczajace_selekcje_dotknietych_nie_daja_zielonego_wyniku(tmp_path, linie):
+    plik = tmp_path / "argumenty.txt"
+    plik.write_text("".join(f"{linia}\n" for linia in linie), encoding="utf-8")
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, "-q", f"@{plik}")
+    _nie_jest_zielone_z_wylaczona_selekcja(kod, wyjscie, bledy)
+
+
+def test_pytest_addopts_z_otoczenia_z_pasujacym_slowem_kluczowym_nie_podmienia_wybranych_testow(tmp_path):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(
+        tmp_path, "-v", srodowisko={"PYTEST_ADDOPTS": "-k odejmowanie"}
     )
+    assert kod == 0, wyjscie + bledy
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_odejmowanie_do_ujemnej" not in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+def test_klucz_ini_tylko_podobny_do_addopts_nie_wylacza_selekcji_dotknietych_testow(tmp_path):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, "-v", "-o", "addoptsx=-kodejmowanie")
+    assert kod == 0, wyjscie + bledy
+    assert "brak dowodu" not in wyjscie + bledy
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_odejmowanie_do_ujemnej" not in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        ["-q", "--nieistniejaca-opcja-har257"],
+        ["-q", "--markex", "not wolny"],  # pytest nie przyjmuje skrotow opcji dlugich: UsageError parsera
+    ],
+)
+def test_opcja_nieznana_pytestowi_to_brak_dowodu_kod_2_a_nie_kod_uzycia_pytesta(tmp_path, argumenty):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, *argumenty)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "BLAD: brak dowodu:" in bledy
+
+
+def test_brak_testmona_przy_sprawdzaniu_selekcji_to_brak_dowodu_kod_2(tmp_path):
+    # `testmon` podmieniony pakietem, ktory nie daje sie zaimportowac: sonda nie ma z czego ocenic selekcji
+    atrapa = tmp_path / "atrapa" / "testmon"
+    atrapa.mkdir(parents=True)
+    (atrapa / "__init__.py").write_text("raise ImportError('brak testmona w tescie HAR-257')\n", encoding="utf-8")
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(
+        tmp_path, "-q", srodowisko={"PYTHONPATH": str(atrapa.parent)}
+    )
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "BLAD: brak dowodu:" in bledy
+
+
+# --- HAR-257: sonda parsera (`_powody_bez_selekcji`) - kazda galaz "brak dowodu" i kontrakt wywolania ---
+
+
+def _atrapa_sondy(*, kod: int = 0, stdout: str = "", stderr: str = "", wyjatek: Exception | None = None):
+    """Atrapa `subprocess.run` widzianego przez sonde; zapisuje wywolania (argumenty i parametry nazwane)."""
+    wywolania: list[tuple[list[str], dict]] = []
+
+    def atrapa(argv, **nazwane):
+        wywolania.append((list(argv), nazwane))
+        if wyjatek is not None:
+            raise wyjatek
+        return subprocess.CompletedProcess(argv, kod, stdout=stdout, stderr=stderr)
+
+    atrapa.wywolania = wywolania
+    return atrapa
+
+
+def _sonda_z_atrapa(monkeypatch, tmp_path, atrapa, argumenty=("--testmon",)):
+    monkeypatch.setattr(testy_py.subprocess, "run", atrapa)
+    return testy_py._powody_bez_selekcji(list(argumenty), tmp_path)
+
+
+# Odpowiedz sondy: obiekt z kompletem kluczy. Test zmienia jedno pole naraz, wiec o wyniku decyduje tylko ono.
+WERDYKT_BEZ_POWODOW = {
+    "noselect": [],
+    "notestmon": None,
+    "forceselect": False,
+    "keyword": None,
+    "markexpr": None,
+    "lf": False,
+    "recznie": [],
+}
+
+
+def _odpowiedz_sondy(**nadpisania) -> str:
+    return json.dumps({**WERDYKT_BEZ_POWODOW, **nadpisania})
+
+
+def _stdout_sondy(**nadpisania) -> str:
+    return f"{testy_py.ZNACZNIK_SONDY}{_odpowiedz_sondy(**nadpisania)}\n"
+
+
+def test_sonda_podaje_powody_wylaczenia_selekcji_z_prawdziwego_parsera_pytesta_i_testmona(tmp_path):
+    assert testy_py._powody_bez_selekcji(["--testmon", "-k", "x"], tmp_path) == ["-k was used"]
+    assert testy_py._powody_bez_selekcji(["--testmon", "-q"], tmp_path) == []
+
+
+def test_jawne_testmon_noselect_w_argumentach_sondy_to_powod_o_nazwie_opcji_a_nie_pusty_tekst(tmp_path):
+    assert testy_py._powody_bez_selekcji(["--testmon", "--testmon-noselect"], tmp_path) == ["--testmon-noselect"]
+
+
+def test_kolejnosc_argumentow_sondy_decyduje_ostatnie_ustawienie_addopts_wygrywa(tmp_path):
+    zle_na_koncu = ["--testmon", "-o", "addopts=", "-o", "addopts=-kfoo"]
+    dobre_na_koncu = ["--testmon", "-o", "addopts=-kfoo", "-o", "addopts="]
+    assert testy_py._powody_bez_selekcji(zle_na_koncu, tmp_path) == ["-k was used"]
+    assert testy_py._powody_bez_selekcji(dobre_na_koncu, tmp_path) == []
+
+
+def test_sonda_startuje_w_podanym_katalogu_z_limitem_czasu_bez_stdin_i_z_argumentami_po_skrypcie(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy())
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa, ("--testmon", "-q")) == []
+    (argv, nazwane), = atrapa.wywolania
+    assert argv == [sys.executable, "-c", testy_py._SKRYPT_SONDY, "--testmon", "-q"]
+    assert nazwane["cwd"] == tmp_path
+    assert nazwane["timeout"] == testy_py.LIMIT_SONDY
+    assert nazwane["stdin"] == subprocess.DEVNULL
+    assert nazwane["env"] == dict(os.environ)
+    assert nazwane["capture_output"] is True
+    assert nazwane["text"] is True
+    assert nazwane["encoding"] == "utf-8"
+    assert nazwane["errors"] == "replace"
+
+
+def test_przekroczenie_limitu_czasu_sondy_to_brak_dowodu_a_nie_selekcja_ktora_dziala(monkeypatch, tmp_path):
+    wyjatek = subprocess.TimeoutExpired(["sonda"], 120.0)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(wyjatek=wyjatek))
+    assert str(blad.value) == f"brak dowodu: sonda parsera pytesta przekroczyla limit 120 s: {wyjatek}"
+    assert blad.value.__cause__ is wyjatek
+
+
+def test_niemozliwy_start_sondy_to_brak_dowodu_z_przyczyna_systemu(monkeypatch, tmp_path):
+    wyjatek = OSError(2, "brak interpretera")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(wyjatek=wyjatek))
+    assert str(blad.value) == "brak dowodu: nie udalo sie uruchomic sondy parsera pytesta: [Errno 2] brak interpretera"
+    assert blad.value.__cause__ is wyjatek
+
+
+def test_sonda_ktora_padla_to_brak_dowodu_z_ostatnia_linia_bledu_nawet_gdy_wypisala_odpowiedz(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(kod=3, stdout=_stdout_sondy(), stderr="Traceback\n  pierwsza\nValueError: zla\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem 3: ValueError: zla"
+
+
+def test_sonda_ktora_padla_bez_komunikatu_to_brak_dowodu_z_adnotacja_o_braku_komunikatu(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(kod=1, stderr="  \n"))
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem 1: brak komunikatu"
+
+
+def test_sonda_zabita_sygnalem_to_brak_dowodu_z_ujemnym_kodem_nawet_gdy_wypisala_odpowiedz(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(kod=-9, stdout=_stdout_sondy()))
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem -9: brak komunikatu"
+
+
+@pytest.mark.parametrize(
+    ("stdout", "ile"),
+    [
+        ("", 0),
+        ("jakis szum\n", 0),
+        (f" {_stdout_sondy()}", 0),
+        (_stdout_sondy() * 2, 2),
+    ],
+)
+def test_sonda_bez_dokladnie_jednej_odpowiedzi_to_brak_dowodu_z_liczba_odpowiedzi(monkeypatch, tmp_path, stdout, ile):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(stdout=stdout))
+    assert str(blad.value) == f"brak dowodu: sonda parsera pytesta nie podala powodow (odpowiedzi: {ile})"
+
+
+def _bez_klucza(klucz: str) -> str:
+    return json.dumps({k: v for k, v in WERDYKT_BEZ_POWODOW.items() if k != klucz})
+
+
+# Kazdy wiersz psuje dokladnie jedno: skladnie JSON, ksztalt calosci, brak jednego z siedmiu kluczy albo typ jednego pola
+ZLE_ODPOWIEDZI_SONDY = [
+    pytest.param("nie json", id="nie-json"),
+    pytest.param("", id="pusta"),
+    pytest.param("{", id="urwany-json"),
+    pytest.param("[]", id="lista-zamiast-obiektu"),
+    pytest.param('["noselect"]', id="lista-tekstow-zamiast-obiektu"),
+    pytest.param("5", id="liczba-zamiast-obiektu"),
+    pytest.param("null", id="null-zamiast-obiektu"),
+    pytest.param('"noselect"', id="tekst-zamiast-obiektu"),
+    pytest.param("{}", id="pusty-obiekt"),
+    *[pytest.param(_bez_klucza(klucz), id=f"brak-klucza-{klucz}") for klucz in WERDYKT_BEZ_POWODOW],
+    pytest.param(_odpowiedz_sondy(noselect="-k was used"), id="noselect-tekst-zamiast-listy"),
+    pytest.param(_odpowiedz_sondy(noselect=None), id="noselect-null-zamiast-listy"),
+    pytest.param(_odpowiedz_sondy(noselect={"a": "b"}), id="noselect-obiekt-zamiast-listy"),
+    pytest.param(_odpowiedz_sondy(noselect=[1]), id="noselect-liczba-w-liscie"),
+    pytest.param(_odpowiedz_sondy(noselect=["a", 2]), id="noselect-liczba-po-tekscie"),
+    pytest.param(_odpowiedz_sondy(noselect=[[]]), id="noselect-lista-w-liscie"),
+    pytest.param(_odpowiedz_sondy(notestmon=5), id="notestmon-liczba"),
+    pytest.param(_odpowiedz_sondy(notestmon=0), id="notestmon-zero-nie-jest-brakiem"),
+    pytest.param(_odpowiedz_sondy(notestmon=False), id="notestmon-false-nie-jest-brakiem"),
+    pytest.param(_odpowiedz_sondy(notestmon=["x"]), id="notestmon-lista"),
+    pytest.param(_odpowiedz_sondy(forceselect="tak"), id="forceselect-tekst"),
+    pytest.param(_odpowiedz_sondy(forceselect=1), id="forceselect-jedynka"),
+    pytest.param(_odpowiedz_sondy(forceselect=0), id="forceselect-zero"),
+    pytest.param(_odpowiedz_sondy(forceselect=None), id="forceselect-null"),
+    pytest.param(_odpowiedz_sondy(recznie=5), id="recznie-liczba"),
+    pytest.param(_odpowiedz_sondy(recznie=None), id="recznie-null"),
+    pytest.param(_odpowiedz_sondy(recznie=[1]), id="recznie-liczba-w-liscie"),
+    pytest.param(_odpowiedz_sondy(recznie=["a.py::t", 1]), id="recznie-liczba-po-tekscie"),
+    pytest.param(_odpowiedz_sondy(recznie=[None]), id="recznie-null-w-liscie"),
+    pytest.param(_odpowiedz_sondy(recznie=[["a.py::t"]]), id="recznie-lista-w-liscie"),
+]
+
+
+@pytest.mark.parametrize("odpowiedz", ZLE_ODPOWIEDZI_SONDY)
+def test_odpowiedz_sondy_niezgodna_z_kontraktem_to_brak_dowodu_a_nie_selekcja_ktora_dziala(monkeypatch, tmp_path, odpowiedz):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}{odpowiedz}\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedz!r}"
+
+
+# Pola selektorow o zlym typie: kazde sprawdzamy z forceselect i bez niego. Bez kontroli typu wartosc "prawie dobra"
+# (pusty tekst, "ab", 1) przechodzilaby jako brak selektora albo jako selektor, wiec wynik byloby inny niz blad.
+ZLE_POLA_SELEKTOROW = [
+    ("recznie-pusty-tekst", {"recznie": ""}),
+    ("recznie-tekst", {"recznie": "ab"}),
+    ("recznie-null", {"recznie": None}),
+    ("recznie-liczba-w-liscie", {"recznie": [1]}),
+    ("keyword-liczba", {"keyword": 5}),
+    ("keyword-pusta-lista", {"keyword": []}),
+    ("markexpr-liczba", {"markexpr": 5}),
+    ("markexpr-pusta-lista", {"markexpr": []}),
+    ("lf-jedynka", {"lf": 1}),
+    ("lf-tekst", {"lf": "x"}),
+]
+
+
+@pytest.mark.parametrize(
+    ("forceselect", "pole"),
+    [
+        pytest.param(forceselect, pole, id=f"{nazwa}-{'z' if forceselect else 'bez'}-forceselect")
+        for nazwa, pole in ZLE_POLA_SELEKTOROW
+        for forceselect in (True, False)
+    ],
+)
+def test_pole_selektora_zlego_typu_w_odpowiedzi_sondy_to_brak_dowodu_z_forceselect_i_bez(monkeypatch, tmp_path, forceselect, pole):
+    odpowiedz = _odpowiedz_sondy(forceselect=forceselect, **pole)
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}{odpowiedz}\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedz!r}"
+
+
+def test_odpowiedz_sondy_bez_klucza_zachowuje_przyczyne_klucza_a_nie_jest_osobnym_wyjatkiem(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}{_bez_klucza('lf')}\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert isinstance(blad.value.__cause__, KeyError)
+
+
+def test_odpowiedz_sondy_niebedaca_obiektem_zachowuje_przyczyne_bledu_typu(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}[]\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert isinstance(blad.value.__cause__, TypeError)
+
+
+def test_sonda_bez_zadnego_powodu_zwraca_pusta_liste_a_powody_noselect_w_kolejnosci(monkeypatch, tmp_path):
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(stdout=_stdout_sondy())) == []
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(noselect=["b", "a"]))
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["b", "a"]
+
+
+def test_testmon_wylaczony_w_odpowiedzi_sondy_to_brak_dowodu_z_powodem_i_pierwszenstwem_przed_reszta(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(
+        stdout=_stdout_sondy(notestmon="deactivated through --no-testmon", forceselect=True, keyword="x", noselect=["-k was used"])
+    )
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == "brak dowodu: testmon wylaczony (deactivated through --no-testmon) - uruchom bez tych argumentow"
+
+
+def test_pusty_powod_wylaczenia_testmona_w_odpowiedzi_sondy_nie_jest_wylaczeniem(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(notestmon="", noselect=["-k was used"]))
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["-k was used"]
+
+
+@pytest.mark.parametrize(
+    ("pole", "wartosc", "opis"),
+    [
+        ("keyword", "szybkie", "-k szybkie"),
+        ("markexpr", "not wolny", "-m not wolny"),
+        ("lf", True, "--lf"),
+        ("recznie", ["tests/a.py::test_a"], "tests/a.py::test_a"),
+    ],
+    ids=["keyword", "markexpr", "lf", "recznie"],
+)
+def test_forceselect_z_kazdym_selektorem_pytesta_z_osobna_to_brak_dowodu_z_nazwa_selektora(monkeypatch, tmp_path, pole, wartosc, opis):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(forceselect=True, **{pole: wartosc}))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == f"brak dowodu: --testmon-forceselect z selektorem pytesta ({opis}) - uruchom bez tych argumentow"
+
+
+def test_forceselect_z_kilkoma_selektorami_wymienia_je_wszystkie_w_stalej_kolejnosci(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(
+        stdout=_stdout_sondy(
+            forceselect=True, keyword="a", markexpr="b", lf=True, recznie=["x.py::t1", "y.py::t2"]
+        )
+    )
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == (
+        "brak dowodu: --testmon-forceselect z selektorem pytesta (-k a, -m b, --lf, x.py::t1, y.py::t2) - uruchom bez tych argumentow"
+    )
+
+
+@pytest.mark.parametrize(
+    "nadpisania",
+    [
+        {"forceselect": True},
+        {"forceselect": True, "keyword": "", "markexpr": "", "lf": False, "recznie": []},
+        {"forceselect": False, "keyword": "x"},
+        {"forceselect": False, "markexpr": "x"},
+        {"forceselect": False, "lf": True},
+        {"forceselect": False, "recznie": ["a.py::t"]},
+    ],
+    ids=["forceselect-bez-selektora", "forceselect-z-pustymi-selektorami", "k-bez-forceselect", "m-bez-forceselect", "lf-bez-forceselect", "plik-bez-forceselect"],
+)
+def test_bez_pary_forceselect_i_selektor_odpowiedz_sondy_nie_jest_bledem_selektora(monkeypatch, tmp_path, nadpisania):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(noselect=["-k was used"], **nadpisania))
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["-k was used"]
+
+
+# Prawdziwy parser pytesta i testmon (sonda w podprocesie): forma, w jakiej selektor albo wylaczenie trafia do argumentow,
+# nie ma znaczenia - `-o addopts=...` i `@plik` rozwija ten sam parser, ktory zobaczy realny przebieg.
+
+def _argumenty_z_pliku(tmp_path: Path, *linie: str) -> list[str]:
+    plik = tmp_path / "argumenty.txt"
+    plik.write_text("".join(f"{linia}\n" for linia in linie), encoding="utf-8")
+    return [f"@{plik}"]
+
+
+def _sonda_na_prawdziwym_parserze_odrzuca(argumenty: list[str], tmp_path: Path) -> str:
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py._powody_bez_selekcji(["--testmon", *argumenty], tmp_path)
+    return str(blad.value)
+
+
+@pytest.mark.parametrize(
+    ("argumenty", "selektor"),
+    [
+        (["--testmon-forceselect", "-k", "x"], "-k x"),
+        (["--testmon-forceselect", "-m", "x"], "-m x"),
+        (["--testmon-forceselect", "--lf"], "--lf"),
+        (["--testmon-forceselect", "plik.py::t"], "plik.py::t"),
+        (["--testmon-forceselect", "-o", "addopts=-k x"], "-k x"),
+        (["--testmon-forceselect", "-o", "addopts=-m x"], "-m x"),
+        (["--testmon-forceselect", "-o", "addopts=--lf"], "--lf"),
+        (["--testmon-forceselect", "-o", "addopts=plik.py::t"], "plik.py::t"),
+        (["-o", "addopts=--testmon-forceselect -k x"], "-k x"),
+    ],
+    ids=["k", "m", "lf", "plik-test", "addopts-k", "addopts-m", "addopts-lf", "addopts-plik-test", "addopts-z-forceselect"],
+)
+def test_forceselect_z_selektorem_pytesta_to_brak_dowodu_na_prawdziwym_parserze_w_kazdej_formie(tmp_path, argumenty, selektor):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(argumenty, tmp_path)
+    assert komunikat == f"brak dowodu: --testmon-forceselect z selektorem pytesta ({selektor}) - uruchom bez tych argumentow"
+
+
+@pytest.mark.parametrize(
+    ("linie", "selektor"),
+    [
+        (("--testmon-forceselect", "-k", "x"), "-k x"),
+        (("--testmon-forceselect", "-m", "x"), "-m x"),
+        (("--testmon-forceselect", "--lf"), "--lf"),
+        (("--testmon-forceselect", "plik.py::t"), "plik.py::t"),
+    ],
+    ids=["k", "m", "lf", "plik-test"],
+)
+def test_forceselect_z_selektorem_z_pliku_argumentow_to_brak_dowodu_na_prawdziwym_parserze(tmp_path, linie, selektor):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(_argumenty_z_pliku(tmp_path, *linie), tmp_path)
+    assert komunikat == f"brak dowodu: --testmon-forceselect z selektorem pytesta ({selektor}) - uruchom bez tych argumentow"
+
+
+def test_forceselect_rozdzielony_miedzy_argumenty_i_plik_z_selektorem_to_brak_dowodu(tmp_path):
+    argumenty = ["--testmon-forceselect", *_argumenty_z_pliku(tmp_path, "-k", "x")]
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(argumenty, tmp_path)
+    assert komunikat == "brak dowodu: --testmon-forceselect z selektorem pytesta (-k x) - uruchom bez tych argumentow"
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [["--testmon-forceselect"], ["-o", "addopts=--testmon-forceselect"], ["--testmon-forceselect", "plik.py"]],
+    ids=["argument", "addopts", "sam-plik-bez-nazwy-testu"],
+)
+def test_forceselect_bez_selektora_na_prawdziwym_parserze_nie_jest_bledem_selektora(tmp_path, argumenty):
+    assert testy_py._powody_bez_selekcji(["--testmon", *argumenty], tmp_path) == []
+
+
+def test_forceselect_bez_selektora_z_pliku_argumentow_na_prawdziwym_parserze_nie_jest_bledem_selektora(tmp_path):
+    argumenty = _argumenty_z_pliku(tmp_path, "--testmon-forceselect")
+    assert testy_py._powody_bez_selekcji(["--testmon", *argumenty], tmp_path) == []
+
+
+def test_forceselect_z_addopts_repozytorium_tylko_po_skasowaniu_ich_przez_wlasne_nie_ma_selektora():
+    # korzen repo ma `addopts = -m 'not e2e'`: bez wlasnego `-o addopts=` to selektor, z nim - brak
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(["--testmon-forceselect"], KORZEN)
+    assert komunikat == "brak dowodu: --testmon-forceselect z selektorem pytesta (-m not e2e) - uruchom bez tych argumentow"
+    assert testy_py._powody_bez_selekcji(["--testmon", "-o", "addopts=", "--testmon-forceselect"], KORZEN) == []
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [["--no-testmon"], ["-o", "addopts=--no-testmon"], ["-q", "--no-testmon", "-v"]],
+    ids=["argument", "addopts", "miedzy-innymi"],
+)
+def test_wylaczenie_testmona_argumentem_na_prawdziwym_parserze_to_brak_dowodu_z_powodem_testmona(tmp_path, argumenty):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(argumenty, tmp_path)
+    assert komunikat == "brak dowodu: testmon wylaczony (deactivated through --no-testmon) - uruchom bez tych argumentow"
+
+
+def test_wylaczenie_testmona_z_pliku_argumentow_na_prawdziwym_parserze_to_brak_dowodu(tmp_path):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(_argumenty_z_pliku(tmp_path, "--no-testmon"), tmp_path)
+    assert komunikat == "brak dowodu: testmon wylaczony (deactivated through --no-testmon) - uruchom bez tych argumentow"
+
+
+# Pelna sciezka: `uruchom_dotkniete` w mini-projekcie z prawdziwym pytestem i testmonem; sprawdzamy, KTORE testy ruszyly.
+
+@pytest.mark.parametrize(
+    ("argumenty", "komunikat"),
+    [
+        (["-q", "--testmon-forceselect", "-k", "odejmowanie"], "--testmon-forceselect z selektorem pytesta (-k odejmowanie)"),
+        (["-q", "--testmon-forceselect", "-m", "wolny"], "--testmon-forceselect z selektorem pytesta (-m wolny)"),
+        (["-q", "--testmon-forceselect", "--lf"], "--testmon-forceselect z selektorem pytesta (--lf)"),
+        (["-q", "--no-testmon"], "testmon wylaczony (deactivated through --no-testmon)"),
+    ],
+    ids=["forceselect-k", "forceselect-m", "forceselect-lf", "no-testmon"],
+)
+def test_dotkniete_z_forceselect_i_selektorem_albo_z_wylaczonym_testmonem_to_brak_dowodu_kod_2(tmp_path, argumenty, komunikat):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, *argumenty)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert f"BLAD: brak dowodu: {komunikat} - uruchom bez tych argumentow" in bledy
+    assert "testy.py: pelny przebieg" not in wyjscie
+
+
+def test_dotkniete_z_forceselect_bez_selektora_uruchamia_tylko_testy_dotknietej_funkcji(tmp_path):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, "-v", "--testmon-forceselect")
+    assert kod == 0, wyjscie + bledy
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_odejmowanie_do_ujemnej" not in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+def test_odpowiedz_sondy_niebedaca_json_zachowuje_przyczyne_bledu_parsowania(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}nie json\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert isinstance(blad.value.__cause__, ValueError)
+
+
+def test_pierwszy_argument_sondy_trafia_do_parsera_pytesta_a_nie_jest_pomijany(tmp_path):
+    # `--testmon` na koncu (bez niego testmon jest wylaczony): argument zerowy sondy to opcja `-k`, a nie tylko wypelniacz
+    assert testy_py._powody_bez_selekcji(["-k", "x", "--testmon"], tmp_path) == ["-k was used"]
+
+
+def test_odpowiedz_sondy_wsrod_innych_linii_stdout_jest_czytana_a_powody_zachowuja_kolejnosc(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f'szum\n{testy_py.ZNACZNIK_SONDY}{_odpowiedz_sondy(noselect=["b", None, "a"])}\nszum 2\n')
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["b", "--testmon-noselect", "a"]
+
+
+def test_odpowiedz_sondy_z_literalnym_znacznikiem_jest_czytana_niezaleznie_od_stalej_w_kodzie(monkeypatch, tmp_path):
+    # znacznik wpisany tekstem, nie ze stalej: zmiana wartosci stalej w kodzie nie moze przejsc niezauwazona
+    atrapa = _atrapa_sondy(stdout=f'szum SONDA-POWODY: nie to\nSONDA-POWODY:{_odpowiedz_sondy(noselect=["a"])}\n')
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["a"]
+
+
+def test_atrapa_zamiast_testmona_w_sondzie_to_brak_dowodu_z_ostatnia_linia_bledu_importu(monkeypatch, tmp_path):
+    atrapa = tmp_path / "atrapa" / "testmon"
+    atrapa.mkdir(parents=True)
+    (atrapa / "__init__.py").write_text("raise ImportError('brak testmona w tescie HAR-257')\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("PYTHONPATH", str(atrapa.parent))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py._powody_bez_selekcji(["--testmon"], repo)
+    assert str(blad.value).startswith("brak dowodu: sonda parsera pytesta zakonczyla sie kodem 1: ImportError")
+    assert "brak testmona w tescie HAR-257" in str(blad.value)
+
+
+def _zapisujaca_sonda(monkeypatch, powody: list[str]):
+    wywolania: list[tuple[list[str], Path]] = []
+
+    def sonda(argumenty, cwd):
+        wywolania.append((list(argumenty), cwd))
+        return powody
+
+    monkeypatch.setattr(testy_py, "_powody_bez_selekcji", sonda)
+    return wywolania
+
+
+def test_przebieg_z_selekcja_pyta_sonde_o_te_same_argumenty_w_tej_samej_kolejnosci_i_w_katalogu_repo(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    (repo / "tests" / "e2e").mkdir(parents=True)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    wywolania = _zapisujaca_sonda(monkeypatch, [])
+    uruchomione = _atrapa_z_przebiegami(["8 passed, 4 deselected in 0.1s\n"], [])
+    monkeypatch.setattr(testy_py, "uruchom", uruchomione)
+    assert testy_py.uruchom_dotkniete(["-q", "tests/a.py"], 5.0, repo) == 0
+    oczekiwane = ["--testmon", "-o", "addopts=", "--ignore=tests/e2e", "-q", "tests/a.py"]
+    assert wywolania == [(oczekiwane, repo)]
+    assert uruchomione.wywolania == [oczekiwane]
+
+
+def test_powod_od_sondy_przerywa_dotkniete_przed_uruchomieniem_pytesta_i_podaje_tylko_pierwszy_powod(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    _zapisujaca_sonda(monkeypatch, ["pierwszy", "drugi"])
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: testmon wylaczyl selekcje (pierwszy) - uruchom bez tych argumentow"
+
+
+def test_pelny_przebieg_dotknietych_nie_uruchamia_sondy_bo_nic_nie_selekcjonuje(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("TESTMON_DATAFILE", str(tmp_path / "baza" / "testmon.db"))
+    wywolania = _zapisujaca_sonda(monkeypatch, ["-k was used"])
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["5 passed in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(["-q", "-k", "x"], 5.0, repo) == 0
+    assert wywolania == []
+
+
+def test_blad_sondy_w_dotknietych_to_blad_narzedzia_a_nie_uruchomienie_pytesta(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py.subprocess, "run", _atrapa_sondy(kod=1, stderr="UsageError: zle\n"))
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem 1: UsageError: zle"
+
+
+def test_pytest_addopts_z_otoczenia_nie_trafia_do_sondy_bo_zmienna_jest_czyszczona_przed_nia(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-k cokolwiek")
+    widziane: list[str | None] = []
+
+    def sonda(_argumenty, _cwd):
+        widziane.append(os.environ.get("PYTEST_ADDOPTS"))
+        return []
+
+    monkeypatch.setattr(testy_py, "_powody_bez_selekcji", sonda)
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["8 passed, 4 deselected in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert widziane == [None]
 
 
 def test_pominiete_pod_xdist_sa_zmierzone_a_nie_zerem_dla_prawdziwego_projektu_z_addopts(tmp_path):
