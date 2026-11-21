@@ -417,6 +417,108 @@ async def test_czlonek_zespolu_nie_widzi_skilli_projektu_cudzego_zespolu(swiat, 
     assert odp.status_code == 404
 
 
+# --- HAR-181: zapis skilli i workflow z UI (PUT/POST/DELETE) oraz lista i walidacja workflow ----
+
+_FM_NOWY = "id: x\nname: X\nrole: author\n"
+_TRESC_WORKFLOW = "name: x\nsteps:\n  a:\n    skill: x\n"
+
+# nazwa -> (metoda, adres, parametry zapytania poza `project`, cialo)
+TRASY_ZMIENIAJACE_DEFINICJE = {
+    "zapis_skilla": ("PUT", "/api/skills/x", {},
+                     {"scope": "project", "frontmatter": _FM_NOWY, "brief": "B\n"}),
+    "nowy_skill": ("POST", "/api/skills", {},
+                   {"id": "x", "scope": "project", "frontmatter": _FM_NOWY, "brief": "B\n"}),
+    "usuniecie_skilla": ("DELETE", "/api/skills/x", {"scope": "project"}, None),
+    "zapis_workflow": ("PUT", "/api/workflows/x", {}, {"tresc": _TRESC_WORKFLOW}),
+}
+TRASY_ODCZYTU_WORKFLOW = {
+    "lista_workflow": ("GET", "/api/workflows", {}, None),
+    "walidacja_workflow": ("GET", "/api/workflows/x/validate", {}, None),
+}
+NOWE_TRASY_DEFINICJI = {**TRASY_ZMIENIAJACE_DEFINICJE, **TRASY_ODCZYTU_WORKFLOW}
+
+
+async def _wywolaj_nowa_trase(klient, trasa, projekt):
+    metoda, adres, parametry, cialo = trasa
+    return await klient.request(
+        metoda, adres, params={"project": projekt, **parametry}, json=cialo)
+
+
+@pytest.mark.parametrize("trasa", TRASY_ZMIENIAJACE_DEFINICJE.values(),
+                         ids=TRASY_ZMIENIAJACE_DEFINICJE.keys())
+async def test_obserwator_nie_zapisuje_ani_nie_usuwa_skilli_i_workflow_swojego_zespolu(
+    swiat, runner_nie_jest_pytany, trasa,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+
+    odp = await _wywolaj_nowa_trase(klient, trasa, projekt)
+
+    # runner zespolu A jest online, wiec 403 to odmowa roli, nie brak runnera (409)
+    assert odp.status_code == 403
+    assert runner_nie_jest_pytany == []
+
+
+@pytest.mark.parametrize("trasa", NOWE_TRASY_DEFINICJI.values(), ids=NOWE_TRASY_DEFINICJI.keys())
+async def test_czlonek_zespolu_nie_dotyka_skilli_i_workflow_projektu_cudzego_zespolu(
+    swiat, runner_nie_jest_pytany, trasa,
+):
+    cudzy = await _projekt_zespolu(swiat, swiat.tenant_b, swiat.runner_b, "/repo/cudzy")
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await _wywolaj_nowa_trase(klient, trasa, cudzy)
+
+    assert odp.status_code == 404
+    assert odp.json() == {"detail": "projekt nieznany"}   # odmowa trasy, nie brak trasy
+    assert runner_nie_jest_pytany == []
+
+
+@pytest.mark.parametrize("trasa", NOWE_TRASY_DEFINICJI.values(), ids=NOWE_TRASY_DEFINICJI.keys())
+async def test_bez_sesji_nowe_trasy_skilli_i_workflow_daja_401_takze_na_localhoscie(
+    swiat, runner_nie_jest_pytany, trasa,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = swiat.nowy_klient()
+    assert klient.base_url.host == "127.0.0.1"
+
+    odp = await _wywolaj_nowa_trase(klient, trasa, projekt)
+
+    assert odp.status_code == 401
+    assert runner_nie_jest_pytany == []
+
+
+@pytest.mark.parametrize("trasa", TRASY_ZMIENIAJACE_DEFINICJE.values(),
+                         ids=TRASY_ZMIENIAJACE_DEFINICJE.keys())
+async def test_zapis_i_usuniecie_definicji_bez_tokenu_csrf_dostaje_403_z_komunikatem_o_braku_tokenu(
+    swiat, runner_nie_jest_pytany, trasa,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    del klient.headers[NAGLOWEK_CSRF]
+
+    odp = await _wywolaj_nowa_trase(klient, trasa, projekt)
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "brak tokenu CSRF"}
+    assert runner_nie_jest_pytany == []
+
+
+@pytest.mark.parametrize("trasa", TRASY_ZMIENIAJACE_DEFINICJE.values(),
+                         ids=TRASY_ZMIENIAJACE_DEFINICJE.keys())
+async def test_zapis_i_usuniecie_definicji_ze_zlym_tokenem_csrf_dostaje_403_z_komunikatem_o_zlym_tokenie(
+    swiat, runner_nie_jest_pytany, trasa,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    klient.headers[NAGLOWEK_CSRF] = "zly-token"
+
+    odp = await _wywolaj_nowa_trase(klient, trasa, projekt)
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "nieprawidłowy token CSRF"}
+    assert runner_nie_jest_pytany == []
+
+
 # --- trasy publiczne dzialaja bez sesji -------------------------------------------------------
 
 
@@ -558,6 +660,12 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("PATCH", "/api/projects/{project_id}"): {"kontekst_sesji"},
         ("GET", "/api/skills"): {"kontekst_sesji"},
         ("GET", "/api/skills/{skill_id}"): {"kontekst_sesji"},
+        ("PUT", "/api/skills/{skill_id}"): {"kontekst_sesji"},
+        ("POST", "/api/skills"): {"kontekst_sesji"},
+        ("DELETE", "/api/skills/{skill_id}"): {"kontekst_sesji"},
+        ("GET", "/api/workflows"): {"kontekst_sesji"},
+        ("PUT", "/api/workflows/{name}"): {"kontekst_sesji"},
+        ("GET", "/api/workflows/{name}/validate"): {"kontekst_sesji"},
         ("POST", "/api/konto/wyloguj"): {"kontekst_sesji"},
         ("POST", "/api/konto/wyloguj-wszedzie"): {"kontekst_sesji"},
         ("POST", "/api/konto/haslo"): {"kontekst_sesji"},
@@ -594,6 +702,12 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("PATCH", "/api/projects/{project_id}"),
         ("GET", "/api/skills"),
         ("GET", "/api/skills/{skill_id}"),
+        ("PUT", "/api/skills/{skill_id}"),
+        ("POST", "/api/skills"),
+        ("DELETE", "/api/skills/{skill_id}"),
+        ("GET", "/api/workflows"),
+        ("PUT", "/api/workflows/{name}"),
+        ("GET", "/api/workflows/{name}/validate"),
         ("GET", "/api/tickety"),
         ("GET", "/api/tickety/{id_ticketu:path}"),
         ("POST", "/api/konto/rejestracja"),

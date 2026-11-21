@@ -172,10 +172,27 @@ def wczytaj_workflow(plik: Path) -> tuple[Workflow | None, list[Problem]]:
     """Wczytuje workflow. `None` tylko gdy plik jest nieczytelny albo nie ma mapy `steps`."""
     try:
         bajty = plik.read_bytes()
-        tekst = bajty.decode("utf-8")
+        tekst = bajty.decode()
     except (OSError, UnicodeDecodeError) as exc:
         return None, [Problem(None, BLAD_ODCZYTU, f"nie mozna odczytac pliku: {exc}")]
+    return _zbuduj_workflow(tekst, bajty, plik)
 
+
+def wczytaj_workflow_z_tekstu(tekst: str) -> tuple[Workflow | None, list[Problem]]:
+    """Wczytuje workflow z tekstu, bez dysku (HAR-181): kokpit czyta i zapisuje plik przez runnera.
+
+    Te same reguly co `wczytaj_workflow`. Nazwy pliku nie ma: plik bez pola `name` ma nazwe
+    workflow `""` (`Path("").stem`), a nie ".yaml"."""
+    try:
+        bajty = tekst.encode()
+    except UnicodeEncodeError:
+        return None, [Problem(None, BLAD_ODCZYTU, "tekst nie jest poprawnym UTF-8")]
+    return _zbuduj_workflow(tekst, bajty, Path(""))
+
+
+def _zbuduj_workflow(
+    tekst: str, bajty: bytes, plik: Path,
+) -> tuple[Workflow | None, list[Problem]]:
     try:
         mapa = _nowy_yaml().load(tekst)
     except RecursionError:
@@ -184,6 +201,10 @@ def wczytaj_workflow(plik: Path) -> tuple[Workflow | None, list[Problem]]:
         return None, [Problem(None, ZDUPLIKOWANY_KLUCZ, f"zduplikowany klucz{_lokalizacja(exc)}")]
     except YAMLError as exc:
         return None, [Problem(None, NIEPOPRAWNY_YAML, f"niepoprawny YAML{_lokalizacja(exc)}")]
+    except (ValueError, IndexError, KeyError, AttributeError):
+        # konstrukcja wartosci, nie skladnia; z ruamel naprawde leca: ValueError (data 2024-02-30),
+        # IndexError (`!!int 0b`), KeyError (`!!bool x`), AttributeError (`!!set x`)
+        return None, [Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
 
     kroki_surowe = mapa.get("steps") if isinstance(mapa, CommentedMap) else None
     if not isinstance(kroki_surowe, CommentedMap):
@@ -312,16 +333,25 @@ def _nanies_zmiany(workflow: Workflow) -> None:
     _przestaw_kroki(kroki_mapa, [k.id for k in workflow.kroki])
 
 
+def _wyrenderuj(workflow: Workflow) -> bytes:
+    """Bajty workflow po naniesieniu zmian modelu na oryginalna mape (komentarze, kolejnosc)."""
+    _nanies_zmiany(workflow)
+    wyjscie = io.StringIO()
+    _nowy_yaml().dump(workflow._mapa, wyjscie)
+    return wyjscie.getvalue().encode()
+
+
+def _zapamietaj(workflow: Workflow, bajty: bytes) -> None:
+    workflow._bajty = bajty
+    workflow._migawka = workflow.model_dump()
+
+
 def zapisz_workflow(workflow: Workflow, plik: Path) -> None:
     """Zapisuje workflow. Bez zmian modelu plik jest identyczny bajt w bajt z oryginalem."""
     if not workflow._zmieniony():
         plik.write_bytes(workflow._bajty)
         return
 
-    _nanies_zmiany(workflow)
-    wyjscie = io.StringIO()
-    _nowy_yaml().dump(workflow._mapa, wyjscie)
-    bajty = wyjscie.getvalue().encode("utf-8")
+    bajty = _wyrenderuj(workflow)
     plik.write_bytes(bajty)
-    workflow._bajty = bajty
-    workflow._migawka = workflow.model_dump()
+    _zapamietaj(workflow, bajty)
