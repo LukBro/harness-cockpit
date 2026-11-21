@@ -105,7 +105,10 @@ znacznikami). Brak agenta `Explore` -> uproszczoną analizę robisz sam w tym sa
 i opisujesz ją w `log_time` jako "Uproszczona analiza ticketu (bez Researchera)".
 
 Sekcję "Bramki" raportu zapisz jako JSON w katalogu tymczasowym sesji (nie w worktree: zmieniłby skrót
-diffu), potem `stan.py bramki <KEY> <plik>` przepisuje ją do `bramki.json` w katalogu stanu. Narzędzie
+diffu), potem `stan.py bramki <KEY> <plik>` przepisuje ją do `bramki.json` w katalogu stanu. Punkt wyjścia to
+`<SKILL_DIR>/bramki-szablon.json` (te same nazwy bramek; podmieniasz tylko ścieżki interpretera i `ruff`).
+Odstępstwa (brak bramki z szablonu, `sh -c`, skrypt spoza repo, kod porażki mapowany na zielony) `stan.py`
+wypisuje jako `OSTRZEZENIE:` na stderr — przez sprint po audycie 2026-11-19 tylko ostrzega, potem blokuje. Narzędzie
 zapisu pliku tam nie sięga: sesja w worktree ma zapis tylko w swoim drzewie (HAR-169). To jedyne
 miejsce, w którym komendy lintu i testów przechodzą z wiki do wykonania. Sekcja pusta albo brak strony
 `toolchain` -> decyzja człowieka (powód `brak strony toolchain`), bo bez komend nie ma bramki testów.
@@ -211,7 +214,7 @@ python3 <SKILL_DIR>/scripts/werdykt.py <KEY> --agent-id <agentId z wyniku narzę
 | Kod | Co robisz |
 |---|---|
 | 0 | APPROVED dla każdego agenta - krok 7 |
-| 1 | NEEDS WORK: tylko agenci poniżej 82. Linie `REGULA:` zapisujesz addytywnie do `.claude/agent-memory/<typ>/MEMORY.md`, chyba że reguły projektu zabraniają zapisu w `.claude/` z tej sesji - wtedy do komentarza ticketu. `stan.py poprawka`, re-run agenta z feedbackiem, krok 5, potem `prompt_krytyka.py ... --tylko <agent>` i nowy werdykt. Ponowna ocena ma zamrożony zakres (odjęcie tylko za nienaprawione odjęcie, kod zmieniony poprawką albo przydział); linie `UWAGA-PO-RUNDZIE:` z wyjścia `werdykt.py` idą do komentarza ticketu, nie do kolejnej poprawki |
+| 1 | NEEDS WORK: tylko agenci poniżej 82. Linie `REGULA:` zapisujesz addytywnie do `.claude/agent-memory/<typ>/MEMORY.md`, chyba że reguły projektu zabraniają zapisu w `.claude/` z tej sesji - wtedy do komentarza ticketu. `stan.py poprawka`, re-run agenta z feedbackiem, krok 5, potem `prompt_krytyka.py ... --tylko <agent>` i nowy werdykt. Ponowna ocena ma zamrożony zakres (odjęcie tylko za nienaprawione odjęcie albo kod zmieniony poprawką; plik poza przydziałem to UWAGA bez odjęcia); linie `UWAGA-PO-RUNDZIE:` z wyjścia `werdykt.py` idą do komentarza ticketu, nie do kolejnej poprawki |
 | 4 | poniżej progu wyłącznie przez `BLOKADA-ZEWNĘTRZNA` - kolejna iteracja nic nie zmieni: komentarz BLOKADA (`references/komentarze.md`), decyzja człowieka z opcjami (a)/(b)/(c); bez auto-commita |
 | 2 | brak werdyktu - jedno ponowne powołanie krytyka; drugi brak -> decyzja człowieka. Nigdy nie liczysz tego jako zaliczenie |
 

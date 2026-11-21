@@ -785,6 +785,7 @@ class _Srodowisko:
             "diff": "",
             "nowe_rc": 0,
             "nowe": "",
+            "nowe_poza_zasiegiem_rc": 0,  # `ls-files` nowych plikow w katalogach poza zasiegiem mutmuta
             "run_rc": 0,
             "run_out": "",
             "run_err": "",
@@ -794,6 +795,8 @@ class _Srodowisko:
             "opoznienie_diffu": 0,
             "opoznienie_biegu": 0,
             "linie_biegu": [],  # (opoznienie przed linia w s, linia wyjscia `mutmut run`)
+            "zmienione_pliki": "",  # wyjscie `git diff --name-only` (ostrzezenia poza zasiegiem)
+            "nazwy_rc": 0,
             "tests_rc": 0,
             "tests_dodatkowe": "",  # dopisane do listy plikow testow (np. katalog, plik, ktorego nie ma)
         }
@@ -824,6 +827,8 @@ class _Srodowisko:
         self.wywolania.append(list(argv))
         if argv[:2] == ["git", "merge-base"]:
             return self._wynik(argv, self.u["merge_rc"], "abc123\n", "fatal: brak bazy")
+        if argv[:2] == ["git", "diff"] and "--name-only" in argv:
+            return self._wynik(argv, self.u["nazwy_rc"], self.u["zmienione_pliki"], "fatal: name-only")
         if argv[:2] == ["git", "diff"]:
             time.sleep(self.u["opoznienie_diffu"])
             return self._wynik(argv, self.u["diff_rc"], self.u["diff"], "fatal: diff")
@@ -834,6 +839,8 @@ class _Srodowisko:
                 self._pliki_testow(argv) + self.u["tests_dodatkowe"],
                 "fatal: ls-files tests",
             )
+        if argv[:2] == ["git", "ls-files"] and "tests/mutanty_reczne/" in argv:
+            return self._wynik(argv, self.u["nowe_poza_zasiegiem_rc"], self.u["nowe"], "fatal: ls-files poza")
         if argv[:2] == ["git", "ls-files"]:
             return self._wynik(argv, self.u["nowe_rc"], self.u["nowe"], "fatal: ls-files")
         if argv[1:3] == ["-m", "mutmut"] and argv[3] == "run":
@@ -847,6 +854,9 @@ class _Srodowisko:
         if argv[1:3] == ["-m", "mutmut"] and argv[3] == "results":
             time.sleep(self.u["opoznienie_wynikow"])
             return self._wynik(argv, self.u["results_rc"], self.u["results"])
+        if argv[2:3] == ["mutmut-run"]:
+            # HAR-255: opakowanie mutmuta z dowodami shardow zamiast `-m mutmut run`.
+            return self._wynik(argv, self.u["run_rc"], self.u["run_out"], self.u["run_err"])
         raise AssertionError(f"nieoczekiwane polecenie: {argv}")
 
     @staticmethod
@@ -855,6 +865,9 @@ class _Srodowisko:
 
     def mutmut(self, tryb: str) -> list[list[str]]:
         return [w for w in self.wywolania if w[1:3] == ["-m", "mutmut"] and w[3] == tryb]
+
+    def opakowane_run(self) -> list[list[str]]:
+        return [w for w in self.wywolania if w[2:3] == ["mutmut-run"]]
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -1955,6 +1968,111 @@ def test_pragma_block_w_ciele_przypadku_zglasza_dalsze_instrukcje_ciala_ale_nie_
     assert _bez(zrodlo, 4, 6, 8, 9) == [6]
 
 
+# --- HAR-255: dowody shardow zamiast "clean tests" mutmuta -------------------------------------
+#
+# Z flaga `--katalog-dowodow` mutmut biegnie przez opakowanie `tools/statystyki_mutmuta.py mutmut-run`,
+# ktore przed podmiana `run_clean_tests` sprawdza dowody (brak dowodu to kod 2). Bez flagi: `-m mutmut run`.
+
+FLAGA_DOWODOW = "--katalog-dowodow"
+DIFF_DWIE_FUNKCJE = _diff("src/cockpit/services/a.py", "@@ -1,5 +1,5 @@")
+WZORCE_DWOCH_FUNKCJI = ["cockpit.services.a.x_inna__mutmut_*", "cockpit.services.a.x_zapisz__mutmut_*"]
+
+
+def _katalog_dowodow(tmp_path: Path) -> Path:
+    katalog = tmp_path / "dowody-ci"
+    katalog.mkdir()
+    return katalog
+
+
+def test_z_katalogiem_dowodow_mutmut_biegnie_przez_opakowanie_z_dowodami_a_nie_zwyklym_run(
+    monkeypatch, tmp_path
+):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 0
+    assert s.mutmut("run") == []
+    assert s.opakowane_run() == [
+        [
+            sys.executable,
+            str(Path(mutanty_zmian.__file__).with_name("statystyki_mutmuta.py")),
+            "mutmut-run",
+            FLAGA_DOWODOW,
+            str(katalog),
+            *WZORCE_DWOCH_FUNKCJI,
+        ]
+    ]
+
+
+def test_z_katalogiem_dowodow_wyniki_mutantow_czyta_zwykly_mutmut_results(monkeypatch, tmp_path):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE, results=_wyniki((KLUCZ_A, "survived")))
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 1
+    assert s.mutmut("results") == [[sys.executable, "-m", "mutmut", "results"]]
+
+
+def test_bez_katalogu_dowodow_mutmut_biegnie_zwyklym_run_z_oryginalnymi_clean_tests(monkeypatch, tmp_path):
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert s.opakowane_run() == []
+    assert s.mutmut("run") == [[sys.executable, "-m", "mutmut", "run", *WZORCE_DWOCH_FUNKCJI]]
+
+
+def test_katalog_dowodow_ktory_nie_istnieje_to_kod_2_z_brakiem_dowodu_bez_wolania_gita_i_mutmuta(
+    monkeypatch, tmp_path, capsys
+):
+    katalog = tmp_path / "nie-ma-dowodow"
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 2
+    assert s.wywolania == []
+    assert f"blad: brak dowodu: katalog dowodow {katalog} nie istnieje" in capsys.readouterr().err.splitlines()
+
+
+def test_zwykly_plik_zamiast_katalogu_dowodow_to_kod_2_z_brakiem_dowodu(monkeypatch, tmp_path, capsys):
+    plik = tmp_path / "dowody-ci"
+    plik.write_text("x", encoding="utf-8")
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(plik)) == 2
+    assert s.wywolania == []
+    assert f"blad: brak dowodu: katalog dowodow {plik} nie istnieje" in capsys.readouterr().err.splitlines()
+
+
+def test_brak_dowodu_zgloszony_przez_opakowanie_daje_kod_2_z_trescia_na_stderr_i_bez_czytania_wynikow(
+    monkeypatch, tmp_path, capsys
+):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE, run_rc=2, run_err="blad: brak dowodu: brak pliku shardu 1 z 4")
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 2
+    assert s.mutmut("results") == []
+    assert "brak dowodu: brak pliku shardu 1 z 4" in capsys.readouterr().err
+
+
+def test_opakowanie_bez_pasujacych_mutantow_daje_kod_0_jak_zwykly_mutmut(monkeypatch, tmp_path):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(
+        diff=DIFF_DWIE_FUNKCJE,
+        run_rc=1,
+        run_out="AssertionError: Filtered for specific mutants, but nothing matches",
+    )
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 0
+    assert s.mutmut("results") == []
+
+
+def test_z_katalogiem_dowodow_i_bez_zmienionych_funkcji_nie_wola_opakowania(monkeypatch, tmp_path):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko()
+
+    assert _main(monkeypatch, tmp_path, s, FLAGA_DOWODOW, str(katalog)) == 0
+    assert s.opakowane_run() == []
+    assert s.mutmut("run") == []
+
+
 # --- HAR-236: --max-children, czasy faz, tryb przyrostowy (--od-przebiegu) ---------------------
 
 PLIK_A = "src/cockpit/services/a.py"
@@ -2944,3 +3062,156 @@ def test_uruchom_z_na_linie_nie_otwiera_nowej_sesji_wiec_sygnal_do_grupy_zabija_
         _skrypt("import os; print(os.getpgid(0), os.getsid(0))"), na_linie=lambda _linia: None
     )
     assert wynik.stdout.split() == [str(os.getpgid(0)), str(os.getsid(0))]
+
+
+# Ostrzezenia trybu przejsciowego: kod wyjscia i stdout bez zmian.
+OSTRZEZENIE_BRAK_DOWODU = "OSTRZEZENIE: brak dowodu:"
+OSTRZEZENIE_BEZ_TABELI = "OSTRZEZENIE: zmiana poza zasiegiem mutmuta bez tabeli recznych mutantow: "
+NIC_NIE_PASUJE = "AssertionError: Filtered for specific mutants, but nothing matches"
+
+
+def test_zmienione_funkcje_bez_zadnego_mutanta_daja_ostrzezenie_brak_dowodu_bez_zmiany_kodu(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(diff=_diff_a(), run_rc=1, run_out=NIC_NIE_PASUJE)
+    assert _main(monkeypatch, tmp_path, s) == 0
+    wyjscie = capsys.readouterr()
+    assert wyjscie.out == ""
+    assert [w for w in wyjscie.err.splitlines() if w.startswith(OSTRZEZENIE_BRAK_DOWODU)] == [
+        f"{OSTRZEZENIE_BRAK_DOWODU} 1 zmienionych funkcji bez mutantow"
+    ]
+
+
+def test_zmienione_funkcje_z_mutantami_nie_daja_ostrzezenia_brak_dowodu(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(diff=_diff_a(), results=_wyniki((KLUCZ_A, "killed")))
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert OSTRZEZENIE_BRAK_DOWODU not in capsys.readouterr().err
+
+
+def test_pusta_lista_zmienionych_funkcji_nie_daje_ostrzezenia_brak_dowodu(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(diff=_diff_a(4))
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert OSTRZEZENIE_BRAK_DOWODU not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "plik",
+    [
+        "tools/x.py",
+        "cicd/x.sh",
+        "web/src/x.ts",
+        ".claude/skills/s/SKILL.md",
+        ".claude/hooks/h.py",
+    ],
+)
+def test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu(
+    monkeypatch, tmp_path, capsys, plik
+):
+    s = _Srodowisko(zmienione_pliki=f"{plik}\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    wyjscie = capsys.readouterr()
+    assert wyjscie.out == ""
+    assert f"{OSTRZEZENIE_BEZ_TABELI}{plik}" in wyjscie.err.splitlines()
+
+
+def test_ostrzezenie_poza_zasiegiem_dotyczy_kazdego_pliku_osobno_a_kod_3_zostaje(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(
+        diff=_diff_linii(STALE, 1), zmienione_pliki="tools/a.py\nweb/b.ts\nREADME.md\n"
+    )
+    assert _main(monkeypatch, tmp_path, s, pliki={STALE: ZRODLO_STALE}) == 3
+    wyjscie = capsys.readouterr()
+    assert wyjscie.out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{STALE}:1"]
+    ostrzezenia = [w for w in wyjscie.err.splitlines() if w.startswith(OSTRZEZENIE_BEZ_TABELI)]
+    assert ostrzezenia == [f"{OSTRZEZENIE_BEZ_TABELI}tools/a.py", f"{OSTRZEZENIE_BEZ_TABELI}web/b.ts"]
+
+
+def test_zmiana_poza_zasiegiem_z_zmieniona_tabela_recznych_mutantow_nie_daje_ostrzezenia(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(zmienione_pliki="tools/x.py\ntests/mutanty_reczne/HAR-1.toml\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert OSTRZEZENIE_BEZ_TABELI not in capsys.readouterr().err
+
+
+def test_nowa_niezacommitowana_tabela_recznych_mutantow_tez_wylacza_ostrzezenie(monkeypatch, tmp_path, capsys):
+    # sesja puszcza bramki przed commitem: nowa tabela jest jeszcze nieSledzona, a `git diff` jej nie widzi
+    s = _Srodowisko(zmienione_pliki="tools/x.py\n", nowe="tests/mutanty_reczne/HAR-1.toml\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert OSTRZEZENIE_BEZ_TABELI not in capsys.readouterr().err
+
+
+def test_nowy_niezacommitowany_plik_w_tools_bez_tabeli_daje_ostrzezenie(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(nowe="tools/nowe_narzedzie.py\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/nowe_narzedzie.py" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "plik",
+    ["src/tools/x.py", "mojtools/x.py", "docs/web/x.md", ".claude/rules/r.md"],
+)
+def test_podobna_sciezka_poza_lista_katalogow_nie_daje_ostrzezenia_poza_zasiegiem(
+    monkeypatch, tmp_path, capsys, plik
+):
+    s = _Srodowisko(zmienione_pliki=f"{plik}\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert OSTRZEZENIE_BEZ_TABELI not in capsys.readouterr().err
+
+
+def test_plik_inny_niz_toml_w_katalogu_tabel_nie_zastepuje_tabeli_recznych_mutantow(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(zmienione_pliki="tools/x.py\ntests/mutanty_reczne/notatka.md\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" in capsys.readouterr().err.splitlines()
+
+
+def test_nieudane_pobranie_listy_zmienionych_plikow_daje_ostrzezenie_a_nie_kod_2(
+    monkeypatch, tmp_path, capsys
+):
+    # nowy plik w tools/ dalby ostrzezenie, gdyby po bledzie sprawdzanie szlo dalej
+    s = _Srodowisko(nazwy_rc=128, nowe="tools/x.py\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    bledy = capsys.readouterr().err.splitlines()
+    assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: fatal: name-only" in bledy
+    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" not in bledy
+
+
+def test_zmienione_pliki_poza_zasiegiem_liczone_wzgledem_bazy_bez_zewnetrznego_diffu(monkeypatch, tmp_path):
+    s = _Srodowisko()
+    _main(monkeypatch, tmp_path, s)
+    nazwy = [w for w in s.wywolania if w[:2] == ["git", "diff"] and "--name-only" in w]
+    assert nazwy == [["git", "diff", "--name-only", "--no-ext-diff", "abc123"]]
+
+
+def test_nieudane_pobranie_nowych_plikow_poza_zasiegiem_daje_ostrzezenie_a_nie_kod_2(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(nowe_poza_zasiegiem_rc=128, zmienione_pliki="tools/x.py\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    bledy = capsys.readouterr().err.splitlines()
+    assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: fatal: ls-files poza" in bledy
+    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" not in bledy
+
+
+def test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_tabel(monkeypatch, tmp_path):
+    s = _Srodowisko()
+    _main(monkeypatch, tmp_path, s)
+    nowe = [w for w in s.wywolania if w[:2] == ["git", "ls-files"] and "tests/mutanty_reczne/" in w]
+    assert nowe == [
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "tools/",
+            "cicd/",
+            "web/",
+            ".claude/skills/",
+            ".claude/hooks/",
+            "tests/mutanty_reczne/",
+        ]
+    ]

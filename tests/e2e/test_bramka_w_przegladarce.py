@@ -116,7 +116,7 @@ def _opoznij_otwarcie_strumienia(page, run_id) -> _OpoznioneOtwarcie:
     (`onopen`). Wstrzymany strumien nie otwiera sie sam, wiec drugi GET wychodzi dopiero
     po zwolnieniu strumienia przez test (HAR-232)."""
     stan = _OpoznioneOtwarcie(run_id)
-    page.route("**/api/runs/*/stream", lambda r: stan.strumien.append(r))
+    page.route("**/api/runs/*/events", lambda r: stan.strumien.append(r))
     page.on("response", stan.licz)
     return stan
 

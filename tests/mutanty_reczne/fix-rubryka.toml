@@ -1,0 +1,19 @@
+# krok 5 audytu procesu: plik poza przydzialem to UWAGA w prompcie krytyka
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem,"
+zamien = "pliki_sprzed_startu to odjęcie z rubryki (plik poza przydziałem,"
+test = "tests/test_skill_praca_ticketu.py::test_prompt_krytyka_kaze_wpisac_plik_poza_przydzialem_jako_uwage_bez_odjecia"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "plik poza przydziałem w iteracji też wpisz jako UWAGA (bez blokady), bez odjęcia."
+zamien = "naruszenie przydziału w iteracji też się liczy."
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_nie_odejmuje_za_plik_poza_przydzialem"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = "zmieniła. Plik poza przydziałem to UWAGA (bez blokady), bez odjęcia."
+zamien = "zmieniła; (c) naruszenie przydziału."
+test = "tests/test_skill_praca_ticketu.py::test_ponowna_ocena_nie_odejmuje_za_plik_poza_przydzialem"

@@ -1137,14 +1137,18 @@ test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_cala_faze_gdy_mutmut
 
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = """        return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
+szukaj = """        return _przebieg(
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+        )
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
     finally:
         czasy.wypisz()
 """
-zamien = """        kod = _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
+zamien = """        kod = _przebieg(
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+        )
         czasy.wypisz()
         return kod
     except BladNarzedzia as blad:

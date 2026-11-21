@@ -10,6 +10,7 @@ Actions, na kopii baseline w tmp_path. Prawdziwe `mutmut` i `git` zastepuja atra
 z kodu wyjscia kroku, podsumowania zadania, pliku baseline i dziennika wywolan atrapy mutmut.
 Zmienne kroku (BASE_REF, GH_TOKEN, RUN_ID, REPO) test czyta z jego `env` w YAML i podstawia za wyrazenia GitHub Actions.
 """
+import fnmatch
 import json
 import re
 import shlex
@@ -56,6 +57,10 @@ WYRAZENIA = {
     "${{ github.repository }}": REPOZYTORIUM,
     # Wyjscie `adres` kroku `id: postgres` (HAR-156): tak GitHub podstawia je w kroku `mutanty ręczne`.
     "${{ steps.postgres.outputs.adres }}": "postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test",
+    # HAR-255: shard statystyk (indeks z macierzy i liczba shardow) oraz wyniki jobow, od ktorych zalezy `mutation`.
+    "${{ matrix.shard }}": "2",
+    "${{ strategy.job-total }}": "4",
+    "${{ join(needs.*.result, ' ') }}": "success",
 }
 # Wyjatek od zakazu ukrywania bledu: skladany, zeby ten plik nie zawieral literalnego wzorca.
 UKRYCIE_BLEDU = re.compile(r"\|\|\s*" + "tr" + "ue")
@@ -316,8 +321,11 @@ def _lepszy_od_baseline() -> list[str]:
 
 
 def test_zadanie_mutation_odpala_sie_na_pull_request_a_nie_na_push():
+    # HAR-255: `always()` wpuszcza zadanie po czerwonych shardach (krok wyniku shardow oblewa je jawnie);
+    # warunek zdarzenia zostaje, zeby `always()` nie uruchomilo go na push. Tekst zaczyna sie od dawnego
+    # warunku, bo tabela HAR-221 celuje w `mutation:\n    if: github.event_name == 'pull_request'`.
     assert "pull_request" in _wyzwalacze()
-    assert _zadanie(ZADANIE_PR)["if"] == "github.event_name == 'pull_request'"
+    assert _zadanie(ZADANIE_PR)["if"] == "github.event_name == 'pull_request' && always()"
 
 
 def test_krok_zmienionych_funkcji_dostaje_galaz_docelowa_pull_requestu_ze_zmiennej_srodowiska():
@@ -2523,3 +2531,320 @@ def test_blad_narzedzia_mutantow_uzupelniajacych_oblewa_krok_a_stderr_trafia_do_
     assert len(linie_bledu) == 1
     assert f"kodem {kod}" in linie_bledu[0]
     assert "zero zebranych testow" in linie_bledu[0]
+
+
+# =============================================================================
+# HAR-255: statystyki mutmuta w shardach, job `mutation` scala je i sprawdza dowody
+# =============================================================================
+#
+# `mutation-statystyki` (macierz shardow, tylko pull_request) liczy statystyki podzbioru testow i wgrywa dowod
+# `dowody/shard-<n>.json`. `mutation` (wymagany check, bez `name:`) czeka na shardy (`needs`, `always()`),
+# pierwszym krokiem oblewa sie przy kazdym wyniku shardow innym niz success, pobiera dowody, scala je w
+# `mutants/mutmut-stats.json` PO przywroceniu cache (inaczej cache nadpisalby scalone statystyki) i podaje
+# katalog dowodow narzedziu mutantow zmian.
+
+ZADANIE_SHARD = "mutation-statystyki"
+KROK_SHARDU = "statystyki mutmuta shardu"
+KROK_WYNIKU_SHARDOW = "wynik shardów statystyk mutmuta"
+KROK_SCALENIA = "scalenie statystyk shardów"
+KATALOG_DOWODOW = "dowody"
+BLAD_WYNIKU_SHARDOW = "::error::brak dowodu: shardy statystyk mutmuta nie zakonczyly sie sukcesem (wyniki: {})"
+BLAD_BRAKU_WYNIKU_SHARDOW = "::error::brak dowodu: brak wyniku shardow statystyk mutmuta"
+WYRAZENIE_WYNIKOW = "${{ join(needs.*.result, ' ') }}"
+
+# Atrapa tools/statystyki_mutmuta.py: dopisuje argv wywolania do pliku i konczy sie zadanym kodem.
+ATRAPA_STATYSTYKI = """import os
+import sys
+
+with open(os.environ["ATRAPA_ARGV_STATYSTYKI"], "a", encoding="utf-8") as plik:
+    plik.write(" ".join(sys.argv[1:]) + "\\n")
+sys.exit(int(os.environ["ATRAPA_KOD_STATYSTYK"]))
+"""
+
+
+class PrzebiegStatystyk:
+    def __init__(self, tmp_path: Path):
+        self.kod = -1
+        self.wyjscie = ""
+        self.argv_plik = tmp_path / "argv-statystyki.txt"
+
+    @property
+    def linie(self) -> list[str]:
+        return self.wyjscie.splitlines()
+
+    @property
+    def wywolania(self) -> list[str]:
+        if not self.argv_plik.exists():
+            return []
+        return self.argv_plik.read_text(encoding="utf-8").splitlines()
+
+
+def uruchom_krok_statystyk(
+    tmp_path: Path, zadanie: str, nazwa_kroku: str, *, kod: int = 0, wyniki: str | None = None
+) -> PrzebiegStatystyk:
+    """Uruchamia `run` kroku z atrapa tools/statystyki_mutmuta.py; `wyniki` nadpisuje WYNIKI_SHARDOW."""
+    praca = tmp_path / "praca"
+    (praca / "tools").mkdir(parents=True)
+    _atrapa(praca / "tools", "statystyki_mutmuta.py", ATRAPA_STATYSTYKI)
+    narzedzia = tmp_path / "narzedzia"
+    narzedzia.mkdir()
+    (narzedzia / "python3").symlink_to(sys.executable)
+
+    przebieg = PrzebiegStatystyk(tmp_path)
+    krok = _krok(zadanie, nazwa_kroku)
+    assert "${{" not in krok["run"], "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(krok["run"], encoding="utf-8")
+    srodowisko = {
+        "PATH": f"{narzedzia}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_ARGV_STATYSTYKI": str(przebieg.argv_plik),
+        "ATRAPA_KOD_STATYSTYK": str(kod),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "podsumowanie.md"),
+        **_srodowisko_kroku(krok),
+    }
+    if wyniki is not None:
+        srodowisko["WYNIKI_SHARDOW"] = wyniki
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+def _kroki_zadania(zadanie: str) -> list[dict]:
+    return _zadanie(zadanie)["steps"]
+
+
+def _indeks_w_zadaniu(zadanie: str, predykat) -> int:
+    return next(i for i, krok in enumerate(_kroki_zadania(zadanie)) if predykat(krok))
+
+
+def _potrzeby_pr() -> list[str]:
+    needs = _zadanie(ZADANIE_PR)["needs"]
+    return [needs] if isinstance(needs, str) else list(needs)
+
+
+# --- job shardow ---------------------------------------------------------------------------
+
+
+def test_zadanie_statystyk_shardow_odpala_sie_tylko_na_pull_request():
+    assert _zadanie(ZADANIE_SHARD)["if"] == "github.event_name == 'pull_request'"
+
+
+def test_macierz_shardow_ma_co_najmniej_dwa_kolejne_indeksy_od_zera():
+    shardy = _zadanie(ZADANIE_SHARD)["strategy"]["matrix"]["shard"]
+
+    assert len(shardy) >= 2
+    assert shardy == list(range(len(shardy)))
+
+
+def test_zadanie_statystyk_shardow_nie_przywraca_ani_nie_zapisuje_cache_mutmuta():
+    # Shard liczy statystyki od zera; cache przywrocilby statystyki z innego stanu (HAR-132: wynik ze starego stanu).
+    assert _kroki_uses(ZADANIE_SHARD, "actions/cache") == []
+
+
+def test_krok_shardu_dostaje_indeks_i_liczbe_shardow_ze_zmiennych_srodowiska():
+    krok = _krok(ZADANIE_SHARD, KROK_SHARDU)
+
+    assert krok["env"] == {"SHARD": "${{ matrix.shard }}", "LICZBA_SHARDOW": "${{ strategy.job-total }}"}
+    assert "${{" not in krok["run"]
+
+
+def test_zaden_krok_run_zadania_statystyk_shardow_nie_uzywa_wyrazen_github_actions_w_skrypcie():
+    for krok in _kroki_zadania(ZADANIE_SHARD):
+        assert "${{" not in krok.get("run", ""), krok.get("name")
+
+
+def test_krok_shardu_stoi_po_instalacji_zaleznosci_z_mutmutem():
+    instalacja = _indeks_w_zadaniu(ZADANIE_SHARD, lambda k: "pip install" in k.get("run", ""))
+    shard = _indeks_w_zadaniu(ZADANIE_SHARD, _czy_nazwa(KROK_SHARDU))
+
+    assert instalacja < shard
+
+
+def test_krok_shardu_woła_narzedzie_z_indeksem_liczba_shardow_i_katalogiem_dowodow(tmp_path):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_SHARD, KROK_SHARDU)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania == [f"shard --indeks 2 --liczba 4 --katalog-dowodow {KATALOG_DOWODOW}"]
+
+
+@pytest.mark.parametrize("kod", [1, 2, 3])
+def test_niezerowy_kod_narzedzia_statystyk_oblewa_krok_shardu(tmp_path, kod):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_SHARD, KROK_SHARDU, kod=kod)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert len(przebieg.wywolania) == 1
+
+
+def test_dowod_shardu_jest_wgrywany_jako_artefakt_o_nazwie_z_indeksem_shardu_po_kroku_shardu():
+    wgrania = _kroki_uses(ZADANIE_SHARD, "actions/upload-artifact")
+
+    assert len(wgrania) == 1
+    assert wgrania[0]["with"]["name"] == "dowody-${{ matrix.shard }}"
+    assert wgrania[0]["with"]["path"] == KATALOG_DOWODOW
+    assert _indeks_w_zadaniu(ZADANIE_SHARD, _czy_nazwa(KROK_SHARDU)) < _indeks_w_zadaniu(
+        ZADANIE_SHARD, _czy_uses("actions/upload-artifact")
+    )
+
+
+def test_zadanie_statystyk_shardow_nie_swieci_na_zielono_mimo_czerwonego_kroku_ani_nie_ukrywa_bledu():
+    zadanie = _zadanie(ZADANIE_SHARD)
+
+    assert zadanie.get("continue-on-error") not in (True, "true")
+    for krok in zadanie["steps"]:
+        assert krok.get("continue-on-error") not in (True, "true"), krok
+    for linia in _linie_skryptow(ZADANIE_SHARD):
+        assert not UKRYCIE_BLEDU.search(linia), linia
+
+
+# --- job `mutation` jako zbiorczy --------------------------------------------------------------
+
+
+def test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_wlasnej():
+    # Wymagany check to klucz `mutation`; `name:` zmienilby nazwe checku w regule ochrony galezi.
+    assert _potrzeby_pr() == [ZADANIE_SHARD]
+    assert "name" not in _zadanie(ZADANIE_PR)
+
+
+def test_zadanie_po_scaleniu_nie_czeka_na_shardy_statystyk():
+    assert "needs" not in _zadanie(ZADANIE_MAIN)
+
+
+def test_krok_wyniku_shardow_jest_pierwszym_krokiem_zadania_mutation_i_nie_ma_warunku():
+    pierwszy = _kroki_pr()[0]
+
+    assert pierwszy["name"] == KROK_WYNIKU_SHARDOW
+    assert "if" not in pierwszy
+    assert pierwszy.get("continue-on-error") not in (True, "true")
+
+
+def test_krok_wyniku_shardow_czyta_wyniki_jobow_ze_zmiennej_srodowiska_a_nie_z_wyrazenia_w_skrypcie():
+    krok = _krok(ZADANIE_PR, KROK_WYNIKU_SHARDOW)
+
+    assert krok["env"] == {"WYNIKI_SHARDOW": WYRAZENIE_WYNIKOW}
+    assert "${{" not in krok["run"]
+
+
+@pytest.mark.parametrize(
+    "wyniki",
+    [
+        pytest.param("success", id="jeden_job_zielony"),
+        pytest.param("success success", id="dwa_joby_zielone"),
+    ],
+)
+def test_wszystkie_shardy_z_wynikiem_success_daja_zielony_krok_wyniku(tmp_path, wyniki):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_PR, KROK_WYNIKU_SHARDOW, wyniki=wyniki)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert not any(linia.startswith("::error::") for linia in przebieg.linie)
+
+
+@pytest.mark.parametrize(
+    "wyniki",
+    [
+        pytest.param("failure", id="failure"),
+        pytest.param("cancelled", id="cancelled"),
+        pytest.param("skipped", id="skipped"),
+        pytest.param("success failure", id="drugi_failure"),
+        pytest.param("failure success", id="pierwszy_failure"),
+        pytest.param("success cancelled", id="drugi_cancelled"),
+        pytest.param("success skipped", id="drugi_skipped"),
+        pytest.param("success success skipped", id="trzeci_skipped"),
+        pytest.param("successful", id="przedrostek_success"),
+        pytest.param("Success", id="inna_wielkosc_liter"),
+        pytest.param("niespodziewana", id="nieznana_wartosc"),
+    ],
+)
+def test_kazdy_wynik_shardow_inny_niz_success_oblewa_krok_wyniku_z_brakiem_dowodu(tmp_path, wyniki):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_PR, KROK_WYNIKU_SHARDOW, wyniki=wyniki)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert BLAD_WYNIKU_SHARDOW.format(wyniki) in przebieg.linie
+    assert BLAD_BRAKU_WYNIKU_SHARDOW not in przebieg.linie
+
+
+@pytest.mark.parametrize(
+    "wyniki", [pytest.param("", id="pusty"), pytest.param("   ", id="same_spacje")]
+)
+def test_brak_wyniku_shardow_oblewa_krok_wyniku_z_osobnym_komunikatem(tmp_path, wyniki):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_PR, KROK_WYNIKU_SHARDOW, wyniki=wyniki)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert BLAD_BRAKU_WYNIKU_SHARDOW in przebieg.linie
+    assert not any(linia.startswith("::error::brak dowodu: shardy") for linia in przebieg.linie)
+
+
+def test_artefakty_dowodow_sa_pobierane_do_jednego_katalogu_pasujacego_do_nazw_wgranych_przez_shardy():
+    pobrania = _kroki_uses(ZADANIE_PR, "actions/download-artifact")
+
+    assert len(pobrania) == 1
+    parametry = pobrania[0]["with"]
+    assert parametry["path"] == KATALOG_DOWODOW
+    assert parametry["merge-multiple"] is True
+    nazwa_wgrana = _kroki_uses(ZADANIE_SHARD, "actions/upload-artifact")[0]["with"]["name"]
+    for shard in _zadanie(ZADANIE_SHARD)["strategy"]["matrix"]["shard"]:
+        assert fnmatch.fnmatchcase(nazwa_wgrana.replace("${{ matrix.shard }}", str(shard)), parametry["pattern"])
+
+
+def test_pobranie_dowodow_nie_lapie_artefaktu_raportu_mutacji():
+    parametry = _kroki_uses(ZADANIE_PR, "actions/download-artifact")[0]["with"]
+
+    assert not fnmatch.fnmatchcase("mutation-report", parametry["pattern"])
+
+
+def test_scalenie_statystyk_stoi_po_przywroceniu_cache_i_pobraniu_dowodow_a_przed_mutantami_zmienionych_funkcji():
+    # Cache przywraca mutants/mutmut-stats.json ze starego stanu; scalone statystyki musza go nadpisac.
+    checkout = _indeks_kroku(_czy_uses("actions/checkout"))
+    instalacja = _indeks_kroku(lambda k: "pip install" in k.get("run", ""))
+    cache = _indeks_kroku(_czy_uses("actions/cache/restore"))
+    pobranie = _indeks_kroku(_czy_uses("actions/download-artifact"))
+    scalenie = _indeks_kroku(_czy_nazwa(KROK_SCALENIA))
+    zmienione = _indeks_kroku(_czy_nazwa(KROK_PR))
+
+    assert checkout < pobranie
+    assert instalacja < scalenie
+    assert cache < scalenie
+    assert pobranie < scalenie < zmienione
+
+
+def test_krok_wyniku_shardow_stoi_przed_checkoutem_i_pobraniem_dowodow():
+    wynik = _indeks_kroku(_czy_nazwa(KROK_WYNIKU_SHARDOW))
+
+    assert wynik < _indeks_kroku(_czy_uses("actions/checkout"))
+    assert wynik < _indeks_kroku(_czy_uses("actions/download-artifact"))
+
+
+def test_krok_scalenia_woła_narzedzie_z_katalogiem_dowodow(tmp_path):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_PR, KROK_SCALENIA)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania == [f"scal --katalog-dowodow {KATALOG_DOWODOW}"]
+
+
+@pytest.mark.parametrize("kod", [1, 2, 3])
+def test_niezerowy_kod_scalenia_statystyk_oblewa_krok(tmp_path, kod):
+    przebieg = uruchom_krok_statystyk(tmp_path, ZADANIE_PR, KROK_SCALENIA, kod=kod)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+
+
+def test_krok_scalenia_nie_ma_warunku_i_nie_jest_dozwolony_do_porazki():
+    krok = _krok(ZADANIE_PR, KROK_SCALENIA)
+
+    assert "if" not in krok
+    assert krok.get("continue-on-error") not in (True, "true")
+
+
+def test_narzedzie_mutantow_zmian_dostaje_katalog_dowodow_shardow(tmp_path):
+    przebieg = _krok_pr(tmp_path)
+
+    assert przebieg.argv_zmian.exists(), przebieg.wyjscie
+    argv = przebieg.argv_zmian.read_text(encoding="utf-8").split()
+    assert argv.count("--katalog-dowodow") == 1
+    assert argv[argv.index("--katalog-dowodow") + 1] == KATALOG_DOWODOW
+
+
+def test_katalog_dowodow_jest_ten_sam_w_wgraniu_przez_shard_i_pobraniu_przez_job_koncowy():
+    wgrany = _kroki_uses(ZADANIE_SHARD, "actions/upload-artifact")[0]["with"]["path"]
+    pobrany = _kroki_uses(ZADANIE_PR, "actions/download-artifact")[0]["with"]["path"]
+
+    assert wgrany == pobrany == KATALOG_DOWODOW

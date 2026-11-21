@@ -171,12 +171,16 @@ SEPARATORY = {"|", "||", "&&", ";", "2>&1"}
 
 
 def _argumenty_pytest(linia: str) -> list[str] | None:
-    """Tokeny po `pytest` albo `-m pytest` w jednym poleceniu; None, gdy linia nie wola pytesta."""
+    """Tokeny po `pytest`, `-m pytest` albo `tools/testy.py` (bez jego `--bez-postepu N`, reszta idzie do pytesta)
+    w jednym poleceniu; None, gdy linia nie wola pytesta."""
     tokeny = shlex.split(linia, comments=True)
     for i, token in enumerate(tokeny):
-        if token == "pytest":
+        if token == "pytest" or token.endswith("tools/testy.py"):
             wynik: list[str] = []
-            for dalej in tokeny[i + 1 :]:
+            dalsze = tokeny[i + 1 :]
+            if token.endswith("tools/testy.py") and dalsze[:1] == ["--bez-postepu"]:
+                dalsze = dalsze[2:]
+            for dalej in dalsze:
                 if dalej in SEPARATORY:
                     break
                 wynik.append(dalej)
@@ -286,13 +290,14 @@ def _polecenia_pytest(job: dict) -> list[tuple[str, list[str]]]:
 def test_job_python_uruchamia_zwykly_przebieg_na_czterech_procesach():
     kroki = [str(k.get("run", "")).strip() for k in _joby_ci()["python"]["steps"]]
 
-    assert "pytest -q -n 4" in kroki
+    assert "python tools/testy.py --bez-postepu 600 -q -n 4" in kroki
 
 
 def test_job_python_nie_ma_drugiego_przebiegu_pytesta_bez_rownoleglosci():
     polecenia = _polecenia_pytest(_joby_ci()["python"])
 
-    assert [linia for linia, _ in polecenia] == ["pytest -q -n 4"]
+    assert [linia for linia, _ in polecenia] == ["python tools/testy.py --bez-postepu 600 -q -n 4"]
+    assert [argumenty for _, argumenty in polecenia] == [["-q", "-n", "4"]]
 
 
 def test_joby_z_baza_i_e2e_zostaja_sekwencyjne():

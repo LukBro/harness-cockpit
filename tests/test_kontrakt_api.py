@@ -54,7 +54,7 @@ BEZ_TRESCI_204 = {
 }
 STRUMIENIE_SSE = {
     ("GET", "/api/runners/stream"),
-    ("GET", "/api/runs/{run_id}/stream"),
+    ("GET", "/api/runs/{run_id}/events"),
 }
 TRASY_PUBLICZNE = {
     ("GET", "/api/health"),

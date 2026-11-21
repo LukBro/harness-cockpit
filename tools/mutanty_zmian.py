@@ -507,13 +507,43 @@ def _wybierz_do_mutowania(
     return do_mutowania, {w: poprzednie[w]["przezywajace"] for w in lista if w not in do_mutowania}
 
 
+PREFIKSY_POZA_ZASIEGIEM = ("tools/", "cicd/", "web/", ".claude/skills/", ".claude/hooks/")
+
+
+def _ostrzez_o_zmianach_bez_tabeli(sha: str) -> None:
+    """Tryb samych ostrzezen: kod wyjscia i stdout bez zmian; nieznany stan to tez ostrzezenie."""
+    nazwy = uruchom(["git", "diff", "--name-only", "--no-ext-diff", sha])
+    if nazwy.returncode != 0:
+        print(f"OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: {nazwy.stderr.strip()}", file=sys.stderr)
+        return
+    # nowe, jeszcze niezacommitowane pliki (sesja puszcza bramki przed commitem): tabela i zmiany w tools/ itd.
+    nowe = uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", *PREFIKSY_POZA_ZASIEGIEM,
+                    "tests/mutanty_reczne/"])
+    if nowe.returncode != 0:
+        print(f"OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: {nowe.stderr.strip()}", file=sys.stderr)
+        return
+    pliki = nazwy.stdout.splitlines() + nowe.stdout.splitlines()
+    if any(fnmatch.fnmatchcase(p, "tests/mutanty_reczne/*.toml") for p in pliki):
+        return
+    for plik in pliki:
+        if plik.startswith(PREFIKSY_POZA_ZASIEGIEM):
+            print(
+                f"OSTRZEZENIE: zmiana poza zasiegiem mutmuta bez tabeli recznych mutantow: {plik}",
+                file=sys.stderr,
+            )
+
+
 def _przebieg(
     baza: str,
     korzen: Path,
     czasy: _Czasy,
     max_children: int | None = None,
     od_przebiegu: Path | None = None,
+    katalog_dowodow: Path | None = None,
 ) -> int:
+    # Katalog dowodow sprawdzamy pierwszy: bez niego nie ma po co wolac gita ani mutmuta.
+    if katalog_dowodow is not None and not katalog_dowodow.is_dir():
+        raise BladNarzedzia(f"brak dowodu: katalog dowodow {katalog_dowodow} nie istnieje")
     source_paths = source_paths_z_pyproject(korzen / "pyproject.toml")
 
     merge = uruchom(["git", "merge-base", baza, "HEAD"])
@@ -542,6 +572,7 @@ def _przebieg(
     if nowe.returncode != 0:
         raise BladNarzedzia(f"git ls-files nie powiodl sie: {nowe.stderr.strip()}")
 
+    _ostrzez_o_zmianach_bez_tabeli(sha)
     zmiany = zmienione_linie(roznica.stdout)
     for sciezka, linie in _nowe_pliki(nowe.stdout, korzen).items():
         zmiany.setdefault(sciezka, set()).update(linie)
@@ -565,7 +596,17 @@ def _przebieg(
             print("brak zmienionych funkcji - nie ma czego mutowac", file=sys.stderr)
         return _zakoncz([], poza_zasiegiem)
     if do_mutowania:
-        polecenie = [sys.executable, "-m", "mutmut", "run"]
+        if katalog_dowodow is None:
+            polecenie = [sys.executable, "-m", "mutmut", "run"]
+        else:
+            # HAR-255: opakowanie mutmuta sprawdza dowody shardow zamiast `run_clean_tests`.
+            polecenie = [
+                sys.executable,
+                str(Path(__file__).with_name("statystyki_mutmuta.py")),
+                "mutmut-run",
+                "--katalog-dowodow",
+                str(katalog_dowodow),
+            ]
         if max_children is not None:
             polecenie += ["--max-children", str(max_children)]
         start = time.monotonic()
@@ -580,6 +621,10 @@ def _przebieg(
             nowe_przezywajace = przezywajace(wyniki.stdout, do_mutowania)
         elif "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
             print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
+            print(
+                f"OSTRZEZENIE: brak dowodu: {len(do_mutowania)} zmienionych funkcji bez mutantow",
+                file=sys.stderr,
+            )
         else:
             raise BladNarzedzia(f"mutmut run zakonczyl sie bledem:\n{_koncowka(bieg)}")
 
@@ -638,6 +683,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baza", default="origin/main", help="baza porownania (merge-base z HEAD)")
     parser.add_argument("--korzen", type=Path, default=Path.cwd(), help="korzen repozytorium")
     parser.add_argument(
+        "--katalog-dowodow", type=Path, default=None,
+        help="katalog dowodow shardow: clean tests mutmuta zastepuje sprawdzenie dowodow",
+    )
+    parser.add_argument(
         "--max-children", type=_liczba_dzieci, default=None, metavar="N",
         help="liczba rownoleglych procesow mutmuta (mutmut run --max-children N)",
     )
@@ -648,7 +697,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     czasy = _Czasy()
     try:
-        return _przebieg(args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu)
+        return _przebieg(
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+        )
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
