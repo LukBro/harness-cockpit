@@ -2515,7 +2515,34 @@ def test_przezywajace_mutanty_uzupelniajace_oblewaja_krok_i_sa_wypisane_w_podsum
     assert "src/cockpit/services/runs.py:41" in linie_bledu[0]
 
 
-@pytest.mark.parametrize("kod", [2, 3, 4])
+MIEJSCA_DO_SPRAWDZENIA_UZUPELNIAJACE = (
+    "src/cockpit/services/runs.py:12: sprawdz recznie\n"
+    "src/cockpit/services/invariants.py:7: sprawdz recznie\n"
+)
+
+
+def test_kod_3_mutantow_uzupelniajacych_oblewa_krok_a_miejsca_do_sprawdzenia_trafiaja_do_podsumowania_i_bledu_ci(
+    tmp_path,
+):
+    przebieg = uruchom_krok_uzupelniajacych(
+        tmp_path, kod=3, stdout=MIEJSCA_DO_SPRAWDZENIA_UZUPELNIAJACE, stderr="komunikat ze stderr"
+    )
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    # osobna galaz `3)`: ani "blad narzedzia" ze stderr, ani lista przezywajacych mutantow
+    assert przebieg.podsumowanie == (
+        f"{NAGLOWEK_UZUPELNIAJACE}\n\n"
+        "Miejsca do ręcznego sprawdzenia (bez dowodu, krok jest czerwony):\n\n"
+        f"```\n{MIEJSCA_DO_SPRAWDZENIA_UZUPELNIAJACE}```\n"
+    )
+    linie_bledu = _bledy_ci(przebieg)
+    assert len(linie_bledu) == 1
+    assert "kodem 3" in linie_bledu[0]
+    assert "src/cockpit/services/runs.py:12: sprawdz recznie" in linie_bledu[0]
+    assert "src/cockpit/services/invariants.py:7: sprawdz recznie" in linie_bledu[0]
+
+
+@pytest.mark.parametrize("kod", [2, 4])
 def test_blad_narzedzia_mutantow_uzupelniajacych_oblewa_krok_a_stderr_trafia_do_podsumowania_i_bledu_ci(
     tmp_path, kod
 ):

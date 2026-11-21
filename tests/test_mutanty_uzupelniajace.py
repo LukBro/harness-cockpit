@@ -93,9 +93,16 @@ funkcja i nie blad skladni), nieSledzone pliki z `.gitignore` (np. `__pycache__/
 Granice: linia `def` i ostatnia linia funkcji nalezą do funkcji, linia przed `def` i po
 ostatniej - nie. Stala w ciele klasy jest stala modulu (zakres = jej instrukcja, wieloliniowa
 tez), metoda klasy ma wlasny zakres.
-`zbadano 0` (kod 0) to JAWNA galaz: diff dotyka funkcji albo stalej (`X = 1`, `42`, `print()`
-na poziomie modulu), ale zaden ksztalt nie daje mutanta. Sam import, sam docstring modulu
-albo sama zmiana poza instrukcjami (komentarz) to `brak zmienionych funkcji`.
+Diff dotyka funkcji albo stalej (`X = 1`, `42`, `print()` na poziomie modulu), ale zaden ksztalt
+nie daje mutanta: to KOD 3 (brak dowodu) i linia `plik:linia: sprawdz recznie` na kazda dotknieta
+funkcje lub stala (linia jej startu), nigdy `zbadano 0`. Sam import, sam docstring modulu albo sama
+zmiana poza instrukcjami (komentarz) to `brak zmienionych funkcji` (kod 0).
+`re.compile` ze wzorcem nieliteralnym (zmienna, f-string, wynik wywolania, takze `pattern=`) w
+dotknietym zakresie to tez kod 3: linia wywolania (`plik:linia: sprawdz recznie`); `re.compile()`
+bez argumentow nie. Powtorzony `pattern=` i gwiazdka w argumentach pozycyjnych `re.compile` to
+blad narzedzia (kod 2) z `plik:linia` wywolania.
+Priorytet kodow: 2 > 1 > 3 > 0. Przy kodzie 1 stdout to WYLACZNIE linie mutantow (bez linii
+`sprawdz recznie`); `[[rownowazny]]` nie wycisza kodu 3.
 
 Wybor testow: pliki `.py` pod `tests/` (bez `tests/mutanty_reczne/` na korzeniu - katalog o
 tej nazwie glebiej JEST przegladany), bez plikow nie-`.py`. Kopia z testami nie dostaje zmiennej
@@ -122,6 +129,11 @@ Kody wyjscia i wyjscie:
 - 2: blad narzedzia (komunikat na stderr, stdout bez linii wynikow ani `zbadano`): nieznana baza,
   niesparsowalny plik, zepsuta tabela `tests/mutanty_reczne/*.toml`, ZERO zebranych testow
   (stderr zawiera nazwe modulu), test czerwony bez mutacji (stderr zawiera sciezke testu).
+- 3: brak dowodu (stdout to WYLACZNIE linie `<plik>:<linia>: sprawdz recznie`, posortowane): diff
+  dotyka funkcji albo stalej, a zaden ksztalt nie daje mutanta (linia startu kazdej dotknietej
+  funkcji lub stalej, takze `re.compile` ze wzorcem nieliteralnym), albo wszystkie mutanty
+  zabite, a w dotknietym zakresie jest `re.compile` ze wzorcem nieliteralnym (wtedy tylko linie
+  tych wywolan). Przezyl mutant -> kod 1 (pierwszenstwo nad 3).
 
 `[[rownowazny]]`: tabele `tests/mutanty_reczne/*.toml` w korzeniu czyta
 `mutanty_reczne.wczytaj_tabele_z_rownowaznymi`; mutant jest wyciszony TYLKO gdy wpis spelnia
@@ -155,6 +167,7 @@ from procesy import uruchom_proces_sync, zakoncz_proces_sync
 KORZEN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(KORZEN / "tools"))
 import mutanty_uzupelniajace  # noqa: E402
+import mutanty_zmian  # noqa: E402
 
 SCIEZKA = "src/pakiet/modul.py"
 TEST_MODULU = "tests/test_modul.py"
@@ -1269,6 +1282,33 @@ def test_zmieniona_kotwica_regex_z_testami_na_kazdy_znak_klasy_daje_kod_0(tmp_pa
     assert wyjscie.splitlines() == ["zbadano 3"]
 
 
+def test_mutant_regex_kotwicy_zgloszony_przez_uzupelniajace_nie_wystepuje_w_wyniku_mutantow_zmian(
+    tmp_path, capsys, monkeypatch
+):
+    # AC4: mutmut nie mutuje stalej modulu, wiec `mutanty_zmian` oddaje te linie jako "sprawdz recznie",
+    # a mutanty regex tej linii daje dopiero narzedzie uzupelniajace. Oba na tym samym diffie HAR-176.
+    linia = _linia(ZRODLO_KOTWIC_NOWE, "KOTWICA = re.compile")
+    repo = _repo_kotwic(tmp_path, TEST_KOTWIC_SLABY)
+
+    kod_uzupelniajacych, wyjscie_uzupelniajacych, _ = _narzedzie(repo, capsys)
+    assert kod_uzupelniajacych == 1
+    zgloszone = wyjscie_uzupelniajacych.splitlines()
+    assert _wyniki(wyjscie_uzupelniajacych) == [(SCIEZKA_KOTWIC, linia, "regex")] * 3
+    opisy = {wiersz.split(": ", 2)[2] for wiersz in zgloszone}
+    assert len(opisy) == 3
+
+    monkeypatch.chdir(repo)  # `mutanty_zmian.uruchom` wola gita w biezacym katalogu, nie w `--korzen`
+    kod_zmian = mutanty_zmian.main(["--korzen", str(repo), "--baza", "HEAD"])
+    wyjscie_zmian = capsys.readouterr()
+
+    assert kod_zmian == 3, wyjscie_zmian.err
+    assert wyjscie_zmian.out.splitlines() == [mutanty_zmian.NAGLOWEK_BEZ_MUTANTOW, f"{SCIEZKA_KOTWIC}:{linia}"]
+    for opis in opisy:
+        assert opis not in wyjscie_zmian.out
+        assert opis not in wyjscie_zmian.err
+    assert "regex" not in wyjscie_zmian.out
+
+
 # --- HAR-241, uzupelnienie: dowod wykonania testow, limit, git, zasieg funkcji ----------------------
 #
 # Brak dowodu to blad narzedzia (kod 2), nigdy "zabity" ani "czysto": testy tylko pominiete,
@@ -1402,7 +1442,7 @@ def _zlap_przebieg(monkeypatch) -> list[tuple[Path, str, float]]:
 
     def falszywy(korzen, baza, limit):
         zlapane.append((korzen, baza, limit))
-        return 0, ["zbadano 0"]
+        return 0, ["zbadano 1"]
 
     monkeypatch.setattr(mutanty_uzupelniajace, "_przebieg", falszywy)
     return zlapane
@@ -1991,27 +2031,81 @@ def test_nowy_plik_py_ignorowany_przez_gitignore_nie_jest_badany(tmp_path, capsy
     assert wyjscie.splitlines() == ["brak zmienionych funkcji"]
 
 
+def _miejsce(plik: str, linia: int) -> str:
+    return f"{plik}:{linia}: sprawdz recznie"
+
+
 @pytest.mark.parametrize(
-    ("zrodlo", "oczekiwane"),
+    ("zrodlo", "linia_startu"),
     [
-        pytest.param("X = 1\n", "zbadano 0", id="stala_bez_ksztaltu"),
-        pytest.param("def f():\n    return 0\n", "zbadano 0", id="funkcja_bez_ksztaltu"),
-        pytest.param("async def f():\n    return 0\n", "zbadano 0", id="funkcja_async_bez_ksztaltu"),
-        pytest.param("42\n", "zbadano 0", id="wyrazenie_liczbowe_nie_jest_docstringiem"),
-        pytest.param('print("a")\n', "zbadano 0", id="wywolanie_na_poziomie_modulu"),
-        pytest.param("import os\n", "brak zmienionych funkcji", id="sam_import"),
-        pytest.param("from os import path\n", "brak zmienionych funkcji", id="sam_import_from"),
-        pytest.param('"""Opis modulu."""\n', "brak zmienionych funkcji", id="sam_docstring"),
-        pytest.param("# komentarz\n", "brak zmienionych funkcji", id="sam_komentarz"),
+        pytest.param("X = 1\n", 1, id="stala_bez_ksztaltu"),
+        pytest.param("def f():\n    return 0\n", 1, id="funkcja_bez_ksztaltu"),
+        pytest.param("async def f():\n    return 0\n", 1, id="funkcja_async_bez_ksztaltu"),
+        pytest.param("42\n", 1, id="wyrazenie_liczbowe_nie_jest_docstringiem"),
+        pytest.param('print("a")\n', 1, id="wywolanie_na_poziomie_modulu"),
+        pytest.param("import os\n\n\ndef f():\n    return 0\n", 4, id="funkcja_po_imporcie_linia_startu_to_def"),
+        pytest.param(
+            "import functools\n\n\n@functools.cache\ndef f():\n    return 0\n", 4, id="funkcja_z_dekoratorem_start_w_dekoratorze"
+        ),
+        pytest.param("class A:\n    X = 1\n", 2, id="stala_w_ciele_klasy_linia_stalej"),
     ],
 )
-def test_diff_dotykajacy_stalej_albo_funkcji_bez_mutanta_to_zbadano_0_a_import_docstring_komentarz_to_brak(
-    tmp_path, capsys, zrodlo, oczekiwane
+def test_diff_dotykajacy_stalej_albo_funkcji_bez_mutanta_to_kod_3_z_linia_startu_do_recznego_sprawdzenia(
+    tmp_path, capsys, zrodlo, linia_startu
+):
+    repo = _standardowy(tmp_path, zrodlo, "def test_x():\n    pass\n")
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 3, blad
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, linia_startu)]
+    assert "zbadano" not in wyjscie
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("import os\n", id="sam_import"),
+        pytest.param("from os import path\n", id="sam_import_from"),
+        pytest.param('"""Opis modulu."""\n', id="sam_docstring"),
+        pytest.param("# komentarz\n", id="sam_komentarz"),
+    ],
+)
+def test_diff_z_samym_importem_docstringiem_albo_komentarzem_to_brak_zmienionych_funkcji_kod_0(
+    tmp_path, capsys, zrodlo
 ):
     repo = _standardowy(tmp_path, zrodlo, "def test_x():\n    pass\n")
     kod, wyjscie, _ = _narzedzie(repo, capsys)
     assert kod == 0
-    assert wyjscie.splitlines() == [oczekiwane]
+    assert wyjscie.splitlines() == ["brak zmienionych funkcji"]
+
+
+def test_kilka_dotknietych_funkcji_bez_mutantow_to_linie_posortowane_liczbowo_a_nie_kolejnoscia_zbioru(
+    tmp_path, capsys
+):
+    # osiem pozycji: kolejnosc iteracji zbioru krotek (napis, liczba) jest losowa, wiec bez sortowania
+    # wynik jest rosnacy z prawdopodobienstwem 1/40320
+    zrodlo = "\n\n".join(f"def f{n}():\n    return {n}" for n in range(8)) + "\n"
+    linie = [_linia(zrodlo, f"def f{n}") for n in range(8)]
+    assert linie == [1, 4, 7, 10, 13, 16, 19, 22]
+    repo = _standardowy(tmp_path, zrodlo, "def test_x():\n    pass\n")
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, n) for n in linie]
+
+
+def test_dotkniete_stale_w_dwoch_plikach_daja_linie_obu_plikow_posortowane_po_pliku(tmp_path, capsys):
+    baza = {"src/pakiet/__init__.py": "", "src/pakiet/a.py": "# a\n", "src/pakiet/z.py": "# z\n"}
+    repo = _repo(tmp_path, baza, {"src/pakiet/a.py": "X = 1\n", "src/pakiet/z.py": "Y = 2\n"})
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce("src/pakiet/a.py", 1), _miejsce("src/pakiet/z.py", 1)]
+
+
+def test_funkcja_bez_mutantow_zmieniona_tylko_wewnatrz_ma_miejsce_w_linii_def_a_nie_zmienionej(tmp_path, capsys):
+    baza = {"src/pakiet/__init__.py": "", SCIEZKA: "def f():\n    x = 1\n    return 0\n"}
+    repo = _repo(tmp_path, baza, {SCIEZKA: "def f():\n    x = 2\n    return 0\n"})
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 1)]
 
 
 # --- wybor testow i sprzatanie --------------------------------------------------------------------------------
@@ -2422,6 +2516,8 @@ def _komunikat_wzorca(powod: str, linia: int = 3) -> str:
 POWOD_VERBOSE = "flaga re.VERBOSE zmienia skladnie wzorca, narzedzie jej nie obsluguje"
 POWOD_ARGUMENTY = "nie umiem odczytac argumentow re.compile (gwiazdka albo wiele flag)"
 POWOD_KWARG = "nie umiem odczytac argumentow re.compile (nieznany argument nazwany)"
+POWOD_GWIAZDKA_POZYCYJNA = "nie umiem odczytac argumentow re.compile (gwiazdka w argumentach pozycyjnych)"
+POWOD_POWTORZONY_PATTERN = "nie umiem odczytac argumentow re.compile (powtorzony argument pattern=)"
 
 
 @pytest.mark.parametrize(
@@ -2464,7 +2560,7 @@ def test_flagi_nieodczytywalne_z_kodu_to_blad_narzedzia_z_wyrazeniem_a_nie_zero_
 @pytest.mark.parametrize(
     ("reszta", "powod"),
     [
-        pytest.param(", *FLAGI", POWOD_ARGUMENTY, id="gwiazdka"),
+        pytest.param(", *FLAGI", POWOD_GWIAZDKA_POZYCYJNA, id="gwiazdka"),
         pytest.param(", re.I, re.M", POWOD_ARGUMENTY, id="dwa_argumenty_pozycyjne"),
         pytest.param(", re.I, flags=re.M", POWOD_ARGUMENTY, id="pozycyjny_i_nazwany"),
         pytest.param(", **OPCJE", POWOD_KWARG, id="rozwiniecie_slownika"),
@@ -2528,6 +2624,23 @@ def test_wzorzec_podany_jako_pattern_ma_te_same_mutanty_kotwic_co_pozycyjny(argu
         pytest.param("p, foo=1", 3, POWOD_KWARG, id="wzorzec_zmienna_z_nieznanym_argumentem"),
         pytest.param("pattern=p, foo=1", 3, POWOD_KWARG, id="wzorzec_nazwany_zmienna_z_nieznanym_argumentem"),
         pytest.param("**kw", 3, POWOD_KWARG, id="rozwiniecie_slownika_bez_wzorca"),
+        pytest.param(
+            'pattern=r"^a$", pattern=r"b"', 3, POWOD_POWTORZONY_PATTERN, id="powtorzony_pattern_z_literalami"
+        ),
+        pytest.param("pattern=p, pattern=q", 3, POWOD_POWTORZONY_PATTERN, id="powtorzony_pattern_ze_zmiennymi"),
+        pytest.param(
+            "p, pattern=q, pattern=r", 3, POWOD_POWTORZONY_PATTERN, id="powtorzony_pattern_wazniejszy_niz_pozycyjny"
+        ),
+        pytest.param(
+            "*ARGS, pattern=p, pattern=q", 3, POWOD_POWTORZONY_PATTERN, id="powtorzony_pattern_wazniejszy_niz_gwiazdka"
+        ),
+        pytest.param("*ARGS", 3, POWOD_GWIAZDKA_POZYCYJNA, id="sama_gwiazdka_w_pozycyjnych"),
+        pytest.param(
+            'r"^a$", *FLAGI', 3, POWOD_GWIAZDKA_POZYCYJNA, id="gwiazdka_po_literale_wskazuje_linie_wywolania"
+        ),
+        pytest.param(
+            "*ARGS, pattern=p", 3, POWOD_GWIAZDKA_POZYCYJNA, id="gwiazdka_wazniejsza_niz_pattern_z_pozycyjnym"
+        ),
     ],
 )
 def test_argumenty_nazwane_re_compile_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_literalu_albo_wywolania(
@@ -2596,6 +2709,76 @@ def test_flaga_debug_nie_wypisuje_zrzutu_wzorca_na_stdout_podczas_rozbioru(capsy
 )
 def test_re_compile_bez_literalu_wzorca_nie_daje_mutantow_regex_ani_wyjatku(zrodlo):
     assert mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, {3}) == []
+
+
+# --- wzorzec nieliteralny: narzedzie go nie zbada, wiec to miejsce do recznego sprawdzenia ---------------------
+
+
+def _miejsca_nieliteralne(zrodlo: str, linie: set[int] | None = None) -> list[int]:
+    """Czwarty element `_analiza`: linie `re.compile` z wzorcem, ktorego narzedzie nie umie zbadac."""
+    return mutanty_uzupelniajace._analiza(
+        SCIEZKA, zrodlo, linie if linie is not None else _wszystkie_linie(zrodlo)
+    )[3]
+
+
+@pytest.mark.parametrize(
+    "zrodlo",
+    [
+        pytest.param("import re\n\nX = re.compile(WZORZEC)\n", id="zmienna"),
+        pytest.param("import re\n\nX = re.compile(modul.WZORZEC)\n", id="atrybut"),
+        pytest.param('import re\n\nX = re.compile(f"{PRZEDROSTEK}a")\n', id="f_string"),
+        pytest.param("import re\n\nX = re.compile(zbuduj())\n", id="wynik_wywolania"),
+        pytest.param("import re\n\nX = re.compile(pattern=WZORZEC)\n", id="zmienna_jako_pattern"),
+        pytest.param('import re\n\nX = re.compile(pattern=f"{P}a")\n', id="f_string_jako_pattern"),
+        pytest.param("import re\n\nX = re.compile(WZORZEC, re.I)\n", id="zmienna_z_flagami"),
+        pytest.param("import re\n\nX = re.compile(WZORZEC, flags=FLAGI)\n", id="zmienna_z_flagami_nieodczytywalnymi"),
+    ],
+)
+def test_re_compile_ze_wzorcem_nieliteralnym_w_dotknietym_zakresie_to_miejsce_do_recznego_sprawdzenia(zrodlo):
+    assert _miejsca_nieliteralne(zrodlo, {3}) == [3]
+
+
+def test_re_compile_bez_argumentow_i_z_literalem_nie_sa_miejscami_do_recznego_sprawdzenia():
+    assert _miejsca_nieliteralne("import re\n\nX = re.compile()\n") == []
+    assert _miejsca_nieliteralne(ZRODLO_KLASA_ZNAKOW) == []
+    assert _miejsca_nieliteralne(_regex_zrodlo("^a$", "rb")) == []
+
+
+def test_wywolanie_inne_niz_re_compile_ze_zmienna_nie_jest_miejscem_do_recznego_sprawdzenia():
+    zrodlo = "import re\n\nX = re.sub(WZORZEC, '', 'a')\nY = zbuduj.compile(WZORZEC)\nZ = compile(WZORZEC)\n"
+    assert _miejsca_nieliteralne(zrodlo) == []
+
+
+def test_re_compile_ze_zmienna_poza_dotknietym_zakresem_nie_jest_miejscem_do_recznego_sprawdzenia():
+    zrodlo = "import re\n\nX = re.compile(WZORZEC)\n\n\ndef f():\n    return 0\n"
+    assert _miejsca_nieliteralne(zrodlo, {7}) == []
+    assert _miejsca_nieliteralne(zrodlo, {3}) == [3]
+
+
+def test_dwa_wywolania_re_compile_ze_zmienna_w_jednej_linii_to_jedno_miejsce():
+    assert _miejsca_nieliteralne("import re\n\nX = re.compile(A) or re.compile(B)\n") == [3]
+
+
+def test_miejsca_nieliteralne_sa_posortowane_rosnaco_choc_ast_odwiedza_plytsze_wywolanie_pierwsze():
+    # linie 7 i 8: sam zbior `{7, 8}` iteruje jako [8, 7], wiec tylko `sorted` daje kolejnosc rosnaca
+    zrodlo = "import re\n\n\n\ndef f(t, c):\n    if c:\n        a = re.compile(t)\n    return re.compile(t)\n"
+    assert _linia(zrodlo, "a = re.compile") < _linia(zrodlo, "return re.compile")
+    assert list({_linia(zrodlo, "a = re.compile"), _linia(zrodlo, "return re.compile")}) == [8, 7]
+    assert _miejsca_nieliteralne(zrodlo) == [7, 8]
+
+
+def test_wzorzec_nieliteralny_obok_literalu_nie_blokuje_mutantow_literalu():
+    zrodlo = 'import re\n\nA = re.compile(r"^a$")\nB = re.compile(WZORZEC)\n'
+    analiza = mutanty_uzupelniajace._analiza(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    assert {m.linia for m in analiza[0]} == {3}
+    assert len(analiza[0]) == 2
+    assert analiza[3] == [4]
+
+
+def test_dotkniete_zakresy_z_analizy_to_linie_startu_funkcji_i_stalych_bez_importow():
+    zrodlo = "X = 1\nY = {\n    'a': 1,\n}\n\n\ndef f():\n    return 0\n"
+    analiza = mutanty_uzupelniajace._analiza(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    assert analiza[1] == [1, 2, 7]
 
 
 # --- opis mutanta: caly wiersz `plik:linia: ksztalt: opis` dla kazdego ksztaltu ------------------------------
@@ -2708,31 +2891,151 @@ def test_wywolanie_przed_instrukcja_niebedaca_wywolaniem_nie_ma_mutanta_kolejnos
     assert _wszystkie(zrodlo) == Counter({("instrukcja", 2): 1})
 
 
-# --- `zbadano 0`: stala tekstowa nie jest docstringiem, flagi diffu z wielu plikow --------------------------------
+# --- kod 3 bez mutantow: stala tekstowa nie jest docstringiem, flagi diffu z wielu plikow ---------------------------
 
 
 def test_stala_tekstowa_przypisana_do_nazwy_to_stala_do_zbadania_a_nie_docstring(tmp_path, capsys):
     repo = _standardowy(tmp_path, 'X = "a"\n', "def test_x():\n    pass\n")
     kod, wyjscie, _ = _narzedzie(repo, capsys)
-    assert kod == 0
-    assert wyjscie.splitlines() == ["zbadano 0"]
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 1)]
 
 
 @pytest.mark.parametrize(
-    ("pierwszy", "drugi"),
+    ("pierwszy", "drugi", "plik_ze_stala"),
     [
-        pytest.param("X = 1\n", "import os\n", id="stala_w_pierwszym_pliku_import_w_drugim"),
-        pytest.param("import os\n", "X = 1\n", id="import_w_pierwszym_pliku_stala_w_drugim"),
+        pytest.param("X = 1\n", "import os\n", "src/pakiet/a.py", id="stala_w_pierwszym_pliku_import_w_drugim"),
+        pytest.param("import os\n", "X = 1\n", "src/pakiet/z.py", id="import_w_pierwszym_pliku_stala_w_drugim"),
     ],
 )
-def test_diff_dotykajacy_stalej_w_jednym_z_dwoch_plikow_to_zbadano_0_niezaleznie_od_kolejnosci(
-    tmp_path, capsys, pierwszy, drugi
+def test_diff_dotykajacy_stalej_w_jednym_z_dwoch_plikow_to_miejsce_tylko_tego_pliku_niezaleznie_od_kolejnosci(
+    tmp_path, capsys, pierwszy, drugi, plik_ze_stala
 ):
     baza = {"src/pakiet/__init__.py": "", "src/pakiet/a.py": "# a\n", "src/pakiet/z.py": "# z\n"}
     repo = _repo(tmp_path, baza, {"src/pakiet/a.py": pierwszy, "src/pakiet/z.py": drugi})
     kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(plik_ze_stala, 1)]
+
+
+# --- kod 3: wzorzec nieliteralny i priorytet kodow 2 > 1 > 3 > 0 ----------------------------------------------
+
+ZRODLO_WZORZEC_ZMIENNY = "import re\n\nX = re.compile(WZORZEC)\n"
+ZRODLO_EXCEPT_I_WZORZEC = "import re\n\n\n" + ZRODLO_EXCEPT + "\n\ndef wzorzec(tekst):\n    return re.compile(tekst)\n"
+LINIA_WYWOLANIA_RE_COMPILE = _linia(ZRODLO_EXCEPT_I_WZORZEC, "return re.compile(tekst)")
+LINIA_DEF_WZORZEC = _linia(ZRODLO_EXCEPT_I_WZORZEC, "def wzorzec")
+TEST_NIC = "def test_x():\n    pass\n"
+
+
+def test_re_compile_ze_zmienna_bez_mutantow_to_kod_3_z_jedna_linia_wywolania(tmp_path, capsys):
+    repo = _standardowy(tmp_path, ZRODLO_WZORZEC_ZMIENNY, TEST_NIC)
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 3, blad
+    # linia startu stalej i linia wywolania to ta sama linia: jedna pozycja, nie dwie
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 3)]
+
+
+def test_re_compile_ze_zmienna_w_funkcji_bez_mutantow_daje_linie_def_i_linie_wywolania(tmp_path, capsys):
+    zrodlo = "import re\n\n\ndef zbuduj(wzorzec):\n    x = 1\n    return re.compile(wzorzec)\n"
+    repo = _standardowy(tmp_path, zrodlo, TEST_NIC)
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 4), _miejsce(SCIEZKA, 6)]
+
+
+def test_wszystkie_mutanty_zabite_ale_re_compile_ze_zmienna_w_zakresie_to_kod_3_tylko_z_linia_wywolania(
+    tmp_path, capsys
+):
+    repo = _standardowy(tmp_path, ZRODLO_EXCEPT_I_WZORZEC, PRZYPADKI[0].mocny_test)
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 3, blad
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, LINIA_WYWOLANIA_RE_COMPILE)]
+    assert LINIA_DEF_WZORZEC != LINIA_WYWOLANIA_RE_COMPILE
+    assert "zbadano" not in wyjscie
+
+
+def test_przezyl_mutant_i_jest_re_compile_ze_zmienna_to_kod_1_a_stdout_ma_tylko_linie_mutantow(tmp_path, capsys):
+    repo = _standardowy(tmp_path, ZRODLO_EXCEPT_I_WZORZEC, PRZYPADKI[0].slaby_test)
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    linia = _linia(ZRODLO_EXCEPT_I_WZORZEC, TEKST_EXCEPT)
+    assert kod == 1
+    assert wyjscie.splitlines() == [
+        f"{SCIEZKA}:{linia}: except: {OPIS_TYPE}",
+        f"{SCIEZKA}:{linia}: except: {OPIS_VALUE}",
+    ]
+    assert "sprawdz recznie" not in wyjscie
+
+
+def test_wpis_rownowazny_wycisza_mutanty_ale_nie_wycisza_miejsca_do_recznego_sprawdzenia(tmp_path, capsys):
+    tabela = _tabela(
+        WPIS_OBA_ELEMENTY,
+        (SCIEZKA, "return re.compile(tekst)", _uzasadnienie("regex")),
+        (SCIEZKA, "def wzorzec(tekst):", _uzasadnienie("instrukcja")),
+    )
+    repo = _standardowy(tmp_path, ZRODLO_EXCEPT_I_WZORZEC, PRZYPADKI[0].slaby_test, tabela)
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, LINIA_WYWOLANIA_RE_COMPILE)]
+
+
+def test_wpis_rownowazny_nie_wycisza_miejsca_do_recznego_sprawdzenia_gdy_nie_ma_mutantow(tmp_path, capsys):
+    zrodlo = "import re\n\n\ndef zbuduj(wzorzec):\n    x = 1\n    return re.compile(wzorzec)\n"
+    tabela = _tabela((SCIEZKA, "return re.compile(wzorzec)", _uzasadnienie("regex")))
+    repo = _standardowy(tmp_path, zrodlo, TEST_NIC, tabela)
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 3
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 4), _miejsce(SCIEZKA, 6)]
+
+
+def test_plik_bez_mutantow_z_re_compile_ze_zmienna_nie_wymaga_testow_a_mutanty_innego_pliku_sa_badane(
+    tmp_path, capsys
+):
+    test_z = PRZYPADKI[0].mocny_test.replace("pakiet.modul", "pakiet.z")
+    baza = {"src/pakiet/__init__.py": "", "src/pakiet/a.py": "# a\n", "src/pakiet/z.py": "# z\n", "tests/test_z.py": test_z}
+    repo = _repo(tmp_path, baza, {"src/pakiet/a.py": ZRODLO_WZORZEC_ZMIENNY, "src/pakiet/z.py": ZRODLO_EXCEPT})
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 3, blad
+    assert wyjscie.splitlines() == [_miejsce("src/pakiet/a.py", 3)]
+
+
+def test_re_compile_ze_zmienna_poza_zmienionym_zakresem_to_brak_zmienionych_funkcji(tmp_path, capsys):
+    baza = {"src/pakiet/__init__.py": "", SCIEZKA: ZRODLO_WZORZEC_ZMIENNY}
+    repo = _repo(tmp_path, baza, {SCIEZKA: "import os\n" + ZRODLO_WZORZEC_ZMIENNY})
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
     assert kod == 0
-    assert wyjscie.splitlines() == ["zbadano 0"]
+    assert wyjscie.splitlines() == ["brak zmienionych funkcji"]
+
+
+def test_blad_narzedzia_w_jednym_pliku_ma_pierwszenstwo_nad_miejscem_do_recznego_sprawdzenia_w_drugim(
+    tmp_path, capsys
+):
+    baza = {"src/pakiet/__init__.py": "", "src/pakiet/a.py": "# a\n", "src/pakiet/z.py": "# z\n"}
+    repo = _repo(tmp_path, baza, {"src/pakiet/a.py": ZRODLO_WZORZEC_ZMIENNY, "src/pakiet/z.py": "def f(:\n"})
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 2
+    assert "src/pakiet/z.py" in blad
+    assert wyjscie == ""
+
+
+@pytest.mark.parametrize(
+    ("zrodlo", "powod"),
+    [
+        pytest.param(
+            "import re\n\nX = re.compile(pattern=r'^a$', pattern=r'b')\n",
+            POWOD_POWTORZONY_PATTERN,
+            id="powtorzony_pattern",
+        ),
+        pytest.param("import re\n\nX = re.compile(*ARGS)\n", POWOD_GWIAZDKA_POZYCYJNA, id="gwiazdka_w_pozycyjnych"),
+    ],
+)
+def test_re_compile_ktorego_argumentow_narzedzie_nie_czyta_to_kod_2_z_plikiem_i_linia_a_nie_kod_3(
+    tmp_path, capsys, zrodlo, powod
+):
+    repo = _standardowy(tmp_path, zrodlo, TEST_NIC)
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 2
+    assert blad == f"blad: {SCIEZKA}:3: nie umiem rozebrac wzorca ({powod})\n"
+    assert wyjscie == ""
 
 
 # --- czytanie zmienionego pliku zrodlowego -----------------------------------------------------------------------

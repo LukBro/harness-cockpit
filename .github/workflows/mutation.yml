@@ -448,7 +448,8 @@ jobs:
       # HAR-241: kształty, których mutmut nie generuje (element krotki `except`, instrukcja,
       # kolejność, element zbioru/krotki/mapy, `sorted`/`.strip()`, element wyrażenia regularnego).
       # Kod narzędzia: 0 zielony (`zbadano N` albo `brak zmienionych funkcji`), 1 przeżywający
-      # mutant, każdy inny to błąd narzędzia (np. zero zebranych testów) - czerwony krok.
+      # mutant, 3 miejsca do ręcznego sprawdzenia (`plik:linia: sprawdz recznie`), każdy inny
+      # to błąd narzędzia (np. zero zebranych testów) - czerwony krok.
       # Stoi po kroku pokrycia, żeby nie rozdzielać kroków czytających kod mutantów zmian.
       - name: mutanty uzupełniające
         env:
@@ -466,6 +467,13 @@ jobs:
                 ;;
               1)
                 echo "Przeżywające mutanty uzupełniające (krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/mutanty-uzupelniajace.txt
+                echo '```'
+                ;;
+              3)
+                echo "Miejsca do ręcznego sprawdzenia (bez dowodu, krok jest czerwony):"
                 echo
                 echo '```'
                 cat mutants/mutanty-uzupelniajace.txt

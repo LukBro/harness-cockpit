@@ -7,10 +7,15 @@ zbioru, krotki i mapy, usuniecie `sorted(...)` / `.strip()` oraz element wyrazen
 i stale modulu, dla kazdego mutanta uruchamia testy modulu w nowej kopii repozytorium i wypisuje
 przezywajace mutanty.
 
-Kody wyjscia: 0 - wszystkie mutanty zabite albo rownowazne (stdout: `zbadano N`, albo
+Kody wyjscia: 0 - wszystkie mutanty zabite albo rownowazne (stdout: `zbadano N`, N > 0, albo
 `brak zmienionych funkcji`, gdy diff nie dotyka funkcji ani stalej), 1 - przezyl mutant
 (stdout: wylacznie linie `plik:linia: ksztalt: opis`), 2 - blad narzedzia (zly plik, tabela,
-zero zebranych testow, test czerwony bez mutacji, nieznana baza; komunikat na stderr).
+zero zebranych testow, test czerwony bez mutacji, nieznana baza; komunikat na stderr),
+3 - brak dowodu, trzeba sprawdzic recznie (stdout: linie `plik:linia: sprawdz recznie`):
+diff dotyka funkcji albo stalej, a zaden ksztalt nie daje mutanta (linia startu kazdej dotknietej
+funkcji lub stalej), albo `re.compile` ze wzorcem nieliteralnym (zmienna, f-string, wynik wywolania)
+w dotknietym zakresie. Priorytet: 2 > 1 > 3 > 0. `[[rownowazny]]` nie wycisza kodu 3; wyjscie
+to wiersz w tabeli recznych mutantow.
 `[[rownowazny]]` z `tests/mutanty_reczne/*.toml` wycisza mutanta TYLKO gdy: `plik` sie zgadza,
 `linia_tekst` rowna sie (po `strip()`) tekstowi linii mutanta w oryginalnym pliku, `uzasadnienie`
 zawiera doslownie `kształt: <nazwa>` (nazwa z KSZTALTY, np. `kształt: regex`), a dla `except`
@@ -26,8 +31,8 @@ nieodczytywalne z wywolania, grupa z `|` nierozpoznanego rodzaju, np. warunkowa 
 rozbierane jak tekstowe; oryginal i mutanty sa kompilowane z flagami z wywolania (drugi argument
 albo `flags=`). Wzorzec odrzucony przez `re.compile` (`re.error`, `OverflowError`) nie ma mutantow
 regex.
-`zbadano 0` (kod 0) to jawna galaz: diff dotyka funkcji albo stalej, ale zaden rozpoznawany
-ksztalt nie daje mutanta; ksztalty spoza KSZTALTY nie sa objete bramka.
+Powtorzony `pattern=` i gwiazdka w argumentach pozycyjnych `re.compile` to blad narzedzia (kod 2).
+Ksztalty spoza KSZTALTY nie sa objete bramka.
 Mutant, ktory przy uruchomieniu testow daje kod pytesta inny niz 0/1 (np. blad importu po
 mutacji), to blad narzedzia - brak dowodu, nie "zabity".
 Skrypt niczego nie zmienia w repozytorium: mutanty zyja w kopiach w katalogach tymczasowych.
@@ -425,11 +430,14 @@ def _flagi_wywolania(wezel: ast.Call) -> int:
     return flagi
 
 
-def _wzorzec_re_compile(wezel: ast.AST) -> tuple[ast.Constant, int] | None:
+def _wzorzec_re_compile(wezel: ast.AST) -> tuple[ast.Constant, int] | ast.Call | None:
     """(literal wzorca tekstowego albo bajtowego, flagi z wywolania) dla `re.compile(literal, ...)`.
 
     Wzorzec podany jako `pattern=` jest czytany jak pierwszy argument pozycyjny; `pattern=` razem
-    z argumentem pozycyjnym i kazdy nieznany argument nazwany (takze `**kw`) to `_NiepoprawnyWzorzec`.
+    z argumentem pozycyjnym, powtorzony `pattern=`, gwiazdka w argumentach pozycyjnych i kazdy
+    nieznany argument nazwany (takze `**kw`) to `_NiepoprawnyWzorzec`. Wzorzec nieliteralny
+    (zmienna, f-string, wynik wywolania) zwraca samo wywolanie: narzedzie go nie zbada, wiec
+    wolajacy zglasza `sprawdz recznie`. `re.compile()` bez wzorca to `None`.
     """
     if not isinstance(wezel, ast.Call):
         return None
@@ -444,6 +452,10 @@ def _wzorzec_re_compile(wezel: ast.AST) -> tuple[ast.Constant, int] | None:
     linia = wezel.lineno
     try:
         nazwane = [s for s in wezel.keywords if s.arg == "pattern"]
+        if len(nazwane) > 1:
+            raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (powtorzony argument pattern=)")
+        if any(isinstance(a, ast.Starred) for a in wezel.args):
+            raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (gwiazdka w argumentach pozycyjnych)")
         if nazwane and wezel.args:
             raise _NiepoprawnyWzorzec("nie umiem odczytac argumentow re.compile (pattern= razem z argumentem pozycyjnym)")
         if nazwane:
@@ -460,7 +472,7 @@ def _wzorzec_re_compile(wezel: ast.AST) -> tuple[ast.Constant, int] | None:
     except _NiepoprawnyWzorzec as blad:
         blad.linia = linia
         raise
-    return None
+    return wezel if pierwszy is not None else None
 
 
 def _zamiary_regex(stala: ast.Constant, flagi: int) -> list[_Zamiar]:
@@ -488,8 +500,10 @@ def _zamiary_regex(stala: ast.Constant, flagi: int) -> list[_Zamiar]:
     return zamiary
 
 
-def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> list[_Zamiar]:
+def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> tuple[list[_Zamiar], list[int]]:
+    """(zamiary mutacji, linie `re.compile` z wzorcem nieliteralnym, ktorego narzedzie nie zbada)."""
     wezly = list(ast.walk(korzen_zakresu))
+    nieliteralne: list[int] = []
     krotki_except = {id(w.type) for w in wezly if isinstance(w, ast.ExceptHandler) and isinstance(w.type, ast.Tuple)}
     indeksowane = {id(w.slice) for w in wezly if isinstance(w, ast.Subscript)}
     zamiary: list[_Zamiar] = []
@@ -507,7 +521,9 @@ def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> list[_Zamiar]:
         if w_funkcji:
             zamiary += _zamiary_instrukcji(wezel)
         wzorzec = _wzorzec_re_compile(wezel)
-        if wzorzec is not None:
+        if isinstance(wzorzec, ast.Call):
+            nieliteralne.append(wzorzec.lineno)
+        elif wzorzec is not None:
             zamiary += _zamiary_regex(*wzorzec)
         for pole, wartosc in ast.iter_fields(wezel):
             dzieci = (
@@ -524,7 +540,7 @@ def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> list[_Zamiar]:
                     return _podmien(wezel, pole, indeks, zastepnik)
 
                 zamiary.append(_Zamiar(dziecko.lineno, "wywolanie", f"usunieto wywolanie w {_tekst(dziecko)}", usun))
-    return zamiary
+    return zamiary, nieliteralne
 
 
 def _zakresy_instrukcji(instrukcje: list[ast.stmt]) -> Iterator[tuple[ast.AST, bool, int, int]]:
@@ -549,25 +565,29 @@ def _stala_do_zbadania(wezel: ast.AST) -> bool:
     )
 
 
-def _analiza(sciezka: str, zrodlo: str, linie: set[int]) -> tuple[list[Mutant], bool, str]:
-    """(mutanty, czy diff dotyka funkcji albo stalej, zrodlo bazowe) dla jednego pliku.
+def _analiza(sciezka: str, zrodlo: str, linie: set[int]) -> tuple[list[Mutant], list[int], str, list[int]]:
+    """(mutanty, linie startu dotknietych funkcji i stalych, zrodlo bazowe, linie `sprawdz recznie`).
 
     Zrodlo bazowe to `ast.unparse` niezmienionego drzewa: ten sam tekst co w mutantach,
     wiec przebieg kontrolny porownuje sie z mutantami bez roznic formatowania.
+    Linie `sprawdz recznie` to `re.compile` z wzorcem nieliteralnym w dotknietych zakresach.
     """
     try:
         drzewo = ast.parse(zrodlo, filename=sciezka)
     except (SyntaxError, ValueError, RecursionError, MemoryError) as blad:
         raise BladNarzedzia(f"{sciezka}: nie da sie sparsowac: {blad!r}") from blad
     zamiary: list[_Zamiar] = []
-    dotkniete = False
+    dotkniete: list[int] = []
+    reczne: list[int] = []
     try:
         for wezel, w_funkcji, start, koniec in _zakresy_instrukcji(drzewo.body):
             if not any(start <= numer <= koniec for numer in linie):
                 continue
             if w_funkcji or _stala_do_zbadania(wezel):
-                dotkniete = True
-            zamiary += _zamiary_zakresu(wezel, w_funkcji)  # opisy mutantow wolaja ast.unparse
+                dotkniete.append(start)
+            z_zakresu, nieliteralne = _zamiary_zakresu(wezel, w_funkcji)  # opisy mutantow wolaja ast.unparse
+            zamiary += z_zakresu
+            reczne += nieliteralne
     except _NiepoprawnyWzorzec as blad:
         raise BladNarzedzia(f"{sciezka}:{blad.linia}: nie umiem rozebrac wzorca ({blad})") from blad
     except (RecursionError, MemoryError) as blad:
@@ -591,7 +611,7 @@ def _analiza(sciezka: str, zrodlo: str, linie: set[int]) -> tuple[list[Mutant], 
             continue
         widziane.add(klucz)
         mutanty.append(Mutant(sciezka, zamiar.linia, zamiar.ksztalt, zamiar.opis, nowe))
-    return mutanty, dotkniete, bazowe
+    return mutanty, sorted(set(dotkniete)), bazowe, sorted(set(reczne))
 
 
 def generuj_mutanty(sciezka: str, zrodlo: str, linie: set[int]) -> list[Mutant]:
@@ -754,13 +774,22 @@ def _wycisza(wpis: mutanty_reczne.Rownowazny, mutant: Mutant, tekst_linii: str) 
     return mutant.ksztalt != "except" or mutant.opis in wpis.uzasadnienie
 
 
+def _linie_recznie(miejsca: list[tuple[str, int]]) -> list[str]:
+    return [f"{plik}:{linia}: sprawdz recznie" for plik, linia in miejsca]
+
+
 def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
-    """(kod, linie stdout); bledy to wyjatki, wiec przy kodzie 2 stdout zostaje pusty."""
+    """(kod, linie stdout); bledy to wyjatki, wiec przy kodzie 2 stdout zostaje pusty.
+
+    Priorytet: blad narzedzia 2 > przezyl mutant 1 > `sprawdz recznie` 3 > 0 (`zbadano N`, N > 0,
+    albo `brak zmienionych funkcji`). Przy kodzie 1 stdout to wylacznie linie mutantow.
+    """
     zmiany = _zmiany(korzen, baza)
     mutanty: list[Mutant] = []
     zrodla: dict[str, str] = {}
     bazowe: dict[str, str] = {}
-    dotkniete = False
+    dotkniete: list[tuple[str, int]] = []
+    reczne: list[tuple[str, int]] = []
     for sciezka in sorted(zmiany):
         try:
             zrodlo = (korzen / sciezka).read_text(encoding="utf-8")
@@ -769,12 +798,16 @@ def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
         except (OSError, UnicodeDecodeError) as blad:
             raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
         zrodla[sciezka] = zrodlo
-        z_pliku, dotyka, bazowe[sciezka] = _analiza(sciezka, zrodlo, zmiany[sciezka])
+        z_pliku, dotyka, bazowe[sciezka], nieliteralne = _analiza(sciezka, zrodlo, zmiany[sciezka])
         mutanty += z_pliku
-        dotkniete = dotkniete or dotyka
+        dotkniete += [(sciezka, numer) for numer in dotyka]
+        reczne += [(sciezka, numer) for numer in nieliteralne]
     rownowazne = _rownowazne(korzen)
     if not mutanty:
-        return 0, ["zbadano 0"] if dotkniete else ["brak zmienionych funkcji"]
+        if reczne or dotkniete:
+            # brak mutantow przy dotknietym kodzie to brak dowodu, nie "zbadano 0"
+            return 3, _linie_recznie(sorted({*reczne, *dotkniete}))
+        return 0, ["brak zmienionych funkcji"]
 
     tresci = _tresci_testow(korzen)
     testy_pliku: dict[str, list[str]] = {}
@@ -803,6 +836,8 @@ def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
     if zglaszane:
         zglaszane.sort(key=lambda m: (m.plik, m.linia, m.ksztalt, m.opis))
         return 1, [f"{m.plik}:{m.linia}: {m.ksztalt}: {m.opis}" for m in zglaszane]
+    if reczne:
+        return 3, _linie_recznie(sorted(set(reczne)))
     return 0, [f"zbadano {len(mutanty)}"]
 
 
