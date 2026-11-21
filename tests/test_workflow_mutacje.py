@@ -2396,3 +2396,130 @@ def test_stderr_narzedzia_pokrycia_z_kilku_linii_trafia_do_bledu_ci_w_jednej_lin
 
 def test_krok_pokrycia_linii_nie_ma_warunku_if_wiec_wykonuje_sie_na_kazdym_pr_takze_bez_zmienionej_tabeli():
     assert "if" not in _krok(ZADANIE_PR, KROK_POKRYCIA)
+
+
+# =============================================================================
+# HAR-241: krok `mutanty uzupełniające` - kształty, których mutmut nie generuje
+# =============================================================================
+
+KROK_UZUPELNIAJACE = "mutanty uzupełniające"
+NAGLOWEK_UZUPELNIAJACE = "## Mutanty uzupełniające"
+WYJSCIE_UZUPELNIAJACE = "mutants/mutanty-uzupelniajace.txt"
+BLAD_UZUPELNIAJACE = "mutants/mutanty-uzupelniajace.err"
+PRZEZYWAJACE_UZUPELNIAJACE = (
+    "src/cockpit/services/runs.py:41: except: usunieto element TypeError z krotki except\n"
+    "src/cockpit/services/invariants.py:9: kolekcja: usunieto element 'author' z krotki\n"
+)
+
+
+def uruchom_krok_uzupelniajacych(
+    tmp_path: Path,
+    *,
+    kod: int = 0,
+    stdout: str = "zbadano 3\n",
+    stderr: str = "",
+    base_ref: str | None = None,
+) -> PrzebiegRecznych:
+    """Uruchamia `run` kroku `mutanty uzupełniające` z atrapa tools/mutanty_uzupelniajace.py.
+
+    Katalogu `mutants/` celowo nie tworzymy: krok ma go utworzyc sam. Atrapa zapisuje argv wywolania,
+    wypisuje zadane stdout/stderr i konczy sie zadanym kodem."""
+    praca = tmp_path / "praca"
+    (praca / "tools").mkdir(parents=True)
+    _atrapa(praca / "tools", "mutanty_uzupelniajace.py", ATRAPA_MUTANTY_RECZNE)
+
+    narzedzia = tmp_path / "narzedzia"
+    narzedzia.mkdir()
+    (narzedzia / "python3").symlink_to(sys.executable)
+
+    przebieg = PrzebiegRecznych(tmp_path, praca)
+    krok = _krok(ZADANIE_PR, KROK_UZUPELNIAJACE)
+    assert "${{" not in krok["run"], "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(krok["run"], encoding="utf-8")
+
+    srodowisko = {
+        "PATH": f"{narzedzia}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_ARGV_RECZNE": str(przebieg.argv_plik),
+        "ATRAPA_KOD_RECZNE": str(kod),
+        "ATRAPA_STDOUT_RECZNE": stdout,
+        "ATRAPA_STDERR_RECZNE": stderr,
+        "GITHUB_STEP_SUMMARY": str(przebieg.podsumowanie_plik),
+        **_srodowisko_kroku(krok),
+    }
+    if base_ref is not None:
+        srodowisko["BASE_REF"] = base_ref
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+def test_krok_mutanty_uzupelniajace_stoi_zaraz_po_kroku_pokrycia_linii_i_dostaje_galaz_docelowa():
+    nazwy = [k.get("name") for k in _zadanie(ZADANIE_PR)["steps"]]
+    krok = _krok(ZADANIE_PR, KROK_UZUPELNIAJACE)
+
+    assert nazwy.index(KROK_UZUPELNIAJACE) == nazwy.index(KROK_POKRYCIA) + 1
+    assert krok["env"]["BASE_REF"] == "${{ github.base_ref }}"
+    assert "if" not in krok
+    assert "continue-on-error" not in krok
+    assert not UKRYCIE_BLEDU.search(krok["run"])
+
+
+def test_zadanie_pull_requestu_publikuje_wynik_mutantow_uzupelniajacych_nawet_po_czerwonym_kroku():
+    artefakt = _artefakt(ZADANIE_PR, "mutation-report")
+    sciezki = artefakt["with"]["path"].splitlines()
+
+    assert artefakt["if"] == "always()"
+    assert WYJSCIE_UZUPELNIAJACE in sciezki
+    assert BLAD_UZUPELNIAJACE in sciezki
+
+
+def test_mutanty_uzupelniajace_dostaja_baze_z_galezi_docelowej_pull_requestu(tmp_path):
+    inna_galaz = "release-7"
+    assert inna_galaz != GALAZ_DOCELOWA
+    przebieg = uruchom_krok_uzupelniajacych(tmp_path, base_ref=inna_galaz)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania_skryptu == [f"--baza origin/{inna_galaz}"]
+
+
+def test_mutanty_uzupelniajace_z_kodem_0_daja_zielony_krok_a_wynik_trafia_do_podsumowania(tmp_path):
+    przebieg = uruchom_krok_uzupelniajacych(tmp_path, kod=0, stdout="zbadano 3\n")
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert _bledy_ci(przebieg) == []
+    assert przebieg.podsumowanie == f"{NAGLOWEK_UZUPELNIAJACE}\n\nzbadano 3\n"
+    assert (przebieg.praca / WYJSCIE_UZUPELNIAJACE).read_text(encoding="utf-8") == "zbadano 3\n"
+
+
+def test_przezywajace_mutanty_uzupelniajace_oblewaja_krok_i_sa_wypisane_w_podsumowaniu_i_bledzie_ci(tmp_path):
+    przebieg = uruchom_krok_uzupelniajacych(tmp_path, kod=1, stdout=PRZEZYWAJACE_UZUPELNIAJACE)
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert przebieg.podsumowanie == (
+        f"{NAGLOWEK_UZUPELNIAJACE}\n\n"
+        "Przeżywające mutanty uzupełniające (krok jest czerwony):\n\n"
+        f"```\n{PRZEZYWAJACE_UZUPELNIAJACE}```\n"
+    )
+    linie_bledu = _bledy_ci(przebieg)
+    assert len(linie_bledu) == 1
+    assert "kodem 1" in linie_bledu[0]
+    assert "src/cockpit/services/runs.py:41" in linie_bledu[0]
+
+
+@pytest.mark.parametrize("kod", [2, 3, 4])
+def test_blad_narzedzia_mutantow_uzupelniajacych_oblewa_krok_a_stderr_trafia_do_podsumowania_i_bledu_ci(
+    tmp_path, kod
+):
+    przebieg = uruchom_krok_uzupelniajacych(tmp_path, kod=kod, stdout="", stderr="blad: zero zebranych testow")
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+    assert przebieg.podsumowanie == (
+        f"{NAGLOWEK_UZUPELNIAJACE}\n\n"
+        f"błąd narzędzia (kod {kod}):\n\n"
+        "```\nblad: zero zebranych testow```\n"
+    )
+    linie_bledu = _bledy_ci(przebieg)
+    assert len(linie_bledu) == 1
+    assert f"kodem {kod}" in linie_bledu[0]
+    assert "zero zebranych testow" in linie_bledu[0]

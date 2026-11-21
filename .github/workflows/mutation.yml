@@ -372,6 +372,46 @@ jobs:
               ;;
           esac
 
+      # HAR-241: kształty, których mutmut nie generuje (element krotki `except`, instrukcja,
+      # kolejność, element zbioru/krotki/mapy, `sorted`/`.strip()`, element wyrażenia regularnego).
+      # Kod narzędzia: 0 zielony (`zbadano N` albo `brak zmienionych funkcji`), 1 przeżywający
+      # mutant, każdy inny to błąd narzędzia (np. zero zebranych testów) - czerwony krok.
+      # Stoi po kroku pokrycia, żeby nie rozdzielać kroków czytających kod mutantów zmian.
+      - name: mutanty uzupełniające
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mkdir -p mutants
+          kod=0
+          python3 tools/mutanty_uzupelniajace.py --baza "origin/$BASE_REF" > mutants/mutanty-uzupelniajace.txt 2> mutants/mutanty-uzupelniajace.err || kod=$?
+          {
+            echo "## Mutanty uzupełniające"
+            echo
+            case "$kod" in
+              0)
+                cat mutants/mutanty-uzupelniajace.txt
+                ;;
+              1)
+                echo "Przeżywające mutanty uzupełniające (krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/mutanty-uzupelniajace.txt
+                echo '```'
+                ;;
+              *)
+                echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/mutanty-uzupelniajace.err
+                echo '```'
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$kod" != "0" ]; then
+            echo "::error::mutanty_uzupelniajace.py zakończył się kodem $kod: $(tr '\n' ' ' < mutants/mutanty-uzupelniajace.err) $(tr '\n' ' ' < mutants/mutanty-uzupelniajace.txt)"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -385,6 +425,8 @@ jobs:
             mutants/tabele-reczne.err
             mutants/pokrycie-kod3.txt
             mutants/pokrycie-kod3.err
+            mutants/mutanty-uzupelniajace.txt
+            mutants/mutanty-uzupelniajace.err
 
   mutation-main:
     if: github.event_name == 'push'

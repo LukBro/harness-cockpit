@@ -1,0 +1,757 @@
+"""Mutanty uzupelniajace zmienionych funkcji i stalych (HAR-241).
+
+Bramka dla kształtow, ktorych mutmut nie generuje: element krotki `except`, instrukcja
+(`finally`, samodzielne wywolanie), kolejnosc dwoch sasiednich instrukcji, element literalu
+zbioru, krotki i mapy, usuniecie `sorted(...)` / `.strip()` oraz element wyrazenia regularnego
+(`re.compile`). Mapuje diff wzgledem bazy (jak `tools/mutanty_zmian.py`) na funkcje, metody
+i stale modulu, dla kazdego mutanta uruchamia testy modulu w nowej kopii repozytorium i wypisuje
+przezywajace mutanty.
+
+Kody wyjscia: 0 - wszystkie mutanty zabite albo rownowazne (stdout: `zbadano N`, albo
+`brak zmienionych funkcji`, gdy diff nie dotyka funkcji ani stalej), 1 - przezyl mutant
+(stdout: wylacznie linie `plik:linia: ksztalt: opis`), 2 - blad narzedzia (zly plik, tabela,
+zero zebranych testow, test czerwony bez mutacji, nieznana baza; komunikat na stderr).
+`[[rownowazny]]` z `tests/mutanty_reczne/*.toml` wycisza mutanta TYLKO gdy: `plik` sie zgadza,
+`linia_tekst` rowna sie (po `strip()`) tekstowi linii mutanta w oryginalnym pliku, `uzasadnienie`
+zawiera doslownie `kształt: <nazwa>` (nazwa z KSZTALTY, np. `kształt: regex`), a dla `except`
+takze caly opis mutanta (np. `usunieto element ValueError z krotki except`) - wpis dotyczy
+jednego elementu krotki. Wpis bez tego (sama linia, wpis z tabeli innego ticketu) nie wycisza.
+Samodzielne wywolanie to `f(...)` oraz `await f(...)`. Przebieg kontrolny (testy bez mutacji)
+idzie na `ast.unparse(ast.parse(zrodlo))`, czyli tym samym tekstem co mutanty. `SyntaxError`,
+`ValueError`, `RecursionError` i `MemoryError` z `ast.parse` oraz `RecursionError` i `MemoryError`
+z `ast.unparse` to blad narzedzia (kod 2). Tak samo wzorzec `re.compile`, ktory przyjmuje `re`,
+a narzedzie nie umie go rozebrac (np. nawias w komentarzu `(?x)`): `plik:linia: nie umiem rozebrac
+wzorca`, nigdy `zbadano 0`. Wzorzec odrzucony przez `re.compile` (`re.error`, `OverflowError`)
+nie ma mutantow regex.
+`zbadano 0` (kod 0) to jawna galaz: diff dotyka funkcji albo stalej, ale zaden rozpoznawany
+ksztalt nie daje mutanta; ksztalty spoza KSZTALTY nie sa objete bramka.
+Mutant, ktory przy uruchomieniu testow daje kod pytesta inny niz 0/1 (np. blad importu po
+mutacji), to blad narzedzia - brak dowodu, nie "zabity".
+Skrypt niczego nie zmienia w repozytorium: mutanty zyja w kopiach w katalogach tymczasowych.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import math
+import os
+import re
+import shutil
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+
+import mutanty_reczne
+import mutanty_zmian
+
+KSZTALTY = ("except", "instrukcja", "kolejnosc", "kolekcja", "wywolanie", "regex")
+WYWOLANIA_USUWALNE = ("sorted", "strip")
+LIMIT_DOMYSLNY = 300.0
+RAPORT_JUNIT = ".mutanty-uzupelniajace-junit.xml"
+KATALOG_TABEL = mutanty_reczne.KATALOG_TABEL
+DLUGOSC_OPISU = 60
+
+
+class BladNarzedzia(Exception):
+    """Blad dziedziny skryptu (kod wyjscia 2)."""
+
+
+@dataclass(frozen=True)
+class Mutant:
+    plik: str
+    linia: int
+    ksztalt: str
+    opis: str
+    zrodlo: str
+
+
+@dataclass(frozen=True)
+class _Zamiar:
+    """Jedna mutacja drzewa: `zastosuj` mutuje w miejscu i zwraca funkcje cofajaca."""
+
+    linia: int
+    ksztalt: str
+    opis: str
+    zastosuj: Callable[[], Callable[[], None]]
+
+
+def _tekst(wezel: ast.AST) -> str:
+    tekst = " ".join(ast.unparse(wezel).split())
+    return tekst if len(tekst) <= DLUGOSC_OPISU else tekst[: DLUGOSC_OPISU - 3] + "..."
+
+
+# --- wyrazenia regularne ---------------------------------------------------------------------
+
+PREFIKS_GRUPY = re.compile(r"\((?:\?(?:P<\w+>|<[=!]|[=!:]|[a-zA-Z]+(?:-[a-zA-Z]+)?:|-[a-zA-Z]+:)|(?!\?))")
+
+
+class _NiepoprawnyWzorzec(Exception):
+    """Wzorzec poprawny dla `re.compile`, ktorego narzedzie nie umie rozebrac."""
+
+    linia: int | None = None
+
+
+def _koniec_ucieczki(wzorzec: str, poczatek: int) -> int:
+    """Indeks za sekwencja ucieczki zaczynajaca sie od `\\` na `poczatek` (wzorzec nie konczy sie `\\`)."""
+    znak = wzorzec[poczatek + 1]
+    if znak == "x":
+        return poczatek + 4
+    if znak == "u":
+        return poczatek + 6
+    if znak == "U":
+        return poczatek + 10
+    if znak == "N" and wzorzec[poczatek + 2 : poczatek + 3] == "{":
+        zamkniecie = wzorzec.find("}", poczatek)
+        if zamkniecie < 0:
+            raise _NiepoprawnyWzorzec("brak } w \\N{...}")
+        return zamkniecie + 1
+    if znak in "01234567":
+        koniec = poczatek + 2
+        while koniec < poczatek + 4 and wzorzec[koniec : koniec + 1] in tuple("01234567"):
+            koniec += 1
+        return koniec
+    return poczatek + 2
+
+
+def _koniec_elementu(wzorzec: str, poczatek: int) -> int:
+    if wzorzec[poczatek] == "\\":
+        return _koniec_ucieczki(wzorzec, poczatek)
+    return poczatek + 1
+
+
+def _klasa_znakow(wzorzec: str, poczatek: int, elementy: list[tuple[int, int]]) -> int:
+    """Dopisuje przedzialy elementow klasy zaczynajacej sie od `[`; zwraca indeks za `]`."""
+    i = poczatek + 1
+    if wzorzec[i : i + 1] == "^":
+        i += 1
+    pierwszy = True
+    while True:
+        if i >= len(wzorzec):
+            raise _NiepoprawnyWzorzec("niezamknieta klasa znakow")
+        if wzorzec[i] == "]" and not pierwszy:
+            return i + 1
+        start = i
+        i = _koniec_elementu(wzorzec, i)
+        if wzorzec[i : i + 1] == "-" and i + 1 < len(wzorzec) and wzorzec[i + 1] != "]":
+            i = _koniec_elementu(wzorzec, i + 1)
+        elementy.append((start, i))
+        pierwszy = False
+
+
+def _dopisz_alternatywy(alternatywy: list[tuple[int, int]], poczatek: int, kreski: list[int], koniec: int) -> None:
+    """Przedzialy do usuniecia (kazdy z jednym `|`) dla grupy z zawartoscia `[poczatek, koniec)`."""
+    granice = [poczatek - 1, *kreski, koniec]
+    for k in range(len(kreski) + 1):
+        if k < len(kreski):
+            alternatywy.append((granice[k] + 1, granice[k + 1] + 1))
+        else:
+            alternatywy.append((granice[k], koniec))
+
+
+def _warianty_wzorca(wzorzec: str) -> list[tuple[str, str]]:
+    """(opis, nowy wzorzec) dla kazdej kotwicy, elementu klasy znakow i alternatywy (takze poza grupa).
+
+    Wzorzec, ktorego `re.compile` nie przyjmuje, nie ma mutantow (`[]`). Wzorzec poprawny dla
+    `re.compile`, ktorego nie da sie rozebrac (np. nawias w komentarzu `(?x)`), rzuca
+    `_NiepoprawnyWzorzec` - to blad narzedzia, nie "zero mutantow".
+    """
+    try:
+        re.compile(wzorzec)
+    except (re.error, OverflowError):
+        return []
+    kotwice: list[int] = []
+    elementy: list[tuple[int, int]] = []
+    # grupa: [indeks pierwszego znaku zawartosci albo None dla nieobslugiwanej, indeksy `|`];
+    # dolna ramka to niejawna grupa calego wzorca (alternatywy poza nawiasami)
+    stos: list[list] = [[0, []]]
+    alternatywy: list[tuple[int, int]] = []
+    i = 0
+    while i < len(wzorzec):
+        znak = wzorzec[i]
+        if znak == "\\":
+            i = _koniec_ucieczki(wzorzec, i)
+        elif znak == "[":
+            i = _klasa_znakow(wzorzec, i, elementy)
+        elif znak == "(":
+            if wzorzec.startswith("(?#", i):
+                zamkniecie = wzorzec.find(")", i)
+                if zamkniecie < 0:
+                    raise _NiepoprawnyWzorzec("niezamkniety komentarz (?#")
+                i = zamkniecie + 1
+                continue
+            dopasowanie = PREFIKS_GRUPY.match(wzorzec, i)
+            stos.append([dopasowanie.end() if dopasowanie else None, []])
+            i += 1
+        elif znak == ")":
+            if len(stos) < 2:
+                raise _NiepoprawnyWzorzec("nawias zamykajacy bez otwierajacego")
+            poczatek, kreski = stos.pop()
+            if kreski:
+                _dopisz_alternatywy(alternatywy, poczatek, kreski, i)
+            i += 1
+        elif znak == "|":
+            if stos[-1][0] is not None:
+                stos[-1][1].append(i)
+            i += 1
+        else:
+            if znak in "^$":
+                kotwice.append(i)
+            i += 1
+    if len(stos) != 1:
+        raise _NiepoprawnyWzorzec("niezamknieta grupa")
+    if stos[0][1]:
+        _dopisz_alternatywy(alternatywy, 0, stos[0][1], len(wzorzec))
+
+    warianty: list[tuple[str, str]] = []
+    for indeks in kotwice:
+        warianty.append((f"usunieto kotwice {wzorzec[indeks]!r} z wzorca", wzorzec[:indeks] + wzorzec[indeks + 1 :]))
+    for start, koniec in elementy:
+        warianty.append(
+            (f"usunieto element {wzorzec[start:koniec]!r} z klasy znakow", wzorzec[:start] + wzorzec[koniec:])
+        )
+    for start, koniec in alternatywy:
+        warianty.append(
+            (f"usunieto alternatywe {wzorzec[start:koniec].strip('|')!r} z grupy", wzorzec[:start] + wzorzec[koniec:])
+        )
+    wynik: list[tuple[str, str]] = []
+    widziane: set[str] = set()
+    for opis, nowy in warianty:
+        if nowy in widziane:
+            continue
+        try:
+            re.compile(nowy)
+        except (re.error, OverflowError):
+            continue  # np. pusta klasa `[]`: mutant nie istnieje, nie liczy sie do `zbadano`
+        widziane.add(nowy)
+        wynik.append((opis, nowy))
+    return wynik
+
+
+# --- zamiary mutacji na drzewie ---------------------------------------------------------------
+
+
+def _usuniecia_elementow(wezel: ast.Set | ast.Tuple | ast.Dict, ksztalt: str, rodzaj: str) -> list[_Zamiar]:
+    """Po jednym zamiarze na kazdy element literalu (tylko gdy ma co najmniej dwa elementy)."""
+    zamiary: list[_Zamiar] = []
+    if isinstance(wezel, ast.Dict):
+        liczba = len(wezel.keys)
+    else:
+        liczba = len(wezel.elts)
+    if liczba < 2:
+        return zamiary
+
+    def fabryka(indeks: int) -> Callable[[], Callable[[], None]]:
+        def zastosuj() -> Callable[[], None]:
+            if isinstance(wezel, ast.Dict):
+                klucz, wartosc = wezel.keys.pop(indeks), wezel.values.pop(indeks)
+
+                def cofnij() -> None:
+                    wezel.keys.insert(indeks, klucz)
+                    wezel.values.insert(indeks, wartosc)
+
+                return cofnij
+            element = wezel.elts.pop(indeks)
+
+            def cofnij_element() -> None:
+                wezel.elts.insert(indeks, element)
+
+            return cofnij_element
+
+        return zastosuj
+
+    for indeks in range(liczba):
+        if isinstance(wezel, ast.Dict):
+            klucz, wartosc = wezel.keys[indeks], wezel.values[indeks]
+            linia = (klucz or wartosc).lineno
+            opis_elementu = f"{_tekst(klucz)}: {_tekst(wartosc)}" if klucz is not None else f"**{_tekst(wartosc)}"
+        else:
+            linia = wezel.elts[indeks].lineno
+            opis_elementu = _tekst(wezel.elts[indeks])
+        zamiary.append(_Zamiar(linia, ksztalt, f"usunieto element {opis_elementu} z {rodzaj}", fabryka(indeks)))
+    return zamiary
+
+
+def _podmien(rodzic: ast.AST, pole: str, indeks: int | None, nowy: ast.AST) -> Callable[[], None]:
+    if indeks is None:
+        stary = getattr(rodzic, pole)
+        setattr(rodzic, pole, nowy)
+        return lambda: setattr(rodzic, pole, stary)
+    lista = getattr(rodzic, pole)
+    stary = lista[indeks]
+    lista[indeks] = nowy
+
+    def cofnij() -> None:
+        lista[indeks] = stary
+
+    return cofnij
+
+
+def _samodzielne_wywolanie(instrukcja: ast.stmt) -> bool:
+    """`f(...)` albo `await f(...)` jako cala instrukcja; `await x`, `y = f()` i `return f()` nie."""
+    if not isinstance(instrukcja, ast.Expr):
+        return False
+    wartosc = instrukcja.value
+    if isinstance(wartosc, ast.Await):
+        wartosc = wartosc.value
+    return isinstance(wartosc, ast.Call)
+
+
+def _zamiary_instrukcji(wezel: ast.AST) -> list[_Zamiar]:
+    zamiary: list[_Zamiar] = []
+    for pole in ("body", "orelse", "finalbody"):
+        lista = getattr(wezel, pole, None)
+        if not isinstance(lista, list) or not lista or not isinstance(lista[0], ast.stmt):
+            continue
+        for indeks, instrukcja in enumerate(lista):
+            if not _samodzielne_wywolanie(instrukcja):
+                continue
+
+            def usun(lista=lista, indeks=indeks, instrukcja=instrukcja) -> Callable[[], None]:
+                return _podmien_w_liscie(lista, indeks, ast.copy_location(ast.Pass(), instrukcja))
+
+            zamiary.append(
+                _Zamiar(instrukcja.lineno, "instrukcja", f"zastapiono wywolanie {_tekst(instrukcja)} przez pass", usun)
+            )
+            nastepna = lista[indeks + 1] if indeks + 1 < len(lista) else None
+            if nastepna is not None and _samodzielne_wywolanie(nastepna):
+
+                def zamien(lista=lista, indeks=indeks) -> Callable[[], None]:
+                    def zamien_pare() -> None:
+                        lista[indeks], lista[indeks + 1] = lista[indeks + 1], lista[indeks]
+
+                    zamien_pare()
+                    return zamien_pare
+
+                zamiary.append(
+                    _Zamiar(
+                        instrukcja.lineno,
+                        "kolejnosc",
+                        f"zamieniono kolejnosc wywolan {_tekst(instrukcja)} i {_tekst(nastepna)}",
+                        zamien,
+                    )
+                )
+    return zamiary
+
+
+def _podmien_w_liscie(lista: list, indeks: int, nowy: ast.AST) -> Callable[[], None]:
+    stary = lista[indeks]
+    lista[indeks] = nowy
+
+    def cofnij() -> None:
+        lista[indeks] = stary
+
+    return cofnij
+
+
+def _usuwalne_wywolanie(wezel: ast.AST) -> ast.expr | None:
+    """Wyrazenie, ktore zastepuje wywolanie `sorted(x)` albo `x.strip()`; None, gdy to nie ten ksztalt."""
+    if not isinstance(wezel, ast.Call):
+        return None
+    funkcja = wezel.func
+    if (
+        "sorted" in WYWOLANIA_USUWALNE
+        and isinstance(funkcja, ast.Name)
+        and funkcja.id == "sorted"
+        and len(wezel.args) == 1
+        and not isinstance(wezel.args[0], ast.Starred)
+    ):
+        return wezel.args[0]
+    if (
+        "strip" in WYWOLANIA_USUWALNE
+        and isinstance(funkcja, ast.Attribute)
+        and funkcja.attr == "strip"
+        and not wezel.args
+        and not wezel.keywords
+    ):
+        return funkcja.value
+    return None
+
+
+def _wzorzec_re_compile(wezel: ast.AST) -> ast.Constant | None:
+    if not isinstance(wezel, ast.Call) or not wezel.args:
+        return None
+    funkcja = wezel.func
+    if not (
+        isinstance(funkcja, ast.Attribute)
+        and funkcja.attr == "compile"
+        and isinstance(funkcja.value, ast.Name)
+        and funkcja.value.id == "re"
+    ):
+        return None
+    pierwszy = wezel.args[0]
+    if isinstance(pierwszy, ast.Constant) and isinstance(pierwszy.value, str):
+        return pierwszy
+    return None
+
+
+def _zamiary_regex(stala: ast.Constant) -> list[_Zamiar]:
+    zamiary: list[_Zamiar] = []
+    oryginal = stala.value
+
+    def fabryka(nowy: str) -> Callable[[], Callable[[], None]]:
+        def zastosuj() -> Callable[[], None]:
+            stala.value = nowy
+
+            def cofnij() -> None:
+                stala.value = oryginal
+
+            return cofnij
+
+        return zastosuj
+
+    try:
+        warianty = _warianty_wzorca(oryginal)
+    except _NiepoprawnyWzorzec as blad:
+        blad.linia = stala.lineno
+        raise
+    for opis, nowy in warianty:
+        zamiary.append(_Zamiar(stala.lineno, "regex", opis, fabryka(nowy)))
+    return zamiary
+
+
+def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> list[_Zamiar]:
+    wezly = list(ast.walk(korzen_zakresu))
+    krotki_except = {id(w.type) for w in wezly if isinstance(w, ast.ExceptHandler) and isinstance(w.type, ast.Tuple)}
+    indeksowane = {id(w.slice) for w in wezly if isinstance(w, ast.Subscript)}
+    zamiary: list[_Zamiar] = []
+    for wezel in wezly:
+        if isinstance(wezel, ast.ExceptHandler) and isinstance(wezel.type, ast.Tuple):
+            zamiary += _usuniecia_elementow(wezel.type, "except", "krotki except")
+        elif isinstance(wezel, (ast.Set, ast.Tuple, ast.Dict)) and id(wezel) not in krotki_except:
+            # krotka w Store/Del albo w indeksie (`x[a, b]`, `dict[str, int]`) nie jest wartoscia z elementami
+            pomijana = isinstance(wezel, ast.Tuple) and (
+                not isinstance(wezel.ctx, ast.Load) or id(wezel) in indeksowane
+            )
+            if not pomijana:
+                rodzaj = {ast.Set: "zbioru", ast.Tuple: "krotki", ast.Dict: "mapy"}[type(wezel)]
+                zamiary += _usuniecia_elementow(wezel, "kolekcja", rodzaj)
+        if w_funkcji:
+            zamiary += _zamiary_instrukcji(wezel)
+        stala = _wzorzec_re_compile(wezel)
+        if stala is not None:
+            zamiary += _zamiary_regex(stala)
+        for pole, wartosc in ast.iter_fields(wezel):
+            dzieci = (
+                [(indeks, dziecko) for indeks, dziecko in enumerate(wartosc)]
+                if isinstance(wartosc, list)
+                else [(None, wartosc)]
+            )
+            for indeks, dziecko in dzieci:
+                zastepnik = _usuwalne_wywolanie(dziecko)
+                if zastepnik is None:
+                    continue
+
+                def usun(wezel=wezel, pole=pole, indeks=indeks, zastepnik=zastepnik) -> Callable[[], None]:
+                    return _podmien(wezel, pole, indeks, zastepnik)
+
+                zamiary.append(_Zamiar(dziecko.lineno, "wywolanie", f"usunieto wywolanie w {_tekst(dziecko)}", usun))
+    return zamiary
+
+
+def _zakresy_instrukcji(instrukcje: list[ast.stmt]) -> Iterator[tuple[ast.AST, bool, int, int]]:
+    """Zakresy zamiarow: funkcje i metody (funkcja=True) oraz stale modulu i klas (funkcja=False)."""
+    funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)
+    for wezel in instrukcje:
+        if isinstance(wezel, funkcje):
+            start = min([wezel.lineno, *(d.lineno for d in wezel.decorator_list)])
+            yield wezel, True, start, wezel.end_lineno or wezel.lineno
+        elif isinstance(wezel, ast.ClassDef):
+            yield from _zakresy_instrukcji(wezel.body)
+        else:
+            yield wezel, False, wezel.lineno, wezel.end_lineno or wezel.lineno
+
+
+def _stala_do_zbadania(wezel: ast.AST) -> bool:
+    """Import i docstring nie sa stalymi (nie ma w nich czego mutowac)."""
+    if isinstance(wezel, (ast.Import, ast.ImportFrom)):
+        return False
+    return not (
+        isinstance(wezel, ast.Expr) and isinstance(wezel.value, ast.Constant) and isinstance(wezel.value.value, str)
+    )
+
+
+def _analiza(sciezka: str, zrodlo: str, linie: set[int]) -> tuple[list[Mutant], bool, str]:
+    """(mutanty, czy diff dotyka funkcji albo stalej, zrodlo bazowe) dla jednego pliku.
+
+    Zrodlo bazowe to `ast.unparse` niezmienionego drzewa: ten sam tekst co w mutantach,
+    wiec przebieg kontrolny porownuje sie z mutantami bez roznic formatowania.
+    """
+    try:
+        drzewo = ast.parse(zrodlo, filename=sciezka)
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as blad:
+        raise BladNarzedzia(f"{sciezka}: nie da sie sparsowac: {blad!r}") from blad
+    zamiary: list[_Zamiar] = []
+    dotkniete = False
+    try:
+        for wezel, w_funkcji, start, koniec in _zakresy_instrukcji(drzewo.body):
+            if not any(start <= numer <= koniec for numer in linie):
+                continue
+            if w_funkcji or _stala_do_zbadania(wezel):
+                dotkniete = True
+            zamiary += _zamiary_zakresu(wezel, w_funkcji)  # opisy mutantow wolaja ast.unparse
+    except _NiepoprawnyWzorzec as blad:
+        raise BladNarzedzia(f"{sciezka}:{blad.linia}: nie umiem rozebrac wzorca ({blad})") from blad
+    except (RecursionError, MemoryError) as blad:
+        raise BladNarzedzia(f"{sciezka}: nie da sie opisac mutantow (ast.unparse): {blad!r}") from blad
+    try:
+        bazowe = ast.unparse(drzewo)
+    except (RecursionError, MemoryError) as blad:
+        raise BladNarzedzia(f"{sciezka}: nie da sie odtworzyc zrodla (ast.unparse): {blad!r}") from blad
+    mutanty: list[Mutant] = []
+    widziane: set[tuple[int, str, str]] = set()
+    for zamiar in zamiary:
+        cofnij = zamiar.zastosuj()
+        try:
+            nowe = ast.unparse(drzewo)
+        except (RecursionError, MemoryError) as blad:
+            raise BladNarzedzia(f"{sciezka}: nie da sie odtworzyc mutanta (ast.unparse): {blad!r}") from blad
+        finally:
+            cofnij()
+        klucz = (zamiar.linia, zamiar.ksztalt, nowe)
+        if nowe == bazowe or klucz in widziane:
+            continue
+        widziane.add(klucz)
+        mutanty.append(Mutant(sciezka, zamiar.linia, zamiar.ksztalt, zamiar.opis, nowe))
+    return mutanty, dotkniete, bazowe
+
+
+def generuj_mutanty(sciezka: str, zrodlo: str, linie: set[int]) -> list[Mutant]:
+    """Wszystkie mutanty funkcji i stalych modulu, ktorych zakres przecina `linie`."""
+    return _analiza(sciezka, zrodlo, linie)[0]
+
+
+# --- uruchamianie testow ----------------------------------------------------------------------
+
+
+def _wymagaj_wykonanych(raport: Path, testy: list[str]) -> None:
+    """Raport JUnit musi dowodzic, ze co najmniej jeden test sie wykonal (nie tylko pominieto)."""
+    nazwa = ", ".join(testy)
+    try:
+        xml = ET.parse(raport).getroot()
+    except OSError as blad:
+        raise BladNarzedzia(f"{nazwa}: brak raportu JUnit {raport}: brak dowodu ({blad})") from blad
+    except ET.ParseError as blad:
+        raise BladNarzedzia(f"{nazwa}: raport JUnit nie jest poprawnym XML: brak dowodu ({blad})") from blad
+    try:
+        wykonane = sum(int(s.get("tests", "0")) - int(s.get("skipped", "0")) for s in xml.iter("testsuite"))
+    except ValueError as blad:
+        raise BladNarzedzia(f"{nazwa}: raport JUnit ma liczniki nie bedace liczbami: brak dowodu ({blad})") from blad
+    if wykonane <= 0:
+        raise BladNarzedzia(f"{nazwa}: zaden test sie nie wykonal wedlug raportu JUnit - brak dowodu")
+
+
+def _uruchom_pytest(kopia: Path, testy: list[str], limit: float) -> int:
+    raport = kopia / RAPORT_JUNIT
+    polecenie = [
+        sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=",
+        f"--junitxml={raport}", *testy,
+    ]  # fmt: skip
+    stare = os.environ.get("PYTHONPATH")
+    sciezki = os.pathsep.join([str(kopia / "src"), *([stare] if stare else [])])
+    srodowisko = {**os.environ, "PYTHONPATH": sciezki, "PYTHONDONTWRITEBYTECODE": "1"}
+    srodowisko.pop(mutanty_reczne.ZMIENNA_WYMAGANIA_BAZY, None)
+    kod, _ = mutanty_reczne._uruchom_proces(polecenie, kopia, srodowisko, limit, f"testow {', '.join(testy)}")
+    if kod in (0, 1):
+        _wymagaj_wykonanych(raport, testy)
+    return kod
+
+
+@contextmanager
+def _kopia_repo(korzen: Path) -> Iterator[Path]:
+    try:
+        kopia = Path(tempfile.mkdtemp(prefix="mutanty-uzupelniajace-"))
+    except OSError as blad:
+        raise BladNarzedzia(f"nie da sie utworzyc katalogu tymczasowego: {blad}") from blad
+    try:
+        mutanty_reczne.skopiuj_repo(korzen, kopia)
+        yield kopia
+    finally:
+        try:
+            shutil.rmtree(kopia)
+        except OSError as blad:
+            raise BladNarzedzia(f"nie da sie usunac katalogu tymczasowego {kopia}: {blad}") from blad
+
+
+def _zapisz_w_kopii(kopia: Path, plik: str, zrodlo: str) -> None:
+    try:
+        (kopia / plik).write_text(zrodlo, encoding="utf-8")
+    except (OSError, UnicodeEncodeError) as blad:
+        raise BladNarzedzia(f"{plik}: nie da sie zapisac zrodla w kopii: {blad}") from blad
+
+
+def _sprawdz_testy_bez_mutacji(korzen: Path, plik: str, bazowe: str, testy: list[str], limit: float) -> None:
+    """Testy na kopii z `bazowe` (unparse niezmienionego pliku), czyli tym samym tekstem co mutanty."""
+    with _kopia_repo(korzen) as kopia:
+        _zapisz_w_kopii(kopia, plik, bazowe)
+        kod = _uruchom_pytest(kopia, testy, limit)
+    if kod != 0:
+        raise BladNarzedzia(
+            f"testy {', '.join(testy)} nie przechodza bez mutacji (kod pytesta {kod}): brak dowodu"
+        )
+
+
+def _mutant_zabity(korzen: Path, mutant: Mutant, testy: list[str], limit: float) -> bool:
+    with _kopia_repo(korzen) as kopia:
+        _zapisz_w_kopii(kopia, mutant.plik, mutant.zrodlo)
+        return mutanty_reczne.ocen_kod_testu(_uruchom_pytest(kopia, testy, limit))
+
+
+# --- wybor testow, tabele, diff -----------------------------------------------------------------
+
+
+def _blad_katalogu(blad: OSError) -> None:
+    raise BladNarzedzia(f"nie da sie przejrzec katalogu testow: {blad}")
+
+
+def _tresci_testow(korzen: Path) -> dict[str, str]:
+    """Pliki `.py` pod `tests/` (bez `tests/mutanty_reczne/`) -> tresc."""
+    tresci: dict[str, str] = {}
+    pominiety = Path(*KATALOG_TABEL)
+    for katalog, podkatalogi, pliki in os.walk(korzen / "tests", onerror=_blad_katalogu):
+        wzgledny = Path(katalog).relative_to(korzen)
+        podkatalogi[:] = sorted(p for p in podkatalogi if wzgledny / p != pominiety)
+        for plik in sorted(pliki):
+            if not plik.endswith(".py"):
+                continue
+            sciezka = Path(katalog) / plik
+            try:
+                tresci[(wzgledny / plik).as_posix()] = sciezka.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as blad:
+                raise BladNarzedzia(f"{sciezka}: nie da sie odczytac testu: {blad}") from blad
+    return tresci
+
+
+def _rownowazne(korzen: Path) -> list[mutanty_reczne.Rownowazny]:
+    katalog = korzen.joinpath(*KATALOG_TABEL)
+    try:
+        tabele = sorted(k for k in katalog.iterdir() if k.name.endswith(".toml"))
+    except FileNotFoundError:
+        return []
+    except OSError as blad:
+        raise BladNarzedzia(f"nie da sie odczytac katalogu tabel {katalog}: {blad}") from blad
+    wynik: list[mutanty_reczne.Rownowazny] = []
+    for tabela in tabele:
+        wynik.extend(mutanty_reczne.wczytaj_tabele_z_rownowaznymi(tabela)[1])
+    return wynik
+
+
+def _zmiany(korzen: Path, baza: str) -> dict[str, set[int]]:
+    merge = mutanty_reczne.uruchom(["git", "merge-base", baza, "HEAD"], korzen)
+    if merge.returncode != 0:
+        raise BladNarzedzia(f"nieznana baza {baza!r}: {merge.stderr.strip()}")
+    sha = merge.stdout.strip()
+    roznica = mutanty_reczne.uruchom(
+        [
+            "git", "diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+            sha, "--", "src/",
+        ],
+        korzen,
+    )  # fmt: skip
+    if roznica.returncode != 0:
+        raise BladNarzedzia(f"git diff nie powiodl sie: {roznica.stderr.strip()}")
+    nowe = mutanty_reczne.uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", "src/"], korzen)
+    if nowe.returncode != 0:
+        raise BladNarzedzia(f"git ls-files nie powiodl sie: {nowe.stderr.strip()}")
+    zmiany = mutanty_zmian.zmienione_linie(roznica.stdout)
+    for sciezka, linie in mutanty_zmian._nowe_pliki(nowe.stdout, korzen).items():
+        zmiany.setdefault(sciezka, set()).update(linie)
+    return {s: numery for s, numery in zmiany.items() if s.endswith(".py") and s.startswith("src/")}
+
+
+def _wycisza(wpis: mutanty_reczne.Rownowazny, mutant: Mutant, tekst_linii: str) -> bool:
+    """Wpis `[[rownowazny]]` wycisza mutanta tylko po plik + linia ORAZ `kształt: <nazwa>` w uzasadnieniu.
+
+    Dla `except` wpis dotyczy jednego elementu krotki: uzasadnienie musi zawierac caly opis mutanta.
+    """
+    if wpis.plik != mutant.plik or wpis.linia_tekst.strip() != tekst_linii:
+        return False
+    if f"kształt: {mutant.ksztalt}" not in wpis.uzasadnienie:
+        return False
+    return mutant.ksztalt != "except" or mutant.opis in wpis.uzasadnienie
+
+
+def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
+    """(kod, linie stdout); bledy to wyjatki, wiec przy kodzie 2 stdout zostaje pusty."""
+    zmiany = _zmiany(korzen, baza)
+    mutanty: list[Mutant] = []
+    zrodla: dict[str, str] = {}
+    bazowe: dict[str, str] = {}
+    dotkniete = False
+    for sciezka in sorted(zmiany):
+        try:
+            zrodlo = (korzen / sciezka).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeDecodeError) as blad:
+            raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
+        zrodla[sciezka] = zrodlo
+        z_pliku, dotyka, bazowe[sciezka] = _analiza(sciezka, zrodlo, zmiany[sciezka])
+        mutanty += z_pliku
+        dotkniete = dotkniete or dotyka
+    rownowazne = _rownowazne(korzen)
+    if not mutanty:
+        return 0, ["zbadano 0"] if dotkniete else ["brak zmienionych funkcji"]
+
+    tresci = _tresci_testow(korzen)
+    testy_pliku: dict[str, list[str]] = {}
+    for sciezka in sorted({m.plik for m in mutanty}):
+        modul = mutanty_zmian.modul_ze_sciezki(sciezka)
+        testy = sorted(nazwa for nazwa, tresc in tresci.items() if modul in tresc)
+        if not testy:
+            raise BladNarzedzia(f"{sciezka}: zero zebranych testow dla modulu {modul} - brak dowodu")
+        testy_pliku[sciezka] = testy
+
+    sprawdzone: set[str] = set()
+    przezyly: list[Mutant] = []
+    for mutant in mutanty:
+        testy = testy_pliku[mutant.plik]
+        if mutant.plik not in sprawdzone:
+            _sprawdz_testy_bez_mutacji(korzen, mutant.plik, bazowe[mutant.plik], testy, limit)
+            sprawdzone.add(mutant.plik)
+        if not _mutant_zabity(korzen, mutant, testy, limit):
+            przezyly.append(mutant)
+
+    zglaszane = []
+    for mutant in przezyly:
+        tekst_linii = zrodla[mutant.plik].splitlines()[mutant.linia - 1].strip()
+        if not any(_wycisza(r, mutant, tekst_linii) for r in rownowazne):
+            zglaszane.append(mutant)
+    if zglaszane:
+        zglaszane.sort(key=lambda m: (m.plik, m.linia, m.ksztalt, m.opis))
+        return 1, [f"{m.plik}:{m.linia}: {m.ksztalt}: {m.opis}" for m in zglaszane]
+    return 0, [f"zbadano {len(mutanty)}"]
+
+
+def _limit(tekst: str) -> float:
+    try:
+        wartosc = float(tekst)
+    except ValueError as blad:
+        raise argparse.ArgumentTypeError(f"{tekst!r} nie jest liczba") from blad
+    if not math.isfinite(wartosc) or wartosc <= 0:
+        raise argparse.ArgumentTypeError(f"limit musi byc skonczona liczba > 0, jest {tekst!r}")
+    return wartosc
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--baza", default="origin/main", help="baza porownania (merge-base z HEAD)")
+    parser.add_argument("--korzen", type=Path, default=None, help="korzen repozytorium (domyslnie cwd)")
+    parser.add_argument("--limit", type=_limit, default=LIMIT_DOMYSLNY, help="limit czasu jednego pytesta w sekundach")
+    args = parser.parse_args(argv)
+    korzen = args.korzen if args.korzen is not None else Path.cwd()
+    try:
+        kod, linie = _przebieg(korzen, args.baza, args.limit)
+    except (BladNarzedzia, mutanty_zmian.BladNarzedzia, mutanty_reczne.BladNarzedzia) as blad:
+        print(f"blad: {blad}", file=sys.stderr)
+        return 2
+    for linia in linie:
+        print(linia)
+    return kod
+
+
+if __name__ == "__main__":
+    sys.exit(main())
