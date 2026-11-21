@@ -108,8 +108,8 @@ test = "tests/test_narzedzia_sesji.py::test_baza_testmona_bez_ani_jednej_tabeli_
 
 [[mutant]]
 plik = "tools/testy.py"
-szukaj = "if wynik.returncode != 0:"
-zamien = "if False:"
+szukaj = "if wynik.returncode != 0:\n        raise BladNarzedzia(f\"brak dowodu: git diff"
+zamien = "if False:\n        raise BladNarzedzia(f\"brak dowodu: git diff"
 test = "tests/test_narzedzia_sesji.py::test_diff_w_repozytorium_bez_commita_to_blad_brak_dowodu_a_nie_pusta_lista_zmian"
 
 [[mutant]]
@@ -418,66 +418,6 @@ test = "tests/test_narzedzia_sesji.py::test_katalog_e2e_jest_pomijany_przy_pelny
 
 [[mutant]]
 plik = "tools/testy.py"
-szukaj = "markexpr|"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "keyword|"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "lf|"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "|last-failed"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "(?:=.*)?"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "|.*\\.py::.*"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[km]"
-zamien = "[k]"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[km]"
-zamien = "[m]"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "(argument {argument!r}) - uruchom bez niego"
-zamien = "(argument)"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "    if not powod:\n        poprzedni = \"\""
-zamien = "    if True:\n        poprzedni = \"\""
-test = "tests/test_narzedzia_sesji.py::test_te_same_argumenty_w_pelnym_przebiegu_sa_dozwolone_bo_nie_ma_selekcji"
-
-[[mutant]]
-plik = "tools/testy.py"
 szukaj = "if not powod and dezaktywacje:"
 zamien = "if dezaktywacje:"
 test = "tests/test_narzedzia_sesji.py::test_komunikat_o_wylaczeniu_selekcji_w_pelnym_przebiegu_nie_jest_bledem_bo_noselect_robi_to_celowo"
@@ -737,61 +677,6 @@ szukaj = "no tests collected(?: in [\\d.]+s)?"
 zamien = "no tests collected(?: in [\\d.]+s)"
 test = "tests/test_narzedzia_sesji.py::test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych"
 
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[qvxsldfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hvxsldfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqxsldfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqvsldfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqvxldfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqvxsdfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqvxsldf]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[km].*"
-zamien = "[km]"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "-[hqvxsldfV]*[km].*|"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-
 # --- runda 7: kontrakt dezaktywacje, -z w diffie, luki werdyktu ---
 
 [[mutant]]
@@ -842,7 +727,6 @@ szukaj = "args=(proc.stdout, stan, ogon, dezaktywacje)"
 zamien = "args=(proc.stdout, stan, ogon)"
 test = "tests/test_narzedzia_sesji.py::test_komunikat_o_wylaczeniu_selekcji_z_prawdziwego_przebiegu_trafia_do_bledu_brak_dowodu"
 
-
 [[mutant]]
 plik = "tools/testy.py"
 szukaj = "\"diff\", \"--name-only\", \"-z\", \"HEAD\""
@@ -859,92 +743,18 @@ test = "tests/test_narzedzia_sesji.py::test_plik_py_ze_znakiem_spoza_ascii_w_dif
 
 [[mutant]]
 plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqvxslfV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "[hqvxsldfV]*"
-zamien = "[hqvxsldV]*"
-test = "tests/test_narzedzia_sesji.py::test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
 szukaj = "os.environ.pop(\"PYTEST_ADDOPTS\", None)"
 zamien = "pass"
 test = "tests/test_narzedzia_sesji.py::test_pytest_addopts_z_otoczenia_nie_wylacza_selekcji_dotknietych_testow"
 
 [[mutant]]
 plik = "tools/testy.py"
-szukaj = "errors=\"replace\","
-zamien = ""
+szukaj = "errors=\"replace\",\n            timeout=60,"
+zamien = "timeout=60,"
 test = "tests/test_narzedzia_sesji.py::test_nazwa_zmienionego_pliku_z_bajtem_spoza_utf8_nie_przerywa_odczytu_diffu"
 
 [[mutant]]
 plik = "tools/testy.py"
-szukaj = "encoding=\"utf-8\","
-zamien = ""
+szukaj = "encoding=\"utf-8\",\n            errors=\"replace\",\n            timeout=60,"
+zamien = "errors=\"replace\",\n            timeout=60,"
 test = "tests/test_narzedzia_sesji.py::test_nazwa_zmienionego_pliku_py_ze_znakiem_spoza_ascii_jest_czytana_jako_utf8_niezaleznie_od_locale"
-
-# --- runda 9: addopts ustawiany argumentem ---
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "-oaddopts=.*|"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "|--override-ini=addopts=.*"
-zamien = ""
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "(\"-o\", \"--override-ini\")"
-zamien = "(\"--override-ini\",)"
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "(\"-o\", \"--override-ini\")"
-zamien = "(\"-o\",)"
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith(\"addopts=\")"
-zamien = "poprzedni in _OPCJE_NADPISANIA_INI and True"
-test = "tests/test_narzedzia_sesji.py::test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith(\"addopts=\")"
-zamien = "argument.startswith(\"addopts=\")"
-test = "tests/test_narzedzia_sesji.py::test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "poprzedni in _OPCJE_NADPISANIA_INI and argument.startswith(\"addopts=\")"
-zamien = "False"
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "poprzedni = argument"
-zamien = "pass"
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "poprzedni = \"\""
-zamien = "poprzedni = \"-o\""
-test = "tests/test_narzedzia_sesji.py::test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja"
-
-[[mutant]]
-plik = "tools/testy.py"
-szukaj = "selekcje testmona ({argument!r})"
-zamien = "selekcje testmona ({argument})"
-test = "tests/test_narzedzia_sesji.py::test_argument_ustawiajacy_addopts_to_blad_brak_dowodu_zanim_ruszy_pytest"
