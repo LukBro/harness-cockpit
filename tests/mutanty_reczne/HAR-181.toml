@@ -1200,3 +1200,10 @@ plik = "src/cockpit/services/skille_api.py"
 szukaj = "_ODMOWY_DOTYCZACE_PLIKU = frozenset({\n    \"sciezka jest katalogiem\", \"plik nie jest tekstem UTF-8\",\n    \"plik nie jest tekstem (zawiera bajt NUL)\", \"brak uprawnien do pliku lub katalogu\",\n    \"sciezka nie jest zwyklym plikiem\", \"element sciezki nie jest katalogiem\",\n    \"blad dysku przy operacji na pliku\",\n})"
 zamien = "_ODMOWY_DOTYCZACE_PLIKU = frozenset()"
 test = "tests/test_skille_zapis_api.py::test_nieczytelny_globalny_skill_o_tym_id_nie_blokuje_zapisu_lokalnego_ktory_jest_lokalny"
+
+# blokada wiersza Runner z powrotem PO odczycie katalogu (wyscig-sprawdz-zapisz): odczyt i wymiana nie sa pod jedna blokada
+[[mutant]]
+plik = "src/cockpit/services/skille_api.py"
+szukaj = "    runner_id = projekt.runner_id\n    await _zablokuj_runnera(s, tenant_id, runner_id)\n    _, wynik = await zapytania_runnera.zapytaj_runnera_online("
+zamien = "    runner_id = projekt.runner_id\n    _, wynik = await zapytania_runnera.zapytaj_runnera_online("
+test = "tests/test_skille_zapis_api.py::test_zapis_globalny_blokuje_wiersz_runnera_przed_pytaniem_runnera_o_istnienie_id"

@@ -193,8 +193,12 @@ async def _odswiez_katalog_projektu(
 ) -> None:
     """Jak `katalog.odswiez_katalog`, ale pyta runnera TEGO projektu, nie pierwszego online
     (HAR-181): inaczej katalog innego runnera zespolu przykrylby skutek zapisu. Walidacja
-    odpowiedzi przed zmiana w bazie, wymiana wierszy runnera w jednej transakcji."""
+    odpowiedzi przed zmiana w bazie, wymiana wierszy runnera w jednej transakcji. Blokada
+    wiersza Runner jest wzieta PRZED odczytem katalogu: odczyt i wymiana wierszy sa pod jedna
+    blokada, wiec rownolegly zapis w innym projekcie tego runnera nie nadpisze cache starym
+    odczytem (wyscig-sprawdz-zapisz)."""
     runner_id = projekt.runner_id
+    await _zablokuj_runnera(s, tenant_id, runner_id)
     _, wynik = await zapytania_runnera.zapytaj_runnera_online(
         s, tenant_id, "katalog_definicji", {}, polaczone, wyslij, runner_id=runner_id)
     ksztalt = _sprawdz_ksztalt(wynik)
@@ -204,7 +208,6 @@ async def _odswiez_katalog_projektu(
         # plik z zlym tagiem YAML (jakikolwiek skill runnera) nie moze zamienic zapisu, ktory
         # sie udal, w 500; `_odswiez_po_zapisie` zostawia cache do recznego odswiezenia
         raise StanNiemozliwy("katalog runnera zawiera plik z niepoprawnym YAML") from None
-    await _zablokuj_runnera(s, tenant_id, runner_id)
     await s.execute(delete(Definicja).where(
         Definicja.tenant_id == tenant_id, Definicja.runner_id == runner_id))
     s.add_all(wiersze)

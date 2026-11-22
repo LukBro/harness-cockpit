@@ -1747,6 +1747,101 @@ async def test_dwa_rownolegle_dodania_globalnego_id_z_dwoch_projektow_jednego_ru
     assert tresc.endswith("---\n" + zwyciezca)
 
 
+class RunnerZKatalogiemWstrzymanym:
+    """Atrapa runnera z plikami w pamieci i katalogiem liczonym z CHWILI WYWOLANIA. Pierwsza
+    odpowiedz `katalog_definicji` stoi, az test ja zwolni: stary odczyt katalogu czeka na
+    commit drugiego zapisu."""
+
+    def __init__(self, projekty: tuple[str, ...]) -> None:
+        self.projekty = projekty
+        self.pliki: dict[str, str] = {}
+        self.katalogi = 0
+        self.pierwszy_katalog = asyncio.Event()
+        self.zwolnij = asyncio.Event()
+
+    def _katalog(self) -> dict:
+        return {"projekty": [{
+            "projekt": projekt, "workflow": [],
+            "skille": [{
+                "zrodlo": "repo", "podkatalog": PODKATALOG, "katalog": sciezka.split("/")[-2],
+                "sciezka": sciezka, "frontmatter": tresc.split("---\n")[1]}
+                for sciezka, tresc in self.pliki.items() if sciezka.startswith(projekt + "/")],
+        } for projekt in self.projekty]}
+
+    async def __call__(self, runner_id, typ, dane, timeout_s):
+        if typ == "katalog_definicji":
+            self.katalogi += 1
+            wynik = self._katalog()   # odczyt z chwili wywolania, przed wstrzymaniem
+            if self.katalogi == 1:
+                self.pierwszy_katalog.set()
+                await asyncio.wait_for(self.zwolnij.wait(), LIMIT_S)
+            return {"ok": True, "wynik": wynik}
+        sciezka = dane["sciezka"]
+        if typ == "read_file":
+            if sciezka not in self.pliki:
+                return {"ok": False, "blad": "sciezka nie istnieje", "kod": "nie_istnieje"}
+            tresc = self.pliki[sciezka]
+            return {"ok": True, "wynik": {"sciezka": sciezka, "tresc": tresc, "rozmiar": len(tresc)}}
+        if typ == "write_file":
+            self.pliki[sciezka] = dane["tresc"]
+            return {"ok": True, "wynik": {"sciezka": sciezka, "rozmiar": len(dane["tresc"])}}
+        return {"ok": False, "blad": "nieznana operacja", "kod": "nieznana_operacja"}
+
+
+@pytest.mark.baza
+@tylko_postgres
+async def test_dwa_przeplecione_zapisy_skilli_w_dwoch_projektach_jednego_runnera_zostawiaja_w_katalogu_oba_skille(
+    maker_pg, monkeypatch,
+):
+    monkeypatch.setattr(db_session, "SessionLocal", maker_pg)
+    runner_atrapa = RunnerZKatalogiemWstrzymanym(("/pg/a", "/pg/b"))
+    monkeypatch.setattr(bus, "zapytaj", runner_atrapa)
+    wlasciciel, tenant = await zaloz_wlasciciela(maker_pg, "pg-katalog@example.com")
+    runner = await zaloz_runnera(maker_pg, tenant, "laptop-pg-k", "token-pg-k")
+    async with maker_pg() as s:
+        projekt_a = Project(tenant_id=tenant, runner_id=runner, path="/pg/a", name="a")
+        projekt_b = Project(tenant_id=tenant, runner_id=runner, path="/pg/b", name="b")
+        s.add_all([projekt_a, projekt_b])
+        await s.commit()
+    bus.mark_runner_connected(runner)
+    klient_a = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    klient_b = AsyncClient(transport=TransportASGIStrumieniujacy(app), base_url="http://127.0.0.1")
+    zadania = []
+    try:
+        await zaloguj_klienta(klient_a, maker_pg, wlasciciel)
+        await zaloguj_klienta(klient_b, maker_pg, wlasciciel)
+        zadania.append(asyncio.create_task(_post(klient_a, projekt_a.id, "skill-a")))
+        await asyncio.wait_for(runner_atrapa.pierwszy_katalog.wait(), LIMIT_S)
+        zadania.append(asyncio.create_task(_post(klient_b, projekt_b.id, "skill-b")))
+        koniec = asyncio.get_running_loop().time() + LIMIT_S
+        while len(runner_atrapa.pliki) < 2:   # drugi zapis ma plik na dysku runnera
+            assert asyncio.get_running_loop().time() < koniec, "drugi zapis nie dotarl do runnera"
+            await asyncio.sleep(0.05)
+        # bez blokady przed odczytem drugi zapis konczy odswiezenie sam; z blokada czeka na pierwszy
+        while (runner_atrapa.katalogi < 2 and not await _czeka_na_blokade_wiersza(maker_pg)):
+            assert asyncio.get_running_loop().time() < koniec, "drugi zapis ani nie dziala, ani nie czeka"
+            await asyncio.sleep(0.05)
+        runner_atrapa.zwolnij.set()
+        odpowiedzi = await asyncio.wait_for(asyncio.gather(*zadania), LIMIT_S)
+    finally:
+        runner_atrapa.zwolnij.set()
+        for zadanie in zadania:
+            zadanie.cancel()
+        await asyncio.gather(*zadania, return_exceptions=True)
+        await klient_a.aclose()
+        await klient_b.aclose()
+        while runner in bus.connected_runner_ids():
+            bus.mark_runner_disconnected(runner)
+        getattr(bus, "_rozlaczone", {}).pop(runner, None)
+
+    assert [o.status_code for o in odpowiedzi] == [201, 201], [o.text for o in odpowiedzi]
+    async with maker_pg() as s:
+        klucze = (await s.execute(
+            select(Definicja.klucz).where(Definicja.tenant_id == tenant, Definicja.rodzaj == "skill")
+        )).scalars().all()
+    assert sorted(klucze) == ["skill-a", "skill-b"]
+
+
 # =================================================================================
 # 10. Runda domykajaca: kolejnosc blokady, straznik ksztaltu, zakres z dysku, limity pol
 # =================================================================================
@@ -1772,6 +1867,13 @@ async def test_zapis_globalny_blokuje_wiersz_runnera_przed_pytaniem_runnera_o_is
     blokada = _indeks(sql, lambda q: "FROM runner" in q and q.rstrip().endswith("FOR UPDATE"))
     pytanie = _indeks(sql, lambda q: "FROM runner" in q and "ORDER BY runner.id" in q)
     assert (blokada < pytanie) is lock_przed_pytaniem, sql
+    # odczyt katalogu (ostatnie pytanie do runnera) zawsze pod blokada wiersza Runner: inaczej
+    # rownolegly zapis w innym projekcie tego runnera nadpisze cache starym odczytem
+    ostatnie_pytanie = max(
+        i for i, q in enumerate(sql) if "FROM runner" in q and "ORDER BY runner.id" in q)
+    blokady = [i for i, q in enumerate(sql)
+               if "FROM runner" in q and q.rstrip().endswith("FOR UPDATE")]
+    assert min(blokady) < ostatnie_pytanie, sql
 
 
 ZLE_KSZTALTY_KATALOGU = {
