@@ -4,7 +4,9 @@ Bramka dla kształtow, ktorych mutmut nie generuje: element krotki `except`, ins
 (`finally`, samodzielne wywolanie), kolejnosc dwoch sasiednich instrukcji, element literalu
 zbioru, krotki i mapy, usuniecie `sorted(...)` / `.strip()` oraz element wyrazenia regularnego
 (`re.compile`). Mapuje diff wzgledem bazy (jak `tools/mutanty_zmian.py`) na funkcje, metody
-i stale modulu, dla kazdego mutanta uruchamia testy modulu w nowej kopii repozytorium i wypisuje
+i stale modulu (funkcja zdefiniowana w instrukcji zlozonej modulu lub klasy - `if TYPE_CHECKING:`,
+`try`, `with`, `for`, `while`, `match` - jest funkcja jak kazda inna, a sama instrukcja zlozona
+nadal jest zakresem stalej), dla kazdego mutanta uruchamia testy modulu w nowej kopii repozytorium i wypisuje
 przezywajace mutanty.
 
 Kody wyjscia: 0 - wszystkie mutanty zabite albo rownowazne (stdout: `zbadano N`, N > 0, albo
@@ -543,17 +545,43 @@ def _zamiary_zakresu(korzen_zakresu: ast.AST, w_funkcji: bool) -> tuple[list[_Za
     return zamiary, nieliteralne
 
 
+_FUNKCJE = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _zakres_funkcji(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[ast.AST, bool, int, int]:
+    start = min([wezel.lineno, *(d.lineno for d in wezel.decorator_list)])
+    return wezel, True, start, wezel.end_lineno or wezel.lineno
+
+
+def _funkcje_w_instrukcji(wezel: ast.AST) -> Iterator[tuple[ast.AST, bool, int, int]]:
+    """Funkcje i metody zdefiniowane w ciele instrukcji zlozonej (`if`, `try`, `with`, `for`, `while`, `match`).
+
+    Przechodzi body/orelse/finalbody, `except` i `case` na dowolna glebokosc, takze przez klasy.
+    Funkcji nie rozbiera dalej: funkcje w funkcjach obejmuje `ast.walk` zakresu funkcji.
+    """
+    for dziecko in ast.iter_child_nodes(wezel):
+        if isinstance(dziecko, _FUNKCJE):
+            yield _zakres_funkcji(dziecko)
+        elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler, ast.match_case)):
+            yield from _funkcje_w_instrukcji(dziecko)
+
+
 def _zakresy_instrukcji(instrukcje: list[ast.stmt]) -> Iterator[tuple[ast.AST, bool, int, int]]:
-    """Zakresy zamiarow: funkcje i metody (funkcja=True) oraz stale modulu i klas (funkcja=False)."""
-    funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)
+    """Zakresy zamiarow: funkcje i metody (funkcja=True) oraz stale modulu i klas (funkcja=False).
+
+    Instrukcja zlozona modulu lub klasy jest oddawana w calosci jako zakres stalej (naglowki, np.
+    `if x in {1, 2}`), a DODATKOWO kazda funkcja zdefiniowana w jej ciele (na dowolna glebokosc)
+    jest oddawana jako zakres funkcji, zeby dostala mutanty instrukcji, `finally` i kolejnosci.
+    Mutanty z obu przejsc laczy deduplikacja w `_analiza`.
+    """
     for wezel in instrukcje:
-        if isinstance(wezel, funkcje):
-            start = min([wezel.lineno, *(d.lineno for d in wezel.decorator_list)])
-            yield wezel, True, start, wezel.end_lineno or wezel.lineno
+        if isinstance(wezel, _FUNKCJE):
+            yield _zakres_funkcji(wezel)
         elif isinstance(wezel, ast.ClassDef):
             yield from _zakresy_instrukcji(wezel.body)
         else:
             yield wezel, False, wezel.lineno, wezel.end_lineno or wezel.lineno
+            yield from _funkcje_w_instrukcji(wezel)
 
 
 def _stala_do_zbadania(wezel: ast.AST) -> bool:

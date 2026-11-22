@@ -36,7 +36,9 @@
 #   `reczne` powstaje z wynikow `_analiza`, ktore sa juz posortowane i bez powtorzen w pliku, a pliki ida
 #   w kolejnosci `sorted(zmiany)`; nie ma wejscia z powtorzona albo nieposortowana pozycja;
 # - `sorted(set(dotkniete))` -> `dotkniete` w `_analiza`: kazda instrukcja `drzewo.body` (i kazda stala w
-#   ciele klasy) dodaje swoj start dokladnie raz, w kolejnosci rosnacych linii;
+#   ciele klasy) dodaje swoj start dokladnie raz, w kolejnosci rosnacych linii; funkcje zdefiniowane w instrukcji
+#   zlozonej (`_funkcje_w_instrukcji`) ida zaraz po niej w kolejnosci zrodla, kazda raz (nie rozbiera
+#   funkcji w funkcjach), wiec start instrukcji < starty jej funkcji < start nastepnej instrukcji;
 # - `any(isinstance(p, ast.Starred) for p in przekazane)` w `_flagi_wywolania`: gwiazdke w argumentach
 #   pozycyjnych odrzuca juz `_wzorzec_re_compile`, a wartosc `flags=` nie moze byc gwiazdka (`**kw` to nieznany
 #   argument nazwany); nie ma wejscia, ktore dociera do tego warunku z gwiazdka.
@@ -1347,8 +1349,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_ustawienie_gita_uzytkownika_ni
 # Funkcja `async def` jest funkcja (instrukcje w jej ciele sa mutowane).
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)"
-zamien = "funkcje = (ast.FunctionDef,)"
+szukaj = "_FUNKCJE = (ast.FunctionDef, ast.AsyncFunctionDef)"
+zamien = "_FUNKCJE = (ast.FunctionDef,)"
 test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_async_ma_mutanty_instrukcji_jak_zwykla_funkcja"
 
 # Zakres funkcji zaczyna sie od pierwszego dekoratora.
@@ -1363,7 +1365,129 @@ test = "tests/test_mutanty_uzupelniajace.py::test_zmiana_tylko_w_dekoratorze_daj
 plik = "tools/mutanty_uzupelniajace.py"
 szukaj = "elif isinstance(wezel, ast.ClassDef):"
 zamien = "elif False:"
-test = "tests/test_mutanty_uzupelniajace.py::test_zmiana_w_jednej_metodzie_klasy_nie_daje_mutantow_drugiej_a_instrukcje_metody_sa_mutowane[3]"
+test = "tests/test_mutanty_uzupelniajace.py::test_zmiana_w_metodzie_klasy_nie_daje_mutantow_stalej_klasy_ani_linii_klasy_w_kodzie_3"
+
+# --- funkcje w instrukcjach zlozonych modulu i klas (`_funkcje_w_instrukcji`, `_zakres_funkcji`) ----------
+
+# Instrukcja zlozona oddaje tez swoje funkcje (inaczej `zbadano N` bez instrukcji i finally).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "yield from _funkcje_w_instrukcji(wezel)"
+zamien = "pass"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[if]"
+
+# Sama instrukcja zlozona nadal jest zakresem stalej (naglowek `if x in {1, 2}:`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "yield wezel, False, wezel.lineno, wezel.end_lineno or wezel.lineno"
+zamien = "pass"
+test = "tests/test_mutanty_uzupelniajace.py::test_naglowek_instrukcji_zlozonej_dalej_daje_mutanty_kolekcji_a_funkcja_w_niej_swoje"
+
+# Funkcja bezposrednio w ciele instrukcji jest oddawana jako zakres funkcji.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "yield _zakres_funkcji(dziecko)"
+zamien = "pass"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[if]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "        if isinstance(dziecko, _FUNKCJE):"
+zamien = "        if False:"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[if]"
+
+# `async def` w instrukcji zlozonej to tez funkcja.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "        if isinstance(dziecko, _FUNKCJE):"
+zamien = "        if isinstance(dziecko, ast.FunctionDef):"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_async_w_instrukcji_zlozonej_ma_mutanty_instrukcji"
+
+# Zagniezdzona instrukcja (`ast.stmt`), obsluga `except`, `case` i klasa to drogi do funkcji.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler, ast.match_case)):"
+zamien = "elif False:"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[dwa_poziomy]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler, ast.match_case)):"
+zamien = "elif isinstance(dziecko, (ast.ExceptHandler, ast.match_case)):"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[dwa_poziomy]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler, ast.match_case)):"
+zamien = "elif isinstance(dziecko, (ast.stmt, ast.match_case)):"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[except_obsluga]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler, ast.match_case)):"
+zamien = "elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler)):"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[match_case]"
+
+# Klasa w instrukcji zlozonej jest instrukcja: jej metody sa funkcjami (galaz `ast.stmt`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "elif isinstance(dziecko, (ast.stmt, ast.ExceptHandler, ast.match_case)):"
+zamien = "elif isinstance(dziecko, (ast.ExceptHandler, ast.match_case)):"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[klasa_w_if]"
+
+# Przechodzenie w dol: wynik rekurencji jest oddawany (`yield from`), nie gubiony.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "yield from _funkcje_w_instrukcji(dziecko)"
+zamien = "_funkcje_w_instrukcji(dziecko)"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[trzy_poziomy]"
+
+# Funkcji w funkcji nie rozbiera sie osobno (jej instrukcje obejmuje `ast.walk` zakresu funkcji).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "            yield _zakres_funkcji(dziecko)\n"
+zamien = "            yield _zakres_funkcji(dziecko)\n            yield from _funkcje_w_instrukcji(dziecko)\n"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_zagniezdzona_w_funkcji_w_instrukcji_zlozonej_nie_jest_osobnym_zakresem"
+
+# `_zakres_funkcji`: instrukcje funkcji sa mutowane (w_funkcji=True), zakres konczy sie na ostatniej linii,
+# a zaczyna na dekoratorze (takze w instrukcji zlozonej).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "return wezel, True, start, wezel.end_lineno or wezel.lineno"
+zamien = "return wezel, False, start, wezel.end_lineno or wezel.lineno"
+test = "tests/test_mutanty_uzupelniajace.py::test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz[if]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "return wezel, True, start, wezel.end_lineno or wezel.lineno"
+zamien = "return wezel, True, start, wezel.lineno"
+test = "tests/test_mutanty_uzupelniajace.py::test_def_z_dekoratorem_w_instrukcji_zlozonej_zaczyna_sie_od_dekoratora_i_konczy_na_ostatniej_linii[4]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "start = min([wezel.lineno, *(d.lineno for d in wezel.decorator_list)])"
+zamien = "start = wezel.lineno"
+test = "tests/test_mutanty_uzupelniajace.py::test_def_z_dekoratorem_w_instrukcji_zlozonej_zaczyna_sie_od_dekoratora_i_konczy_na_ostatniej_linii[2]"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "start = min([wezel.lineno, *(d.lineno for d in wezel.decorator_list)])"
+zamien = "start = 1"
+test = "tests/test_mutanty_uzupelniajace.py::test_linia_przed_dekoratorem_funkcji_w_instrukcji_zlozonej_nie_jest_jej_zakresem"
+
+# Funkcja w instrukcji zlozonej ma wlasny zakres: zmiana w sasiedniej funkcji nie daje jej mutantow,
+# a start dotknietej funkcji (z dekoratorem) trafia do linii kodu 3.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "if not any(start <= numer <= koniec for numer in linie):"
+zamien = "if False:"
+test = "tests/test_mutanty_uzupelniajace.py::test_zmiana_w_jednej_funkcji_instrukcji_zlozonej_nie_daje_mutantow_sasiedniej"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "dotkniete.append(start)"
+zamien = "dotkniete.append(wezel.lineno)"
+test = "tests/test_mutanty_uzupelniajace.py::test_dotkniete_zakresy_instrukcji_zlozonej_to_linia_instrukcji_i_linie_startu_jej_funkcji"
 
 # Literal z jednym elementem nie daje mutanta (prog `< 2`, nie `< 1`).
 [[mutant]]

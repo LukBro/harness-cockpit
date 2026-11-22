@@ -3435,3 +3435,223 @@ def test_wpis_rownowazny_dla_linii_za_znakiem_form_feed_wycisza_ja_a_nie_nastepn
     kod, wyjscie, _ = _narzedzie(repo, capsys)
     assert kod == 1
     assert {(p, n, k) for p, n, k in _wyniki(wyjscie)} == {(SCIEZKA, 4, "regex")}
+
+
+def test_zmiana_w_metodzie_klasy_nie_daje_mutantow_stalej_klasy_ani_linii_klasy_w_kodzie_3():
+    # tylko rozwiniecie klasy do jej ciala odroznia metode od klasy jako calosci (stala ROLE, linia `class`)
+    zrodlo = ZRODLO_STALA_W_KLASIE
+    mutanty, dotkniete, _, _ = mutanty_uzupelniajace._analiza(SCIEZKA, zrodlo, {5})
+    assert Counter((m.ksztalt, m.linia) for m in mutanty) == Counter({("wywolanie", 5): 1})
+    assert dotkniete == [4]
+    bez_ksztaltu = "class Rola:\n    def zapis(self):\n        return 0\n"
+    assert mutanty_uzupelniajace._analiza(SCIEZKA, bez_ksztaltu, {3})[1] == [2]
+
+
+# --- HAR-241: funkcje zdefiniowane w instrukcjach zlozonych modulu i klas --------------------------------------
+# Funkcja w `if TYPE_CHECKING:`, `try`, `with`, `for`, `while`, `match` (i w klasie w nich) jest funkcja jak
+# kazda inna: dostaje mutanty instrukcji, `finally` i kolejnosci. Wczesniej taka funkcja dawala `zbadano N`
+# i kod 0 bez tych ksztaltow (falszywa zielen).
+
+FUNKCJA_Z_FINALLY = (
+    "def uzyj(k):\n    try:\n        k.otworz()\n        k.zapisz()\n    finally:\n        k.zamknij()\n"
+)
+
+
+def _wciete(tekst: str, poziom: int) -> str:
+    wciecie = "    " * poziom
+    return "".join(wciecie + linia if linia.strip() else linia for linia in tekst.splitlines(keepends=True)).rstrip("\n")
+
+
+def _w_instrukcji(szablon: str, funkcja: str = FUNKCJA_Z_FINALLY) -> str:
+    """Wstawia `funkcja` w miejsce znacznika `@N@` (N = poziom wciecia)."""
+    for poziom in (1, 2, 3):
+        szablon = szablon.replace(f"@{poziom}@", _wciete(funkcja, poziom))
+    return szablon + "\n"
+
+
+SZABLONY_INSTRUKCJI_ZLOZONYCH = [
+    pytest.param("if CZY:\n@1@", id="if"),
+    pytest.param("if CZY:\n    pass\nelse:\n@1@", id="if_galaz_else"),
+    pytest.param("try:\n@1@\nexcept ImportError:\n    pass", id="try_cialo"),
+    pytest.param("try:\n    pass\nexcept ImportError:\n@1@", id="except_obsluga"),
+    pytest.param("try:\n    pass\nexcept ImportError:\n    pass\nelse:\n@1@", id="try_galaz_else"),
+    pytest.param("try:\n    pass\nfinally:\n@1@", id="try_finally"),
+    pytest.param("with kontekst():\n@1@", id="with"),
+    pytest.param("async with kontekst():\n@1@", id="async_with"),
+    pytest.param("for x in xs:\n@1@", id="for"),
+    pytest.param("for x in xs:\n    pass\nelse:\n@1@", id="for_galaz_else"),
+    pytest.param("async for x in xs:\n@1@", id="async_for"),
+    pytest.param("while CZY:\n@1@", id="while"),
+    pytest.param("match CZY:\n    case 1:\n@2@", id="match_case"),
+    pytest.param("if CZY:\n    class K:\n@2@", id="klasa_w_if"),
+    pytest.param("if CZY:\n    try:\n@2@\n    finally:\n        pass", id="dwa_poziomy"),
+    pytest.param("if CZY:\n    try:\n        with kontekst():\n@3@\n    finally:\n        pass", id="trzy_poziomy"),
+    pytest.param("class K:\n    if CZY:\n@2@", id="if_w_ciele_klasy"),
+    pytest.param("class K:\n    if CZY:\n        class L:\n@3@", id="klasa_w_if_w_klasie"),
+]
+
+
+def _mutanty_funkcji_z_finally(zrodlo: str) -> Counter:
+    otworz = _linia(zrodlo, "k.otworz()")
+    return Counter(
+        {
+            ("instrukcja", otworz): 1,
+            ("instrukcja", _linia(zrodlo, "k.zapisz()")): 1,
+            ("instrukcja", _linia(zrodlo, "k.zamknij()")): 1,
+            ("kolejnosc", otworz): 1,
+        }
+    )
+
+
+@pytest.mark.parametrize("szablon", SZABLONY_INSTRUKCJI_ZLOZONYCH)
+def test_funkcja_w_instrukcji_zlozonej_ma_mutanty_instrukcji_finally_i_kolejnosci_kazdy_raz(szablon):
+    zrodlo = _w_instrukcji(szablon)
+    assert _wszystkie(zrodlo) == _mutanty_funkcji_z_finally(zrodlo)
+
+
+@pytest.mark.parametrize("szablon", SZABLONY_INSTRUKCJI_ZLOZONYCH)
+def test_zmiana_tylko_w_finally_funkcji_w_instrukcji_zlozonej_daje_mutanty_calej_funkcji(szablon):
+    zrodlo = _w_instrukcji(szablon)
+    linia_finally = _linia(zrodlo, "k.zamknij()")
+    assert _licz(zrodlo, {linia_finally}) == _mutanty_funkcji_z_finally(zrodlo)
+
+
+def test_zmiana_poza_funkcja_w_instrukcji_zlozonej_nie_daje_jej_mutantow():
+    zrodlo = _w_instrukcji("if CZY:\n@1@")
+    assert _licz(zrodlo, {1}) == Counter()
+
+
+def test_funkcja_async_w_instrukcji_zlozonej_ma_mutanty_instrukcji():
+    zrodlo = "if CZY:\n    async def zamknij(k):\n        await k.zapisz()\n        await k.zamknij()\n"
+    assert _wszystkie(zrodlo) == Counter({("instrukcja", 3): 1, ("instrukcja", 4): 1, ("kolejnosc", 3): 1})
+
+
+def test_naglowek_instrukcji_zlozonej_dalej_daje_mutanty_kolekcji_a_funkcja_w_niej_swoje():
+    zrodlo = "if STAN in {1, 2}:\n    def uzyj(k):\n        k.otworz()\n"
+    assert _wszystkie(zrodlo) == Counter({("kolekcja", 1): 2, ("instrukcja", 3): 1})
+    assert _licz(zrodlo, {1}) == Counter({("kolekcja", 1): 2})
+    assert _licz(zrodlo, {3}) == Counter({("kolekcja", 1): 2, ("instrukcja", 3): 1})
+
+
+def test_krotka_w_funkcji_w_instrukcji_zlozonej_daje_kazdy_mutant_raz_choc_widza_ja_dwa_zakresy():
+    # instrukcja `if` (zakres stalej) i funkcja w niej (zakres funkcji) obie obejmuja ta krotke
+    zrodlo = "if CZY:\n    def czy(k):\n        return k in (1, 2)\n"
+    mutanty = mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    assert Counter((m.ksztalt, m.linia) for m in mutanty) == Counter({("kolekcja", 3): 2})
+    assert sorted(_drzewo(m.zrodlo) for m in mutanty) == _drzewa(
+        "if CZY:\n    def czy(k):\n        return k in (2,)\n",
+        "if CZY:\n    def czy(k):\n        return k in (1,)\n",
+    )
+
+
+@pytest.mark.parametrize("zmieniona", [2, 3, 4])
+def test_def_z_dekoratorem_w_instrukcji_zlozonej_zaczyna_sie_od_dekoratora_i_konczy_na_ostatniej_linii(zmieniona):
+    zrodlo = "if CZY:\n    @dekorator\n    def uzyj(k):\n        k.otworz()\n"
+    assert _licz(zrodlo, {zmieniona}) == Counter({("instrukcja", 4): 1})
+
+
+def test_linia_przed_dekoratorem_funkcji_w_instrukcji_zlozonej_nie_jest_jej_zakresem():
+    zrodlo = "X = 1\nif CZY:\n    @dekorator\n    def uzyj(k):\n        k.otworz()\n"
+    assert _licz(zrodlo, {1}) == Counter()
+
+
+def test_zmiana_w_jednej_funkcji_instrukcji_zlozonej_nie_daje_mutantow_sasiedniej():
+    zrodlo = "if CZY:\n    def a(k):\n        k.x()\n\n    def b(k):\n        k.y()\n"
+    assert _licz(zrodlo, {3}) == Counter({("instrukcja", 3): 1})
+    assert _licz(zrodlo, {6}) == Counter({("instrukcja", 6): 1})
+
+
+ZRODLO_FUNKCJA_W_FUNKCJI_W_IF = (
+    "if CZY:\n    def zewn(k):\n        def wewn(j):\n            j.a()\n        return wewn\n"
+)
+
+
+def test_funkcja_zagniezdzona_w_funkcji_w_instrukcji_zlozonej_nie_jest_osobnym_zakresem():
+    zrodlo = ZRODLO_FUNKCJA_W_FUNKCJI_W_IF
+    mutanty, dotkniete, _, reczne = mutanty_uzupelniajace._analiza(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    assert Counter((m.ksztalt, m.linia) for m in mutanty) == Counter({("instrukcja", 4): 1})
+    assert dotkniete == [1, 2]
+    assert reczne == []
+
+
+def test_dotkniete_zakresy_instrukcji_zlozonej_to_linia_instrukcji_i_linie_startu_jej_funkcji():
+    zrodlo = "try:\n    def f():\n        return 0\n\n    @dekorator\n    def g():\n        return 1\nexcept ImportError:\n    pass\n"
+    mutanty, dotkniete, _, _ = mutanty_uzupelniajace._analiza(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    assert mutanty == []
+    assert dotkniete == [1, 2, 5]
+
+
+ZRODLO_FUNKCJA_W_TRY = """\
+try:
+    def uzyj(k):
+        k.otworz()
+        try:
+            return k.czytaj()
+        finally:
+            k.zamknij()
+except ImportError:
+    pass
+
+
+def czy_zapis(rola):
+    return rola in ("author", "executor")
+"""
+
+KANAL_OTWIERANY = """\
+class Kanal:
+    def __init__(self):
+        self.otwarty = False
+        self.zamkniety = False
+
+    def otworz(self):
+        self.otwarty = True
+
+    def czytaj(self):
+        return "dane"
+
+    def zamknij(self):
+        self.zamkniety = True
+"""
+
+TEST_FUNKCJA_W_TRY_SLABY = (
+    "from pakiet.modul import czy_zapis, uzyj\n\n" + KANAL_OTWIERANY + "\n\n"
+    "def test_uzyj_zwraca_dane_kanalu():\n"
+    "    assert uzyj(Kanal()) == 'dane'\n\n\n"
+    "def test_autor_i_wykonawca_zapisuja_a_recenzent_nie():\n"
+    "    assert czy_zapis('author')\n"
+    "    assert czy_zapis('executor')\n"
+    "    assert not czy_zapis('reviewer')\n"
+)
+TEST_FUNKCJA_W_TRY_MOCNY = TEST_FUNKCJA_W_TRY_SLABY + (
+    "\n\ndef test_uzyj_otwiera_i_zamyka_kanal():\n"
+    "    kanal = Kanal()\n"
+    "    uzyj(kanal)\n"
+    "    assert kanal.otwarty\n"
+    "    assert kanal.zamkniety\n"
+)
+
+
+def test_funkcja_w_try_modulu_bez_testu_zamkniecia_daje_kod_1_z_linia_finally_a_nie_zbadano_n(tmp_path, capsys):
+    repo = _standardowy(tmp_path, ZRODLO_FUNKCJA_W_TRY, TEST_FUNKCJA_W_TRY_SLABY)
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 1
+    assert "zbadano" not in wyjscie
+    assert {(p, n, k) for p, n, k in _wyniki(wyjscie)} == {
+        (SCIEZKA, _linia(ZRODLO_FUNKCJA_W_TRY, "k.otworz()"), "instrukcja"),
+        (SCIEZKA, _linia(ZRODLO_FUNKCJA_W_TRY, "k.zamknij()"), "instrukcja"),
+    }
+
+
+def test_funkcja_w_try_modulu_z_testem_zamkniecia_daje_kod_0_i_liczy_jej_mutanty(tmp_path, capsys):
+    repo = _standardowy(tmp_path, ZRODLO_FUNKCJA_W_TRY, TEST_FUNKCJA_W_TRY_MOCNY)
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 0, blad
+    assert wyjscie.splitlines() == ["zbadano 4"]  # 2 instrukcje funkcji w try + 2 elementy krotki
+
+
+def test_funkcja_bez_ksztaltu_w_instrukcji_zlozonej_to_kod_3_z_linia_instrukcji_i_linia_funkcji(tmp_path, capsys):
+    zrodlo = "try:\n    def f():\n        return 0\nexcept ImportError:\n    pass\n"
+    repo = _standardowy(tmp_path, zrodlo, "def test_x():\n    pass\n")
+    kod, wyjscie, blad = _narzedzie(repo, capsys)
+    assert kod == 3, blad
+    assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 1), _miejsce(SCIEZKA, 2)]
