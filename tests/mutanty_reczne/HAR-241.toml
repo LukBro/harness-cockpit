@@ -4,11 +4,17 @@
 # Krok `mutanty uzupelniajace` w .github/workflows/mutation.yml (usuniecie `exit 1`, baza z BASE_REF)
 # ma wiersze na koncu tabeli; chronia go testy tests/test_workflow_mutacje.py (HAR-241).
 #
-# Kazdy element kodu narzedzia, ktory zmienia wynik, ma ponizej wiersz z testem, ktory po mutacji oblewa
-# (runda 3: opisy mutantow, przekazywanie `limit`, flagi i bajty w `re.compile`, flagi globalne wzorca,
-# cyfry osemkowe, ucieczka z literka u, OverflowError, straznik `git ls-files` dla nowych plikow,
-# przeniesienie pliku do src/, liczba kopii repozytorium, bledy odczytu zrodla, sprzatanie kopii,
-# polecenie pytesta). Lista luk (elementow bez testu) jest pusta: kazdy wpis z rund 1-2 ma wiersz.
+# Wiersze pokrywaja: zamknieta liste ksztaltow, zasieg (funkcje, klasy, funkcje w instrukcjach zlozonych),
+# opisy mutantow, przekazywanie `limit`, flagi i bajty w `re.compile`, flagi globalne wzorca, cyfry osemkowe,
+# ucieczke z literka u i `\N{...}`, prefiks grupy `(?L:...)`, `a.b.compile`, OverflowError, straznik
+# `git ls-files` dla nowych plikow, przeniesienie pliku do src/, liczbe kopii repozytorium, bledy odczytu
+# zrodla, sprzatanie kopii i polecenie pytesta.
+#
+# NIEPOKRYTE (znane luki, brak wiersza i brak testu; nie sa zielone, tylko niesprawdzone):
+# - flagi wzorca po komentarzu `(?#...)` oraz po `(?x)` (rozbior wzorca nie rozroznia ich od flag globalnych);
+# - flaga TEMPLATE (`re.T`) i uznanie jej za rownowazna: nie sprawdzono jej uruchomionym mutantem;
+# - dokladne komunikaty bledow narzedzia (wiersze sprawdzaja kod 2 i fragmenty, nie caly tekst);
+# - zawieszenia mutantow (mutant z petla nieskonczona konczy sie dopiero limitem czasu pytesta).
 #
 # Rownowazne (zadne wejscie nie odroznia wersji). KAZDY z ponizszych mutantow uruchomiono osobna tabela
 # (`python tools/mutanty_reczne.py <tabela>`, kod 1: przezyl test wskazany w jej wierszu), a
@@ -24,6 +30,9 @@
 # - `_wartosc_flag(przekazane[0])` -> `przekazane[-1]`: przy jednym elemencie listy indeksy 0 i -1 to to
 #   samo (dwa i wiecej elementow konczy sie bledem wczesniej);
 # - `nastepna is not None and` w `_zamiary_instrukcji`: `_samodzielne_wywolanie(None)` jest False;
+# - `A-Z` w drugim i trzecim `[a-zA-Z]+` z `PREFIKS_GRUPY` (po `-`): uruchomione mutanty `(?:-[a-z]+)?:`
+#   i `|-[a-z]+:)` przezyly test, bo flagi po `-` musza byc male (`(?-L:a)`, `(?i-L:a)` i `(?-S:a)` nie
+#   kompiluja sie), a wzorzec odrzucony przez `re.compile` nie ma mutantow;
 # - `w_funkcji or` w `_analiza`: `_stala_do_zbadania(FunctionDef)` jest zawsze True;
 # - `ast.copy_location(ast.Pass(), instrukcja)`: `ast.unparse` nie czyta numerow linii;
 # - `--src-prefix=a/` w `_zmiany`: parser czyta tylko linie `+++ b/...`;
@@ -1488,6 +1497,27 @@ plik = "tools/mutanty_uzupelniajace.py"
 szukaj = "dotkniete.append(start)"
 zamien = "dotkniete.append(wezel.lineno)"
 test = "tests/test_mutanty_uzupelniajace.py::test_dotkniete_zakresy_instrukcji_zlozonej_to_linia_instrukcji_i_linie_startu_jej_funkcji"
+
+# `re.compile` wolane na zagniezdzonym atrybucie (`a.b.compile`) to nie `re.compile`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "        and isinstance(funkcja.value, ast.Name)\n"
+zamien = ""
+test = "tests/test_mutanty_uzupelniajace.py::test_compile_wolane_na_zagniezdzonym_atrybucie_nie_jest_re_compile_i_nie_rzuca_wyjatku"
+
+# `\N{nazwa}` szuka `}` od poczatku ucieczki, nie od poczatku wzorca.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.find("}")'
+test = "tests/test_mutanty_uzupelniajace.py::test_ucieczka_nazwana_konczy_sie_na_swoim_nawiasie_a_nie_na_wczesniejszym"
+
+# Flaga grupy z wielkiej litery (`(?L:...)`, wzorzec bajtowy) to rozpoznany prefiks grupy.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "[a-zA-Z]+(?:-[a-zA-Z]+)?:"
+zamien = "[a-z]+(?:-[a-zA-Z]+)?:"
+test = "tests/test_mutanty_uzupelniajace.py::test_grupa_z_flaga_wielka_litera_we_wzorcu_bajtowym_ma_mutanty_alternatyw"
 
 # Literal z jednym elementem nie daje mutanta (prog `< 2`, nie `< 1`).
 [[mutant]]

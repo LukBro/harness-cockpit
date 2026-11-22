@@ -3437,6 +3437,20 @@ def test_wpis_rownowazny_dla_linii_za_znakiem_form_feed_wycisza_ja_a_nie_nastepn
     assert {(p, n, k) for p, n, k in _wyniki(wyjscie)} == {(SCIEZKA, 4, "regex")}
 
 
+def test_compile_wolane_na_zagniezdzonym_atrybucie_nie_jest_re_compile_i_nie_rzuca_wyjatku():
+    zrodlo = 'import a\n\nX = a.b.compile(r"^x$")\n'
+    assert mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, {3}) == []
+
+
+def test_ucieczka_nazwana_konczy_sie_na_swoim_nawiasie_a_nie_na_wczesniejszym():
+    wzorzec = r"a{2}\N{LATIN SMALL LETTER A}"
+    assert mutanty_uzupelniajace._koniec_ucieczki(wzorzec, wzorzec.index("\\")) == len(wzorzec)
+
+
+def test_grupa_z_flaga_wielka_litera_we_wzorcu_bajtowym_ma_mutanty_alternatyw():
+    assert _wzorce_regex("(?L:ab|cd)", "rb") == _oczekiwane_wzorce("(?L:cd)", "(?L:ab)", przedrostek="rb")
+
+
 def test_zmiana_w_metodzie_klasy_nie_daje_mutantow_stalej_klasy_ani_linii_klasy_w_kodzie_3():
     # tylko rozwiniecie klasy do jej ciala odroznia metode od klasy jako calosci (stala ROLE, linia `class`)
     zrodlo = ZRODLO_STALA_W_KLASIE
