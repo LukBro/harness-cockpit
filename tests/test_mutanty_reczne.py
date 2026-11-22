@@ -4124,7 +4124,7 @@ def test_rownolegle_uruchamia_wiersze_naraz_gdy_jest_wiecej_niz_jeden_proces():
     bariera = threading.Barrier(2, timeout=10)
 
     def czekaj(e):
-        bariera.wait()
+        bariera.wait(10)
         return e * 10
 
     assert mutanty_reczne.rownolegle(czekaj, [1, 2], 2) == [10, 20]
@@ -4210,7 +4210,7 @@ def test_kazdy_wiersz_jest_oceniony_raz_a_sekwencyjny_dopiero_gdy_nic_innego_nie
             trwa["teraz"] += 1
             oceny.append((mutant, trwa["teraz"]))
         if mutant is not M_FRONT:
-            bariera.wait()
+            bariera.wait(10)
         with zamek:
             trwa["teraz"] -= 1
         return mutant is not drugi
