@@ -3735,9 +3735,16 @@ def test_ValueError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
     def parser(*_args, **_kwargs):
         raise ValueError("atrapa")
 
-    monkeypatch.setattr(mutanty_uzupelniajace.ast, "parse", parser)
-    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
-        mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+    # podmiana tylko na czas wywolania: pytest sam uzywa ast.parse przy raportowaniu bledu
+    with monkeypatch.context() as podmiana:
+        podmiana.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+        try:
+            mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+            wynik = None
+        except Exception as blad:  # noqa: BLE001 - kazdy wyjatek ma wyjsc z podmiany przed asercja
+            wynik = blad
+    assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
+    assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
 
 
 
@@ -3745,9 +3752,16 @@ def test_RecursionError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatc
     def parser(*_args, **_kwargs):
         raise RecursionError("atrapa")
 
-    monkeypatch.setattr(mutanty_uzupelniajace.ast, "parse", parser)
-    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
-        mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+    # podmiana tylko na czas wywolania: pytest sam uzywa ast.parse przy raportowaniu bledu
+    with monkeypatch.context() as podmiana:
+        podmiana.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+        try:
+            mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+            wynik = None
+        except Exception as blad:  # noqa: BLE001 - kazdy wyjatek ma wyjsc z podmiany przed asercja
+            wynik = blad
+    assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
+    assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
 
 
 
@@ -3755,6 +3769,13 @@ def test_MemoryError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
     def parser(*_args, **_kwargs):
         raise MemoryError("atrapa")
 
-    monkeypatch.setattr(mutanty_uzupelniajace.ast, "parse", parser)
-    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
-        mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+    # podmiana tylko na czas wywolania: pytest sam uzywa ast.parse przy raportowaniu bledu
+    with monkeypatch.context() as podmiana:
+        podmiana.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+        try:
+            mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+            wynik = None
+        except Exception as blad:  # noqa: BLE001 - kazdy wyjatek ma wyjsc z podmiany przed asercja
+            wynik = blad
+    assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
+    assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
