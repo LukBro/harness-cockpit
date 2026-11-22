@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
+from procesy import uruchom_i_zbierz
 
 KORZEN = Path(__file__).resolve().parent.parent
 ZMIENNA = "COCKPIT_WYMAGAJ_BAZY"
@@ -336,7 +336,7 @@ def _nazwy_testow(plik: str, po_dekoratorze: str | None = None) -> list[str]:
 
 def _zbierz_w_repo(wyrazenie: str) -> set[str]:
     env = {k: v for k, v in os.environ.items() if k != ZMIENNA}
-    wynik = subprocess.run(
+    wynik = uruchom_i_zbierz(
         [
             sys.executable,
             "-m",

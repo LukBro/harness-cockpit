@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import os
-import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,6 +22,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from cockpit.db.models import Base, Membership, Runner, RolaWZespole, Tenant, User
 from cockpit.settings import settings
 from runner import secrets
+from procesy import uruchom_i_zbierz
 
 EMAIL = "dev@example.com"
 HASLO = "haslo-z-env-123"
@@ -423,7 +423,7 @@ def test_zasiew_jako_osobny_proces_nie_wypisuje_hasla_i_nie_przyjmuje_go_w_argum
         COCKPIT_DEV_PASSWORD=HASLO,
     )
 
-    wynik = subprocess.run(
+    wynik = uruchom_i_zbierz(
         [sys.executable, str(KORZEN / "tools" / "seed_dev.py")],   # bez zadnych argumentow
         env=env, cwd=tmp_path, capture_output=True, text=True, timeout=60,
     )

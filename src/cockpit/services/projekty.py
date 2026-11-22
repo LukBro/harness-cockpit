@@ -124,7 +124,8 @@ async def projekt_zespolu(
     startu runu: FK run.project_id bierze FOR KEY SHARE, ktore z FOR NO KEY UPDATE sie nie wyklucza."""
     zapytanie = select(Project).where(Project.id == project_id, Project.tenant_id == tenant_id)
     if blokuj:
-        zapytanie = zapytanie.with_for_update(key_share=True)
+        # blokade widzi tylko PostgreSQL, a mutmut biegnie bez bazy: warianty zabija tabela HAR-180.toml (z baza)
+        zapytanie = zapytanie.with_for_update(key_share=True)  # pragma: no mutate
     projekt = (await s.execute(zapytanie)).scalar_one_or_none()
     if projekt is None:
         raise NieZnaleziono("projekt nieznany")
@@ -187,7 +188,8 @@ async def zmien_projekt(
     zmian. Blokada nie wstrzymuje startu runu: FK run.project_id bierze FOR KEY SHARE, ktore
     z FOR NO KEY UPDATE sie nie wyklucza.
     Edycja pliku w edytorze poza kokpitem nadal moze sie nadpisac - kokpit jej nie widzi."""
-    projekt = await projekt_zespolu(s, tenant_id, project_id, blokuj=True)
+    # blokade widzi tylko PostgreSQL, a mutmut biegnie bez bazy: warianty zabija tabela HAR-180.toml (z baza)
+    projekt = await projekt_zespolu(s, tenant_id, project_id, blokuj=True)  # pragma: no mutate
     wzgledna = PLIK_PROJEKTU.as_posix()
     tekst = await czytaj_plik_projektu(s, tenant_id, projekt, wzgledna, polaczone, wyslij)
     nowy, po_zmianie = zmien_capabilities(tekst, capabilities)

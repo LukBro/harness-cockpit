@@ -408,7 +408,7 @@ async def test_notatka_z_kotwicami_w_diffie_konczy_krok_sukcesem_i_niesie_kotwic
         zmienione_linie=plik_linii)
 
     assert wynik == WynikKroku(
-        "zakonczony", None, 0, kotwice=("src/b.py:40", "src/a.py:11"))
+        status="zakonczony", powod=None, kod_wyjscia=0, kotwice=("src/b.py:40", "src/a.py:11"))
     assert (katalog_runu / KROK / "notatka-zmiany.md").is_file()
 
 
@@ -615,7 +615,7 @@ async def test_notatka_zapisana_przez_autora_w_kopii_roboczej_tez_podlega_sprawd
 
 
 async def test_wynik_kroku_bez_kotwic_ma_domyslnie_pusta_krotke_kotwic():
-    assert WynikKroku("zakonczony", None, 0).kotwice == ()
+    assert WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0).kotwice == ()
 
 
 @pytest.fixture
@@ -675,7 +675,7 @@ async def test_notatka_z_polskimi_znakami_jest_czytana_jako_utf8_niezaleznie_od_
     wynik = await krok(
         spec_notatki(), wypisz(notatka), katalog, katalog_runu, zmienione_linie=plik)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, kotwice=("zażółć.py:1",))
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, kotwice=("zażółć.py:1",))
 
 
 async def test_notatka_zapisana_przez_autora_z_niepoprawnym_utf8_jest_czytana_z_zastapieniem_znaku(
@@ -688,7 +688,7 @@ async def test_notatka_zapisana_przez_autora_z_niepoprawnym_utf8_jest_czytana_z_
     wynik = await krok(
         spec_notatki(Rola.author), atrapa(), katalog, katalog_runu, zmienione_linie=plik_linii)
 
-    assert wynik == WynikKroku("zakonczony", None, 0, kotwice=("src/a.py:11",))
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, kotwice=("src/a.py:11",))
 
 
 # --- silnik: przekazanie zmienionych linii i kotwic -------------------------------------------
@@ -737,7 +737,7 @@ async def test_silnik_podaje_zmienione_linie_z_kroku_diff_tylko_krokowi_produkuj
 
 async def test_zdarzenie_konca_kroku_notatki_niesie_kotwice_z_wyniku_kroku(tmp_path):
     s = swiat_notatki(tmp_path)
-    wyniki = {"opis": WynikKroku("zakonczony", None, 0, kotwice=("README.md:2", "nowy.txt:1"))}
+    wyniki = {"opis": WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0, kotwice=("README.md:2", "nowy.txt:1"))}
     agent = SzpiegZmieniajacyDrzewo(zmiany={"autor": zmien_drzewo}, wyniki=wyniki)
 
     zdarzenia = await uruchom(s, agent)
@@ -768,7 +768,7 @@ async def test_zdarzenia_konca_krokow_bez_notatki_zmiany_nie_maja_klucza_kotwice
 
 async def test_zdarzenie_porazki_kroku_notatki_nie_ma_klucza_kotwice(tmp_path):
     s = swiat_notatki(tmp_path)
-    wyniki = {"opis": WynikKroku("nieudany", "kod wyjścia 1", 1, kotwice=("README.md:2",))}
+    wyniki = {"opis": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1, kotwice=("README.md:2",))}
     agent = SzpiegZmieniajacyDrzewo(zmiany={"autor": zmien_drzewo}, wyniki=wyniki)
 
     zdarzenia = await uruchom(s, agent)
@@ -787,7 +787,7 @@ class AgentZPrawdziwymKrokiem:
     async def __call__(self, spec, polecenie, katalog, emit, *, katalog_runu=None, **dodatkowe):
         if spec.step_id == "autor":
             zmien_drzewo(katalog)
-            return WynikKroku("zakonczony", None, 0)
+            return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
         if spec.step_id == "opis":
             # silnik podaje prompt, wiec krok idzie w trybie agenta (HAR-174): wynik recenzenta
             # przychodzi jako zdarzenie `result` strumienia stream-json, nie surowy tekst
@@ -795,7 +795,7 @@ class AgentZPrawdziwymKrokiem:
             return await wykonaj_krok(
                 spec, wypisz(wynik + "\n"), katalog, emit,
                 katalog_runu=katalog_runu, **dodatkowe)
-        return WynikKroku("zakonczony", None, 0)
+        return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
 
 async def test_run_z_kotwicami_z_diffu_konczy_krok_notatki_a_kotwice_trafiaja_do_zdarzenia(

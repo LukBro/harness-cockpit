@@ -44,6 +44,7 @@ from cockpit.db.models import (
 )
 from cockpit.services import odbior_dowody
 from cockpit.services.errors import StanNiemozliwy
+from procesy import czekaj
 from sesja_testowa import zaloguj_klienta, zaloz_czlonka, zaloz_wlasciciela
 from test_krok_check import (
     DOWOD_TYPECHECK,
@@ -1411,7 +1412,7 @@ async def _poczekaj_na_sesje(sesje: list) -> None:
     """Czeka (z limitem z `wait_for` wolajacego), az trasa A otworzy pierwsza sesje, potem na jej brame."""
     while not sesje:
         await asyncio.sleep(0.01)
-    await sesje[0].po_sprawdzeniu.wait()
+    await czekaj(sesje[0].po_sprawdzeniu.wait(), LIMIT_S, "brama pierwszej sesji")
 
 
 # --- runda 3: komunikaty odmowy na pelna tresc, kolejnosc i autor decyzji, dlugosc tekstu ---------
@@ -1574,7 +1575,7 @@ async def test_udany_krok_skilla_bez_produces_nie_ma_pola_artefakty(tmp_path):
 
 async def test_nieudany_krok_z_produces_nie_deklaruje_artefaktow(tmp_path):
     s = swiat_silnika(tmp_path, [K("a")], opcje_skilli=_opcje_produkcji(a=["plan.md"]))
-    agent = Szpieg(wyniki={"a": WynikKroku("nieudany", "kod wyjścia 1", 1)})
+    agent = Szpieg(wyniki={"a": WynikKroku(status="nieudany", powod="kod wyjścia 1", kod_wyjscia=1)})
 
     zdarzenia = await uruchom(s, agent)
 

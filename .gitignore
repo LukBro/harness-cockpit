@@ -20,5 +20,10 @@ mutants/
 
 # pliki robocze kroku mutacji w CI
 mutation-summary.json
+# artefakty dowodow shardow statystyk mutmuta (job mutation-statystyki)
+dowody/
 # wygenerowane z web/openapi.json przy buildzie (npm run types); w repo tylko kontrakt, nie jego kopia
 web/src/api-types.ts
+
+# baza pytest-testmon; tools/testy.py --dotkniete trzyma ja poza repo, to siatka dla recznego uruchomienia
+.testmondata

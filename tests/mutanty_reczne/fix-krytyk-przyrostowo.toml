@@ -1,0 +1,25 @@
+# Krok 6 audytu procesu 2026-11-19: krytyk liczy mutanty przyrostowo od zapisu bramki
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/bramka_testow.py"
+szukaj = 'argv = [s.replace("{KATALOG_STANU}", kat) for s in b["argv"]]'
+zamien = 'argv = list(b["argv"])'
+test = "tests/test_skill_praca_ticketu.py::test_katalog_stanu_w_argv_bramki_zamieniany_na_katalog_epizodu"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = 'przebieg=os.path.join(kat, "mutanty"))'
+zamien = 'przebieg=os.path.join(kat, "mutanty-krytyka"))'
+test = "tests/test_skill_praca_ticketu.py::test_prompt_krytyka_kaze_liczyc_mutanty_przyrostowo_od_zapisu_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/scripts/prompt_krytyka.py"
+szukaj = 'Uruchom `python tools/mutanty_zmian.py --baza origin/main --od-przebiegu'
+zamien = 'Uruchom `python tools/mutanty_zmian.py --baza origin/main --pelny'
+test = "tests/test_skill_praca_ticketu.py::test_prompt_krytyka_kaze_liczyc_mutanty_przyrostowo_od_zapisu_bramki"
+
+[[mutant]]
+plik = ".claude/skills/praca-ticketu/bramki-szablon.json"
+szukaj = '"--od-przebiegu", "{KATALOG_STANU}/mutanty"]'
+zamien = '"--od-przebiegu", "/tmp/mutanty"]'
+test = "tests/test_skill_praca_ticketu.py::test_szablon_mutantow_zapisuje_przebieg_w_katalogu_stanu_tam_gdzie_szuka_krytyk"

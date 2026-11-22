@@ -44,7 +44,7 @@ def _w_bazie(zapytanie: str, parametry: dict | None = None, *, zapis: bool = Fal
             await engine.dispose()
 
     with ThreadPoolExecutor(max_workers=1) as pula:
-        return pula.submit(lambda: asyncio.run(_wykonaj())).result()
+        return pula.submit(lambda: asyncio.run(_wykonaj())).result(timeout=60)
 
 
 def _utworz_run_w_toku() -> str:
@@ -116,7 +116,7 @@ def _opoznij_otwarcie_strumienia(page, run_id) -> _OpoznioneOtwarcie:
     (`onopen`). Wstrzymany strumien nie otwiera sie sam, wiec drugi GET wychodzi dopiero
     po zwolnieniu strumienia przez test (HAR-232)."""
     stan = _OpoznioneOtwarcie(run_id)
-    page.route("**/api/runs/*/stream", lambda r: stan.strumien.append(r))
+    page.route("**/api/runs/*/events", lambda r: stan.strumien.append(r))
     page.on("response", stan.licz)
     return stan
 

@@ -19,9 +19,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi import Path as SciezkaUrl
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +50,7 @@ from .schematy import (
     DecyzjaPrzyjeta,
     DiffRunu,
     DowodyRunu,
+    EventIn,
     Katalog,
     KatalogOdswiezony,
     KrokRunu,
@@ -137,103 +139,19 @@ class BackendIn(BaseModel):
 
 
 class RunnerRegister(BaseModel):
-    name: str
-    version: str = ""
+    name: str = Field(max_length=200)      # kolumny Runner.name/version: String(n) (HAR-242)
+    version: str = Field(default="", max_length=50)
     backends: list[BackendIn] = []
 
 
 class RunCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")   # bez `command`: kokpit nie podaje argv (HAR-159)
 
-    workflow: str = "szkielet"
+    workflow: str = Field(default="szkielet", max_length=200)     # kolumna String(200)
     operacja: str = Field(default="szkielet", max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     ticket_id: str | None = Field(default=None, min_length=1, max_length=200)  # kolumna String(200)
     potwierdz_rownolegly: bool = False
     project_id: str | None = Field(default=None, min_length=1, max_length=36)  # kolumna String(36)
-
-
-_ListaKotwic = Annotated[
-    list[Annotated[str, Field(min_length=1, max_length=1000)]], Field(max_length=1000)]
-_ListaArtefaktow = Annotated[
-    list[Annotated[str, Field(min_length=1, max_length=255)]], Field(max_length=100)]
-
-
-class DowodIn(BaseModel):
-    """Dowod kroku w ksztalcie, jaki wysyla silnik (`runner.dowody`); `argv` i `stdout_tail`
-    zostaja w pliku dowodu u runnera (sekrety, HAR-66), wiec nieznany klucz to 422 (HAR-170)."""
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    capability: str = Field(max_length=200, min_length=1)
-    # None przy przekroczeniu limitu czasu; strict odrzuca bool, napis i liczbe zmiennoprzecinkowa
-    exit_code: int | None = Field(ge=-2_147_483_648, le=2_147_483_647)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    started_at: str = Field(min_length=1, max_length=64)
-    finished_at: str = Field(min_length=1, max_length=64)
-    source: Literal["engine", "agent"]
-    plik: str = Field(min_length=1, max_length=255)
-
-
-class WpisManifestuIn(BaseModel):
-    """Wpis manifestu kroku (HAR-169): sciezka i hash, nigdy tresc; brak pomiaru to None, nie zero.
-    Limity zgodne z `runner.kontekst` (runner sprawdza je przed wyslaniem)."""
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-    warstwa: str = Field(min_length=1, max_length=64)
-    sciezka: str | None = Field(default=None, min_length=1, max_length=255)
-    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    rozmiar: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    id: str | None = Field(default=None, min_length=1, max_length=64)
-
-
-_ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]
-
-
-class EventIn(BaseModel):
-    run_id: str
-    event_id: str = Field(min_length=1)    # nadaje runner; idempotencja (HAR-39)
-    step_id: str = Field(min_length=1)
-    agent_id: str = ""
-    agent_type: str = ""
-    kind: str
-    text: str = ""
-    cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)  # None = brak pomiaru, nigdy 0 (BRO-87)
-    cost_source: str = "unavailable"
-    tokens: int | None = None
-    duration_ms: int | None = None
-    wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
-    # pelna dlugosc tekstu przed obcieciem przez runnera; le = int4 PostgreSQL (HAR-56)
-    text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    # numer proby kroku; brak to None, nie 1; le = int4 PostgreSQL (HAR-78)
-    attempt: int | None = Field(default=None, ge=1, le=2_147_483_647)
-    # pomiar kroku z wyniku agenta (HAR-174); brak to None, nigdy 0; le = int4 PostgreSQL
-    tokens_in: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    tokens_out: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    num_turns: int | None = Field(default=None, ge=0, le=2_147_483_647)
-    session_id: str | None = Field(default=None, min_length=1, max_length=100)
-    # kroki weryfikujace (D27) w `run_finished`; None = runner nie sklasyfikowal (HAR-178)
-    kroki_weryfikujace: list[Annotated[str, Field(min_length=1, max_length=200)]] | None = Field(
-        default=None, max_length=1000)
-    # dane konca kroku (HAR-170), tylko w step_finished/step_failed; brak to None
-    dowod: DowodIn | None = None
-    verdict: str | None = Field(default=None, min_length=1, max_length=200)
-    kotwice: _ListaKotwic | None = None
-    artefakty: _ListaArtefaktow | None = None
-    manifest: _ListaManifestu | None = None    # tylko w context_manifest (HAR-169); egzekwuje services.runs
-
-    def dane(self) -> dict | None:
-        """Podane pola dowodowe jako `Event.dane`; zadne nie podane to None (SQL NULL), nie `{}`."""
-        dane: dict = {}
-        if self.dowod is not None:
-            dane["dowod"] = self.dowod.model_dump()
-        if self.verdict is not None:
-            dane["verdict"] = self.verdict
-        if self.kotwice is not None:
-            dane["kotwice"] = self.kotwice
-        if self.artefakty is not None:
-            dane["artefakty"] = self.artefakty
-        if self.manifest is not None:
-            dane["manifest"] = [w.model_dump() for w in self.manifest]
-        return dane or None
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -491,26 +409,66 @@ async def decyzja_odbioru(
     return DecyzjaOdbioru(**odbior_dowody.decyzja_z_zdarzenia(zapisane))
 
 
-@app.get("/api/runs/{run_id}/stream", response_model=None,
+def _ramka_runu(ev: dict[str, Any]) -> dict[str, str]:
+    return {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
+
+
+def _po_seq(naglowek: str | None) -> int | None:
+    # isascii: isdecimal() przyjmuje tez cyfry spoza ASCII, a int() je zjada
+    if naglowek is None or not (naglowek.isascii() and naglowek.isdecimal()):
+        return None
+    # dlugosc przed int(): powyzej 4300 cyfr int() rzuca ValueError (limit konwersji Pythona)
+    if len(naglowek) > len(str(2**31 - 1)):
+        return None
+    n = int(naglowek)
+    return n if n <= 2**31 - 1 else None
+
+
+async def _zdarzenia_runu_bez_przerwania(run_ref: Any, po_seq: int | None) -> list[Any]:
+    # Wolane przez shield(ensure_future(...)): anulowanie generatora w srodku zapytania
+    # unieważnia polaczenie i jego graceful close wisi przy zamknieciu petli.
+    async with db_session.SessionLocal() as s:
+        return await uslugi.zdarzenia_runu(s, run_ref, po_seq)
+
+
+@app.get("/api/runs/{run_id}/events", response_model=None,
          responses=odpowiedzi_bledow(401, 404, 422))
 async def run_stream(
     run_id: str,
     request: Request,
     k: Kontekst = Depends(kontekst_sesji_strumienia),
     identyfikator: str = Depends(identyfikator_sesji),
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> EventSourceResponse:
+    po_seq = _po_seq(last_event_id)
     # cudzy lub nieznany run to 404 przed otwarciem strumienia; sesja bazy
     # tylko na to sprawdzenie, zamknieta przed zwroceniem strumienia (HAR-147)
     async with db_session.SessionLocal() as s:
-        await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+        run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
+    # wyluskane przed zamknieciem sesji; do historii wystarcza id i tenant_id
+    run_ref = SimpleNamespace(id=run.id, tenant_id=run.tenant_id)
 
     async def gen():
         q = None
         try:
             # Subskrypcja w try, bo niewystartowany generator nie wykona finally.
             q = bus.subscribe_run(run_id)
-            # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            # Okno kontroli liczymy od subskrypcji, przed odczytem historii (ten oddaje petle).
             ostatnia = time.monotonic()
+            # Otwarcie strumienia rozstrzygnelo sesje w zaleznosci kontekst_sesji_strumienia.
+            # Historia po subskrypcji: zdarzenie z okna miedzy nimi trafia do obu zrodel,
+            # a duplikat odcina `ostatni_seq`. Sesja zamknieta przed czekaniem na kolejke.
+            # shortcut: cala historia bez Last-Event-ID na polaczenie - gdy runy beda duze, limit/paginacja
+            # id ramki rosnie monotonicznie (Last-Event-ID wznawia bez dziur i duplikatow);
+            # seq zapisu idzie pod blokada wiersza runu, wiec kolejnosc commitow = kolejnosc seq.
+            ostatni_seq = po_seq or 0
+            historia = await asyncio.shield(asyncio.ensure_future(
+                _zdarzenia_runu_bez_przerwania(run_ref, po_seq)))
+            for h in historia:
+                if await request.is_disconnected():
+                    return
+                ostatni_seq = h.seq
+                yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
             while True:
                 if await request.is_disconnected():
                     break
@@ -523,7 +481,10 @@ async def run_stream(
                 ev = None
                 if pozostalo > 0:
                     try:
-                        ev = await asyncio.wait_for(q.get(), pozostalo)
+                        # timeout, nie wait_for: na 3.11 wait_for polyka anulowanie, gdy kolejka
+                        # ma akurat zdarzenie, i strumien zostaje przy zamknieciu petli testow
+                        async with asyncio.timeout(pozostalo):
+                            ev = await q.get()
                     except TimeoutError:
                         # cisza przez reszte okna: ev zostaje None, nizej kontrola
                         pass
@@ -544,7 +505,20 @@ async def run_stream(
                     ostatnia = time.monotonic()
                 if ev is None:
                     continue
-                yield {"id": str(ev["seq"]), "event": "run", "data": json.dumps(ev)}
+                # seq <= ostatni_seq pomija koncowy warunek (duplikat lub zdarzenie z historii)
+                if ev["seq"] > ostatni_seq + 1:
+                    # Dziura (np. 5 przed 4 przy rownoleglych ingest): dociagamy z bazy
+                    # i wysylamy rosnaco, zeby id nie cofalo sie po wznowieniu.
+                    luka = await asyncio.shield(asyncio.ensure_future(
+                        _zdarzenia_runu_bez_przerwania(run_ref, ostatni_seq)))
+                    for h in luka:
+                        if await request.is_disconnected():
+                            return
+                        ostatni_seq = h.seq
+                        yield _ramka_runu(uslugi.zdarzenie_na_szyne(h))
+                if ev["seq"] > ostatni_seq:
+                    ostatni_seq = ev["seq"]
+                    yield _ramka_runu(ev)
         finally:
             if q is not None:
                 bus.unsubscribe_run(run_id, q)

@@ -590,11 +590,13 @@
         "properties": {
           "agent_id": {
             "default": "",
+            "maxLength": 100,
             "title": "Agent Id",
             "type": "string"
           },
           "agent_type": {
             "default": "",
+            "maxLength": 100,
             "title": "Agent Type",
             "type": "string"
           },
@@ -630,6 +632,7 @@
           },
           "cost_source": {
             "default": "unavailable",
+            "maxLength": 20,
             "title": "Cost Source",
             "type": "string"
           },
@@ -667,11 +670,13 @@
             "title": "Duration Ms"
           },
           "event_id": {
+            "maxLength": 36,
             "minLength": 1,
             "title": "Event Id",
             "type": "string"
           },
           "kind": {
+            "maxLength": 50,
             "title": "Kind",
             "type": "string"
           },
@@ -738,6 +743,7 @@
             "title": "Num Turns"
           },
           "run_id": {
+            "maxLength": 36,
             "title": "Run Id",
             "type": "string"
           },
@@ -755,6 +761,7 @@
             "title": "Session Id"
           },
           "step_id": {
+            "maxLength": 100,
             "minLength": 1,
             "title": "Step Id",
             "type": "string"
@@ -1526,6 +1533,7 @@
           },
           "workflow": {
             "default": "szkielet",
+            "maxLength": 200,
             "title": "Workflow",
             "type": "string"
           }
@@ -1684,11 +1692,13 @@
             "type": "array"
           },
           "name": {
+            "maxLength": 200,
             "title": "Name",
             "type": "string"
           },
           "version": {
             "default": "",
+            "maxLength": 50,
             "title": "Version",
             "type": "string"
           }
@@ -4504,6 +4514,89 @@
         "summary": "Dowody Runu"
       }
     },
+    "/api/runs/{run_id}/events": {
+      "get": {
+        "operationId": "run_stream_api_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Run Stream"
+      }
+    },
     "/api/runs/{run_id}/integrate": {
       "post": {
         "operationId": "integruj_run_api_runs__run_id__integrate_post",
@@ -4591,73 +4684,6 @@
           }
         },
         "summary": "Integruj Run"
-      }
-    },
-    "/api/runs/{run_id}/stream": {
-      "get": {
-        "operationId": "run_stream_api_runs__run_id__stream_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Blad"
-                }
-              }
-            },
-            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Blad"
-                }
-              }
-            },
-            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Blad"
-                }
-              }
-            },
-            "description": "Niepoprawne dane wejściowe"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Blad"
-                }
-              }
-            },
-            "description": "Błąd wewnętrzny kokpitu"
-          }
-        },
-        "summary": "Run Stream"
       }
     },
     "/api/skills": {

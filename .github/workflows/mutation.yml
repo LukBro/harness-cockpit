@@ -13,6 +13,12 @@ name: mutation
 #   krok, nie cicha zapadka na starym wyniku; CI niczego nie commituje ani nie pushuje.
 #   Plik cicd/mutation-baseline.json zostaje w repo jako historia i niczego nie decyduje.
 #
+# HAR-255: statystyki mutmuta (uruchomienie calego zestawu testow) licza rownolegle shardy
+# (macierz, bez cache, kazdy od zera) i wgrywaja dowod shard-<n>.json. Job `mutation` czeka na
+# nie, pierwszym krokiem oblewa sie przy kazdym wyniku shardow innym niz success (brak dowodu to
+# nie zielone), pobiera dowody i scala je w mutants/mutmut-stats.json PO przywroceniu cache,
+# a mutanty zmienionych funkcji biegna z dowodami zamiast "clean tests" mutmuta.
+#
 # Cache mutmuta: jedyny stan mutmuta lezy w katalogu mutants/ (kopie zrodel, pliki .meta
 # z wynikami i hashami funkcji, mutmut-stats.json). Zapisuje go tylko mutation-main;
 # PR czyta (actions/cache/restore). Klucz w obu jobach:
@@ -42,11 +48,64 @@ on:
   push:
     branches: [main]
 
+# Nowy push do PR anuluje poprzedni przebieg tego PR (audyt 2026-11-19: ~1/3 minut mutation szla na nieaktualne
+# SHA). Push na main dostaje wlasna grupe (run_id), wiec niczego nie anuluje ani nie kolejkuje.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  mutation:
+  mutation-statystyki:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+      - name: statystyki mutmuta shardu
+        env:
+          SHARD: ${{ matrix.shard }}
+          LICZBA_SHARDOW: ${{ strategy.job-total }}
+        run: |
+          python3 tools/statystyki_mutmuta.py shard --indeks "$SHARD" --liczba "$LICZBA_SHARDOW" --katalog-dowodow dowody
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dowody-${{ matrix.shard }}
+          path: dowody
+
+  mutation:
+    if: github.event_name == 'pull_request' && always()
+    needs: [mutation-statystyki]
+    runs-on: ubuntu-24.04
+    # bez limitu job wisial do domyslnych 360 min (HAR-106); sufit jak mutation-main
+    timeout-minutes: 240
+    steps:
+      - name: wynik shardów statystyk mutmuta
+        env:
+          WYNIKI_SHARDOW: ${{ join(needs.*.result, ' ') }}
+        run: |
+          if [ -z "${WYNIKI_SHARDOW//[[:space:]]/}" ]; then
+            echo "::error::brak dowodu: brak wyniku shardow statystyk mutmuta"
+            exit 1
+          fi
+          for wynik in $WYNIKI_SHARDOW; do
+            if [ "$wynik" != "success" ]; then
+              echo "::error::brak dowodu: shardy statystyk mutmuta nie zakonczyly sie sukcesem (wyniki: $WYNIKI_SHARDOW)"
+              exit 1
+            fi
+          done
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -104,6 +163,20 @@ jobs:
           key: mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-${{ hashFiles('src/**') }}
           restore-keys: |
             mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-
+
+      # HAR-255: dowody shardow (po przywroceniu cache) i ich scalenie. Scalone statystyki musza
+      # nadpisac plik statystyk z cache, wiec scalenie stoi PO przywroceniu cache i po pobraniu
+      # dowodow, a przed mutantami zmienionych funkcji. Brak pliku shardu, inny commit albo
+      # inne zrodla w dowodzie to kod 2 narzedzia i czerwony krok (bez warunku, bez wyjatku od porazki).
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dowody-*
+          path: dowody
+          merge-multiple: true
+
+      - name: scalenie statystyk shardów
+        run: |
+          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow dowody
 
       # HAR-156: reczny mutant w web/ albo sprawdzany testem e2e potrzebuje zbudowanego frontu,
       # Chromium i prawdziwego Postgresa; wynik ma zalezec od kodu, nie od srodowiska. Krok
@@ -179,7 +252,7 @@ jobs:
           # sprawdzenia w podsumowaniu), inny = blad narzedzia (czerwony krok).
           # Przechwytujemy go do zmiennej, zeby trafil do `case` ponizej, a nie zostal polkniety.
           kod=0
-          python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
+          python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" --katalog-dowodow dowody > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
           # Krok `mutanty reczne` czyta ten kod: bez pliku nie wiadomo, czy mutmut pokryl zmiane.
           echo "$kod" > mutants/mutanty-zmian.kod
           {
@@ -372,6 +445,54 @@ jobs:
               ;;
           esac
 
+      # HAR-241: kształty, których mutmut nie generuje (element krotki `except`, instrukcja,
+      # kolejność, element zbioru/krotki/mapy, `sorted`/`.strip()`, element wyrażenia regularnego).
+      # Kod narzędzia: 0 zielony (`zbadano N` albo `brak zmienionych funkcji`), 1 przeżywający
+      # mutant, 3 miejsca do ręcznego sprawdzenia (`plik:linia: sprawdz recznie`), każdy inny
+      # to błąd narzędzia (np. zero zebranych testów) - czerwony krok.
+      # Stoi po kroku pokrycia, żeby nie rozdzielać kroków czytających kod mutantów zmian.
+      - name: mutanty uzupełniające
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mkdir -p mutants
+          kod=0
+          python3 tools/mutanty_uzupelniajace.py --baza "origin/$BASE_REF" > mutants/mutanty-uzupelniajace.txt 2> mutants/mutanty-uzupelniajace.err || kod=$?
+          {
+            echo "## Mutanty uzupełniające"
+            echo
+            case "$kod" in
+              0)
+                cat mutants/mutanty-uzupelniajace.txt
+                ;;
+              1)
+                echo "Przeżywające mutanty uzupełniające (krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/mutanty-uzupelniajace.txt
+                echo '```'
+                ;;
+              3)
+                echo "Miejsca do ręcznego sprawdzenia (bez dowodu, krok jest czerwony):"
+                echo
+                echo '```'
+                cat mutants/mutanty-uzupelniajace.txt
+                echo '```'
+                ;;
+              *)
+                echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/mutanty-uzupelniajace.err
+                echo '```'
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$kod" != "0" ]; then
+            echo "::error::mutanty_uzupelniajace.py zakończył się kodem $kod: $(tr '\n' ' ' < mutants/mutanty-uzupelniajace.err) $(tr '\n' ' ' < mutants/mutanty-uzupelniajace.txt)"
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -385,6 +506,8 @@ jobs:
             mutants/tabele-reczne.err
             mutants/pokrycie-kod3.txt
             mutants/pokrycie-kod3.err
+            mutants/mutanty-uzupelniajace.txt
+            mutants/mutanty-uzupelniajace.err
 
   mutation-main:
     if: github.event_name == 'push'

@@ -31,7 +31,7 @@ from playwright.sync_api import expect
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from procesy import grupa_istnieje, uruchom_proces_sync, zabij_grupe, zakoncz_proces_sync
+from procesy import grupa_istnieje, uruchom_proces_sync, zabij_grupe, zakoncz_proces_sync, uruchom_i_zbierz
 from runner.worktree import utworz_worktree
 
 pytestmark = [pytest.mark.e2e, pytest.mark.baza]
@@ -113,7 +113,7 @@ def _w_bazie(zapytanie: str, parametry: dict | None = None, *, zapis: bool = Fal
 
 
 def _git(repo: Path, *argumenty: str) -> str:
-    return subprocess.run(
+    return uruchom_i_zbierz(
         ["git", "-C", str(repo), *argumenty],
         check=True, capture_output=True, text=True, timeout=60,
     ).stdout
@@ -311,7 +311,7 @@ def _podstaw_run(page, zdarzenia: list[dict] | None = None, status: str = "to_ac
     Wstrzymany strumien nie otwiera sie, wiec `onopen` nie dociaga run po cichu i jedynym
     zrodlem zmiany widoku po akcji jest `odswiez()` z komponentu odbioru."""
     stan = _Szczegoly(str(uuid.uuid4()), status, list(zdarzenia or []))
-    _wstrzymaj(page, "**/api/runs/*/stream")
+    _wstrzymaj(page, "**/api/runs/*/events")
 
     def szczegoly(r):
         if r.request.method == "GET":

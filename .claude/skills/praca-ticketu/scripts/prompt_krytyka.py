@@ -60,8 +60,13 @@ Przeczytaj, w tej kolejności:
 
 Zakres oceny: {zakres}
 Zmiany: `git diff {sha} -- <pliki agenta>` oraz nowe pliki z `git status --porcelain` (przeczytaj w całości).
-Plik zmieniony poza przydziałem i poza pliki_tm/pliki_sprzed_startu to odjęcie z rubryki.
+Plik zmieniony poza przydziałem i poza pliki_tm/pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem,
+bez blokady) - bez odjęcia punktów; o wejściu zmiany decyduje Team Manager.
 Lint i testy są zielone dla bieżącego diffu (pole bramki w stanie) - nie uruchamiasz ich i ich nie punktujesz.
+Mutanty: nie powtarzasz pełnego mutmuta. Uruchom `python tools/mutanty_zmian.py --baza origin/main --od-przebiegu
+{przebieg}` - mutmut liczy tylko funkcje zmienione od przebiegu bramki, resztę bierze z jej zapisu (brak zapisu =
+pełny przebieg). Kod wyjścia inny niż `bramki.mutanty.kod` w stanie albo przeżywający mutant, którego nie ma w logu
+bramki, to podmieniony wynik (-25, falszywie-zielone). Do tego `python tools/mutanty_reczne.py --sprawdz-wszystkie`.
 
 Odpowiedź: wyłącznie blok **Code Review** w formacie z rubryki, linia `<agent>: 100 ... = X/100` dla każdego
 ocenianego agenta, linia REGULA przy każdym NEEDS WORK.
@@ -108,7 +113,7 @@ def main(a):
         r = n - 1
         zakres = (f"TYLKO agent {op['--tylko']} (ponowna ocena po poprawce). Oceny pozostałych są kontekstem: "
                   f"{json.dumps(poprzedni, ensure_ascii=False)}. Mimo to wykonaj `git diff --stat {st['baseline']['sha']}`"
-                  f" na całym repo - naruszenie przydziału w iteracji też się liczy.")
+                  f" na całym repo - plik poza przydziałem w iteracji też wpisz jako UWAGA (bez blokady), bez odjęcia.")
         migawka = [os.path.join(kat, f"krytyk-werdykt-{r}.md"), os.path.join(kat, f"krytyk-diff-{r}.patch")]
         if all(os.path.isfile(m) for m in migawka):
             zakres += (
@@ -116,16 +121,21 @@ def main(a):
                   f"wskazała). Poprzedni werdykt: {migawka[0]}, diff, który wtedy "
                   f"oceniałeś: {migawka[1]}. Odejmujesz WYŁĄCZNIE za: (a) odjęcie "
                   f"z poprzedniego werdyktu, które nie zostało naprawione; (b) wadę w kodzie, którego nie było w tamtym "
-                  f"diffie albo który poprawka zmieniła; (c) naruszenie przydziału. Wada w kodzie bez zmian od tamtego "
+                  f"diffie albo który poprawka zmieniła. Plik poza przydziałem to UWAGA (bez blokady), bez odjęcia. "
+                  f"Wada w kodzie bez zmian od tamtego "
                   f"diffu, której poprzedni werdykt nie wskazał, to linia `UWAGA-PO-RUNDZIE: <plik:linia> <opis>` pod "
                   f"oceną agenta, bez odjęcia.")
         else:   # runda sprzed migawek: pelna ocena jest surowsza, nie lagodniejsza
             print(f"prompt_krytyka: brak migawki rundy {r} - pełna ocena bez zamrożenia zakresu", file=sys.stderr)
     else:
-        zakres = "wszyscy agenci z `przydzial`"
+        # 2026-11-19 wlasciciel: poprawki szly na raty (HAR-181, HAR-256 - nowe odjecia w kazdej rundzie)
+        zakres = ("wszyscy agenci z `przydzial`.\nPEŁNA LISTA: to jedyna pełna ocena - kolejne rundy mają zamrożony "
+                  "zakres. Wypisz WSZYSTKIE wady, które widzisz, także po odjęciach, które już dają NEEDS WORK; nie "
+                  "przerywaj po pierwszych. Dla każdego zmienionego elementu przejdź rubrykę i "
+                  "`.ai/qa/ksztalty-mutantow.md` do końca, żeby poprawka naprawiła listę w jednej rundzie.")
     tresc = SZABLON.format(key=key, tytul=(st.get("ticket") or {}).get("title", ""), rubryka=op["--rubryka"],
                            stan=stan, raporty=op.get("--raporty", "brak osobnego pliku - raporty w stanie"),
-                           zakres=zakres, sha=st["baseline"]["sha"])
+                           zakres=zakres, sha=st["baseline"]["sha"], przebieg=os.path.join(kat, "mutanty"))
     out = os.path.join(kat, f"krytyk-prompt-{n}.md")
     with open(out, "w", encoding="utf-8") as f:
         f.write(tresc)

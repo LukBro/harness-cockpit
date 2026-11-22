@@ -8,7 +8,6 @@ sprzata grupe procesow. Kazde czekanie ma limit czasu.
 """
 import asyncio
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -19,6 +18,7 @@ from runner.agent import SpecKroku
 from runner import krok as modul_kroku
 from runner.krok import WynikKroku, wykonaj_krok
 from test_wykonanie_kroku import atrapa
+from procesy import uruchom_i_zbierz
 
 KROK = "krok-23"
 EVIDENCE_PUSTY = "niezmiennik evidence_required: pusty wynik agenta, brak artefaktu plan.md"
@@ -102,7 +102,7 @@ async def test_recenzent_wypisujacy_plan_ma_go_w_katalogu_runu_i_krok_zakonczony
 
     wynik, _ = await uruchom(spec(), wypisz(tresc), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == tresc.encode()
 
 
@@ -115,7 +115,7 @@ async def test_zbieracz_wypisujacy_notatke_ma_ja_w_katalogu_runu_i_krok_zakonczo
         spec(Rola.gatherer, ["plan.md"]), wypisz(tresc), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == tresc.encode()
 
 
@@ -136,7 +136,7 @@ async def test_artefakt_recenzenta_w_podkatalogu_powstaje_pod_katalogiem_kroku(
         spec(wyjscia=["raporty/plan.md"]), wypisz("tresc\n"), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "raporty" / "plan.md").read_text() == "tresc\n"
 
 
@@ -147,7 +147,7 @@ async def test_ponowny_krok_zastepuje_artefakt_z_poprzedniego_podejscia(katalog,
 
     wynik, _ = await uruchom(spec(), wypisz("nowy plan\n"), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert stary.read_text() == "nowy plan\n"
     assert pliki_pod(katalog_runu / KROK) == ["plan.md"]
 
@@ -155,7 +155,7 @@ async def test_ponowny_krok_zastepuje_artefakt_z_poprzedniego_podejscia(katalog,
 async def test_bajty_spoza_utf8_w_wyniku_sa_zastapione_w_artefakcie(katalog, katalog_runu):
     wynik, _ = await uruchom(spec(), atrapa(bajty="ff0a"), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == "�\n".encode()
 
 
@@ -168,7 +168,7 @@ async def test_pusty_wynik_recenzenta_to_porazka_evidence_required_bez_pliku(
 ):
     wynik, _ = await uruchom(spec(), atrapa(linie=[["out", stdout]]), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", EVIDENCE_PUSTY, 0)
+    assert wynik == WynikKroku(status="nieudany", powod=EVIDENCE_PUSTY, kod_wyjscia=0)
     assert pliki_pod(katalog_runu) == []
 
 
@@ -179,7 +179,7 @@ async def test_samo_stderr_agenta_nie_jest_wynikiem_wiec_artefakt_nie_powstaje(
         spec(), atrapa(linie=[["err", "ostrzezenie: cos poszlo nie tak\n"]]), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("nieudany", EVIDENCE_PUSTY, 0)
+    assert wynik == WynikKroku(status="nieudany", powod=EVIDENCE_PUSTY, kod_wyjscia=0)
     assert pliki_pod(katalog_runu) == []
 
 
@@ -188,7 +188,7 @@ async def test_pusty_wynik_zbieracza_to_porazka_evidence_required_bez_pliku(
 ):
     wynik, _ = await uruchom(spec(Rola.gatherer), atrapa(), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", EVIDENCE_PUSTY, 0)
+    assert wynik == WynikKroku(status="nieudany", powod=EVIDENCE_PUSTY, kod_wyjscia=0)
     assert pliki_pod(katalog_runu) == []
 
 
@@ -199,7 +199,7 @@ async def test_brak_wyniku_wygrywa_z_samowolnym_zapisem_recenzenta_poza_katalogi
         spec(), atrapa(zapisz={"nowy.txt": "samowola"}), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("nieudany", EVIDENCE_PUSTY, 0)
+    assert wynik == WynikKroku(status="nieudany", powod=EVIDENCE_PUSTY, kod_wyjscia=0)
 
 
 async def test_samowolny_zapis_recenzenta_obok_artefaktu_nadal_jest_naruszeniem_tylko_do_odczytu(
@@ -213,7 +213,7 @@ async def test_samowolny_zapis_recenzenta_obok_artefaktu_nadal_jest_naruszeniem_
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "niezmiennik reviewer_readonly: nowe: nowy.txt", 0
+        status="nieudany", powod="niezmiennik reviewer_readonly: nowe: nowy.txt", kod_wyjscia=0
     )
 
 
@@ -222,7 +222,7 @@ async def test_kod_wyjscia_niezerowy_przy_wypisanej_tresci_to_porazka_bez_pliku(
 ):
     wynik, _ = await uruchom(spec(), wypisz("plan\n", kod=3), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", "kod wyjścia 3", 3)
+    assert wynik == WynikKroku(status="nieudany", powod="kod wyjścia 3", kod_wyjscia=3)
     assert pliki_pod(katalog_runu) == []
 
 
@@ -239,7 +239,7 @@ async def test_stderr_agenta_nie_trafia_do_artefaktu_ale_jest_w_zdarzeniach(
         katalog_runu,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_text() == "tresc planu\n"
     assert all(z["kind"] == "output" and z["step_id"] == KROK for z in zdarzenia)
     assert sorted(z["text"] for z in zdarzenia) == ["ostrzezenie agenta", "tresc planu"]
@@ -264,7 +264,7 @@ async def test_recenzent_z_dwoma_artefaktami_nie_startuje_i_porazka_wymienia_oba
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "rola reviewer oddaje jeden artefakt, zadeklarowano 2: a.md, b.md", None
+        status="nieudany", powod="rola reviewer oddaje jeden artefakt, zadeklarowano 2: a.md, b.md", kod_wyjscia=None
     )
     assert zdarzenia == []
     assert not agent_wystartowal(znacznik)
@@ -282,9 +282,9 @@ async def test_zbieracz_z_dwoma_artefaktami_nie_startuje_i_porazka_nazywa_role(
     )
 
     assert wynik == WynikKroku(
-        "nieudany",
-        "rola gatherer oddaje jeden artefakt, zadeklarowano 3: a.md, b.md, c.md",
-        None,
+        status="nieudany",
+        powod="rola gatherer oddaje jeden artefakt, zadeklarowano 3: a.md, b.md, c.md",
+        kod_wyjscia=None,
     )
     assert not agent_wystartowal(znacznik)
 
@@ -297,7 +297,7 @@ async def test_recenzent_bez_katalogu_runu_nie_startuje_i_porazka_nazywa_artefak
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "brak katalogu runu dla artefaktu plan.md roli reviewer", None
+        status="nieudany", powod="brak katalogu runu dla artefaktu plan.md roli reviewer", kod_wyjscia=None
     )
     assert zdarzenia == []
     assert not agent_wystartowal(znacznik)
@@ -312,7 +312,7 @@ async def test_zbieracz_bez_katalogu_runu_nie_startuje_i_porazka_nazywa_role(
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "brak katalogu runu dla artefaktu plan.md roli gatherer", None
+        status="nieudany", powod="brak katalogu runu dla artefaktu plan.md roli gatherer", kod_wyjscia=None
     )
     assert not agent_wystartowal(znacznik)
 
@@ -323,7 +323,7 @@ async def test_dwa_artefakty_wygrywaja_z_brakiem_katalogu_runu(katalog, znacznik
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "rola reviewer oddaje jeden artefakt, zadeklarowano 2: a.md, b.md", None
+        status="nieudany", powod="rola reviewer oddaje jeden artefakt, zadeklarowano 2: a.md, b.md", kod_wyjscia=None
     )
 
 
@@ -333,7 +333,7 @@ async def test_brak_katalogu_runu_wygrywa_z_niedozwolona_nazwa_artefaktu(katalog
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "brak katalogu runu dla artefaktu ../plan.md roli reviewer", None
+        status="nieudany", powod="brak katalogu runu dla artefaktu ../plan.md roli reviewer", kod_wyjscia=None
     )
 
 
@@ -350,7 +350,7 @@ async def test_niedozwolona_nazwa_artefaktu_nie_startuje_agenta_i_nic_nie_powsta
     )
 
     assert wynik == WynikKroku(
-        "nieudany", f"niedozwolona ścieżka artefaktu: {nazwa!r}", None
+        status="nieudany", powod=f"niedozwolona ścieżka artefaktu: {nazwa!r}", kod_wyjscia=None
     )
     assert zdarzenia == []
     assert not agent_wystartowal(znacznik)
@@ -368,7 +368,7 @@ async def test_bezwzgledna_sciezka_artefaktu_nie_startuje_agenta_i_nic_pod_nia_n
     )
 
     assert wynik == WynikKroku(
-        "nieudany", f"niedozwolona ścieżka artefaktu: {str(poza)!r}", None
+        status="nieudany", powod=f"niedozwolona ścieżka artefaktu: {str(poza)!r}", kod_wyjscia=None
     )
     assert not agent_wystartowal(znacznik)
     assert not poza.parent.exists()
@@ -388,7 +388,7 @@ async def test_niedozwolony_identyfikator_kroku_nie_startuje_agenta_i_nic_nie_po
     )
 
     assert wynik == WynikKroku(
-        "nieudany", f"niedozwolony identyfikator kroku: {step_id!r}", None
+        status="nieudany", powod=f"niedozwolony identyfikator kroku: {step_id!r}", kod_wyjscia=None
     )
     assert zdarzenia == []
     assert not agent_wystartowal(znacznik)
@@ -407,7 +407,7 @@ async def test_niedozwolona_nazwa_artefaktu_wygrywa_z_niedozwolonym_identyfikato
     )
 
     assert wynik == WynikKroku(
-        "nieudany", "niedozwolona ścieżka artefaktu: '../plan.md'", None
+        status="nieudany", powod="niedozwolona ścieżka artefaktu: '../plan.md'", kod_wyjscia=None
     )
 
 
@@ -456,7 +456,7 @@ async def test_katalog_runu_obok_repozytorium_nie_jest_naruszeniem(tmp_path, kat
 
     wynik, _ = await uruchom(spec(), wypisz("plan\n"), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
 
 
 # --- limit rozmiaru -------------------------------------------------------------------
@@ -471,7 +471,7 @@ async def test_wynik_dluzszy_niz_limit_to_porazka_bez_pliku(
         spec(), atrapa(bajty=(b"x" * 101).hex()), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("nieudany", "wynik agenta przekracza 100 bajtów", 0)
+    assert wynik == WynikKroku(status="nieudany", powod="wynik agenta przekracza 100 bajtów", kod_wyjscia=0)
     assert pliki_pod(katalog_runu) == []
 
 
@@ -482,7 +482,7 @@ async def test_wynik_rowny_limitowi_jest_zapisany(monkeypatch, katalog, katalog_
         spec(), atrapa(bajty=(b"x" * 100).hex()), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == b"x" * 100
 
 
@@ -509,7 +509,7 @@ async def test_wynik_rowny_limitowi_w_bajtach_wielobajtowych_znakow_jest_zapisan
         spec(), atrapa(bajty=(litera * 50).hex()), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_bytes() == litera * 50
 
 
@@ -525,7 +525,7 @@ async def test_stderr_nie_liczy_sie_do_limitu_rozmiaru_artefaktu(
         katalog_runu,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_text() == "krotki plan\n"
 
 
@@ -587,7 +587,7 @@ async def test_nieudane_podmienienie_artefaktu_nie_zostawia_pliku_tymczasowego(
 
 
 def git(katalog: Path, *argumenty: str) -> str:
-    wynik = subprocess.run(
+    wynik = uruchom_i_zbierz(
         ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
          "-c", "commit.gpgsign=false", *argumenty],
         cwd=katalog,
@@ -609,7 +609,7 @@ async def test_artefakt_recenzenta_nie_pojawia_sie_w_git_status_repozytorium(
 
     wynik, _ = await uruchom(spec(), wypisz("# Plan\n"), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert git(katalog, "status", "--porcelain") == ""
     assert (katalog_runu / KROK / "plan.md").read_text() == "# Plan\n"
 
@@ -628,7 +628,7 @@ async def test_rola_z_zapisem_pisze_artefakt_sama_a_jej_wynik_nie_trafia_do_kata
         katalog_runu,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog / "a.md").read_text() == "praca autora"
     assert pliki_pod(katalog_runu) == []
 
@@ -640,7 +640,7 @@ async def test_recenzent_bez_deklarowanych_artefaktow_konczy_krok_i_nic_nie_zapi
         spec(wyjscia=[]), wypisz("uwagi bez artefaktu\n"), katalog, katalog_runu
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert pliki_pod(katalog_runu) == []
 
 
@@ -711,7 +711,7 @@ async def test_pelny_stderr_agenta_nie_blokuje_kroku_recenzenta_a_artefakt_ma_ty
         30,
     )
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_text() == "tresc planu\n"
     assert any(z["text"] == "e" * 300000 for z in zdarzenia)
 
@@ -726,14 +726,14 @@ async def test_wynik_dokladnie_8_mib_jest_zapisany_przy_domyslnym_limicie(katalo
     # "dluga" dopisuje "\n": n znakow + newline = MIB8 bajtow
     wynik, _ = await uruchom(spec(), atrapa(dluga=MIB8 - 1), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("zakonczony", None, 0)
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").stat().st_size == MIB8
 
 
 async def test_wynik_8_mib_i_bajt_to_porazka_przy_domyslnym_limicie(katalog, katalog_runu):
     wynik, _ = await uruchom(spec(), atrapa(dluga=MIB8), katalog, katalog_runu)
 
-    assert wynik == WynikKroku("nieudany", f"wynik agenta przekracza {MIB8} bajtów", 0)
+    assert wynik == WynikKroku(status="nieudany", powod=f"wynik agenta przekracza {MIB8} bajtów", kod_wyjscia=0)
     assert pliki_pod(katalog_runu) == []
 
 

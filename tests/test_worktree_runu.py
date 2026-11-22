@@ -2,7 +2,6 @@
 
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,6 +16,7 @@ from runner.worktree import (
     usun_worktree,
     utworz_worktree,
 )
+from procesy import uruchom_i_zbierz
 
 TOZSAMOSC = [
     "-c", "user.name=Test",
@@ -26,7 +26,7 @@ TOZSAMOSC = [
 
 
 def git(repo: Path, *argumenty: str) -> str:
-    return subprocess.run(
+    return uruchom_i_zbierz(
         ["git", *TOZSAMOSC, "-C", str(repo), *argumenty],
         check=True, capture_output=True, text=True,
     ).stdout

@@ -18,6 +18,9 @@ Konfiguracja: <git-common-dir>/monolynx/<KEY>/bramki.json - lista bramek przepis
 
 Wywołanie: python3 bramka_testow.py <KEY> [--tylko nazwa,nazwa]
 
+`{KATALOG_STANU}` w elemencie argv zamienia się na katalog stanu epizodu (<git-common-dir>/monolynx/<KEY>), np.
+`--od-przebiegu {KATALOG_STANU}/mutanty`: zapis przebiegu mutantów, z którego krytyk liczy przyrostowo (krok 6 audytu).
+
 Wiązanie z diffem: przed i po przebiegu liczony jest skrót diffu (git diff --binary <baseline> + treść
 plików nieśledzonych). Zmiana diffu w trakcie przebiegu = brak-dowodu (wynik dotyczyłby innego kodu).
 Wynik każdej bramki trafia do stan.json jako bramki.<nazwa> = {wynik, kod, skrot_diffu, log, czas};
@@ -110,7 +113,8 @@ def main(a):
         t0 = time.time()
         try:
             with open(log, "w", encoding="utf-8") as f:
-                r = subprocess.run(b["argv"], stdout=f, stderr=subprocess.STDOUT, timeout=int(b.get("timeout", 3600)),
+                argv = [s.replace("{KATALOG_STANU}", kat) for s in b["argv"]]
+                r = subprocess.run(argv, stdout=f, stderr=subprocess.STDOUT, timeout=int(b.get("timeout", 3600)),
                                    start_new_session=True)
             kod = r.returncode
             wynik = mapa.get(str(kod), "brak-dowodu")

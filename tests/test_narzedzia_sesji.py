@@ -7,6 +7,9 @@ Testy uruchamiaja PRAWDZIWE skrypty. Pytest, alembic i git pracuja wylacznie w m
 `tmp_path`; zaslepki w PATH (`gh` i `git`) sluza tylko do obserwacji, czy skrypt wypchnal galaz i
 wolal `gh pr create`. Procesy ida przez `tests/procesy.py`.
 """
+import hashlib
+import io
+import json
 import os
 import re
 import shutil
@@ -493,6 +496,1837 @@ def test_sigterm_do_skryptu_zabija_grupe_pytesta_i_konczy_kodem_143(tmp_path):
         zakoncz_proces_sync(proc, nazwa="testy.py")
         if znacznik.exists() and znacznik.read_text() != "" and czy_zyje(int(znacznik.read_text())):
             zabij_proces(int(znacznik.read_text()))  # pytest, ktory przezyl skrypt (tylko gdy test oblal)
+
+
+# ----------------------- tools/testy.py --dotkniete (HAR-256) -----------------------
+# Mini-projekt zyje w tmp_path z wlasnym repo git; `testy.KORZEN` podmienia maly skrypt-opakowanie,
+# bo narzedzie uruchamia pytesta w swoim korzeniu. Baza testmona (TESTMON_DATAFILE) lezy poza repo.
+
+MINI_KOD = """
+def dodaj(a, b):
+    return a + b
+
+
+def odejmij(a, b):
+    return a - b
+
+
+def pomnoz(a, b):
+    return a * b
+"""
+MINI_TESTY = """
+from mini import dodaj, odejmij, pomnoz
+
+
+def test_dodawanie_liczb_dodatnich():
+    assert dodaj(1, 2) == 3
+
+
+def test_dodawanie_liczb_ujemnych():
+    assert dodaj(-1, -2) == -3
+
+
+def test_odejmowanie_liczb_dodatnich():
+    assert odejmij(3, 1) == 2
+
+
+def test_odejmowanie_do_ujemnej():
+    assert odejmij(1, 3) == -2
+
+
+def test_mnozenie_liczb_dodatnich():
+    assert pomnoz(2, 3) == 6
+
+
+def test_mnozenie_przez_zero():
+    assert pomnoz(5, 0) == 0
+
+
+def test_niezalezny_od_kodu():
+    assert True
+
+
+def test_drugi_niezalezny_od_kodu():
+    assert 1 == 1
+"""
+OPAKOWANIE = """
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+import testy
+
+testy.KORZEN = Path(sys.argv[2])
+sys.exit(testy.main(sys.argv[3:]))
+"""
+
+
+def _mini_projekt(tmp_path: Path, testy: str = MINI_TESTY) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _zapisz(repo, "mini.py", MINI_KOD)
+    _zapisz(repo, "test_mini.py", testy)
+    _zapisz(repo, "pytest.ini", "[pytest]\npythonpath = .\n")
+    _commit(repo, "start")
+    return repo
+
+
+def _testy_dotkniete(
+    repo: Path,
+    *argumenty: str,
+    baza: Path | None,
+    limit_testu: float = LIMIT_SKRYPTU,
+    dom: Path | None = None,
+    srodowisko: dict[str, str] | None = None,
+):
+    opakowanie = repo.parent / "opakowanie.py"
+    opakowanie.write_text(OPAKOWANIE, encoding="utf-8")
+    # `_uruchom` dokleja srodowisko procesu testow, wiec samo usuniecie zmiennej by jej nie wylaczylo: pusta wartosc
+    # to "brak" dla narzedzia (`or domyslna`), a podana jawnie baza ma pierwszenstwo.
+    env = {"TESTMON_DATAFILE": str(baza) if baza is not None else ""}
+    if dom is not None:
+        env["HOME"] = str(dom)
+    env.update(srodowisko or {})
+    return _uruchom(
+        [sys.executable, str(opakowanie), str(NARZEDZIA), str(repo), "--dotkniete", *argumenty],
+        KORZEN,
+        env,
+        limit_testu,
+    )
+
+
+def _liczba(wyjscie: str, etykieta: str) -> int:
+    trafienia = re.findall(rf"{etykieta}: (\d+)", wyjscie)
+    assert len(trafienia) == 1, wyjscie
+    return int(trafienia[0])
+
+
+def test_po_zmianie_jednej_funkcji_dotkniete_uruchamiaja_tylko_pokrywajace_ja_testy_i_podaja_liczby(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, _ = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie
+    assert baza.exists()
+    _zapisz(repo, "mini.py", MINI_KOD.replace("return a + b", "return b + a"))
+    kod, wyjscie, _ = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie
+    wybrane, pominiete = _liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")
+    assert wybrane == 2  # tylko dwa testy dodawania pokrywaja `dodaj`
+    assert pominiete == 6
+    assert wybrane < (wybrane + pominiete) / 2
+
+
+def test_dotkniete_uruchamiaja_test_pokrywajacy_zmieniona_funkcje_i_pomijaja_reszte(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    _testy_dotkniete(repo, "-q", baza=baza)
+    _zapisz(repo, "mini.py", MINI_KOD.replace("return a * b", "return b * a"))
+    kod, wyjscie, _ = _testy_dotkniete(repo, "-v", baza=baza)
+    assert kod == 0, wyjscie
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_dodawanie_liczb_dodatnich" not in wyjscie
+
+
+def test_baza_testmona_domyslnie_nie_laduje_w_repozytorium_uzytkownika(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    dom = tmp_path / "dom"
+    kod, wyjscie, _ = _testy_dotkniete(repo, "-q", baza=None, dom=dom)
+    assert kod == 0, wyjscie
+    assert [p.name for p in repo.iterdir() if p.name.startswith(".testmondata")] == []
+    skrot = hashlib.sha1(str(repo).encode()).hexdigest()[:12]
+    baza = dom / ".cache" / "cockpit-testy" / skrot / ".testmondata"
+    assert baza.is_file()
+    assert testy_py.plik_odcisku(baza).is_file()
+
+
+# --- wyzwalacze pelnego przebiegu: czysta funkcja `powod_pelnego_przebiegu` ---------------------
+# Kontrakt: powod_pelnego_przebiegu(korzen, baza, *, wersje=None) -> str | None (powod albo None),
+# zapisz_odcisk(korzen, baza, *, wersje=None) zapisuje odcisk plikow-wyzwalaczy w plik_odcisku(baza),
+# obok bazy. `wersje` to mapa nazwa -> wersja zaleznosci (domyslnie z importlib.metadata).
+
+WERSJE = {"pytest": "8.4.0", "ruamel.yaml": "0.18.0"}
+
+
+def _zdrowy_stan(tmp_path: Path) -> tuple[Path, Path]:
+    import sqlite3
+
+    repo = tmp_path / "repo"
+    _zapisz(repo, "conftest.py", "# a\n")
+    _zapisz(repo, "tests/conftest.py", "# a\n")
+    _zapisz(repo, "tests/test_x.py", "# a\n")
+    _zapisz(repo, "pyproject.toml", "[project]\nname='x'\n")
+    _zapisz(repo, "alembic/versions/0001.py", "# a\n")
+    _zapisz(repo, ".cockpit/project.yaml", "a: 1\n")
+    _zapisz(repo, "deploy/compose.yaml", "a: 1\n")
+    _zapisz(repo, "web/openapi.json", "{}\n")
+    _zapisz(repo, "src/modul.py", "x = 1\n")
+    baza = tmp_path / "baza" / "testmon.db"
+    baza.parent.mkdir()
+    polaczenie = sqlite3.connect(baza)
+    try:
+        with polaczenie:
+            polaczenie.execute("create table node (id integer primary key)")
+    finally:
+        polaczenie.close()
+    testy_py.zapisz_odcisk(repo, baza, wersje=WERSJE)
+    return repo, baza
+
+
+def test_niezmienione_wyzwalacze_i_zdrowa_baza_nie_wymuszaja_pelnego_przebiegu(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) is None
+
+
+def test_zmiana_zwyklego_pliku_zrodlowego_nie_wymusza_pelnego_przebiegu(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "src/modul.py", "x = 2\n")
+    assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) is None
+
+
+def test_odcisk_wyzwalaczy_lezy_obok_bazy_testmona_poza_repozytorium(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    odcisk = testy_py.plik_odcisku(baza)
+    assert odcisk.parent == baza.parent
+    assert odcisk.is_file()
+    assert repo not in odcisk.parents
+
+
+def test_brak_bazy_testmona_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    baza.unlink()
+    assert "brak bazy" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_uszkodzona_baza_testmona_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    baza.write_bytes(b"to nie jest sqlite" * 50)
+    assert "uszkodzona" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_brak_odcisku_wyzwalaczy_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    testy_py.plik_odcisku(baza).unlink()
+    assert "odcisk" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_conftest_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "tests/conftest.py", "# b\n")
+    assert "conftest.py" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_conftest_w_korzeniu_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "conftest.py", "# b\n")
+    assert "conftest.py" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_zwyklego_testu_w_katalogu_tests_nie_wymusza_pelnego_przebiegu(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "tests/test_x.py", "# b\n")
+    assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) is None
+
+
+def test_baza_testmona_bez_ani_jednej_tabeli_jest_uznana_za_uszkodzona(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    baza.write_bytes(b"")  # zerobajtowy plik to poprawna, pusta baza sqlite: 0 tabel
+    assert "uszkodzona" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_pyproject_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "pyproject.toml", "[project]\nname='y'\n")
+    assert "pyproject.toml" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_migracji_alembic_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "alembic/versions/0001.py", "# b\n")
+    assert "alembic" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_nowa_migracja_alembic_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "alembic/versions/0002.py", "# nowy\n")
+    assert "alembic" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_konfiguracji_cockpit_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, ".cockpit/project.yaml", "a: 2\n")
+    assert ".cockpit" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_plikow_deploy_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "deploy/compose.yaml", "a: 2\n")
+    assert "deploy" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_openapi_frontu_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "web/openapi.json", '{"a": 1}\n')
+    assert "web/openapi.json" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_zmiana_wersji_zaleznosci_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    nowe = {**WERSJE, "pytest": "8.5.0"}
+    assert "zaleznosci" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=nowe)
+
+
+def test_dodanie_zaleznosci_wymusza_pelny_przebieg(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    nowe = {**WERSJE, "nowa-biblioteka": "1.0"}
+    assert "zaleznosci" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=nowe)
+
+
+# --- brak dowodu -----------------------------------------------------------------------------
+
+
+def test_zero_wybranych_testow_przy_niepustym_diffie_py_to_blad_brak_dowodu_a_nie_sukces(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, _ = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie
+    # plik .py w diffie, ktorego zaden test nie importuje: testmon nie wybiera niczego (kod 5 pytesta)
+    _zapisz(repo, "nikt_nie_uzywa.py", "x = 1\n")
+    _git(repo, "add", "-N", "nikt_nie_uzywa.py")
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == testy_py.KOD_BLEDU, wyjscie
+    assert kod not in (0, 5)
+    assert "brak dowodu" in wyjscie + bledy
+
+
+def test_zero_wybranych_testow_przy_pustym_diffie_py_nie_jest_bledem_brak_dowodu(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    _testy_dotkniete(repo, "-q", baza=baza)
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert "brak dowodu" not in wyjscie + bledy
+    assert kod == 0, wyjscie
+
+
+def test_projekt_bez_zadnych_testow_i_bez_diffu_py_konczy_dotkniete_kodem_0_a_nie_5_pytesta(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, _ = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie
+    (repo / "test_mini.py").unlink()
+    _commit(repo, "usuniecie testow")
+    assert _git(repo, "diff", "--name-only", "HEAD") == ""
+    # baza i odcisk sa zdrowe: o wyniku decyduje wylacznie gałąź pustego diffu, nie pelny przebieg
+    assert testy_py.powod_pelnego_przebiegu(repo, baza) is None
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert "brak dowodu" not in wyjscie + bledy
+    assert kod == 0, wyjscie
+
+
+def test_wiszacy_test_w_trybie_dotkniete_pod_xdist_n_4_konczy_przebieg_kodem_2_z_node_id(tmp_path):
+    repo = _mini_projekt(tmp_path, PLIK_WISI)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, _ = _testy_dotkniete(repo, "--bez-postepu", "75", "-q", "-n", "4", baza=baza, limit_testu=200.0)
+    assert kod == 2
+    zawieszenia = [w for w in wyjscie.splitlines() if w.startswith("zawieszenie:")]
+    assert len(zawieszenia) == 1
+    assert re.fullmatch(r"zawieszenie: (\S+/)?test_mini\.py::test_wisi", zawieszenia[0])
+
+
+# --- HAR-256, runda 2: kazda galaz tryba --dotkniete ma test, w ktorym tylko ona decyduje ---------
+
+TESTY_CZERWONE = MINI_TESTY + "\n\ndef test_czerwony():\n    assert False\n"
+BEZ_ROOTA = pytest.mark.skipif(os.geteuid() == 0, reason="root ignoruje prawa dostepu do plikow")
+
+
+def test_diff_w_repozytorium_bez_commita_to_blad_brak_dowodu_a_nie_pusta_lista_zmian(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    with pytest.raises(testy_py.BladNarzedzia, match=r"brak dowodu: git diff zakonczyl sie kodem [1-9]\d*: .*HEAD"):
+        testy_py._zmienione_py(repo)
+
+
+def test_zmienione_pliki_to_tylko_te_z_rozszerzeniem_py(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    _zapisz(repo, "notatki.txt", "a\n")
+    _commit(repo, "notatki")
+    _zapisz(repo, "notatki.txt", "b\n")
+    _zapisz(repo, "mini.py", MINI_KOD + "\n# zmiana\n")
+    assert testy_py._zmienione_py(repo) == ["mini.py"]
+
+
+def test_git_ktorego_nie_da_sie_uruchomic_to_blad_brak_dowodu_przy_odczycie_diffu(monkeypatch, tmp_path):
+    def pada(*_argumenty, **_nazwane):
+        raise FileNotFoundError("brak gita")
+
+    monkeypatch.setattr(testy_py.subprocess, "run", pada)
+    with pytest.raises(testy_py.BladNarzedzia, match="brak dowodu: nie udalo sie odczytac diffu: brak gita"):
+        testy_py._zmienione_py(tmp_path)
+
+
+def test_git_diff_przekraczajacy_limit_czasu_to_blad_brak_dowodu_przy_odczycie_diffu(monkeypatch, tmp_path):
+    def pada(*_argumenty, **_nazwane):
+        raise subprocess.TimeoutExpired("git", 60)
+
+    monkeypatch.setattr(testy_py.subprocess, "run", pada)
+    with pytest.raises(testy_py.BladNarzedzia, match="brak dowodu: nie udalo sie odczytac diffu: .*60"):
+        testy_py._zmienione_py(tmp_path)
+
+
+def test_pelny_przebieg_bez_podsumowania_z_liczba_testow_to_blad_brak_dowodu_a_nie_zielony_wynik(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-qq", baza=baza)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "brak dowodu: pelny przebieg bez podsumowania z liczba testow" in bledy
+    assert not testy_py.plik_odcisku(baza).exists()  # brak dowodu nie zapisuje odcisku
+
+
+def test_czerwony_przebieg_bez_podsumowania_zwraca_kod_pytesta_a_nie_blad_brak_dowodu(tmp_path):
+    repo = _mini_projekt(tmp_path, TESTY_CZERWONE)
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-qq", baza=tmp_path / "baza.db")
+    assert kod == 1, wyjscie + bledy
+    assert "brak dowodu" not in wyjscie + bledy
+
+
+def test_baza_testmona_wewnatrz_repozytorium_to_blad_narzedzia_a_nie_przebieg(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = repo / "wewnatrz" / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "baza testmona nie moze lezec w repozytorium" in bledy
+    assert not baza.parent.exists()  # nic nie zostalo utworzone w repozytorium
+
+
+def test_zmiana_pyproject_po_zbudowaniu_bazy_uruchamia_wszystkie_testy_a_nie_zero(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    _zapisz(repo, "pyproject.toml", "[project]\nname='a'\n")
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    _zapisz(repo, "pyproject.toml", "[project]\nname='b'\n")
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    assert "pelny przebieg - zmiana: pyproject.toml" in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (8, 0)
+
+
+def test_uszkodzona_baza_jest_usuwana_i_odbudowana_a_przebieg_pelny_konczy_sie_kodem_0(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    baza.write_bytes(b"to nie jest sqlite" * 50)
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    assert "pelny przebieg - baza testmona uszkodzona" in wyjscie
+    assert _liczba(wyjscie, "wybrane") == 8
+    assert testy_py._baza_zdrowa(baza)
+
+
+def test_przebieg_z_czerwonym_testem_nie_zapisuje_odcisku_wiec_nastepny_przebieg_jest_pelny(tmp_path):
+    repo = _mini_projekt(tmp_path, TESTY_CZERWONE)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 1, wyjscie + bledy
+    assert baza.is_file()
+    assert not testy_py.plik_odcisku(baza).exists()
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 1, wyjscie + bledy
+    assert "pelny przebieg - brak odcisku plikow-wyzwalaczy" in wyjscie
+
+
+def test_katalog_bazy_testmona_ktorego_nie_da_sie_utworzyc_to_blad_narzedzia_z_nazwa_katalogu(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    plik = tmp_path / "zwykly_plik"
+    plik.write_text("to nie katalog", encoding="utf-8")
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=plik / "baza.db")
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    katalog = plik.resolve()
+    assert f"BLAD: nie mozna utworzyc katalogu bazy testmona {katalog}: [Errno 17] File exists: '{katalog}'" in bledy
+
+
+@BEZ_ROOTA
+def test_uszkodzonej_bazy_testmona_ktorej_nie_da_sie_usunac_to_blad_narzedzia_a_baza_zostaje(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    katalog = tmp_path / "bazy"
+    katalog.mkdir()
+    baza = katalog / "baza.db"
+    baza.write_bytes(b"to nie jest sqlite" * 50)
+    katalog.chmod(0o555)
+    try:
+        kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    finally:
+        katalog.chmod(0o755)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    pelna = baza.resolve()
+    assert f"BLAD: nie mozna usunac uszkodzonej bazy testmona {pelna}: [Errno 13] Permission denied: '{pelna}'" in bledy
+    assert baza.read_bytes() == b"to nie jest sqlite" * 50
+
+
+@pytest.mark.parametrize("tresc", [b"{nie json", b"", b"\xff\xfe\xfd"])
+def test_odcisk_ktorego_nie_da_sie_odczytac_jako_json_wymusza_pelny_przebieg_a_nie_traceback(tmp_path, tresc):
+    repo, baza = _zdrowy_stan(tmp_path)
+    testy_py.plik_odcisku(baza).write_bytes(tresc)
+    assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) == "brak odcisku plikow-wyzwalaczy"
+
+
+@pytest.mark.parametrize("tresc", [b"[]", b'"x"', b"null", b"1"])
+def test_odcisk_ktory_nie_jest_slownikiem_wymusza_pelny_przebieg_a_nie_traceback(tmp_path, tresc):
+    repo, baza = _zdrowy_stan(tmp_path)
+    testy_py.plik_odcisku(baza).write_bytes(tresc)
+    assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) == "brak odcisku plikow-wyzwalaczy"
+
+
+def test_podsumowanie_z_jednym_ostrzezeniem_i_pominietymi_to_zero_wybranych_i_szesc_pominietych():
+    assert testy_py._liczby_z_podsumowania(["6 deselected, 1 warning in 0.1s\n"]) == (0, 6)
+
+
+def test_podsumowanie_z_ostrzezeniami_w_liczbie_mnogiej_nie_liczy_ich_jako_wybranych():
+    assert testy_py._liczby_z_podsumowania(["2 passed, 3 warnings in 0.1s\n"]) == (2, None)
+
+
+def test_podsumowanie_sumuje_rodzaje_wybranych_osobno_od_pominietych_i_ignoruje_ozdobniki():
+    ogon = ["=== 2 passed, 1 failed, 4 deselected in 61.25s (0:01:01) ===\n", "inna linia\n"]
+    assert testy_py._liczby_z_podsumowania(ogon) == (3, 4)
+
+
+def test_podsumowanie_bierze_ostatnia_linie_z_liczbami_a_ogon_bez_podsumowania_to_brak_wyniku():
+    assert testy_py._liczby_z_podsumowania(["1 passed in 0.1s\n", "5 failed in 0.2s\n"]) == (5, None)
+    assert testy_py._liczby_z_podsumowania(["nic tu nie ma\n"]) is None
+
+
+def test_podsumowanie_z_nieznanym_rodzajem_to_blad_brak_dowodu_a_nie_pominiecie_liczby():
+    with pytest.raises(testy_py.BladNarzedzia, match="brak dowodu: nieznany rodzaj w podsumowaniu pytesta: 'dziwne'"):
+        testy_py._liczby_z_podsumowania(["2 passed, 3 dziwne in 0.1s\n"])
+
+
+@pytest.mark.parametrize("rodzaj", sorted({"passed", "failed", "error", "errors", "skipped", "xfailed", "xpassed"}))
+def test_podsumowanie_liczy_kazdy_znany_rodzaj_wyniku_jako_wybrane(rodzaj):
+    assert testy_py._liczby_z_podsumowania([f"3 {rodzaj} in 0.1s\n"]) == (3, None)
+
+
+@pytest.mark.parametrize("rodzaj", ["warning", "warnings", "rerun", "reruns"])
+def test_podsumowanie_nie_liczy_ostrzezen_i_ponowien_jako_wybranych(rodzaj):
+    assert testy_py._liczby_z_podsumowania([f"2 passed, 3 {rodzaj} in 0.1s\n"]) == (2, None)
+
+
+def test_plik_w_pycache_migracji_nie_zmienia_odcisku_a_zwykly_plik_migracji_tak(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "alembic/versions/__pycache__/0001.cpython-314.pyc", "bajty")
+    assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) is None
+    _zapisz(repo, "alembic/versions/0002.py", "# nowy\n")
+    assert "alembic" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+@BEZ_ROOTA
+def test_nieczytelny_katalog_migracji_to_blad_narzedzia_a_nie_pusty_odcisk(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    (repo / "alembic").chmod(0o000)
+    try:
+        with pytest.raises(testy_py.BladNarzedzia) as blad:
+            testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+        katalog = repo / "alembic"
+        assert str(blad.value) == f"nie mozna przejrzec katalogu wyzwalaczy: [Errno 13] Permission denied: '{katalog}'"
+    finally:
+        (repo / "alembic").chmod(0o755)
+
+
+def test_wyzwalacz_ktorego_nie_da_sie_sprawdzic_to_blad_narzedzia_z_nazwa_sciezki(monkeypatch, tmp_path):
+    def pada(self, *_argumenty, **_nazwane):
+        raise PermissionError("brak praw")
+
+    with monkeypatch.context() as m:
+        m.setattr(Path, "is_dir", pada)
+        with pytest.raises(testy_py.BladNarzedzia) as blad:
+            testy_py._pliki(tmp_path, "alembic", ("alembic",))
+    assert str(blad.value) == f"nie mozna sprawdzic wyzwalacza {tmp_path / 'alembic'}: brak praw"
+
+
+@BEZ_ROOTA
+def test_nieczytelny_plik_wyzwalacza_to_blad_narzedzia_z_nazwa_pliku(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    (repo / "pyproject.toml").chmod(0o000)
+    try:
+        with pytest.raises(testy_py.BladNarzedzia) as blad:
+            testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+        plik = repo / "pyproject.toml"
+        assert str(blad.value) == f"nie mozna odczytac wyzwalacza {plik}: [Errno 13] Permission denied: '{plik}'"
+    finally:
+        (repo / "pyproject.toml").chmod(0o644)
+
+
+def test_odcisku_nie_da_sie_zapisac_gdy_katalog_bazy_nie_istnieje_to_blad_narzedzia(tmp_path):
+    repo, _ = _zdrowy_stan(tmp_path)
+    baza = tmp_path / "brak" / "baza.db"
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.zapisz_odcisk(repo, baza, wersje=WERSJE)
+    odcisk = testy_py.plik_odcisku(baza)
+    assert str(blad.value) == f"nie mozna zapisac odcisku wyzwalaczy: [Errno 2] No such file or directory: '{odcisk}'"
+
+
+def test_przeniesiona_migracja_o_tej_samej_tresci_zmienia_odcisk_bo_nazwa_pliku_wchodzi_do_skrotu(tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    (repo / "alembic/versions/0001.py").rename(repo / "alembic/versions/0003.py")
+    assert "alembic" in testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE)
+
+
+def test_kolejnosc_przegladania_katalogow_nie_zmienia_odcisku_wyzwalaczy(monkeypatch, tmp_path):
+    repo, baza = _zdrowy_stan(tmp_path)
+    _zapisz(repo, "alembic/versions/0002.py", "# b\n")
+    _zapisz(repo, "alembic/versions/0003.py", "# c\n")
+    _zapisz(repo, "alembic/inne/0004.py", "# d\n")
+    oryginal = os.walk
+
+    def walk_w_kolejnosci(odwrotnie):
+        def przegladaj(*argumenty, **nazwane):
+            for katalog, podkatalogi, pliki in oryginal(*argumenty, **nazwane):
+                podkatalogi.sort(reverse=odwrotnie)
+                pliki.sort(reverse=odwrotnie)
+                yield katalog, podkatalogi, pliki
+
+        return przegladaj
+
+    with monkeypatch.context() as m:
+        m.setattr(testy_py.os, "walk", walk_w_kolejnosci(False))
+        testy_py.zapisz_odcisk(repo, baza, wersje=WERSJE)
+        m.setattr(testy_py.os, "walk", walk_w_kolejnosci(True))
+        assert testy_py.powod_pelnego_przebiegu(repo, baza, wersje=WERSJE) is None
+
+
+def test_zdrowa_baza_testmona_przezywa_pelny_przebieg_po_zmianie_wyzwalacza_i_nie_jest_usuwana(tmp_path):
+    import sqlite3
+
+    repo = _mini_projekt(tmp_path)
+    _zapisz(repo, "pyproject.toml", "[project]\nname='a'\n")
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    polaczenie = sqlite3.connect(baza)
+    try:
+        with polaczenie:
+            polaczenie.execute("create table znacznik_testu (id integer)")
+    finally:
+        polaczenie.close()
+    _zapisz(repo, "pyproject.toml", "[project]\nname='b'\n")
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    assert "pelny przebieg - zmiana: pyproject.toml" in wyjscie
+    polaczenie = sqlite3.connect(baza)
+    try:
+        tabele = {w[0] for w in polaczenie.execute("select name from sqlite_master")}
+    finally:
+        polaczenie.close()
+    assert "znacznik_testu" in tabele  # baza byla zdrowa, wiec nie zostala usunieta
+
+
+# --- addopts projektu, e2e i opcje wylaczajace selekcje testmona ------------------------------------
+
+def _repo_z_prawdziwym_pyproject(tmp_path: Path) -> Path:
+    """Mini-repo z kopia pyproject.toml projektu (addopts = "-m 'not e2e'"); kod w src/, testy w tests/."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    tresc = (KORZEN / "pyproject.toml").read_text(encoding="utf-8")
+    assert "addopts = \"-m 'not e2e'\"" in tresc  # bez tego test nie odtwarza defektu
+    _zapisz(repo, "pyproject.toml", tresc)
+    _zapisz(repo, "src/mini.py", MINI_KOD)
+    _zapisz(repo, "tests/test_mini.py", MINI_TESTY)
+    _commit(repo, "start")
+    return repo
+
+
+def test_addopts_projektu_z_wyborem_znacznikow_nie_wylacza_selekcji_dotknietych_testow(tmp_path):
+    repo = _repo_z_prawdziwym_pyproject(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    _zapisz(repo, "src/mini.py", MINI_KOD.replace("return a + b", "return b + a"))
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    wybrane, pominiete = _liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")
+    assert (wybrane, pominiete) == (2, 6)
+
+
+def test_katalog_e2e_jest_pomijany_przy_pelnym_przebiegu_dotknietych(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    _zapisz(repo, "tests/e2e/test_x.py", "def test_e2e_ktory_padlby():\n    assert False\n")
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=tmp_path / "baza.db")
+    assert kod == 0, wyjscie + bledy
+    assert _liczba(wyjscie, "wybrane") == 8
+    assert "test_e2e_ktory_padlby" not in wyjscie
+
+
+def _repo_ze_zdrowa_baza(tmp_path: Path) -> tuple[Path, Path]:
+    import sqlite3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    baza = tmp_path / "baza" / "testmon.db"
+    baza.parent.mkdir()
+    polaczenie = sqlite3.connect(baza)
+    try:
+        with polaczenie:
+            polaczenie.execute("create table node (id integer primary key)")
+    finally:
+        polaczenie.close()
+    testy_py.zapisz_odcisk(repo, baza)
+    return repo, baza
+
+
+def _nie_uruchamiaj(*_argumenty, **_nazwane):
+    raise AssertionError("pytest nie powinien byc uruchomiony")
+
+
+# Powody podaje sonda (parser pytesta + `_get_noselect_reasons` testmona), nie dopasowanie tekstu argumentow.
+@pytest.mark.parametrize(
+    ("argumenty", "powod"),
+    [
+        (["-k", "dodawanie"], "-k was used"),
+        (["-m", "e2e"], "-m was used"),
+        (["-kdodawanie"], "-k was used"),
+        (["-mslow"], "-m was used"),
+        (["-qkdodawanie"], "-k was used"),
+        (["-vm", "e2e"], "-m was used"),
+        (["-q", "-k", "x"], "-k was used"),
+        (["--lf"], "--lf was used"),
+        (["--last-failed"], "--lf was used"),
+        (["tests/test_mini.py::test_x"], "you selected tests manually"),
+    ],
+)
+def test_argument_wylaczajacy_selekcje_testmona_to_blad_brak_dowodu_zanim_ruszy_pytest(
+    monkeypatch, tmp_path, argumenty, powod
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(argumenty, 5.0, repo)
+    assert str(blad.value) == f"brak dowodu: testmon wylaczyl selekcje ({powod}) - uruchom bez tych argumentow"
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [["-q"], ["-v"], ["-qv"], ["-x"], ["-s"], ["-rA"], ["-W", "ignore"], ["-n", "4"], ["tests/a.py"]],
+)
+def test_argumenty_niewylaczajace_selekcji_nie_sa_bledem_w_trybie_z_selekcja(monkeypatch, tmp_path, argumenty):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["8 passed, 4 deselected in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(argumenty, 5.0, repo) == 0
+
+
+def test_te_same_argumenty_w_pelnym_przebiegu_sa_dozwolone_bo_nie_ma_selekcji(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", "-k", "dodawanie", baza=tmp_path / "baza.db")
+    assert kod == 0, wyjscie + bledy
+    assert "brak dowodu" not in wyjscie + bledy
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+def _odtworz_wyjscie(linie: list[str], ogon, dezaktywacje) -> None:
+    """To, co dla kazdej linii robi prawdziwy `_czytaj_wyjscie`: ogon i pierwsza linia o wylaczeniu selekcji."""
+    for linia in linie:
+        ogon.append(linia)
+        del ogon[:-40]
+        trafienie = testy_py.DEZAKTYWACJA_TESTMONA.search(linia)
+        if trafienie and dezaktywacje is not None and not dezaktywacje:
+            dezaktywacje.append(trafienie.group(0))
+
+
+def _atrapa_pytesta_z_wyjsciem(linie: list[str]):
+    def atrapa(_argumenty, _limit, _cwd, ogon=None, dezaktywacje=None):
+        _odtworz_wyjscie(linie, ogon, dezaktywacje)
+        return 0
+
+    return atrapa
+
+
+@pytest.mark.parametrize(
+    ("komunikat", "w_bledzie"),
+    [
+        ("selection automatically deactivated because -m was used\n", "selection automatically deactivated because -m was used"),
+        ("collection automatically deactivated because -x was used\n", "collection automatically deactivated because -x was used"),
+        ("selection automatically deactivated because -m was used, \n", "selection automatically deactivated because -m was used"),
+        ("testmon: selection automatically deactivated because -m was used\n", "selection automatically deactivated because -m was used"),
+    ],
+)
+def test_testmon_ktory_sam_wylaczyl_selekcje_to_blad_brak_dowodu_z_jego_powodem(monkeypatch, tmp_path, komunikat, w_bledzie):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem([komunikat, "8 passed in 0.1s\n"]))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == f"brak dowodu: testmon wylaczyl selekcje ({w_bledzie})"
+
+
+def test_wyjscie_bez_komunikatu_o_wylaczeniu_selekcji_nie_jest_bledem(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["8 passed, 4 deselected in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+
+
+def test_komunikat_o_wylaczeniu_selekcji_w_pelnym_przebiegu_nie_jest_bledem_bo_noselect_robi_to_celowo(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("TESTMON_DATAFILE", str(tmp_path / "baza" / "testmon.db"))
+    atrapa = _atrapa_pytesta_z_wyjsciem(["selection automatically deactivated because --testmon-noselect\n", "8 passed in 0.1s\n"])
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+
+
+# --- liczba pominietych: brak pomiaru to nie zero (measured_or_null) ---------------------------------
+
+
+def test_podsumowanie_z_zerem_pominietych_to_zero_a_bez_wzmianki_o_pominietych_to_brak_pomiaru():
+    assert testy_py._liczby_z_podsumowania(["2 passed, 0 deselected in 0.1s\n"]) == (2, 0)
+    assert testy_py._liczby_z_podsumowania(["2 passed in 0.1s\n"]) == (2, None)
+
+
+def _atrapa_z_przebiegami(glowny: list[str], collect: list[str], kod_glowny: int = 0, kod_collect: int = 0):
+    """Atrapa `uruchom`: osobne wyjscie dla przebiegu glownego i dla `--collect-only`; zapisuje argumenty wywolan."""
+    wywolania: list[list[str]] = []
+
+    def atrapa(argumenty, _limit, _cwd, ogon=None, dezaktywacje=None):
+        wywolania.append(list(argumenty))
+        if "--collect-only" in argumenty:
+            _odtworz_wyjscie(collect, ogon, dezaktywacje)
+            return kod_collect
+        _odtworz_wyjscie(glowny, ogon, dezaktywacje)
+        return kod_glowny
+
+    atrapa.wywolania = wywolania
+    return atrapa
+
+
+def test_brak_deselected_w_podsumowaniu_uruchamia_collect_only_a_pominiete_to_calosc_minus_wybrane(
+    monkeypatch, tmp_path, capsys
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(["5 passed in 0.1s\n"], ["12 tests collected in 0.1s\n"])
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    assert testy_py.uruchom_dotkniete(["-q", "-n", "4", "tests/x.py"], 5.0, repo) == 0
+    assert capsys.readouterr().out == "wybrane: 5\npominiete: 7\n"
+    assert atrapa.wywolania == [
+        ["--testmon", "-o", "addopts=", "-q", "-n", "4", "tests/x.py"],
+        ["--testmon-noselect", "--collect-only", "-q", "-o", "addopts=", "tests/x.py"],
+    ]
+
+
+def test_deselected_w_podsumowaniu_to_zmierzone_pominiete_bez_dodatkowego_przebiegu(monkeypatch, tmp_path, capsys):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(["5 passed, 7 deselected in 0.1s\n"], ["999 tests collected\n"])
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert capsys.readouterr().out == "wybrane: 5\npominiete: 7\n"
+    assert len(atrapa.wywolania) == 1
+
+
+def test_pelny_przebieg_nic_nie_pomija_wiec_nie_liczy_pominietych_osobnym_przebiegiem(monkeypatch, tmp_path, capsys):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("TESTMON_DATAFILE", str(tmp_path / "baza" / "testmon.db"))
+    atrapa = _atrapa_z_przebiegami(["5 passed in 0.1s\n"], ["999 tests collected\n"])
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert "wybrane: 5\npominiete: 0\n" in capsys.readouterr().out
+    assert len(atrapa.wywolania) == 1
+
+
+@pytest.mark.parametrize("kod_glowny", [0, 5])
+def test_przebieg_bez_wybranych_testow_i_bez_zmian_py_liczy_wszystkie_testy_jako_pominiete(
+    monkeypatch, tmp_path, capsys, kod_glowny
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    _init_repo(repo)
+    _zapisz(repo, "notatki.txt", "a\n")
+    _commit(repo, "start")
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(["no tests ran in 0.00s\n"], ["8 tests collected in 0.1s\n"], kod_glowny=kod_glowny)
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert capsys.readouterr().out == "wybrane: 0\npominiete: 8\n"
+
+
+@pytest.mark.parametrize(
+    ("collect", "wszystkie_w_bledzie"),
+    [(["nic\n"], "None"), (["to nie jest 12 tests collected\n"], "None")],
+)
+def test_collect_only_bez_linii_z_liczba_testow_to_blad_brak_dowodu_a_nie_zero_pominietych(
+    monkeypatch, tmp_path, collect, wszystkie_w_bledzie
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_z_przebiegami(["5 passed in 0.1s\n"], collect))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == (
+        f"brak dowodu: nie udalo sie ustalic liczby pominietych (kod 0, wszystkie: {wszystkie_w_bledzie}, wybrane: 5)"
+    )
+
+
+def test_collect_only_z_kodem_bledu_to_blad_brak_dowodu_mimo_poprawnej_linii(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(["5 passed in 0.1s\n"], ["12 tests collected in 0.1s\n"], kod_collect=2)
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 2, wszystkie: 12, wybrane: 5)"
+
+
+def test_collect_only_z_mniejsza_liczba_testow_niz_wybrane_to_blad_brak_dowodu(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(["5 passed in 0.1s\n"], ["4 tests collected in 0.1s\n"])
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 0, wszystkie: 4, wybrane: 5)"
+
+
+@pytest.mark.parametrize(
+    ("collect", "pominiete"),
+    [
+        (["5 tests collected in 0.1s\n"], 0),
+        (["12 tests collected in 0.1s\n"], 7),
+        (["12 tests collected\n"], 7),
+        (["=== 12 tests collected in 0.1s ===\n"], 7),
+        (["99 tests collected\n", "12 tests collected in 0.1s\n", "inna linia\n"], 7),
+    ],
+)
+def test_collect_only_liczba_testow_jest_brana_z_ostatniej_linii_w_kazdym_formacie(
+    monkeypatch, tmp_path, capsys, collect, pominiete
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_z_przebiegami(["5 passed in 0.1s\n"], collect))
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert capsys.readouterr().out == f"wybrane: 5\npominiete: {pominiete}\n"
+
+
+def test_collect_only_z_jednym_testem_w_liczbie_pojedynczej_jest_liczony(monkeypatch, tmp_path, capsys):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_z_przebiegami(["1 passed in 0.1s\n"], ["1 test collected in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert capsys.readouterr().out == "wybrane: 1\npominiete: 0\n"
+
+
+@pytest.mark.parametrize(
+    ("argumenty", "zostaje"),
+    [
+        (["-n", "4"], []),
+        (["-n4"], []),
+        (["-nauto"], []),
+        (["--numprocesses", "4"], []),
+        (["--numprocesses=4"], []),
+        (["-p", "no:cacheprovider"], []),
+        (["-pno:cacheprovider"], []),
+        (["-q"], []),
+        (["-qq"], []),
+        (["-v"], []),
+        (["-vv"], []),
+        (["tests/a.py"], ["tests/a.py"]),
+        (["-x"], ["-x"]),
+        (["-n", "4", "tests/a.py"], ["tests/a.py"]),
+        (["-p", "x", "-x"], ["-x"]),
+    ],
+)
+def test_do_zliczania_pominietych_nie_trafiaja_opcje_rownoleglosci_wtyczek_i_gadatliwosci(argumenty, zostaje):
+    assert testy_py._argumenty_do_zliczania(argumenty) == zostaje
+
+
+def _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, wybrane, collect, kod_collect):
+    monkeypatch.setattr(
+        testy_py, "uruchom", _atrapa_z_przebiegami([], collect, kod_collect=kod_collect)
+    )
+    return testy_py._liczba_pominietych(wybrane, [], [], 5.0, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "linia",
+    ["no tests collected in 0.01s\n", "no tests collected\n", "=== no tests collected in 0.01s ===\n"],
+)
+def test_projekt_bez_testow_collect_only_z_kodem_5_to_zero_wszystkich_i_zero_pominietych(monkeypatch, tmp_path, linia):
+    assert _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, 0, [linia], 5) == 0
+
+
+def test_kod_5_collect_only_bez_linii_no_tests_collected_to_blad_brak_dowodu(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, 0, ["nic\n"], 5)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 5, wszystkie: None, wybrane: 0)"
+
+
+def test_kod_5_collect_only_z_liczba_testow_zamiast_no_tests_collected_to_blad_brak_dowodu(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, 5, ["12 tests collected in 0.1s\n"], 5)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 5, wszystkie: 12, wybrane: 5)"
+
+
+def test_no_tests_collected_z_kodem_0_to_blad_brak_dowodu_bo_pytest_konczy_wtedy_kodem_5(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, 0, ["no tests collected in 0.01s\n"], 0)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 0, wszystkie: 0, wybrane: 0)"
+
+
+def test_no_tests_collected_z_innym_kodem_bledu_to_blad_brak_dowodu(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, 0, ["no tests collected in 0.01s\n"], 2)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 2, wszystkie: 0, wybrane: 0)"
+
+
+def test_no_tests_collected_przy_wybranych_testach_to_blad_brak_dowodu_a_nie_ujemne_pominiete(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _liczba_pominietych_z_atrapa(monkeypatch, tmp_path, 3, ["no tests collected in 0.01s\n"], 5)
+    assert str(blad.value) == "brak dowodu: nie udalo sie ustalic liczby pominietych (kod 5, wszystkie: 0, wybrane: 3)"
+
+
+def test_projekt_bez_testow_i_bez_zmian_py_konczy_dotkniete_kodem_0_z_zerem_pominietych(monkeypatch, tmp_path, capsys):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    _init_repo(repo)
+    _zapisz(repo, "notatki.txt", "a\n")
+    _commit(repo, "start")
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(
+        ["no tests ran in 0.00s\n"], ["no tests collected in 0.01s\n"], kod_glowny=5, kod_collect=5
+    )
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert capsys.readouterr().out == "wybrane: 0\npominiete: 0\n"
+
+
+def test_plik_py_ze_znakiem_spoza_ascii_w_diffie_jest_zmiana_a_nie_ukryta_przez_cytowanie_sciezki(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    _zapisz(repo, "moduł.py", "x = 1\n")
+    _commit(repo, "modul")
+    _zapisz(repo, "moduł.py", "x = 2\n")
+    assert testy_py._zmienione_py(repo) == ["moduł.py"]
+
+
+def test_zero_wybranych_testow_mimo_zmiany_pliku_py_ze_znakiem_spoza_ascii_to_blad_brak_dowodu(
+    monkeypatch, tmp_path
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    _init_repo(repo)
+    _zapisz(repo, "moduł.py", "x = 1\n")
+    _commit(repo, "start")
+    _zapisz(repo, "moduł.py", "x = 2\n")
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    atrapa = _atrapa_z_przebiegami(["no tests ran in 0.00s\n"], ["8 tests collected\n"], kod_glowny=5)
+    monkeypatch.setattr(testy_py, "uruchom", atrapa)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: zero wybranych testow mimo zmian w .py (moduł.py)"
+
+
+def test_komunikat_o_wylaczeniu_selekcji_sprzed_ostatnich_40_linii_jest_zapamietany_w_locie():
+    pierwszy = "testmon: selection automatically deactivated because -m was used"
+    linie = [pierwszy + "\n"] + [f"linia {i}\n" for i in range(60)]
+    linie.append("collection automatically deactivated because inny\n")
+    ogon: list[str] = []
+    dezaktywacje: list[str] = []
+    testy_py._czytaj_wyjscie(io.BytesIO("".join(linie).encode()), testy_py._Stan(), ogon, dezaktywacje)
+    assert ogon == linie[-40:]
+    assert all("deactivated" not in wiersz for wiersz in ogon[:-1])
+    assert dezaktywacje == ["selection automatically deactivated because -m was used"]
+
+
+def test_komunikat_o_wylaczeniu_selekcji_sprzed_ostatnich_40_linii_wyjscia_daje_blad_brak_dowodu(
+    monkeypatch, tmp_path
+):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    linie = ["selection automatically deactivated because -m was used\n"] + [f"linia {i}\n" for i in range(60)]
+    linie.append("8 passed in 0.1s\n")
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(linie))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: testmon wylaczyl selekcje (selection automatically deactivated because -m was used)"
+
+
+def test_wyjscie_pytesta_spoza_utf8_nie_przerywa_czytnika_a_podsumowanie_jest_odczytane():
+    ogon: list[str] = []
+    testy_py._czytaj_wyjscie(io.BytesIO(b"\xff\xfe zly bajt\n3 passed in 0.1s\n"), testy_py._Stan(), ogon, [])
+    assert ogon[0] == "\ufffd\ufffd zly bajt\n"
+    assert testy_py._liczby_z_podsumowania(ogon) == (3, None)
+
+
+def test_wzgledna_sciezka_bazy_testmona_jest_rozwiazywana_i_wykrywana_jako_lezaca_w_repozytorium(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("TESTMON_DATAFILE", "baza.db")
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == f"baza testmona nie moze lezec w repozytorium ({repo.resolve() / 'baza.db'})"
+
+
+def test_korzen_podany_przez_dowiazanie_symboliczne_nie_ukrywa_bazy_lezacej_w_repozytorium(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    dowiazanie = tmp_path / "dowiazanie"
+    dowiazanie.symlink_to(repo, target_is_directory=True)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(repo / "baza.db"))
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, dowiazanie)
+    assert str(blad.value) == f"baza testmona nie moze lezec w repozytorium ({repo.resolve() / 'baza.db'})"
+
+
+def test_dystrybucja_bez_nazwy_w_metadanych_jest_pomijana_w_odcisku_zaleznosci_a_nie_bledem(monkeypatch, tmp_path):
+    from email.message import Message
+    from types import SimpleNamespace
+
+    nazwana = Message()
+    nazwana["Name"] = "pakiet"
+    dystrybucje = [SimpleNamespace(metadata=Message(), version="1.0"), SimpleNamespace(metadata=nazwana, version="2")]
+    with monkeypatch.context() as m:
+        m.setattr(testy_py.importlib.metadata, "distributions", lambda: dystrybucje)
+        odcisk = testy_py._odcisk(tmp_path, None)
+    assert odcisk["zaleznosci"] == testy_py._odcisk(tmp_path, {"pakiet": "2"})["zaleznosci"]
+
+
+def test_czytnik_wyjscia_bez_listy_dezaktywacji_nie_pada_na_komunikacie_testmona():
+    ogon: list[str] = []
+    testy_py._czytaj_wyjscie(
+        io.BytesIO(b"selection automatically deactivated because -m was used\n"), testy_py._Stan(), ogon, None
+    )
+    assert ogon == ["selection automatically deactivated because -m was used\n"]
+
+
+def test_komunikat_o_wylaczeniu_selekcji_z_prawdziwego_przebiegu_trafia_do_bledu_brak_dowodu(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    _zapisz(
+        repo,
+        "conftest.py",
+        "def pytest_report_header(config):\n    return 'selection automatically deactivated because test'\n",
+    )
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, baza=baza)  # bez -q naglowek jest w wyjsciu
+    assert kod == 0, wyjscie + bledy  # pelny przebieg: komunikat jest oczekiwany
+    kod, wyjscie, bledy = _testy_dotkniete(repo, baza=baza)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "BLAD: brak dowodu: testmon wylaczyl selekcje (selection automatically deactivated because test)" in bledy
+
+
+def test_pytest_addopts_z_otoczenia_nie_wylacza_selekcji_dotknietych_testow(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    _zapisz(repo, "mini.py", MINI_KOD.replace("return a - b", "return -b + a"))
+    kod, wyjscie, bledy = _testy_dotkniete(
+        repo, "-q", baza=baza, srodowisko={"PYTEST_ADDOPTS": "-k nieistniejace_slowo_xyz"}
+    )
+    # bez usuniecia zmiennej `-k` odrzuca wszystkie testy: wybrane 0 mimo zmiany w mini.py => "brak dowodu", kod 2
+    assert kod == 0, wyjscie + bledy
+    assert "brak dowodu" not in wyjscie + bledy
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+def _repo_z_plikiem_o_nazwie_z_bajtem_ff(tmp_path: Path) -> tuple[Path, str]:
+    """Plik tylko w indeksie gita (na dysku nie da sie go utworzyc na kazdym systemie plikow), potem usuniety z indeksu."""
+    repo = _mini_projekt(tmp_path)
+    tresc = tmp_path / "tresc.txt"
+    tresc.write_text("x = 1\n", encoding="utf-8")
+    sha = _git(repo, "hash-object", "-w", str(tresc)).strip()
+    sciezka = "plik\udcff.py"  # surrogateescape: w argv trafia do gita jako bajt 0xff
+    _git(repo, "update-index", "--add", "--cacheinfo", f"100644,{sha},{sciezka}")
+    _git(repo, "commit", "-q", "-m", "plik z bajtem ff")
+    _git(repo, "rm", "-q", "--cached", "--", sciezka)
+    return repo, sciezka
+
+
+def test_nazwa_zmienionego_pliku_z_bajtem_spoza_utf8_nie_przerywa_odczytu_diffu(tmp_path):
+    repo, _ = _repo_z_plikiem_o_nazwie_z_bajtem_ff(tmp_path)
+    assert testy_py._zmienione_py(repo) == ["plik\ufffd.py"]
+
+
+def test_nazwa_zmienionego_pliku_py_ze_znakiem_spoza_ascii_jest_czytana_jako_utf8_niezaleznie_od_locale(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    _zapisz(repo, "moduł.py", "x = 1\n")
+    _commit(repo, "modul")
+    _zapisz(repo, "moduł.py", "x = 2\n")
+    kod = (
+        "import sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\nimport testy\n"
+        "print(ascii(testy._zmienione_py(Path(sys.argv[2]))))\n"
+    )
+    srodowisko = {"LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}
+    kod_wyjscia, wyjscie, bledy = _uruchom([sys.executable, "-c", kod, str(NARZEDZIA), str(repo)], KORZEN, srodowisko)
+    assert kod_wyjscia == 0, bledy
+    assert wyjscie.strip() == ascii(["moduł.py"])
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        ["-oaddopts=-kfoo"],
+        ["--override-ini=addopts=-kfoo"],
+        ["-o", "addopts=-kfoo"],
+        ["--override-ini", "addopts=-kfoo"],
+        ["-q", "-o", "addopts=-kfoo"],
+    ],
+)
+def test_argument_ustawiajacy_addopts_z_opcja_k_to_blad_brak_dowodu_zanim_ruszy_pytest(monkeypatch, tmp_path, argumenty):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(argumenty, 5.0, repo)
+    assert str(blad.value) == "brak dowodu: testmon wylaczyl selekcje (-k was used) - uruchom bez tych argumentow"
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        ["-o", "cache_dir=x"],
+        ["--override-ini", "cache_dir=x"],
+        ["addopts=-kfoo"],
+        ["-o", "x=1", "addopts=-kfoo"],
+        ["-oaddoptsx=1"],
+    ],
+)
+def test_argumenty_niezwiazane_z_addopts_nie_sa_bledem_w_trybie_z_selekcja(monkeypatch, tmp_path, argumenty):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["8 passed, 4 deselected in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(argumenty, 5.0, repo) == 0
+
+
+@pytest.mark.parametrize("argumenty", [["-o", "addopts=-kfoo"], ["-oaddopts=-kfoo"]])
+def test_addopts_w_argumencie_w_pelnym_przebiegu_nie_jest_bledem_bo_nie_ma_selekcji(monkeypatch, tmp_path, argumenty):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("TESTMON_DATAFILE", str(tmp_path / "baza" / "testmon.db"))
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["5 passed in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(argumenty, 5.0, repo) == 0
+
+
+def test_addopts_z_linii_polecen_w_prawdziwym_przebiegu_dotknietych_to_blad_brak_dowodu_kod_2(tmp_path):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", "-o", "addopts=-kfoo", baza=baza)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "BLAD: brak dowodu: testmon wylaczyl selekcje (-k was used) - uruchom bez tych argumentow" in bledy
+
+
+# --- HAR-257: forma opcji nie ma znaczenia, decyduje to, co pytest naprawde zrobi z argumentami -------
+# Testy ida przez prawdziwy pytest i prawdziwy testmon w mini-projekcie. Po zmianie TYLKO `pomnoz` poprawna selekcja to
+# dwa testy mnozenia (wybrane 2, pominiete 6). Wylaczona selekcja (np. `-k odejmowanie`) pokazalaby inne testy z takimi
+# samymi liczbami - dlatego sprawdzamy, KTORE testy ruszyly, a nie same liczby.
+
+def _po_zmianie_pomnoz(tmp_path: Path, *argumenty: str, srodowisko: dict[str, str] | None = None):
+    repo = _mini_projekt(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    _zapisz(repo, "mini.py", MINI_KOD.replace("return a * b", "return b * a"))
+    return _testy_dotkniete(repo, *argumenty, baza=baza, srodowisko=srodowisko)
+
+
+def _nie_jest_zielone_z_wylaczona_selekcja(kod: int, wyjscie: str, bledy: str) -> None:
+    """Dozwolone: blad uzycia / brak dowodu (kod 2) albo jawny pelny przebieg. Zabronione: kod 0 z liczbami selekcji."""
+    if kod == testy_py.KOD_BLEDU:
+        assert "BLAD: brak dowodu:" in bledy, wyjscie + bledy
+    else:
+        assert kod == 0 and "testy.py: pelny przebieg" in wyjscie, (
+            f"kod {kod} bez pelnego przebiegu, a selekcje wylaczyl argument:\n{wyjscie}{bledy}"
+        )
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        ["-q", "-o=addopts=-kodejmowanie"],
+        ["-qo", "addopts=-kodejmowanie"],
+        ["-vo", "addopts=-kodejmowanie"],
+        ["-xo", "addopts=-kodejmowanie"],
+        ["-so=addopts=-kodejmowanie"],
+        ["-q", "--override-ini", "addopts=-kodejmowanie"],
+    ],
+)
+def test_forma_argumentu_wylaczajacego_selekcje_dotknietych_nie_daje_zielonego_wyniku_z_liczbami_selekcji(tmp_path, argumenty):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, *argumenty)
+    _nie_jest_zielone_z_wylaczona_selekcja(kod, wyjscie, bledy)
+
+
+@pytest.mark.parametrize("linie", [["-o", "addopts=-kodejmowanie"], ["-k", "odejmowanie"], ["-qo", "addopts=-kodejmowanie"]])
+def test_argumenty_wczytane_z_pliku_wylaczajace_selekcje_dotknietych_nie_daja_zielonego_wyniku(tmp_path, linie):
+    plik = tmp_path / "argumenty.txt"
+    plik.write_text("".join(f"{linia}\n" for linia in linie), encoding="utf-8")
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, "-q", f"@{plik}")
+    _nie_jest_zielone_z_wylaczona_selekcja(kod, wyjscie, bledy)
+
+
+def test_pytest_addopts_z_otoczenia_z_pasujacym_slowem_kluczowym_nie_podmienia_wybranych_testow(tmp_path):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(
+        tmp_path, "-v", srodowisko={"PYTEST_ADDOPTS": "-k odejmowanie"}
+    )
+    assert kod == 0, wyjscie + bledy
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_odejmowanie_do_ujemnej" not in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+def test_klucz_ini_tylko_podobny_do_addopts_nie_wylacza_selekcji_dotknietych_testow(tmp_path):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, "-v", "-o", "addoptsx=-kodejmowanie")
+    assert kod == 0, wyjscie + bledy
+    assert "brak dowodu" not in wyjscie + bledy
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_odejmowanie_do_ujemnej" not in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        ["-q", "--nieistniejaca-opcja-har257"],
+        ["-q", "--markex", "not wolny"],  # pytest nie przyjmuje skrotow opcji dlugich: UsageError parsera
+    ],
+)
+def test_opcja_nieznana_pytestowi_to_brak_dowodu_kod_2_a_nie_kod_uzycia_pytesta(tmp_path, argumenty):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, *argumenty)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "BLAD: brak dowodu:" in bledy
+
+
+def test_brak_testmona_przy_sprawdzaniu_selekcji_to_brak_dowodu_kod_2(tmp_path):
+    # `testmon` podmieniony pakietem, ktory nie daje sie zaimportowac: sonda nie ma z czego ocenic selekcji
+    atrapa = tmp_path / "atrapa" / "testmon"
+    atrapa.mkdir(parents=True)
+    (atrapa / "__init__.py").write_text("raise ImportError('brak testmona w tescie HAR-257')\n", encoding="utf-8")
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(
+        tmp_path, "-q", srodowisko={"PYTHONPATH": str(atrapa.parent)}
+    )
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert "BLAD: brak dowodu:" in bledy
+
+
+# --- HAR-257: sonda parsera (`_powody_bez_selekcji`) - kazda galaz "brak dowodu" i kontrakt wywolania ---
+
+
+def _atrapa_sondy(*, kod: int = 0, stdout: str = "", stderr: str = "", wyjatek: Exception | None = None):
+    """Atrapa `subprocess.run` widzianego przez sonde; zapisuje wywolania (argumenty i parametry nazwane)."""
+    wywolania: list[tuple[list[str], dict]] = []
+
+    def atrapa(argv, **nazwane):
+        wywolania.append((list(argv), nazwane))
+        if wyjatek is not None:
+            raise wyjatek
+        return subprocess.CompletedProcess(argv, kod, stdout=stdout, stderr=stderr)
+
+    atrapa.wywolania = wywolania
+    return atrapa
+
+
+def _sonda_z_atrapa(monkeypatch, tmp_path, atrapa, argumenty=("--testmon",)):
+    monkeypatch.setattr(testy_py.subprocess, "run", atrapa)
+    return testy_py._powody_bez_selekcji(list(argumenty), tmp_path)
+
+
+# Odpowiedz sondy: obiekt z kompletem kluczy. Test zmienia jedno pole naraz, wiec o wyniku decyduje tylko ono.
+WERDYKT_BEZ_POWODOW = {
+    "noselect": [],
+    "notestmon": None,
+    "forceselect": False,
+    "keyword": None,
+    "markexpr": None,
+    "lf": False,
+    "recznie": [],
+}
+
+
+def _odpowiedz_sondy(**nadpisania) -> str:
+    return json.dumps({**WERDYKT_BEZ_POWODOW, **nadpisania})
+
+
+def _stdout_sondy(**nadpisania) -> str:
+    return f"{testy_py.ZNACZNIK_SONDY}{_odpowiedz_sondy(**nadpisania)}\n"
+
+
+def test_sonda_podaje_powody_wylaczenia_selekcji_z_prawdziwego_parsera_pytesta_i_testmona(tmp_path):
+    assert testy_py._powody_bez_selekcji(["--testmon", "-k", "x"], tmp_path) == ["-k was used"]
+    assert testy_py._powody_bez_selekcji(["--testmon", "-q"], tmp_path) == []
+
+
+def test_jawne_testmon_noselect_w_argumentach_sondy_to_powod_o_nazwie_opcji_a_nie_pusty_tekst(tmp_path):
+    assert testy_py._powody_bez_selekcji(["--testmon", "--testmon-noselect"], tmp_path) == ["--testmon-noselect"]
+
+
+def test_kolejnosc_argumentow_sondy_decyduje_ostatnie_ustawienie_addopts_wygrywa(tmp_path):
+    zle_na_koncu = ["--testmon", "-o", "addopts=", "-o", "addopts=-kfoo"]
+    dobre_na_koncu = ["--testmon", "-o", "addopts=-kfoo", "-o", "addopts="]
+    assert testy_py._powody_bez_selekcji(zle_na_koncu, tmp_path) == ["-k was used"]
+    assert testy_py._powody_bez_selekcji(dobre_na_koncu, tmp_path) == []
+
+
+def test_sonda_startuje_w_podanym_katalogu_z_limitem_czasu_bez_stdin_i_z_argumentami_po_skrypcie(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy())
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa, ("--testmon", "-q")) == []
+    (argv, nazwane), = atrapa.wywolania
+    assert argv == [sys.executable, "-c", testy_py._SKRYPT_SONDY, "--testmon", "-q"]
+    assert nazwane["cwd"] == tmp_path
+    assert nazwane["timeout"] == testy_py.LIMIT_SONDY
+    assert nazwane["stdin"] == subprocess.DEVNULL
+    assert nazwane["env"] == dict(os.environ)
+    assert nazwane["capture_output"] is True
+    assert nazwane["text"] is True
+    assert nazwane["encoding"] == "utf-8"
+    assert nazwane["errors"] == "replace"
+
+
+def test_przekroczenie_limitu_czasu_sondy_to_brak_dowodu_a_nie_selekcja_ktora_dziala(monkeypatch, tmp_path):
+    wyjatek = subprocess.TimeoutExpired(["sonda"], 120.0)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(wyjatek=wyjatek))
+    assert str(blad.value) == f"brak dowodu: sonda parsera pytesta przekroczyla limit 120 s: {wyjatek}"
+    assert blad.value.__cause__ is wyjatek
+
+
+def test_niemozliwy_start_sondy_to_brak_dowodu_z_przyczyna_systemu(monkeypatch, tmp_path):
+    wyjatek = OSError(2, "brak interpretera")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(wyjatek=wyjatek))
+    assert str(blad.value) == "brak dowodu: nie udalo sie uruchomic sondy parsera pytesta: [Errno 2] brak interpretera"
+    assert blad.value.__cause__ is wyjatek
+
+
+def test_sonda_ktora_padla_to_brak_dowodu_z_ostatnia_linia_bledu_nawet_gdy_wypisala_odpowiedz(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(kod=3, stdout=_stdout_sondy(), stderr="Traceback\n  pierwsza\nValueError: zla\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem 3: ValueError: zla"
+
+
+def test_sonda_ktora_padla_bez_komunikatu_to_brak_dowodu_z_adnotacja_o_braku_komunikatu(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(kod=1, stderr="  \n"))
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem 1: brak komunikatu"
+
+
+def test_sonda_zabita_sygnalem_to_brak_dowodu_z_ujemnym_kodem_nawet_gdy_wypisala_odpowiedz(monkeypatch, tmp_path):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(kod=-9, stdout=_stdout_sondy()))
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem -9: brak komunikatu"
+
+
+@pytest.mark.parametrize(
+    ("stdout", "ile"),
+    [
+        ("", 0),
+        ("jakis szum\n", 0),
+        (f" {_stdout_sondy()}", 0),
+        (_stdout_sondy() * 2, 2),
+    ],
+)
+def test_sonda_bez_dokladnie_jednej_odpowiedzi_to_brak_dowodu_z_liczba_odpowiedzi(monkeypatch, tmp_path, stdout, ile):
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(stdout=stdout))
+    assert str(blad.value) == f"brak dowodu: sonda parsera pytesta nie podala powodow (odpowiedzi: {ile})"
+
+
+def _bez_klucza(klucz: str) -> str:
+    return json.dumps({k: v for k, v in WERDYKT_BEZ_POWODOW.items() if k != klucz})
+
+
+# Kazdy wiersz psuje dokladnie jedno: skladnie JSON, ksztalt calosci, brak jednego z siedmiu kluczy albo typ jednego pola
+ZLE_ODPOWIEDZI_SONDY = [
+    pytest.param("nie json", id="nie-json"),
+    pytest.param("", id="pusta"),
+    pytest.param("{", id="urwany-json"),
+    pytest.param("[]", id="lista-zamiast-obiektu"),
+    pytest.param('["noselect"]', id="lista-tekstow-zamiast-obiektu"),
+    pytest.param("5", id="liczba-zamiast-obiektu"),
+    pytest.param("null", id="null-zamiast-obiektu"),
+    pytest.param('"noselect"', id="tekst-zamiast-obiektu"),
+    pytest.param("{}", id="pusty-obiekt"),
+    *[pytest.param(_bez_klucza(klucz), id=f"brak-klucza-{klucz}") for klucz in WERDYKT_BEZ_POWODOW],
+    pytest.param(_odpowiedz_sondy(noselect="-k was used"), id="noselect-tekst-zamiast-listy"),
+    pytest.param(_odpowiedz_sondy(noselect=None), id="noselect-null-zamiast-listy"),
+    pytest.param(_odpowiedz_sondy(noselect={"a": "b"}), id="noselect-obiekt-zamiast-listy"),
+    pytest.param(_odpowiedz_sondy(noselect=[1]), id="noselect-liczba-w-liscie"),
+    pytest.param(_odpowiedz_sondy(noselect=["a", 2]), id="noselect-liczba-po-tekscie"),
+    pytest.param(_odpowiedz_sondy(noselect=[[]]), id="noselect-lista-w-liscie"),
+    pytest.param(_odpowiedz_sondy(notestmon=5), id="notestmon-liczba"),
+    pytest.param(_odpowiedz_sondy(notestmon=0), id="notestmon-zero-nie-jest-brakiem"),
+    pytest.param(_odpowiedz_sondy(notestmon=False), id="notestmon-false-nie-jest-brakiem"),
+    pytest.param(_odpowiedz_sondy(notestmon=["x"]), id="notestmon-lista"),
+    pytest.param(_odpowiedz_sondy(forceselect="tak"), id="forceselect-tekst"),
+    pytest.param(_odpowiedz_sondy(forceselect=1), id="forceselect-jedynka"),
+    pytest.param(_odpowiedz_sondy(forceselect=0), id="forceselect-zero"),
+    pytest.param(_odpowiedz_sondy(forceselect=None), id="forceselect-null"),
+    pytest.param(_odpowiedz_sondy(recznie=5), id="recznie-liczba"),
+    pytest.param(_odpowiedz_sondy(recznie=None), id="recznie-null"),
+    pytest.param(_odpowiedz_sondy(recznie=[1]), id="recznie-liczba-w-liscie"),
+    pytest.param(_odpowiedz_sondy(recznie=["a.py::t", 1]), id="recznie-liczba-po-tekscie"),
+    pytest.param(_odpowiedz_sondy(recznie=[None]), id="recznie-null-w-liscie"),
+    pytest.param(_odpowiedz_sondy(recznie=[["a.py::t"]]), id="recznie-lista-w-liscie"),
+]
+
+
+@pytest.mark.parametrize("odpowiedz", ZLE_ODPOWIEDZI_SONDY)
+def test_odpowiedz_sondy_niezgodna_z_kontraktem_to_brak_dowodu_a_nie_selekcja_ktora_dziala(monkeypatch, tmp_path, odpowiedz):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}{odpowiedz}\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedz!r}"
+
+
+# Pola selektorow o zlym typie: kazde sprawdzamy z forceselect i bez niego. Bez kontroli typu wartosc "prawie dobra"
+# (pusty tekst, "ab", 1) przechodzilaby jako brak selektora albo jako selektor, wiec wynik byloby inny niz blad.
+ZLE_POLA_SELEKTOROW = [
+    ("recznie-pusty-tekst", {"recznie": ""}),
+    ("recznie-tekst", {"recznie": "ab"}),
+    ("recznie-null", {"recznie": None}),
+    ("recznie-liczba-w-liscie", {"recznie": [1]}),
+    ("keyword-liczba", {"keyword": 5}),
+    ("keyword-pusta-lista", {"keyword": []}),
+    ("markexpr-liczba", {"markexpr": 5}),
+    ("markexpr-pusta-lista", {"markexpr": []}),
+    ("lf-jedynka", {"lf": 1}),
+    ("lf-tekst", {"lf": "x"}),
+]
+
+
+@pytest.mark.parametrize(
+    ("forceselect", "pole"),
+    [
+        pytest.param(forceselect, pole, id=f"{nazwa}-{'z' if forceselect else 'bez'}-forceselect")
+        for nazwa, pole in ZLE_POLA_SELEKTOROW
+        for forceselect in (True, False)
+    ],
+)
+def test_pole_selektora_zlego_typu_w_odpowiedzi_sondy_to_brak_dowodu_z_forceselect_i_bez(monkeypatch, tmp_path, forceselect, pole):
+    odpowiedz = _odpowiedz_sondy(forceselect=forceselect, **pole)
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}{odpowiedz}\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == f"brak dowodu: niezrozumiala odpowiedz sondy parsera pytesta: {odpowiedz!r}"
+
+
+def test_odpowiedz_sondy_bez_klucza_zachowuje_przyczyne_klucza_a_nie_jest_osobnym_wyjatkiem(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}{_bez_klucza('lf')}\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert isinstance(blad.value.__cause__, KeyError)
+
+
+def test_odpowiedz_sondy_niebedaca_obiektem_zachowuje_przyczyne_bledu_typu(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}[]\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert isinstance(blad.value.__cause__, TypeError)
+
+
+def test_sonda_bez_zadnego_powodu_zwraca_pusta_liste_a_powody_noselect_w_kolejnosci(monkeypatch, tmp_path):
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, _atrapa_sondy(stdout=_stdout_sondy())) == []
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(noselect=["b", "a"]))
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["b", "a"]
+
+
+def test_testmon_wylaczony_w_odpowiedzi_sondy_to_brak_dowodu_z_powodem_i_pierwszenstwem_przed_reszta(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(
+        stdout=_stdout_sondy(notestmon="deactivated through --no-testmon", forceselect=True, keyword="x", noselect=["-k was used"])
+    )
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == "brak dowodu: testmon wylaczony (deactivated through --no-testmon) - uruchom bez tych argumentow"
+
+
+def test_pusty_powod_wylaczenia_testmona_w_odpowiedzi_sondy_nie_jest_wylaczeniem(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(notestmon="", noselect=["-k was used"]))
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["-k was used"]
+
+
+@pytest.mark.parametrize(
+    ("pole", "wartosc", "opis"),
+    [
+        ("keyword", "szybkie", "-k szybkie"),
+        ("markexpr", "not wolny", "-m not wolny"),
+        ("lf", True, "--lf"),
+        ("recznie", ["tests/a.py::test_a"], "tests/a.py::test_a"),
+    ],
+    ids=["keyword", "markexpr", "lf", "recznie"],
+)
+def test_forceselect_z_kazdym_selektorem_pytesta_z_osobna_to_brak_dowodu_z_nazwa_selektora(monkeypatch, tmp_path, pole, wartosc, opis):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(forceselect=True, **{pole: wartosc}))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == f"brak dowodu: --testmon-forceselect z selektorem pytesta ({opis}) - uruchom bez tych argumentow"
+
+
+def test_forceselect_z_kilkoma_selektorami_wymienia_je_wszystkie_w_stalej_kolejnosci(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(
+        stdout=_stdout_sondy(
+            forceselect=True, keyword="a", markexpr="b", lf=True, recznie=["x.py::t1", "y.py::t2"]
+        )
+    )
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert str(blad.value) == (
+        "brak dowodu: --testmon-forceselect z selektorem pytesta (-k a, -m b, --lf, x.py::t1, y.py::t2) - uruchom bez tych argumentow"
+    )
+
+
+@pytest.mark.parametrize(
+    "nadpisania",
+    [
+        {"forceselect": True},
+        {"forceselect": True, "keyword": "", "markexpr": "", "lf": False, "recznie": []},
+        {"forceselect": False, "keyword": "x"},
+        {"forceselect": False, "markexpr": "x"},
+        {"forceselect": False, "lf": True},
+        {"forceselect": False, "recznie": ["a.py::t"]},
+    ],
+    ids=["forceselect-bez-selektora", "forceselect-z-pustymi-selektorami", "k-bez-forceselect", "m-bez-forceselect", "lf-bez-forceselect", "plik-bez-forceselect"],
+)
+def test_bez_pary_forceselect_i_selektor_odpowiedz_sondy_nie_jest_bledem_selektora(monkeypatch, tmp_path, nadpisania):
+    atrapa = _atrapa_sondy(stdout=_stdout_sondy(noselect=["-k was used"], **nadpisania))
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["-k was used"]
+
+
+# Prawdziwy parser pytesta i testmon (sonda w podprocesie): forma, w jakiej selektor albo wylaczenie trafia do argumentow,
+# nie ma znaczenia - `-o addopts=...` i `@plik` rozwija ten sam parser, ktory zobaczy realny przebieg.
+
+def _argumenty_z_pliku(tmp_path: Path, *linie: str) -> list[str]:
+    plik = tmp_path / "argumenty.txt"
+    plik.write_text("".join(f"{linia}\n" for linia in linie), encoding="utf-8")
+    return [f"@{plik}"]
+
+
+def _sonda_na_prawdziwym_parserze_odrzuca(argumenty: list[str], tmp_path: Path) -> str:
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py._powody_bez_selekcji(["--testmon", *argumenty], tmp_path)
+    return str(blad.value)
+
+
+@pytest.mark.parametrize(
+    ("argumenty", "selektor"),
+    [
+        (["--testmon-forceselect", "-k", "x"], "-k x"),
+        (["--testmon-forceselect", "-m", "x"], "-m x"),
+        (["--testmon-forceselect", "--lf"], "--lf"),
+        (["--testmon-forceselect", "plik.py::t"], "plik.py::t"),
+        (["--testmon-forceselect", "-o", "addopts=-k x"], "-k x"),
+        (["--testmon-forceselect", "-o", "addopts=-m x"], "-m x"),
+        (["--testmon-forceselect", "-o", "addopts=--lf"], "--lf"),
+        (["--testmon-forceselect", "-o", "addopts=plik.py::t"], "plik.py::t"),
+        (["-o", "addopts=--testmon-forceselect -k x"], "-k x"),
+    ],
+    ids=["k", "m", "lf", "plik-test", "addopts-k", "addopts-m", "addopts-lf", "addopts-plik-test", "addopts-z-forceselect"],
+)
+def test_forceselect_z_selektorem_pytesta_to_brak_dowodu_na_prawdziwym_parserze_w_kazdej_formie(tmp_path, argumenty, selektor):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(argumenty, tmp_path)
+    assert komunikat == f"brak dowodu: --testmon-forceselect z selektorem pytesta ({selektor}) - uruchom bez tych argumentow"
+
+
+@pytest.mark.parametrize(
+    ("linie", "selektor"),
+    [
+        (("--testmon-forceselect", "-k", "x"), "-k x"),
+        (("--testmon-forceselect", "-m", "x"), "-m x"),
+        (("--testmon-forceselect", "--lf"), "--lf"),
+        (("--testmon-forceselect", "plik.py::t"), "plik.py::t"),
+    ],
+    ids=["k", "m", "lf", "plik-test"],
+)
+def test_forceselect_z_selektorem_z_pliku_argumentow_to_brak_dowodu_na_prawdziwym_parserze(tmp_path, linie, selektor):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(_argumenty_z_pliku(tmp_path, *linie), tmp_path)
+    assert komunikat == f"brak dowodu: --testmon-forceselect z selektorem pytesta ({selektor}) - uruchom bez tych argumentow"
+
+
+def test_forceselect_rozdzielony_miedzy_argumenty_i_plik_z_selektorem_to_brak_dowodu(tmp_path):
+    argumenty = ["--testmon-forceselect", *_argumenty_z_pliku(tmp_path, "-k", "x")]
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(argumenty, tmp_path)
+    assert komunikat == "brak dowodu: --testmon-forceselect z selektorem pytesta (-k x) - uruchom bez tych argumentow"
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [["--testmon-forceselect"], ["-o", "addopts=--testmon-forceselect"], ["--testmon-forceselect", "plik.py"]],
+    ids=["argument", "addopts", "sam-plik-bez-nazwy-testu"],
+)
+def test_forceselect_bez_selektora_na_prawdziwym_parserze_nie_jest_bledem_selektora(tmp_path, argumenty):
+    assert testy_py._powody_bez_selekcji(["--testmon", *argumenty], tmp_path) == []
+
+
+def test_forceselect_bez_selektora_z_pliku_argumentow_na_prawdziwym_parserze_nie_jest_bledem_selektora(tmp_path):
+    argumenty = _argumenty_z_pliku(tmp_path, "--testmon-forceselect")
+    assert testy_py._powody_bez_selekcji(["--testmon", *argumenty], tmp_path) == []
+
+
+def test_forceselect_z_addopts_repozytorium_tylko_po_skasowaniu_ich_przez_wlasne_nie_ma_selektora():
+    # korzen repo ma `addopts = -m 'not e2e'`: bez wlasnego `-o addopts=` to selektor, z nim - brak
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(["--testmon-forceselect"], KORZEN)
+    assert komunikat == "brak dowodu: --testmon-forceselect z selektorem pytesta (-m not e2e) - uruchom bez tych argumentow"
+    assert testy_py._powody_bez_selekcji(["--testmon", "-o", "addopts=", "--testmon-forceselect"], KORZEN) == []
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [["--no-testmon"], ["-o", "addopts=--no-testmon"], ["-q", "--no-testmon", "-v"]],
+    ids=["argument", "addopts", "miedzy-innymi"],
+)
+def test_wylaczenie_testmona_argumentem_na_prawdziwym_parserze_to_brak_dowodu_z_powodem_testmona(tmp_path, argumenty):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(argumenty, tmp_path)
+    assert komunikat == "brak dowodu: testmon wylaczony (deactivated through --no-testmon) - uruchom bez tych argumentow"
+
+
+def test_wylaczenie_testmona_z_pliku_argumentow_na_prawdziwym_parserze_to_brak_dowodu(tmp_path):
+    komunikat = _sonda_na_prawdziwym_parserze_odrzuca(_argumenty_z_pliku(tmp_path, "--no-testmon"), tmp_path)
+    assert komunikat == "brak dowodu: testmon wylaczony (deactivated through --no-testmon) - uruchom bez tych argumentow"
+
+
+# Pelna sciezka: `uruchom_dotkniete` w mini-projekcie z prawdziwym pytestem i testmonem; sprawdzamy, KTORE testy ruszyly.
+
+@pytest.mark.parametrize(
+    ("argumenty", "komunikat"),
+    [
+        (["-q", "--testmon-forceselect", "-k", "odejmowanie"], "--testmon-forceselect z selektorem pytesta (-k odejmowanie)"),
+        (["-q", "--testmon-forceselect", "-m", "wolny"], "--testmon-forceselect z selektorem pytesta (-m wolny)"),
+        (["-q", "--testmon-forceselect", "--lf"], "--testmon-forceselect z selektorem pytesta (--lf)"),
+        (["-q", "--no-testmon"], "testmon wylaczony (deactivated through --no-testmon)"),
+    ],
+    ids=["forceselect-k", "forceselect-m", "forceselect-lf", "no-testmon"],
+)
+def test_dotkniete_z_forceselect_i_selektorem_albo_z_wylaczonym_testmonem_to_brak_dowodu_kod_2(tmp_path, argumenty, komunikat):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, *argumenty)
+    assert kod == testy_py.KOD_BLEDU, wyjscie + bledy
+    assert f"BLAD: brak dowodu: {komunikat} - uruchom bez tych argumentow" in bledy
+    assert "testy.py: pelny przebieg" not in wyjscie
+
+
+def test_dotkniete_z_forceselect_bez_selektora_uruchamia_tylko_testy_dotknietej_funkcji(tmp_path):
+    kod, wyjscie, bledy = _po_zmianie_pomnoz(tmp_path, "-v", "--testmon-forceselect")
+    assert kod == 0, wyjscie + bledy
+    assert "test_mnozenie_przez_zero" in wyjscie
+    assert "test_odejmowanie_do_ujemnej" not in wyjscie
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
+
+
+def test_odpowiedz_sondy_niebedaca_json_zachowuje_przyczyne_bledu_parsowania(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f"{testy_py.ZNACZNIK_SONDY}nie json\n")
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        _sonda_z_atrapa(monkeypatch, tmp_path, atrapa)
+    assert isinstance(blad.value.__cause__, ValueError)
+
+
+def test_pierwszy_argument_sondy_trafia_do_parsera_pytesta_a_nie_jest_pomijany(tmp_path):
+    # `--testmon` na koncu (bez niego testmon jest wylaczony): argument zerowy sondy to opcja `-k`, a nie tylko wypelniacz
+    assert testy_py._powody_bez_selekcji(["-k", "x", "--testmon"], tmp_path) == ["-k was used"]
+
+
+def test_odpowiedz_sondy_wsrod_innych_linii_stdout_jest_czytana_a_powody_zachowuja_kolejnosc(monkeypatch, tmp_path):
+    atrapa = _atrapa_sondy(stdout=f'szum\n{testy_py.ZNACZNIK_SONDY}{_odpowiedz_sondy(noselect=["b", None, "a"])}\nszum 2\n')
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["b", "--testmon-noselect", "a"]
+
+
+def test_odpowiedz_sondy_z_literalnym_znacznikiem_jest_czytana_niezaleznie_od_stalej_w_kodzie(monkeypatch, tmp_path):
+    # znacznik wpisany tekstem, nie ze stalej: zmiana wartosci stalej w kodzie nie moze przejsc niezauwazona
+    atrapa = _atrapa_sondy(stdout=f'szum SONDA-POWODY: nie to\nSONDA-POWODY:{_odpowiedz_sondy(noselect=["a"])}\n')
+    assert _sonda_z_atrapa(monkeypatch, tmp_path, atrapa) == ["a"]
+
+
+def test_atrapa_zamiast_testmona_w_sondzie_to_brak_dowodu_z_ostatnia_linia_bledu_importu(monkeypatch, tmp_path):
+    atrapa = tmp_path / "atrapa" / "testmon"
+    atrapa.mkdir(parents=True)
+    (atrapa / "__init__.py").write_text("raise ImportError('brak testmona w tescie HAR-257')\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("PYTHONPATH", str(atrapa.parent))
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py._powody_bez_selekcji(["--testmon"], repo)
+    assert str(blad.value).startswith("brak dowodu: sonda parsera pytesta zakonczyla sie kodem 1: ImportError")
+    assert "brak testmona w tescie HAR-257" in str(blad.value)
+
+
+def _zapisujaca_sonda(monkeypatch, powody: list[str]):
+    wywolania: list[tuple[list[str], Path]] = []
+
+    def sonda(argumenty, cwd):
+        wywolania.append((list(argumenty), cwd))
+        return powody
+
+    monkeypatch.setattr(testy_py, "_powody_bez_selekcji", sonda)
+    return wywolania
+
+
+def test_przebieg_z_selekcja_pyta_sonde_o_te_same_argumenty_w_tej_samej_kolejnosci_i_w_katalogu_repo(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    (repo / "tests" / "e2e").mkdir(parents=True)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    wywolania = _zapisujaca_sonda(monkeypatch, [])
+    uruchomione = _atrapa_z_przebiegami(["8 passed, 4 deselected in 0.1s\n"], [])
+    monkeypatch.setattr(testy_py, "uruchom", uruchomione)
+    assert testy_py.uruchom_dotkniete(["-q", "tests/a.py"], 5.0, repo) == 0
+    oczekiwane = ["--testmon", "-o", "addopts=", "--ignore=tests/e2e", "-q", "tests/a.py"]
+    assert wywolania == [(oczekiwane, repo)]
+    assert uruchomione.wywolania == [oczekiwane]
+
+
+def test_powod_od_sondy_przerywa_dotkniete_przed_uruchomieniem_pytesta_i_podaje_tylko_pierwszy_powod(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    _zapisujaca_sonda(monkeypatch, ["pierwszy", "drugi"])
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: testmon wylaczyl selekcje (pierwszy) - uruchom bez tych argumentow"
+
+
+def test_pelny_przebieg_dotknietych_nie_uruchamia_sondy_bo_nic_nie_selekcjonuje(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("TESTMON_DATAFILE", str(tmp_path / "baza" / "testmon.db"))
+    wywolania = _zapisujaca_sonda(monkeypatch, ["-k was used"])
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["5 passed in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(["-q", "-k", "x"], 5.0, repo) == 0
+    assert wywolania == []
+
+
+def test_blad_sondy_w_dotknietych_to_blad_narzedzia_a_nie_uruchomienie_pytesta(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setattr(testy_py.subprocess, "run", _atrapa_sondy(kod=1, stderr="UsageError: zle\n"))
+    monkeypatch.setattr(testy_py, "uruchom", _nie_uruchamiaj)
+    with pytest.raises(testy_py.BladNarzedzia) as blad:
+        testy_py.uruchom_dotkniete(["-q"], 5.0, repo)
+    assert str(blad.value) == "brak dowodu: sonda parsera pytesta zakonczyla sie kodem 1: UsageError: zle"
+
+
+def test_pytest_addopts_z_otoczenia_nie_trafia_do_sondy_bo_zmienna_jest_czyszczona_przed_nia(monkeypatch, tmp_path):
+    repo, baza = _repo_ze_zdrowa_baza(tmp_path)
+    monkeypatch.setenv("TESTMON_DATAFILE", str(baza))
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-k cokolwiek")
+    widziane: list[str | None] = []
+
+    def sonda(_argumenty, _cwd):
+        widziane.append(os.environ.get("PYTEST_ADDOPTS"))
+        return []
+
+    monkeypatch.setattr(testy_py, "_powody_bez_selekcji", sonda)
+    monkeypatch.setattr(testy_py, "uruchom", _atrapa_pytesta_z_wyjsciem(["8 passed, 4 deselected in 0.1s\n"]))
+    assert testy_py.uruchom_dotkniete(["-q"], 5.0, repo) == 0
+    assert widziane == [None]
+
+
+def test_pominiete_pod_xdist_sa_zmierzone_a_nie_zerem_dla_prawdziwego_projektu_z_addopts(tmp_path):
+    repo = _repo_z_prawdziwym_pyproject(tmp_path)
+    baza = tmp_path / "baza.db"
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", "-n", "2", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    _zapisz(repo, "src/mini.py", MINI_KOD.replace("return a + b", "return b + a"))
+    kod, wyjscie, bledy = _testy_dotkniete(repo, "-q", "-n", "2", baza=baza)
+    assert kod == 0, wyjscie + bledy
+    assert (_liczba(wyjscie, "wybrane"), _liczba(wyjscie, "pominiete")) == (2, 6)
 
 
 # ============================ tools/po_merge_main.sh ============================
@@ -1293,6 +3127,7 @@ def test_oddanie_brudny_plik_z_listy_dozwolonych_nie_blokuje_ale_inny_brudny_pli
         ".claude/settings.json",
         ".claude/hooks/straznik.py",
         "src/runner/secrets.py",
+        "alembic.ini",
     ],
 )
 def test_oddanie_diff_ze_sciezka_wrazliwa_tworzy_pr_i_wypisuje_merge_reczny(oddanie, sciezka):
