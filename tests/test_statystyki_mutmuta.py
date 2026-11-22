@@ -14,9 +14,11 @@ w katalogu tymczasowym; atrapa mutmuta nie dowiodlaby, ze scalone statystyki prz
 Modul importujemy w fixture, wiec brak implementacji oblewa kazdy test osobno.
 """
 import json
+import importlib
 import os
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,6 +36,55 @@ def sm():
     import statystyki_mutmuta
 
     return statystyki_mutmuta
+
+
+ZMIENNE_MUTMUTA = ("PY_IGNORE_IMPORTMISMATCH", "MUTMUT_DEPENDENCY_DEPTH")
+
+
+@contextmanager
+def zachowany_mutmut_procesu():
+    """Konfiguracja, stan i zmienne srodowiska mutmuta wracaja po bloku do stanu sprzed niego."""
+    import mutmut.configuration as konfiguracja
+    stan = importlib.import_module("mutmut.state")  # mutmut.state jako atrybut to funkcja state()
+
+    zapisane = (konfiguracja._config, stan._state)
+    zmienne = {nazwa: os.environ.get(nazwa) for nazwa in ZMIENNE_MUTMUTA}
+    try:
+        yield
+    finally:
+        konfiguracja._config, stan._state = zapisane
+        for nazwa, wartosc in zmienne.items():
+            if wartosc is None:
+                os.environ.pop(nazwa, None)
+            else:
+                os.environ[nazwa] = wartosc
+
+
+@pytest.fixture(autouse=True)
+def _mutmut_procesu_nietkniety():
+    # Pod `mutmut run` ten plik biegnie w procesie mutmuta (pytest.main): reset_config()/reset_state() z modulu
+    # podmienialy mu konfiguracje na miniature z tmp_path i kasowaly statystyki - mutation-main mial 0/0 mutantow.
+    with zachowany_mutmut_procesu():
+        yield
+
+
+def test_wywolanie_mutmuta_z_testu_nie_zmienia_konfiguracji_stanu_ani_srodowiska_procesu_mutmuta(sm, tmp_path):
+    import mutmut.configuration as konfiguracja
+    stan = importlib.import_module("mutmut.state")  # mutmut.state jako atrybut to funkcja state()
+
+    os.environ["MUTMUT_DEPENDENCY_DEPTH"] = "7"
+    os.environ.pop("PY_IGNORE_IMPORTMISMATCH", None)
+    przed = (konfiguracja.config(), stan.state())
+
+    with zachowany_mutmut_procesu():
+        sm._mutmut()  # reset_config() i reset_state(), jak w odcisk_zrodel i shardzie
+        os.environ["MUTMUT_DEPENDENCY_DEPTH"] = "0"  # jak _dowod_shardu
+        os.environ["PY_IGNORE_IMPORTMISMATCH"] = "1"
+
+    assert konfiguracja._config is przed[0]
+    assert stan._state is przed[1]
+    assert os.environ["MUTMUT_DEPENDENCY_DEPTH"] == "7"
+    assert "PY_IGNORE_IMPORTMISMATCH" not in os.environ
 
 
 # --- dane wspolne testow czystych --------------------------------------------------------------
