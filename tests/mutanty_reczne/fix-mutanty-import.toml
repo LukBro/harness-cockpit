@@ -1,0 +1,43 @@
+# fix-mutanty-import: wybor testow modulu takze po `from pakiet import modul` (PR #206 oblal na workflowy_api)
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "if _importuje_modul(nazwa, tresc, modul))"
+zamien = "if modul in tresc)"
+test = "tests/test_mutanty_uzupelniajace.py::test_main_bierze_test_z_importem_from_pakiet_import_modul_zamiast_bledu_zero_testow"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "if modul in tresc:"
+zamien = "if False:"
+test = "tests/test_mutanty_uzupelniajace.py::test_test_z_pelna_nazwa_modulu_jest_testem_modulu_bez_parsowania"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "isinstance(wezel, ast.ImportFrom) and wezel.module == pakiet"
+zamien = "isinstance(wezel, ast.ImportFrom)"
+test = "tests/test_mutanty_uzupelniajace.py::test_import_tej_samej_nazwy_z_innego_pakietu_nie_jest_testem_modulu"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "and any(alias.name == koncowka for alias in wezel.names)"
+zamien = ""
+test = "tests/test_mutanty_uzupelniajace.py::test_import_innej_nazwy_z_tego_samego_pakietu_nie_jest_testem_modulu"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "isinstance(wezel, ast.ImportFrom) and wezel.module == pakiet"
+zamien = "wezel.module == pakiet"
+test = "tests/test_mutanty_uzupelniajace.py::test_zwykly_import_bez_nazwy_modulu_nie_jest_testem_modulu"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "raise BladNarzedzia(f\"{nazwa}: nie da sie sparsowac testu: {blad}\") from blad"
+zamien = "return False"
+test = "tests/test_mutanty_uzupelniajace.py::test_niesparsowalny_test_bez_pelnej_nazwy_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "        return True\n    pakiet, _, koncowka"
+zamien = "        pass\n    pakiet, _, koncowka"
+test = "tests/test_mutanty_uzupelniajace.py::test_test_z_pelna_nazwa_modulu_jest_testem_modulu_bez_parsowania"
