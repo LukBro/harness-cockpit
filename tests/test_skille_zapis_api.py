@@ -28,6 +28,7 @@ from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
+from procesy import uruchom_proces_sync, zakoncz_proces_sync
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -186,16 +187,27 @@ async def test_ponowny_zapis_tego_co_oddaly_szczegoly_nie_zmienia_bajtow_pliku(s
     assert _bajty_pliku(_plik(swiat.korzen, "x")) == oryginal
 
 
-def _repo_git(korzen: Path) -> None:
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "start"]):
-        subprocess.run(["git", *TOZSAMOSC_GIT, "-C", str(korzen), *argv],
-                       check=True, capture_output=True, text=True, timeout=60)
+KORZEN_REPO = Path(__file__).resolve().parent.parent   # katalog z pyproject.toml (testy-podprocesow.md)
 
 
 def _git(korzen: Path, *argv: str) -> str:
-    return subprocess.run(
-        ["git", *TOZSAMOSC_GIT, "-C", str(korzen), *argv],
-        check=True, capture_output=True, text=True, timeout=60).stdout
+    """Git w repozytorium `korzen`; proces przez helper testow (nowa sesja, sprzatanie, limit)."""
+    polecenie = ["git", *TOZSAMOSC_GIT, "-C", str(korzen), *argv]
+    proc = uruchom_proces_sync(
+        polecenie, cwd=KORZEN_REPO,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        wyjscie, bledy = proc.communicate(timeout=60)
+    finally:
+        zakoncz_proces_sync(proc, nazwa="git")
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, polecenie, wyjscie, bledy)
+    return wyjscie
+
+
+def _repo_git(korzen: Path) -> None:
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "start"]):
+        _git(korzen, *argv)
 
 
 async def test_zapis_tego_samego_briefu_nie_zostawia_zmian_w_git_diff_prawdziwego_repozytorium(swiat):
