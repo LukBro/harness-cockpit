@@ -1440,7 +1440,7 @@ def test_limit_zero_z_wiersza_polecen_konczy_program_kodem_2_argparse():
 def _zlap_przebieg(monkeypatch) -> list[tuple[Path, str, float]]:
     zlapane: list[tuple[Path, str, float]] = []
 
-    def falszywy(korzen, baza, limit):
+    def falszywy(korzen, baza, limit, procesy):
         zlapane.append((korzen, baza, limit))
         return 0, ["zbadano 1"]
 
