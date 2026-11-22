@@ -730,6 +730,22 @@ def _blad_katalogu(blad: OSError) -> None:
     raise BladNarzedzia(f"nie da sie przejrzec katalogu testow: {blad}")
 
 
+def _importuje_modul(nazwa: str, tresc: str, modul: str) -> bool:
+    """Test wskazuje modul pelna nazwa (`import a.b`, `a.b.f`) albo importem `from a import b`."""
+    if modul in tresc:
+        return True
+    pakiet, _, koncowka = modul.rpartition(".")
+    try:
+        drzewo = ast.parse(tresc, filename=nazwa)
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as blad_testu:
+        raise BladNarzedzia(f"{nazwa}: nie da sie sparsowac testu: {blad_testu}") from blad_testu
+    return any(
+        isinstance(wezel, ast.ImportFrom) and wezel.module == pakiet
+        and any(alias.name == koncowka for alias in wezel.names)
+        for wezel in ast.walk(drzewo)
+    )
+
+
 def _tresci_testow(korzen: Path) -> dict[str, str]:
     """Pliki `.py` pod `tests/` (bez `tests/mutanty_reczne/`) -> tresc."""
     tresci: dict[str, str] = {}
@@ -841,7 +857,7 @@ def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
     testy_pliku: dict[str, list[str]] = {}
     for sciezka in sorted({m.plik for m in mutanty}):
         modul = mutanty_zmian.modul_ze_sciezki(sciezka)
-        testy = sorted(nazwa for nazwa, tresc in tresci.items() if modul in tresc)
+        testy = sorted(nazwa for nazwa, tresc in tresci.items() if _importuje_modul(nazwa, tresc, modul))
         if not testy:
             raise BladNarzedzia(f"{sciezka}: zero zebranych testow dla modulu {modul} - brak dowodu")
         testy_pliku[sciezka] = testy
