@@ -37,7 +37,7 @@ from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.api.schematy import Blad, odpowiedzi_bledow
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Event, Runner, RunnerKind, RunStatus
+from cockpit.db.models import Base, Event, Run, Runner, RunnerKind, RunStatus
 from cockpit.settings import settings
 from sesja_testowa import HASLO_TESTOWE, zaloguj_klienta, zaloz_wlasciciela
 
@@ -175,6 +175,7 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/skills"), ("GET", "/api/skills/{skill_id}"),
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
+        ("POST", "/api/runs/{run_id}/cancel"),
     })
     assert znane <= set(TRASY), f"brakuje tras: {sorted(znane - set(TRASY))}"
 
@@ -233,6 +234,7 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("POST", "/api/runs/{run_id}/commit"): ("Zacommitowano", False),
         ("GET", "/api/runs/{run_id}/dowody"): ("DowodyRunu", False),
         ("POST", "/api/runs/{run_id}/decyzja-odbioru"): ("DecyzjaOdbioru", False),
+        ("POST", "/api/runs/{run_id}/cancel"): ("RunAnulowany", False),
         ("GET", "/api/pliki"): ("PlikOdczytany", False),
         ("GET", "/api/pliki/lista"): ("ListaPlikow", False),
         ("PUT", "/api/pliki"): ("PlikZapisany", False),
@@ -315,6 +317,7 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("POST", "/api/runs/{run_id}/commit"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/runs/{run_id}/dowody"), {"401", "404", "422", "500"}),
     (("POST", "/api/runs/{run_id}/decyzja-odbioru"), {"401", "403", "404", "409", "422", "500"}),
+    (("POST", "/api/runs/{run_id}/cancel"), {"401", "403", "404", "409", "422", "500"}),
     (("POST", "/api/events"), {"401", "404", "422", "500"}),
     (("POST", "/api/runners/odpowiedzi"), {"401", "404", "422"}),
     (("POST", "/api/konto/logowanie"), {"401", "422", "429", "500"}),
@@ -379,6 +382,8 @@ POLA_MODELI = {
     "Zdrowie": {"status": {S}},
     "RunnerZameldowany": {"runner_id": {S}, "tenant_id": {S}, "heartbeat_co_s": {INT}},
     "RunUtworzony": {"run_id": {S}},
+    # HAR-126: po anulowaniu powod jest zawsze ustawiony, wiec nie null (brak powodu to blad)
+    "RunAnulowany": {"run_id": {S}, "status": {S}, "reason": {S}},
     "ZdarzeniePrzyjete": {"seq": {INT}},
     "ZdarzenieRunu": {"seq": {INT}, "kind": {S}, "text": {S}, "step_id": {S}, "agent_type": {S},
                       "text_truncated": {B}, "text_full_len": {INT, N}, "at": {S}},
@@ -447,6 +452,11 @@ def test_model_odpowiedzi_ma_dokladnie_pola_z_kodu_i_wszystkie_sa_wymagane(schem
 
 def test_status_runu_w_schemacie_to_zamknieta_lista_stanow_runu(schemat):
     pole = schemat["components"]["schemas"]["RunSzczegoly"]["properties"]["status"]
+    assert set(_rozwin(schemat, pole)["enum"]) == {s.value for s in RunStatus}
+
+
+def test_status_anulowanego_runu_w_schemacie_to_zamknieta_lista_stanow_runu(schemat):
+    pole = schemat["components"]["schemas"]["RunAnulowany"]["properties"]["status"]
     assert set(_rozwin(schemat, pole)["enum"]) == {s.value for s in RunStatus}
 
 
@@ -664,6 +674,19 @@ async def test_uruchomienie_runu_zwraca_wylacznie_run_id(swiat):
     odp = await swiat.klient.post("/api/runs", json={})
     assert odp.status_code == 200
     assert set(odp.json()) == {"run_id"}
+
+
+async def test_anulowanie_runu_zwraca_dokladnie_run_id_status_i_powod_zgodnie_z_baza(swiat):
+    run_id = (await swiat.klient.post("/api/runs", json={})).json()["run_id"]
+
+    odp = await swiat.klient.post(f"/api/runs/{run_id}/cancel")
+
+    assert odp.status_code == 200
+    assert odp.json() == {
+        "run_id": run_id, "status": "aborted", "reason": "anulowany przez człowieka"}
+    async with swiat.maker() as s:
+        run = (await s.execute(select(Run).where(Run.id == run_id))).scalar_one()
+    assert (run.status, run.reason) == (RunStatus.aborted, "anulowany przez człowieka")
 
 
 async def test_szczegoly_runu_niosa_klucze_reason_i_text_full_len_takze_gdy_sa_puste(swiat):

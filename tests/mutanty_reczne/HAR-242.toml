@@ -1079,14 +1079,14 @@ test = "tests/test_granica.py::test_run_ze_zdarzeniem_ponad_limit_konczy_sie_ste
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
-zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+szukaj = "powod=powod)\n            except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+zamien = "powod=powod)\n            except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
 test = "tests/test_granica.py::test_wznowienie_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, cmd[\"run_id\"], e)"
-zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, cmd[\"run_id\"], e)"
+szukaj = "list(argv))\n            except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+zamien = "list(argv))\n            except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
 test = "tests/test_granica.py::test_krok_polecenia_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finished"
 
 [[mutant]]
@@ -1115,20 +1115,20 @@ test = "tests/test_granica.py::test_przyjety_step_failed_po_niewaznym_polu_jest_
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "            przyjety = await self.send_event("
-zamien = "            przyjety = await self._wyslij_bezposrednio("
+szukaj = "                przyjety = await self.send_event("
+zamien = "                przyjety = await self._wyslij_bezposrednio("
 test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze[http_503]"
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "            przyjety = await self.send_event("
-zamien = "            przyjety = await self._wyslij_bezposrednio("
+szukaj = "                przyjety = await self.send_event("
+zamien = "                przyjety = await self._wyslij_bezposrednio("
 test = "tests/test_granica.py::test_kokpit_odrzucajacy_step_failed_nie_dostaje_run_finished_a_step_failed_czeka_w_buforze[blad_transportu]"
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = "except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
-zamien = "except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+szukaj = "powod=powod)\n            except NiewaznePoleZdarzenia as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
+zamien = "powod=powod)\n            except KeyError as e:\n                await self._zglos_niewazne_pole(client, run_id, e)"
 test = "tests/test_granica.py::test_wznowienie_runu_bez_checkpointu_ze_step_id_ponad_limit_konczy_sie_krokiem_run"
 
 [[mutant]]
@@ -1421,4 +1421,4 @@ test = "tests/test_granica.py::test_przerwanie_z_braku_miejsca_ponad_limit_run_i
 plik = "src/runner/client.py"
 szukaj = "        except NiewaznePoleZdarzenia as e:\n            await self._zglos_niewazne_pole(client, run_id, e)\n\n    async def _nasluchuj"
 zamien = "        except KeyError as e:\n            await self._zglos_niewazne_pole(client, run_id, e)\n\n    async def _nasluchuj"
-test = "tests/test_granica.py::test_polecenie_spoza_listy_z_pustym_step_id_konczy_run_step_failed_i_run_finished"
+test = "tests/test_granica.py::test_polecenie_spoza_listy_z_za_dlugim_step_id_konczy_run_step_failed_i_run_finished"

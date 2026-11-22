@@ -30,6 +30,8 @@ from .walidacja import sprawdz_pomiar
 
 POWOD_RUNNER_OFFLINE = "runner offline"  # (HAR-37)
 KIND_PRZERWANIA = "run_aborted"
+KIND_ANULOWANIA = "run_cancelled"   # anulowanie przez czlowieka (HAR-126); w `RODZAJE_CZLOWIEKA`
+POWOD_ANULOWANIA = "anulowany przez człowieka"
 # Zdarzenia odbioru zapisuje wylacznie kokpit, na zadanie czlowieka (HAR-179): runner nie moze
 # ich zglosic (oba sa w `RODZAJE_CZLOWIEKA`, HAR-234), bo `committed` odblokowywalby sie na
 # sfalszowanym `integrated`.
@@ -278,6 +280,7 @@ RODZAJE_CZLOWIEKA: frozenset[str] = frozenset({
     "integrated",
     "committed",
     "acceptance",
+    "run_cancelled",    # anulowanie runu przez czlowieka (HAR-126); zapisuje je kokpit
 })
 # `step_aborted` nie rusza runu `waiting` (HAR-47)
 _STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})
@@ -603,6 +606,47 @@ async def zdarzenia_przerwania(
             **zdarzenie_na_szyne(ev), "status": run.status.value, "reason": run.reason,
         }))
     return wynik
+
+
+async def anuluj_run(
+    s: AsyncSession, run_id: str, tenant_id: str, user_id: str,
+) -> tuple[Run, Event, dict]:
+    """Czlowiek anuluje run `running` albo `waiting`: `aborted` z powodem i zdarzenie
+    `run_cancelled` z `user_id` (HAR-126). Zwraca `(run, zdarzenie, polecenie dla runnera)`.
+
+    Obcy lub nieznany run to NieZnaleziono; kazdy inny status to StanNiemozliwy. Status
+    czytamy pod blokada wiersza (jak `zapisz_zdarzenie`), wiec rownolegly `run_finished` albo
+    drugie anulowanie nie przejdzie tego samego sprawdzenia: przegrany widzi nowy status.
+    """
+    run = await run_dla_najemcy(s, run_id, tenant_id)
+    run_id = run.id    # po rollbacku obiekty sesji sa wygaszone - trzymamy same napisy
+    for _ in range(_PROBY_SEQ):
+        await s.refresh(run, with_for_update=True)
+        if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value     # przed rollbackiem, ktory wygasza obiekt
+            await s.rollback()      # zwalnia blokade wiersza
+            raise StanNiemozliwy(
+                f"run w stanie {stan} nie moze byc anulowany "
+                "(tylko run w toku albo oczekujacy)"
+            )
+        run.status = RunStatus.aborted
+        run.reason = POWOD_ANULOWANIA
+        ev = Event(tenant_id=tenant_id, run_id=run_id, kind=KIND_ANULOWANIA,
+                   text=POWOD_ANULOWANIA, text_full_len=len(POWOD_ANULOWANIA),
+                   dane={"user_id": user_id},
+                   seq=await _nastepny_seq(s, run_id, tenant_id))
+        s.add(ev)
+        try:
+            await s.commit()
+        except IntegrityError as e:
+            await s.rollback()
+            if not _kolizja_numeru(e):
+                raise
+            continue    # numer zajety rownolegle: status i seq liczymy od nowa
+        return run, ev, {"type": "cancel_run", "run_id": run_id}
+    raise StanNiemozliwy(
+        f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
+    )
 
 
 def czas_zdarzenia(ev: Event) -> str:
