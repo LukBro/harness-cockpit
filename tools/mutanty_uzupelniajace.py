@@ -737,8 +737,8 @@ def _importuje_modul(nazwa: str, tresc: str, modul: str) -> bool:
     pakiet, _, koncowka = modul.rpartition(".")
     try:
         drzewo = ast.parse(tresc, filename=nazwa)
-    except SyntaxError as blad:
-        raise BladNarzedzia(f"{nazwa}: nie da sie sparsowac testu: {blad}") from blad
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as blad_testu:
+        raise BladNarzedzia(f"{nazwa}: nie da sie sparsowac testu: {blad_testu}") from blad_testu
     return any(
         isinstance(wezel, ast.ImportFrom) and wezel.module == pakiet
         and any(alias.name == koncowka for alias in wezel.names)

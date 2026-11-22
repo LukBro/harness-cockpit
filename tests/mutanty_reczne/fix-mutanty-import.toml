@@ -32,7 +32,7 @@ test = "tests/test_mutanty_uzupelniajace.py::test_zwykly_import_bez_nazwy_modulu
 
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "raise BladNarzedzia(f\"{nazwa}: nie da sie sparsowac testu: {blad}\") from blad"
+szukaj = "raise BladNarzedzia(f\"{nazwa}: nie da sie sparsowac testu: {blad_testu}\") from blad_testu"
 zamien = "return False"
 test = "tests/test_mutanty_uzupelniajace.py::test_niesparsowalny_test_bez_pelnej_nazwy_to_blad_narzedzia_z_nazwa_pliku"
 
@@ -41,3 +41,27 @@ plik = "tools/mutanty_uzupelniajace.py"
 szukaj = "        return True\n    pakiet, _, koncowka"
 zamien = "        pass\n    pakiet, _, koncowka"
 test = "tests/test_mutanty_uzupelniajace.py::test_test_z_pelna_nazwa_modulu_jest_testem_modulu_bez_parsowania"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad_testu:"
+zamien = "except (ValueError, RecursionError, MemoryError) as blad_testu:"
+test = "tests/test_mutanty_uzupelniajace.py::test_niesparsowalny_test_bez_pelnej_nazwy_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad_testu:"
+zamien = "except (SyntaxError, RecursionError, MemoryError) as blad_testu:"
+test = "tests/test_mutanty_uzupelniajace.py::test_ValueError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad_testu:"
+zamien = "except (SyntaxError, ValueError, MemoryError) as blad_testu:"
+test = "tests/test_mutanty_uzupelniajace.py::test_RecursionError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "except (SyntaxError, ValueError, RecursionError, MemoryError) as blad_testu:"
+zamien = "except (SyntaxError, ValueError, RecursionError) as blad_testu:"
+test = "tests/test_mutanty_uzupelniajace.py::test_MemoryError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku"

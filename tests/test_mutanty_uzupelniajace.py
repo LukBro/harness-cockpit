@@ -3728,3 +3728,33 @@ def test_main_bierze_test_z_importem_from_pakiet_import_modul_zamiast_bledu_zero
     assert "zero zebranych testow" not in blad
     assert proces.returncode in (0, 1), blad
     assert wyjscie != ""
+
+
+
+def test_ValueError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
+    def parser(*_args, **_kwargs):
+        raise ValueError("atrapa")
+
+    monkeypatch.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
+        mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+
+
+
+def test_RecursionError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
+    def parser(*_args, **_kwargs):
+        raise RecursionError("atrapa")
+
+    monkeypatch.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
+        mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+
+
+
+def test_MemoryError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
+    def parser(*_args, **_kwargs):
+        raise MemoryError("atrapa")
+
+    monkeypatch.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
+        mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
