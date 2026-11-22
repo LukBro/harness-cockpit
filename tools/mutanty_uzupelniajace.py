@@ -822,7 +822,7 @@ def _linie_recznie(miejsca: list[tuple[str, int]]) -> list[str]:
     return [f"{plik}:{linia}: sprawdz recznie" for plik, linia in miejsca]
 
 
-def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
+def _przebieg(korzen: Path, baza: str, limit: float, procesy: int = 1) -> tuple[int, list[str]]:
     """(kod, linie stdout); bledy to wyjatki, wiec przy kodzie 2 stdout zostaje pusty.
 
     Priorytet: blad narzedzia 2 > przezyl mutant 1 > `sprawdz recznie` 3 > 0 (`zbadano N`, N > 0,
@@ -862,15 +862,16 @@ def _przebieg(korzen: Path, baza: str, limit: float) -> tuple[int, list[str]]:
             raise BladNarzedzia(f"{sciezka}: zero zebranych testow dla modulu {modul} - brak dowodu")
         testy_pliku[sciezka] = testy
 
-    sprawdzone: set[str] = set()
-    przezyly: list[Mutant] = []
-    for mutant in mutanty:
-        testy = testy_pliku[mutant.plik]
-        if mutant.plik not in sprawdzone:
-            _sprawdz_testy_bez_mutacji(korzen, mutant.plik, bazowe[mutant.plik], testy, limit)
-            sprawdzone.add(mutant.plik)
-        if not _mutant_zabity(korzen, mutant, testy, limit):
-            przezyly.append(mutant)
+    # Kazdy przebieg w swojej kopii, wiec naraz; z ustawiona baza testy `baza` dzielilyby jedna baze.
+    naraz = 1 if os.environ.get(mutanty_reczne.ZMIENNA_URL_BAZY) else procesy
+    mutanty_reczne.rownolegle(
+        lambda plik: _sprawdz_testy_bez_mutacji(korzen, plik, bazowe[plik], testy_pliku[plik], limit),
+        sorted(testy_pliku), naraz,
+    )
+    zabite = mutanty_reczne.rownolegle(
+        lambda m: _mutant_zabity(korzen, m, testy_pliku[m.plik], limit), mutanty, naraz
+    )
+    przezyly = [m for m, zabity in zip(mutanty, zabite) if not zabity]
 
     zglaszane = []
     for mutant in przezyly:
@@ -903,7 +904,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     korzen = args.korzen if args.korzen is not None else Path.cwd()
     try:
-        kod, linie = _przebieg(korzen, args.baza, args.limit)
+        kod, linie = _przebieg(korzen, args.baza, args.limit, os.cpu_count() or 1)
     except (BladNarzedzia, mutanty_zmian.BladNarzedzia, mutanty_reczne.BladNarzedzia) as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
