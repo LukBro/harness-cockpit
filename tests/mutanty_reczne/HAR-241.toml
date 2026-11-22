@@ -604,10 +604,10 @@ szukaj = "dla modulu {modul}"
 zamien = "dla modulu {sciezka}"
 test = "tests/test_mutanty_uzupelniajace.py::test_zero_zebranych_testow_dla_modulu_to_kod_2_a_nie_czysto"
 
-# Testy modulu to pliki, ktorych tresc zawiera nazwe modulu (nie wszystkie pliki).
+# Testy modulu to pliki, ktore wskazuja modul pelna nazwa albo `from pakiet import modul` (nie wszystkie pliki).
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "if modul in tresc)"
+szukaj = "if _importuje_modul(nazwa, tresc, modul))"
 zamien = "if True)"
 test = "tests/test_mutanty_uzupelniajace.py::test_zero_zebranych_testow_dla_modulu_to_kod_2_a_nie_czysto"
 
@@ -1691,8 +1691,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_pierwszy_blad_zero_testow_doty
 # Komunikat czerwonych testow bez mutacji wymienia pliki posortowane po sciezce.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "testy = sorted(nazwa for nazwa, tresc in tresci.items() if modul in tresc)"
-zamien = "testy = [nazwa for nazwa, tresc in tresci.items() if modul in tresc]"
+szukaj = "testy = sorted(nazwa for nazwa, tresc in tresci.items() if _importuje_modul(nazwa, tresc, modul))"
+zamien = "testy = [nazwa for nazwa, tresc in tresci.items() if _importuje_modul(nazwa, tresc, modul)]"
 test = "tests/test_mutanty_uzupelniajace.py::test_komunikat_czerwonych_testow_bez_mutacji_podaje_pliki_posortowane_po_sciezce"
 
 # Przezywajace mutanty daja kod 1 (nie `zbadano N`).

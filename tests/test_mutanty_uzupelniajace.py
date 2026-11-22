@@ -3669,3 +3669,113 @@ def test_funkcja_bez_ksztaltu_w_instrukcji_zlozonej_to_kod_3_z_linia_instrukcji_
     kod, wyjscie, blad = _narzedzie(repo, capsys)
     assert kod == 3, blad
     assert wyjscie.splitlines() == [_miejsce(SCIEZKA, 1), _miejsce(SCIEZKA, 2)]
+
+
+# --- wybor testow modulu: pelna nazwa albo `from pakiet import modul` (PR #206: workflowy_api) ----------
+
+
+def test_test_z_importem_from_pakiet_import_modul_jest_testem_modulu():
+    tresc = "from cockpit.services import workflowy_api\n"
+    assert mutanty_uzupelniajace._importuje_modul("tests/t.py", tresc, "cockpit.services.workflowy_api")
+
+
+def test_test_z_pelna_nazwa_modulu_jest_testem_modulu_bez_parsowania():
+    tresc = "import cockpit.services.workflowy_api\ndef (\n"
+    assert mutanty_uzupelniajace._importuje_modul("tests/t.py", tresc, "cockpit.services.workflowy_api")
+
+
+def test_import_tej_samej_nazwy_z_innego_pakietu_nie_jest_testem_modulu():
+    tresc = "from cockpit.api import workflowy_api\n"
+    assert not mutanty_uzupelniajace._importuje_modul("tests/t.py", tresc, "cockpit.services.workflowy_api")
+
+
+def test_import_innej_nazwy_z_tego_samego_pakietu_nie_jest_testem_modulu():
+    tresc = "from cockpit.services import skille_api\n"
+    assert not mutanty_uzupelniajace._importuje_modul("tests/t.py", tresc, "cockpit.services.workflowy_api")
+
+
+def test_zwykly_import_bez_nazwy_modulu_nie_jest_testem_modulu():
+    tresc = "import os\n"
+    assert not mutanty_uzupelniajace._importuje_modul("tests/t.py", tresc, "cockpit.services.workflowy_api")
+
+
+def test_niesparsowalny_test_bez_pelnej_nazwy_to_blad_narzedzia_z_nazwa_pliku():
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia, match=r"^tests/t\.py: nie da sie sparsowac testu"):
+        mutanty_uzupelniajace._importuje_modul("tests/t.py", "def (\n", "cockpit.services.workflowy_api")
+
+
+def test_main_bierze_test_z_importem_from_pakiet_import_modul_zamiast_bledu_zero_testow(tmp_path):
+    baza = {
+        "src/pakiet/__init__.py": "",
+        "src/pakiet/m00.py": "# modul\n",
+        "tests/test_m00.py": "from pakiet import m00\n\n\ndef test_x():\n    assert m00\n",
+    }
+    repo = _repo(tmp_path, baza, {"src/pakiet/m00.py": ZRODLO_EXCEPT})
+    proces = uruchom_proces_sync(
+        [
+            sys.executable, str(KORZEN / "tools" / "mutanty_uzupelniajace.py"),
+            "--korzen", str(repo), "--baza", "HEAD", "--limit", LIMIT_TESTU_S,
+        ],  # fmt: skip
+        cwd=KORZEN,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        wyjscie, blad = proces.communicate(timeout=300)
+    finally:
+        zakoncz_proces_sync(proces, nazwa="mutanty uzupelniajace z importem from")
+    assert "zero zebranych testow" not in blad
+    assert proces.returncode in (0, 1), blad
+    assert wyjscie != ""
+
+
+
+def test_ValueError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
+    def parser(*_args, **_kwargs):
+        raise ValueError("atrapa")
+
+    # podmiana tylko na czas wywolania: pytest sam uzywa ast.parse przy raportowaniu bledu
+    with monkeypatch.context() as podmiana:
+        podmiana.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+        try:
+            mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+            wynik = None
+        except Exception as blad:  # noqa: BLE001 - kazdy wyjatek ma wyjsc z podmiany przed asercja
+            wynik = blad
+    assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
+    assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
+
+
+
+def test_RecursionError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
+    def parser(*_args, **_kwargs):
+        raise RecursionError("atrapa")
+
+    # podmiana tylko na czas wywolania: pytest sam uzywa ast.parse przy raportowaniu bledu
+    with monkeypatch.context() as podmiana:
+        podmiana.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+        try:
+            mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+            wynik = None
+        except Exception as blad:  # noqa: BLE001 - kazdy wyjatek ma wyjsc z podmiany przed asercja
+            wynik = blad
+    assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
+    assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
+
+
+
+def test_MemoryError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
+    def parser(*_args, **_kwargs):
+        raise MemoryError("atrapa")
+
+    # podmiana tylko na czas wywolania: pytest sam uzywa ast.parse przy raportowaniu bledu
+    with monkeypatch.context() as podmiana:
+        podmiana.setattr(mutanty_uzupelniajace.ast, "parse", parser)
+        try:
+            mutanty_uzupelniajace._importuje_modul("tests/t.py", "import os\n", "cockpit.services.workflowy_api")
+            wynik = None
+        except Exception as blad:  # noqa: BLE001 - kazdy wyjatek ma wyjsc z podmiany przed asercja
+            wynik = blad
+    assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
+    assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
