@@ -1246,8 +1246,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_inny_kod_pytesta_wraca_do_wola
 # Kod pytesta inny niz 0/1 po mutacji (blad importu) to blad narzedzia, nie "zabity".
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "return mutanty_reczne.ocen_kod_testu(_uruchom_pytest(kopia, testy, limit))"
-zamien = "return _uruchom_pytest(kopia, testy, limit) == 1"
+szukaj = "return mutanty_reczne.ocen_kod_testu(_uruchom_pytest(kopia, testy, limit, do_pierwszego_bledu=True))"
+zamien = "return _uruchom_pytest(kopia, testy, limit, do_pierwszego_bledu=True) == 1"
 test = "tests/test_mutanty_uzupelniajace.py::test_mutant_po_ktorym_modul_sie_nie_importuje_to_kod_2_a_nie_zabity_mutant"
 
 # --- limit czasu i wartosci domyslne ---------------------------------------------------------------
@@ -1291,16 +1291,16 @@ test = "tests/test_mutanty_uzupelniajace.py::test_flagi_baza_i_limit_trafiaja_do
 # Wartosc domyslna limitu to 300 s.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "LIMIT_DOMYSLNY = 300.0"
-zamien = "LIMIT_DOMYSLNY = 301.0"
-test = "tests/test_mutanty_uzupelniajace.py::test_bez_flag_baza_to_origin_main_a_limit_to_300_sekund"
+szukaj = "LIMIT_DOMYSLNY = 1200.0"
+zamien = "LIMIT_DOMYSLNY = 1201.0"
+test = "tests/test_mutanty_uzupelniajace.py::test_bez_flag_baza_to_origin_main_a_limit_to_1200_sekund"
 
 # Wartosc domyslna bazy to origin/main.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
 szukaj = 'default="origin/main"'
 zamien = 'default="origin/master"'
-test = "tests/test_mutanty_uzupelniajace.py::test_bez_flag_baza_to_origin_main_a_limit_to_300_sekund"
+test = "tests/test_mutanty_uzupelniajace.py::test_bez_flag_baza_to_origin_main_a_limit_to_1200_sekund"
 
 # Limit z flagi trafia do przebiegu (nie stala domyslna).
 [[mutant]]
@@ -3343,8 +3343,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_limit_z_wiersza_polecen_docier
 # Limit dociera do pytesta mutanta.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'ocen_kod_testu(_uruchom_pytest(kopia, testy, limit))'
-zamien = 'ocen_kod_testu(_uruchom_pytest(kopia, testy, LIMIT_DOMYSLNY))'
+szukaj = 'ocen_kod_testu(_uruchom_pytest(kopia, testy, limit, do_pierwszego_bledu=True))'
+zamien = 'ocen_kod_testu(_uruchom_pytest(kopia, testy, LIMIT_DOMYSLNY, do_pierwszego_bledu=True))'
 test = "tests/test_mutanty_uzupelniajace.py::test_limit_z_wiersza_polecen_dociera_do_kontroli_bez_mutacji_i_do_kazdego_mutanta"
 
 # Limit dociera do procesu pytesta.
