@@ -355,6 +355,27 @@ def test_zapis_pliku_bez_podanej_opcji_utworz_katalogi_nie_tworzy_katalogow(proj
     assert not (projekt.korzen / "nowy_kat").exists()
 
 
+def test_zapis_pliku_wymusza_na_dysk_komplet_danych_dopiero_po_ich_zapisaniu_i_oproznieniu_bufora(
+    projekt, monkeypatch,
+):
+    dane = b"tresc skilla \xe2\x9c\x93\n"
+    rozmiary_w_chwili_fsync: list[int] = []
+    prawdziwy_fsync = os.fsync
+
+    def fsync_ktory_zapamietuje_rozmiar_pliku_na_dysku(fd):
+        rozmiary_w_chwili_fsync.append(os.fstat(fd).st_size)
+        prawdziwy_fsync(fd)
+
+    monkeypatch.setattr(operacje.os, "fsync", fsync_ktory_zapamietuje_rozmiar_pliku_na_dysku)
+    plik = projekt.korzen / "a.md"
+
+    odp = operacje._zapisz_plik(str(plik), dane)
+
+    assert odp == {"sciezka": str(plik), "rozmiar": len(dane)}
+    assert plik.read_bytes() == dane
+    assert rozmiary_w_chwili_fsync == [len(dane)]
+
+
 async def test_zapis_bez_pola_utworz_katalogi_w_zapytaniu_nie_tworzy_katalogow(projekt):
     odp = await _wyk("write_file", sciezka=str(projekt.korzen / "nowy_kat" / "a.md"), tresc="x")
 

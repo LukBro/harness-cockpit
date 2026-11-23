@@ -1124,3 +1124,35 @@ def test_drugi_zapis_niezmienionego_po_pierwszym_zapisie_workflow_oddaje_te_same
     assert drugi.read_bytes() == pierwszy.read_bytes()
     assert not workflow._zmieniony()
 
+
+def test_plik_workflow_z_bajtami_niebedacymi_utf8_to_problem_odczytu_a_nie_wyjatek(tmp_path):
+    plik = tmp_path / "zly.yaml"
+    plik.write_bytes(b"\xff\xfe")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is None
+    assert [(p.krok, p.kod) for p in problemy] == [(None, BLAD_ODCZYTU)]
+    assert problemy[0].komunikat.startswith("nie mozna odczytac pliku: ")
+
+
+def test_nieudany_zapis_zmienionego_workflow_zostawia_zmiane_niezapisana_a_ponowny_zapis_ja_zapisuje(
+    tmp_path,
+):
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(PLIK_Z_KOMENTARZAMI_I_CUDZYSLOWAMI)
+    assert workflow is not None
+    _krok(workflow, "review").fanout = 5
+    katalog_zamiast_pliku = tmp_path / "cel.yaml"
+    katalog_zamiast_pliku.mkdir()
+
+    with pytest.raises(OSError):
+        zapisz_workflow(workflow, katalog_zamiast_pliku)
+
+    assert workflow._zmieniony()
+    poprawny = tmp_path / "poprawny.yaml"
+    zapisz_workflow(workflow, poprawny)
+    assert b"fanout: 5" in poprawny.read_bytes()
+    assert not workflow._zmieniony()
+

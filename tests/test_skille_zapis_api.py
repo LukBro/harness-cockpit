@@ -2440,3 +2440,81 @@ async def test_zapisany_skill_dostaje_zakres_swojego_id_a_nie_innego_skilla_proj
     assert (a.status_code, a.json()["zakres"]) == (200, "lokalny")
     assert (b.status_code, b.json()["zakres"]) == (200, "nadpisany")
 
+
+# =================================================================================
+# 8. Mutanty uzupelniajace (HAR-181): nazwa skilla, kolejnosc logu i commitu, prawo podgladu
+# =================================================================================
+
+PRZYJMOWANE_NAZWY = {
+    "wielka_litera_na_poczatku": "Abc",
+    "wielka_litera_w_srodku": "aBc",
+    "cyfra_na_poczatku": "1a",
+    "cyfra_w_srodku": "a1",
+    "kropka_w_srodku": "a.b",
+    "podkreslnik_w_srodku": "a_b",
+    "myslnik_w_srodku": "a-b",
+    "szescdziesiat_cztery_znaki": "x" * 64,
+}
+ODRZUCANE_NAZWY = {
+    "kropka_na_poczatku": ".a",
+    "myslnik_na_poczatku": "-a",
+    "podkreslnik_na_poczatku": "_a",
+    "szescdziesiat_piec_znakow": "x" * 65,
+    "pusta": "",
+}
+
+
+@pytest.mark.parametrize("nazwa", PRZYJMOWANE_NAZWY.values(), ids=PRZYJMOWANE_NAZWY.keys())
+def test_nazwa_katalogu_skilla_z_liter_cyfr_kropki_podkreslnika_i_myslnika_jest_bezpieczna(nazwa):
+    skille_api.sprawdz_bezpieczna_nazwe(nazwa)
+
+
+@pytest.mark.parametrize("nazwa", ODRZUCANE_NAZWY.values(), ids=ODRZUCANE_NAZWY.keys())
+def test_nazwa_katalogu_skilla_zaczynajaca_sie_od_znaku_specjalnego_albo_za_dluga_nie_jest_bezpieczna(
+    nazwa,
+):
+    with pytest.raises(BlednySkill):
+        skille_api.sprawdz_bezpieczna_nazwe(nazwa)
+
+
+async def test_przy_nieudanym_odswiezeniu_katalogu_ostrzezenie_trafia_do_logu_przed_zakonczeniem_transakcji(
+    monkeypatch, caplog,
+):
+    na_koniec_transakcji: list[list[str]] = []
+
+    class Sesja:
+        async def commit(self):
+            na_koniec_transakcji.append(
+                [r.getMessage() for r in caplog.records if r.name == "cockpit.services.skille_api"])
+
+    async def nieudane_odswiezenie(*_argumenty):
+        raise StanNiemozliwy("runner odpadl")
+
+    monkeypatch.setattr(skille_api, "_odswiez_katalog_projektu", nieudane_odswiezenie)
+
+    with caplog.at_level(logging.WARNING, logger="cockpit.services.skille_api"):
+        odswiezono = await skille_api._odswiez_po_zapisie(
+            Sesja(), "t", SimpleNamespace(), frozenset(), None)
+
+    assert odswiezono is False
+    assert na_koniec_transakcji == [[KOMUNIKAT_NIEUDANEGO_ODSWIEZENIA]]
+
+
+async def test_rola_bez_prawa_podgladu_nie_dostaje_listy_workflow_ani_walidacji_a_runner_nie_jest_pytany(
+    swiat, monkeypatch,
+):
+    from cockpit.services import dostep
+
+    klient = await _klient_z_katalogiem(swiat)
+    bez_podgladu = {
+        rola: uprawnienia - {dostep.Uprawnienie.podglad}
+        for rola, uprawnienia in dostep.MACIERZ_ROL.items()}
+    monkeypatch.setattr(dostep, "MACIERZ_ROL", bez_podgladu)
+
+    lista = await klient.get("/api/workflows", params={"project": swiat.projekt_a})
+    walidacja = await klient.get(
+        "/api/workflows/x/validate", params={"project": swiat.projekt_a})
+
+    assert (lista.status_code, walidacja.status_code) == (403, 403)
+    assert swiat.runner.wywolania == []
+
