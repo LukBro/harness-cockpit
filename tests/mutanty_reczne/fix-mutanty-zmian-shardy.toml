@@ -271,14 +271,14 @@ test = "tests/test_workflow_mutacje.py::test_shardy_zmian_odpalaja_sie_tylko_na_
 
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "shard: [0,1,2,3]"
-zamien = "shard: [0,1,2]"
+szukaj = "shard: [0,1,2,3,4,5,6,7]"
+zamien = "shard: [0,1,2,3,4,5,6]"
 test = "tests/test_workflow_mutacje.py::test_liczba_shardow_w_kroku_sklejenia_jest_rowna_macierzy_shardow_zmian"
 
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "LICZBA_SHARDOW_ZMIAN: \"4\""
-zamien = "LICZBA_SHARDOW_ZMIAN: \"3\""
+szukaj = "LICZBA_SHARDOW_ZMIAN: \"8\""
+zamien = "LICZBA_SHARDOW_ZMIAN: \"7\""
 test = "tests/test_workflow_mutacje.py::test_liczba_shardow_w_kroku_sklejenia_jest_rowna_macierzy_shardow_zmian"
 
 [[mutant]]

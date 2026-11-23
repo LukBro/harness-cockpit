@@ -91,9 +91,10 @@ jobs:
           name: dowody-${{ matrix.shard }}
           path: dowody
 
-  # fix-mutanty-zmian-shardy: mutanty zmienionych funkcji w 4 shardach. Shard bierze co 4. mutant (po
+  # fix-mutanty-zmian-shardy: mutanty zmienionych funkcji w 8 shardach. Shard bierze co 8. mutant (po
   # posortowanych nazwach), wiec kazdy dostaje te sama czesc kazdej funkcji; przy podziale po plikach jeden
-  # shard pelnego przebiegu trwal 105 min przy pozostalych 14-32. W HAR-181 ten krok w jednym jobie: 37 min.
+  # shard pelnego przebiegu trwal 105 min przy pozostalych 14-32. W HAR-181 ten krok w jednym jobie: 37 min;
+  # proba na tym stanie (1194 mutanty, 4 shardy po 2 procesy): 1027-1118 s na shard, wynik identyczny z CI.
   mutation-zmiany:
     if: github.event_name == 'pull_request'
     needs:
@@ -104,7 +105,7 @@ jobs:
       fail-fast: false
       matrix:
         # Liczba shardow = LICZBA_SHARDOW_ZMIAN w kroku `mutanty zmienionych funkcji` (test pilnuje zgodnosci).
-        shard: [0,1,2,3]
+        shard: [0,1,2,3,4,5,6,7]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -303,7 +304,7 @@ jobs:
       - name: mutanty zmienionych funkcji
         env:
           BASE_REF: ${{ github.base_ref }}
-          LICZBA_SHARDOW_ZMIAN: "4"
+          LICZBA_SHARDOW_ZMIAN: "8"
         run: |
           # Brak mutmuta to brak pomiaru, wiec czerwony krok, nie pominiecie.
           command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono, check nie moze przejsc"; exit 1; }
