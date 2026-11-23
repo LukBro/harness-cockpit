@@ -2531,7 +2531,7 @@ test = "tests/test_mutanty_uzupelniajace.py::test_mutant_ktorego_kompilacja_rzuc
 # Niejawna grupa calego wzorca zaczyna sie za flagami globalnymi.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'stos: list[list] = [[FLAGI_GLOBALNE.match(wzorzec).end(), []]]'
+szukaj = 'stos: list[list] = [[_koniec_flag_globalnych(wzorzec), []]]'
 zamien = 'stos: list[list] = [[0, []]]'
 test = "tests/test_mutanty_uzupelniajace.py::test_pierwsza_alternatywa_wzorca_z_flaga_globalna_nie_obejmuje_flagi_ani_w_opisie_ani_w_wzorcu[i]"
 
@@ -2855,8 +2855,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_flagi_nieodczytywalne_z_kodu_t
 # Komunikat flag nieodczytywalnych niesie wyrazenie.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'f"nie umiem odczytac flag re.compile: {_tekst(wyrazenie)}"'
-zamien = 'f"nie umiem odczytac flag re.compile"'
+szukaj = 'f"nie umiem odczytac flag wywolania re: {_tekst(wyrazenie)}"'
+zamien = 'f"nie umiem odczytac flag wywolania re"'
 test = "tests/test_mutanty_uzupelniajace.py::test_flagi_nieodczytywalne_z_kodu_to_blad_narzedzia_z_wyrazeniem_a_nie_zero_mutantow[zmienna]"
 
 # Argumenty: flagi to drugi argument pozycyjny.
@@ -2931,8 +2931,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_flagi_odczytywalne_z_wywolania
 # Komunikat gwiazdki albo wielu flag.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = '"nie umiem odczytac argumentow re.compile (gwiazdka albo wiele flag)"'
-zamien = '"nie umiem odczytac argumentow re.compile"'
+szukaj = 'f"nie umiem odczytac argumentow re.{wezel.func.attr} (gwiazdka albo wiele flag)"'
+zamien = 'f"nie umiem odczytac argumentow re.{wezel.func.attr}"'
 test = "tests/test_mutanty_uzupelniajace.py::test_argumenty_re_compile_ktorych_narzedzie_nie_umie_odczytac_to_blad_narzedzia[dwa_argumenty_pozycyjne]"
 
 # Brak flag to flagi zero (nie VERBOSE).
