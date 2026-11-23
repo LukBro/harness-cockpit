@@ -22,6 +22,12 @@ HAR-236 (opcjonalne flagi; bez nich kody i stdout bez zmian):
   z zapisu. Zmiana plikow pod `tests/` (takze nieSledzonych) albo `pyproject.toml` albo
   brak/uszkodzenie zapisu to pelny przebieg. Zapis powstaje po kodzie 0, 1 albo 3, nie po 2.
   Znany kompromis: odcisk obejmuje tekst funkcji, nie jej zaleznosci.
+- Shardy (fix-mutanty-zmian-shardy): `--indeks-shardu I --liczba-shardow N --wynik-shardu PLIK` (z
+  `--katalog-dowodow`) mutuje co N-ty mutant zmienionych funkcji (od I) i zapisuje w PLIKU wzorce,
+  wszystkie mutanty wzorcow i statusy mutantow shardu; kod 0 albo 2, bez oceny survivorow.
+  `--z-shardow KATALOG --liczba-shardow N` nie uruchamia mutmuta: bierze statusy z KATALOG/shard-<i>.json
+  i konczy sie jak zwykly przebieg. Brak pliku shardu, inne wzorce albo lista mutantow w shardach, mutant
+  w dwoch shardach, niesprawdzony albo brakujacy mutant to kod 2 (brak dowodu, nigdy zielone).
 - Na stderr idzie czas faz (`czas fazy <faza>: <X.X> s|brak pomiaru`): wybor-funkcji, statystyki,
   mutanty, wyniki. Czasy statystyk i mutantow sa czytane ze znacznikow w wyjsciu `mutmut run`
   (`Running stats`, potem pierwszy z `Running clean tests` / `Running mutation testing`);
@@ -533,6 +539,103 @@ def _ostrzez_o_zmianach_bez_tabeli(sha: str) -> None:
             )
 
 
+NIESPRAWDZONY = "not checked"
+
+
+def _ostrzez_bez_mutantow(do_mutowania: list[str]) -> None:
+    print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
+    print(
+        f"OSTRZEZENIE: brak dowodu: {len(do_mutowania)} zmienionych funkcji bez mutantow",
+        file=sys.stderr,
+    )
+
+
+def _wczytaj_shard(plik: Path) -> dict:
+    try:
+        dane = json.loads(plik.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as blad:
+        raise BladNarzedzia(f"brak dowodu: {plik}: nie da sie odczytac wyniku shardu: {blad}") from blad
+    napisy = lambda w: isinstance(w, list) and all(isinstance(e, str) for e in w)  # noqa: E731
+    if (
+        not isinstance(dane, dict)
+        or not napisy(dane.get("wzorce"))
+        or not napisy(dane.get("wszystkie"))
+        or not isinstance(dane.get("wyniki"), dict)
+        or not all(isinstance(k, str) and isinstance(v, str) for k, v in dane["wyniki"].items())
+    ):
+        raise BladNarzedzia(f"brak dowodu: {plik}: zly format wyniku shardu")
+    return dane
+
+
+def wyniki_shardow(katalog: Path, liczba: int, wzorce: list[str]) -> tuple[list[str], str]:
+    """(wszystkie mutanty wzorcow, statusy w formacie `mutmut results`) z wynikow shardow."""
+    wszystkie: list[str] | None = None
+    statusy: dict[str, str] = {}
+    for indeks in range(liczba):
+        plik = katalog / f"shard-{indeks}.json"
+        dane = _wczytaj_shard(plik)
+        if dane["wzorce"] != wzorce:
+            raise BladNarzedzia(f"brak dowodu: {plik}: shard mutowal inne funkcje niz zmienione w tej zmianie")
+        if wszystkie is None:
+            wszystkie = dane["wszystkie"]
+        elif dane["wszystkie"] != wszystkie:
+            raise BladNarzedzia(f"brak dowodu: {plik}: inna lista mutantow niz w shardzie 0")
+        for klucz, status in dane["wyniki"].items():
+            if klucz in statusy:
+                raise BladNarzedzia(f"brak dowodu: mutant {klucz} w dwoch shardach")
+            if status == NIESPRAWDZONY:
+                raise BladNarzedzia(f"brak dowodu: mutant {klucz} nie zostal sprawdzony")
+            statusy[klucz] = status
+    wszystkie = wszystkie or []
+    brakujace = sorted(set(wszystkie) - set(statusy))
+    if brakujace or set(statusy) - set(wszystkie):
+        raise BladNarzedzia(f"brak dowodu: shardy nie sprawdzily {len(brakujace)} mutantow, np. {brakujace[:3]}")
+    return wszystkie, "\n".join(f"{k}: {v}" for k, v in sorted(statusy.items()))
+
+
+def _mutuj_shard(polecenie: list[str], wzorce: list[str], shard: tuple[int, int], plik: Path, czasy: _Czasy) -> int:
+    """Mutanty shardu i zapis jego wyniku; bez oceny survivorow (robi ja `--z-shardow`)."""
+    indeks, liczba = shard
+    przydzial = plik.with_name(plik.name + ".przydzial")
+    wynik: dict = {"wzorce": wzorce, "wszystkie": [], "wyniki": {}}
+    katalog_wyniku = plik.parent
+    try:
+        katalog_wyniku.mkdir(parents=True, exist_ok=True)
+    except OSError as blad:
+        raise BladNarzedzia(f"{katalog_wyniku}: nie da sie utworzyc katalogu wyniku shardu: {blad}") from blad
+    if wzorce:
+        poczatek = time.monotonic()
+        bieg = uruchom(
+            [*polecenie, "--liczba-shardow", str(liczba), "--indeks-shardu", str(indeks),
+             "--przydzial", str(przydzial), *wzorce],
+            na_linie=czasy.na_linie,
+        )
+        czasy.zmierz_bieg(poczatek)
+        if bieg.returncode != 0:
+            raise BladNarzedzia(f"mutmut run shardu zakonczyl sie bledem:\n{_koncowka(bieg)}")
+        try:
+            dane = json.loads(przydzial.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError) as blad:
+            raise BladNarzedzia(f"brak dowodu: {przydzial}: brak przydzialu shardu: {blad}") from blad
+        wyniki = uruchom([sys.executable, "-m", "mutmut", "results", "--all", "true"])
+        if wyniki.returncode != 0:
+            raise BladNarzedzia(f"mutmut results zakonczyl sie bledem:\n{_koncowka(wyniki)}")
+        statusy = {}
+        for linia in wyniki.stdout.splitlines():
+            klucz, _, status = linia.strip().rpartition(": ")
+            statusy[klucz] = status.strip()
+        brak = [m for m in dane["shard"] if m not in statusy]
+        if brak:
+            raise BladNarzedzia(f"brak dowodu: mutmut results nie pokazal {len(brak)} mutantow shardu, np. {brak[:3]}")
+        wynik = {"wzorce": wzorce, "wszystkie": dane["wszystkie"], "wyniki": {m: statusy[m] for m in dane["shard"]}}
+    try:
+        plik.write_text(json.dumps(wynik, indent=2), encoding="utf-8")
+    except OSError as blad:
+        raise BladNarzedzia(f"{plik}: nie da sie zapisac wyniku shardu: {blad}") from blad
+    print(f"shard {indeks} z {liczba}: {len(wynik['wyniki'])} z {len(wynik['wszystkie'])} mutantow", file=sys.stderr)
+    return 0
+
+
 def _przebieg(
     baza: str,
     korzen: Path,
@@ -540,6 +643,9 @@ def _przebieg(
     max_children: int | None = None,
     od_przebiegu: Path | None = None,
     katalog_dowodow: Path | None = None,
+    shard: tuple[int, int] | None = None,
+    wynik_shardu: Path | None = None,
+    z_shardow: tuple[Path, int] | None = None,
 ) -> int:
     # Katalog dowodow sprawdzamy pierwszy: bez niego nie ma po co wolac gita ani mutmuta.
     if katalog_dowodow is not None and not katalog_dowodow.is_dir():
@@ -590,25 +696,23 @@ def _przebieg(
         )
     czasy.zmierz("wybor-funkcji", czasy.start)
 
+    if wynik_shardu is not None:
+        return _mutuj_shard(
+            _polecenie_mutmuta(katalog_dowodow, max_children), do_mutowania, shard, wynik_shardu, czasy
+        )
     nowe_przezywajace: list[str] = []
     if not lista and plik_zapisu is None:
         if not poza_zasiegiem:
             print("brak zmienionych funkcji - nie ma czego mutowac", file=sys.stderr)
         return _zakoncz([], poza_zasiegiem)
-    if do_mutowania:
-        if katalog_dowodow is None:
-            polecenie = [sys.executable, "-m", "mutmut", "run"]
+    if z_shardow is not None:
+        wszystkie, tekst = wyniki_shardow(z_shardow[0], z_shardow[1], do_mutowania)
+        if wszystkie:
+            nowe_przezywajace = przezywajace(tekst, do_mutowania)
         else:
-            # HAR-255: opakowanie mutmuta sprawdza dowody shardow zamiast `run_clean_tests`.
-            polecenie = [
-                sys.executable,
-                str(Path(__file__).with_name("statystyki_mutmuta.py")),
-                "mutmut-run",
-                "--katalog-dowodow",
-                str(katalog_dowodow),
-            ]
-        if max_children is not None:
-            polecenie += ["--max-children", str(max_children)]
+            _ostrzez_bez_mutantow(do_mutowania)
+    elif do_mutowania:
+        polecenie = _polecenie_mutmuta(katalog_dowodow, max_children)
         start = time.monotonic()
         bieg = uruchom([*polecenie, *do_mutowania], na_linie=czasy.na_linie)
         czasy.zmierz_bieg(start)
@@ -620,11 +724,7 @@ def _przebieg(
                 raise BladNarzedzia(f"mutmut results zakonczyl sie bledem:\n{_koncowka(wyniki)}")
             nowe_przezywajace = przezywajace(wyniki.stdout, do_mutowania)
         elif "nothing matches" in f"{bieg.stdout}\n{bieg.stderr}":
-            print("mutmut nie wygenerowal mutantow dla zmienionych funkcji", file=sys.stderr)
-            print(
-                f"OSTRZEZENIE: brak dowodu: {len(do_mutowania)} zmienionych funkcji bez mutantow",
-                file=sys.stderr,
-            )
+            _ostrzez_bez_mutantow(do_mutowania)
         else:
             raise BladNarzedzia(f"mutmut run zakonczyl sie bledem:\n{_koncowka(bieg)}")
 
@@ -643,6 +743,23 @@ def _przebieg(
     if do_mutowania and not survivory and not poza_zasiegiem:
         print("brak przezywajacych mutantow w zmienionych funkcjach", file=sys.stderr)
     return _zakoncz(survivory, poza_zasiegiem)
+
+
+def _polecenie_mutmuta(katalog_dowodow: Path | None, max_children: int | None) -> list[str]:
+    if katalog_dowodow is None:
+        polecenie = [sys.executable, "-m", "mutmut", "run"]
+    else:
+        # HAR-255: opakowanie mutmuta sprawdza dowody shardow zamiast `run_clean_tests`.
+        polecenie = [
+            sys.executable,
+            str(Path(__file__).with_name("statystyki_mutmuta.py")),
+            "mutmut-run",
+            "--katalog-dowodow",
+            str(katalog_dowodow),
+        ]
+    if max_children is not None:
+        polecenie += ["--max-children", str(max_children)]
+    return polecenie
 
 
 def _zakoncz(survivory: list[str], poza_zasiegiem: list[str]) -> int:
@@ -694,11 +811,37 @@ def main(argv: list[str] | None = None) -> int:
         "--od-przebiegu", type=Path, default=None, metavar="KATALOG",
         help=f"tryb przyrostowy: katalog z zapisem przebiegu ({PLIK_ZAPISU})",
     )
+    parser.add_argument("--liczba-shardow", type=_liczba_dzieci, default=None, metavar="N",
+                        help="liczba shardow mutantow (z --wynik-shardu albo --z-shardow)")
+    parser.add_argument("--indeks-shardu", type=int, default=None, metavar="I", help="numer shardu od 0")
+    parser.add_argument("--wynik-shardu", type=Path, default=None, metavar="PLIK",
+                        help="tryb shardu: mutuje swoja czesc mutantow i zapisuje statusy do PLIKU")
+    parser.add_argument("--z-shardow", type=Path, default=None, metavar="KATALOG",
+                        help="statusy mutantow z KATALOG/shard-<i>.json zamiast mutmuta")
     args = parser.parse_args(argv)
     czasy = _Czasy()
     try:
+        shard = None
+        if args.wynik_shardu is not None or args.indeks_shardu is not None:
+            if args.wynik_shardu is None or args.indeks_shardu is None or args.liczba_shardow is None:
+                raise BladNarzedzia("--wynik-shardu, --indeks-shardu i --liczba-shardow podaje sie razem")
+            if args.katalog_dowodow is None:
+                raise BladNarzedzia("tryb shardu wymaga --katalog-dowodow")
+            if not 0 <= args.indeks_shardu < args.liczba_shardow:
+                raise BladNarzedzia(f"indeks shardu {args.indeks_shardu} poza zakresem 0..{args.liczba_shardow - 1}")
+            shard = (args.indeks_shardu, args.liczba_shardow)
+        z_shardow = None
+        if args.z_shardow is not None:
+            if args.liczba_shardow is None or shard is not None:
+                raise BladNarzedzia("--z-shardow wymaga --liczba-shardow i wyklucza tryb shardu")
+            z_shardow = (args.z_shardow, args.liczba_shardow)
+        elif args.liczba_shardow is not None and shard is None:
+            raise BladNarzedzia("--liczba-shardow tylko z --wynik-shardu albo --z-shardow")
+        if args.od_przebiegu is not None and (shard is not None or z_shardow is not None):
+            raise BladNarzedzia("--od-przebiegu nie laczy sie z shardami")
         return _przebieg(
-            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow,
+            shard, args.wynik_shardu, z_shardow,
         )
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)

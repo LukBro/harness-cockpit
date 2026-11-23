@@ -383,8 +383,8 @@ test = "tests/test_mutanty_zmian.py::test_zapis_przebiegu_powstaje_po_kodzie_0_1
 
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = '    if do_mutowania:'
-zamien = '    if True:'
+szukaj = '    elif do_mutowania:'
+zamien = '    elif True:'
 test = "tests/test_mutanty_zmian.py::test_niezmieniony_kod_i_testy_w_kolejnym_przebiegu_nie_wola_mutmuta_i_daja_kod_0"
 
 [[mutant]]
@@ -417,8 +417,8 @@ test = "tests/test_mutanty_zmian.py::test_survivor_z_nieaktualnych_wynikow_mutmu
 
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
-szukaj = '        if max_children is not None:'
-zamien = '        if True:'
+szukaj = '    if max_children is not None:'
+zamien = '    if True:'
 test = "tests/test_mutanty_zmian.py::test_bez_flagi_max_children_mutmut_run_jej_nie_dostaje"
 
 [[mutant]]
@@ -1138,7 +1138,8 @@ test = "tests/test_mutanty_zmian.py::test_statystyki_mierza_cala_faze_gdy_mutmut
 [[mutant]]
 plik = "tools/mutanty_zmian.py"
 szukaj = """        return _przebieg(
-            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow,
+            shard, args.wynik_shardu, z_shardow,
         )
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
@@ -1147,7 +1148,8 @@ szukaj = """        return _przebieg(
         czasy.wypisz()
 """
 zamien = """        kod = _przebieg(
-            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow
+            args.baza, args.korzen, czasy, args.max_children, args.od_przebiegu, args.katalog_dowodow,
+            shard, args.wynik_shardu, z_shardow,
         )
         czasy.wypisz()
         return kod
