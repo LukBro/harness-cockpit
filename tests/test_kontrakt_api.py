@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import sys
@@ -26,6 +27,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.utils import canonicalize_name
+from packaging.version import Version
 from pydantic import BaseModel, Field, create_model
 from ruamel.yaml import YAML
 from sqlalchemy import select
@@ -884,10 +889,18 @@ class _Maly(BaseModel):
     alfa: str = Field(description="Zażółć gęślą jaźń")
 
 
-def _mala_aplikacja() -> FastAPI:
-    mala = FastAPI(title="Mała aplikacja kontraktu")
+def _mala_aplikacja(dodatkowe_pole: str | None = None) -> FastAPI:
+    """Mała aplikacja z modelem `_Maly`; `dodatkowe_pole` dodaje pole do modelu o TEJ SAMEJ nazwie.
 
-    @mala.get("/api/maly", response_model=_Maly)
+    Dwie osobne aplikacje, a nie dwa modele w jednej: w jednej aplikacji `create_model` o tej
+    samej nazwie dostaje inną nazwę komponentu (`..__1`), więc nie odtworzy rozjazdu samej treści.
+    """
+    mala = FastAPI(title="Mała aplikacja kontraktu")
+    model = _Maly
+    if dodatkowe_pole is not None:
+        model = create_model("_Maly", __base__=_Maly, **{dodatkowe_pole: (int, 0)})
+
+    @mala.get("/api/maly", response_model=model)
     async def maly():
         return {"zeta": "z", "alfa": "a"}
 
@@ -1046,6 +1059,27 @@ def test_dodanie_pola_do_modelu_odpowiedzi_bez_regeneracji_pliku_jest_wykryte(
     assert eksport.main(["--sprawdz"], plik=plik, app=aplikacja_kokpitu) == 0
 
 
+def test_dodanie_pola_do_modelu_o_tej_samej_nazwie_komponentu_bez_regeneracji_pliku_jest_wykryte(
+        eksport, tmp_path, capsys):
+    plik = tmp_path / "openapi.json"
+    przed = _mala_aplikacja()
+    po = _mala_aplikacja(dodatkowe_pole="nowe_pole")
+    assert eksport.main([], plik=plik, app=przed) == 0
+    zapisany = plik.read_text(encoding="utf-8")
+    schematy_przed = json.loads(zapisany)["components"]["schemas"]
+    schematy_po = json.loads(eksport.generuj(po))["components"]["schemas"]
+    # ten sam komponent `_Maly` w obu schematach: rozjazd jest w treści, nie w nazwach komponentów
+    assert set(schematy_przed) == set(schematy_po) == {"_Maly"}
+    assert "nowe_pole" not in schematy_przed["_Maly"]["properties"]
+    assert "nowe_pole" in schematy_po["_Maly"]["properties"]
+
+    kod = eksport.main(["--sprawdz"], plik=plik, app=po)
+    komunikat = capsys.readouterr().err
+    assert kod == 1
+    assert POLECENIE_NAPRAWY in komunikat
+    assert plik.read_text(encoding="utf-8") == zapisany   # --sprawdz nie naprawia pliku
+
+
 def test_sciezka_pliku_schematu_wskazuje_web_openapi_json_niezaleznie_od_katalogu_roboczego(
         tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -1080,6 +1114,40 @@ def test_kontrakt_sprawdzany_jest_w_jobie_python_a_nie_tylko_w_innym_jobie_ci():
     inne = [nazwa for nazwa, job in ci["jobs"].items() if nazwa != "python"
             and any("eksport_openapi" in str(k.get("run", "")) for k in job.get("steps", []))]
     assert inne == []
+
+
+def _specyfikator_zaleznosci(nazwa: str) -> SpecifierSet:
+    zaleznosci = tomllib.loads((KORZEN / "pyproject.toml").read_text("utf-8"))["project"]["dependencies"]
+    wpisy = [Requirement(w) for w in zaleznosci]
+    wpisy = [w for w in wpisy if canonicalize_name(w.name) == nazwa]
+    assert len(wpisy) == 1, f"oczekiwano jednego wpisu {nazwa} w dependencies, jest: {wpisy}"
+    return wpisy[0].specifier
+
+
+@pytest.mark.parametrize(("nazwa", "nastepna_glowna", "kolejna"), [
+    # fastapi jest w serii 0.x: następna wersja główna to 1.0
+    ("fastapi", "1.0", "1.9"),
+    ("pydantic", "3.0", "3.9"),
+])
+def test_zaleznosc_od_biblioteki_kontraktu_wyklucza_nastepna_wersje_glowna(
+        nazwa, nastepna_glowna, kolejna):
+    specyfikator = _specyfikator_zaleznosci(nazwa)
+    # sama dolna granica wpuszcza wersję z innym schematem OpenAPI i zepsuty `web/openapi.json`
+    assert Version(nastepna_glowna) not in specyfikator, f"{nazwa}{specyfikator}"
+    assert Version(kolejna) not in specyfikator, f"{nazwa}{specyfikator}"
+    # górna granica nie może wykluczać wersji zainstalowanej, na której działa kokpit
+    assert Version(importlib.metadata.version(nazwa)) in specyfikator, f"{nazwa}{specyfikator}"
+
+
+@pytest.mark.parametrize(("specyfikator", "wyklucza_1_0"), [
+    (">=0.142", False),
+    (">=0.142,<2", False),   # wpuszcza 1.0: granica na następną-następną główną nie chroni
+    (">=0.142,<1", True),
+    (">=0.142,<1.0", True),
+    (">=0.142,<0.164", True),
+])
+def test_ocena_gornej_granicy_odroznia_wykluczenie_wersji_1_0_od_jej_braku(specyfikator, wyklucza_1_0):
+    assert (Version("1.0") not in SpecifierSet(specyfikator)) is wyklucza_1_0
 
 
 def test_mutmut_kopiuje_web_bo_test_pliku_schematu_czyta_go_z_repozytorium():
