@@ -40,15 +40,15 @@ test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_odpala_sie_na_pull
 # Job zbiorczy bez zaleznosci od shardow.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "needs: [mutation-statystyki]"
-zamien = "needs: []"
+szukaj = "needs: [mutation-statystyki, mutation-zmiany]"
+zamien = "needs: [mutation-zmiany]"
 test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_wlasnej"
 
 # Job zbiorczy z wlasna nazwa zmienilby nazwe wymaganego checku.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "needs: [mutation-statystyki]"
-zamien = "needs: [mutation-statystyki]\n    name: mutation-zbiorczy"
+szukaj = "needs: [mutation-statystyki, mutation-zmiany]"
+zamien = "needs: [mutation-statystyki, mutation-zmiany]\n    name: mutation-zbiorczy"
 test = "tests/test_workflow_mutacje.py::test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_wlasnej"
 
 # Wyniki jobow z wyrazenia innego niz lista wszystkich `needs`.
@@ -212,19 +212,19 @@ zamien = '''czerwony krok (bez warunku, bez wyjatku od porazki).
       - uses: actions/download-artifact@v4'''
 test = "tests/test_workflow_mutacje.py::test_scalenie_statystyk_stoi_po_przywroceniu_cache_i_pobraniu_dowodow_a_przed_mutantami_zmienionych_funkcji"
 
-# Narzedzie mutantow zmian bez katalogu dowodow wola oryginalne clean tests.
+# Job `mutation` uruchamia mutmuta sam zamiast skleic wyniki shardow zmian (fix-mutanty-zmian-shardy).
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = " --katalog-dowodow dowody > mutants/mutanty-zmian.txt"
-zamien = " > mutants/mutanty-zmian.txt"
-test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_dostaje_katalog_dowodow_shardow"
+szukaj = ' --z-shardow zmiany --liczba-shardow "$LICZBA_SHARDOW_ZMIAN" > mutants/mutanty-zmian.txt'
+zamien = " --katalog-dowodow dowody > mutants/mutanty-zmian.txt"
+test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_w_jobie_mutation_skleja_wyniki_shardow_zmian_zamiast_uruchamiac_mutmuta"
 
-# Narzedzie mutantow zmian z innym katalogiem niz scalony.
+# Sklejenie z innego katalogu niz pobrany.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "--katalog-dowodow dowody > mutants/mutanty-zmian.txt"
-zamien = "--katalog-dowodow inny > mutants/mutanty-zmian.txt"
-test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_dostaje_katalog_dowodow_shardow"
+szukaj = "--z-shardow zmiany"
+zamien = "--z-shardow inny"
+test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_w_jobie_mutation_skleja_wyniki_shardow_zmian_zamiast_uruchamiac_mutmuta"
 
 # ===========================================================================
 # .github/workflows/mutation.yml: job shardow `mutation-statystyki`
@@ -1661,17 +1661,9 @@ test = "tests/test_statystyki_mutmuta.py::test_po_bledzie_dowodu_mutmut_run_przy
 [[mutant]]
 plik = "tools/statystyki_mutmuta.py"
 szukaj = '''katalog = args.katalog_dowodow.absolute()
-    sha = _sha_commita(korzen)
-    odcisk = odcisk_zrodel(korzen)
-    with _w_katalogu(korzen):
-        try:
-            mm = _mutmut()'''
+    shard = args.liczba_shardow is not None'''
 zamien = '''katalog = args.katalog_dowodow
-    sha = _sha_commita(korzen)
-    odcisk = odcisk_zrodel(korzen)
-    with _w_katalogu(korzen):
-        try:
-            mm = _mutmut()'''
+    shard = args.liczba_shardow is not None'''
 test = "tests/test_statystyki_mutmuta.py::test_mutmut_z_dowodami_dziala_gdy_katalog_dowodow_jest_podany_wzglednie_a_korzen_to_inny_katalog"
 
 # `shard`: katalog dowodow zamieniany na bezwzgledny przed wejsciem do korzenia, ale plik dowodu zapisujemy dopiero

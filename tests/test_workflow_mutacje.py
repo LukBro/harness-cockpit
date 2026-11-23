@@ -31,6 +31,8 @@ WORKFLOW = KORZEN / ".github" / "workflows" / "mutation.yml"
 ZADANIE_PR = "mutation"
 ZADANIE_MAIN = "mutation-main"
 ZADANIE_MAIN_SHARD = "mutation-main-shard"
+ZADANIE_ZMIANY = "mutation-zmiany"
+KATALOG_ZMIAN = "zmiany"
 KROK_PR = "mutanty zmienionych funkcji"
 KROK_MAIN = "pelny przebieg mutacyjny i zapadka"
 KROK_POPRZEDNI = "poprzedni zielony wynik mutation-main"
@@ -2710,7 +2712,7 @@ def test_zadanie_statystyk_shardow_nie_swieci_na_zielono_mimo_czerwonego_kroku_a
 
 def test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_wlasnej():
     # Wymagany check to klucz `mutation`; `name:` zmienilby nazwe checku w regule ochrony galezi.
-    assert _potrzeby_pr() == [ZADANIE_SHARD]
+    assert _potrzeby_pr() == [ZADANIE_SHARD, ZADANIE_ZMIANY]
     assert "name" not in _zadanie(ZADANIE_PR)
 
 
@@ -2784,7 +2786,7 @@ def test_brak_wyniku_shardow_oblewa_krok_wyniku_z_osobnym_komunikatem(tmp_path, 
 
 
 def test_artefakty_dowodow_sa_pobierane_do_jednego_katalogu_pasujacego_do_nazw_wgranych_przez_shardy():
-    pobrania = _kroki_uses(ZADANIE_PR, "actions/download-artifact")
+    pobrania = [k for k in _kroki_uses(ZADANIE_PR, "actions/download-artifact") if "dowody" in k["with"]["pattern"]]
 
     assert len(pobrania) == 1
     parametry = pobrania[0]["with"]
@@ -2844,13 +2846,14 @@ def test_krok_scalenia_nie_ma_warunku_i_nie_jest_dozwolony_do_porazki():
     assert krok.get("continue-on-error") not in (True, "true")
 
 
-def test_narzedzie_mutantow_zmian_dostaje_katalog_dowodow_shardow(tmp_path):
+def test_narzedzie_mutantow_zmian_w_jobie_mutation_skleja_wyniki_shardow_zmian_zamiast_uruchamiac_mutmuta(tmp_path):
     przebieg = _krok_pr(tmp_path)
 
     assert przebieg.argv_zmian.exists(), przebieg.wyjscie
     argv = przebieg.argv_zmian.read_text(encoding="utf-8").split()
-    assert argv.count("--katalog-dowodow") == 1
-    assert argv[argv.index("--katalog-dowodow") + 1] == KATALOG_DOWODOW
+    assert argv[argv.index("--z-shardow") + 1] == KATALOG_ZMIAN
+    assert argv[argv.index("--liczba-shardow") + 1] == str(len(_zadanie(ZADANIE_ZMIANY)["strategy"]["matrix"]["shard"]))
+    assert "--katalog-dowodow" not in argv
 
 
 def test_katalog_dowodow_jest_ten_sam_w_wgraniu_przez_shard_i_pobraniu_przez_job_koncowy():
@@ -3024,3 +3027,122 @@ def test_shard_pelnego_przebiegu_pobiera_dowody_statystyk_pod_nazwa_wgrywana_prz
     assert pobranie["pattern"] == "dowody-*"
     assert pobranie["merge-multiple"] is True
     assert pobranie["path"] == wgranie["path"] == KATALOG_DOWODOW
+
+
+# =============================================================================
+# Mutanty zmienionych funkcji w shardach (`mutation-zmiany`): w HAR-181 ten krok w jednym jobie trwal 37 min.
+# Shard mutuje co N-ty mutant zmienionych funkcji, `mutation` skleja wyniki (`--z-shardow`).
+# =============================================================================
+
+KROK_SHARDU_ZMIAN = "mutanty zmienionych funkcji shardu"
+
+
+def uruchom_krok_shardu_zmian(tmp_path: Path, *, mutmut_na_path: bool = True, kody: dict[str, int] | None = None):
+    praca = tmp_path / "praca"
+    (praca / "tools").mkdir(parents=True)
+    for nazwa in ("mutanty_zmian.py", "statystyki_mutmuta.py"):
+        _atrapa(praca / "tools", nazwa, ATRAPA_NARZEDZIA_SHARDU)
+    narzedzia = tmp_path / "narzedzia"
+    narzedzia.mkdir()
+    (narzedzia / "python3").symlink_to(sys.executable)
+    atrapy = tmp_path / "atrapy"
+    atrapy.mkdir()
+    _atrapa(atrapy, "git", ATRAPA_GIT)
+    if mutmut_na_path:
+        _atrapa(atrapy, "mutmut", ATRAPA_MUTMUT)
+    przebieg = PrzebiegShardu(tmp_path, praca)
+    krok = _krok(ZADANIE_ZMIANY, KROK_SHARDU_ZMIAN)
+    assert "${{" not in krok["run"], "skrypt kroku uzywa wyrazenia GitHub Actions zamiast zmiennej srodowiska"
+    skrypt = tmp_path / "krok.sh"
+    skrypt.write_text(krok["run"], encoding="utf-8")
+    srodowisko = {
+        "PATH": f"{atrapy}:{narzedzia}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "ATRAPA_DZIENNIK": str(przebieg.dziennik),
+        "ATRAPA_WZORCE": "",
+        "ATRAPA_LOG_MUTMUT": str(przebieg.log_mutmut),
+        **{f"ATRAPA_KOD_{nazwa}".replace("-", "_"): str(kod) for nazwa, kod in (kody or {}).items()},
+        **_srodowisko_kroku(krok),
+    }
+    przebieg.kod, przebieg.wyjscie = _uruchom_powloke(_polecenie_powloki(krok, skrypt), praca, srodowisko)
+    return przebieg
+
+
+def test_shardy_zmian_odpalaja_sie_tylko_na_pull_request_po_statystykach():
+    assert _zadanie(ZADANIE_ZMIANY)["if"] == "github.event_name == 'pull_request'"
+    assert _zadanie(ZADANIE_ZMIANY)["needs"] == [ZADANIE_SHARD]
+
+
+def test_liczba_shardow_w_kroku_sklejenia_jest_rowna_macierzy_shardow_zmian():
+    shardy = _zadanie(ZADANIE_ZMIANY)["strategy"]["matrix"]["shard"]
+
+    assert len(shardy) >= 2
+    assert shardy == list(range(len(shardy)))
+    assert int(_krok(ZADANIE_PR, KROK_PR)["env"]["LICZBA_SHARDOW_ZMIAN"]) == len(shardy)
+
+
+def test_shard_zmian_scala_statystyki_i_mutuje_swoja_czesc_mutantow_zmienionych_funkcji(tmp_path):
+    przebieg = uruchom_krok_shardu_zmian(tmp_path)
+
+    assert przebieg.kod == 0, przebieg.wyjscie
+    assert przebieg.wywolania == [
+        ["statystyki_mutmuta", "scal", f"--katalog-dowodow={KATALOG_DOWODOW}"],
+        ["mutanty_zmian", "--baza", f"origin/{GALAZ_DOCELOWA}", "--katalog-dowodow", KATALOG_DOWODOW,
+         "--indeks-shardu", "2", "--liczba-shardow", "4", "--wynik-shardu", f"{KATALOG_ZMIAN}/shard-2.json"],
+    ]
+
+
+def test_shard_zmian_bez_mutmuta_na_runnerze_oblewa_krok_zanim_cokolwiek_uruchomi(tmp_path):
+    przebieg = uruchom_krok_shardu_zmian(tmp_path, mutmut_na_path=False)
+
+    assert przebieg.kod != 0
+    assert (
+        "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - shard nic nie zmierzyl."
+        in przebieg.linie
+    )
+    assert przebieg.wywolania == []
+
+
+@pytest.mark.parametrize("podkomenda", ["statystyki_mutmuta_scal", "mutanty_zmian_--baza"])
+def test_blad_narzedzia_shardu_zmian_oblewa_krok(tmp_path, podkomenda):
+    przebieg = uruchom_krok_shardu_zmian(tmp_path, kody={podkomenda: 2})
+
+    assert przebieg.kod != 0, przebieg.wyjscie
+
+
+def test_wyniki_shardow_zmian_sa_wgrywane_pod_nazwa_i_sciezka_pobierana_przez_job_mutation():
+    wgranie = _kroki_uses(ZADANIE_ZMIANY, "actions/upload-artifact")[0]["with"]
+    (pobranie,) = [k["with"] for k in _kroki_uses(ZADANIE_PR, "actions/download-artifact")
+                   if k["with"]["pattern"].startswith("zmiany")]
+
+    assert wgranie["name"] == "zmiany-${{ matrix.shard }}"
+    assert pobranie["pattern"] == "zmiany-*"
+    assert pobranie["merge-multiple"] is True
+    assert wgranie["path"] == pobranie["path"] == KATALOG_ZMIAN
+
+
+def test_shard_zmian_pobiera_dowody_statystyk_pod_nazwa_wgrywana_przez_shardy_statystyk():
+    pobranie = _kroki_uses(ZADANIE_ZMIANY, "actions/download-artifact")[0]["with"]
+
+    assert pobranie["pattern"] == "dowody-*"
+    assert pobranie["merge-multiple"] is True
+    assert pobranie["path"] == KATALOG_DOWODOW
+
+
+def test_wyniki_shardow_zmian_sa_pobierane_przed_krokiem_sklejenia():
+    pobranie = _indeks_w_zadaniu(
+        ZADANIE_PR, lambda k: str(k.get("with", {}).get("pattern", "")).startswith("zmiany")
+    )
+
+    assert pobranie < _indeks_w_zadaniu(ZADANIE_PR, _czy_nazwa(KROK_PR))
+
+
+def test_shardy_zmian_nie_uzywaja_cache_ani_nie_ukrywaja_bledu():
+    zadanie = _zadanie(ZADANIE_ZMIANY)
+
+    assert _kroki_uses(ZADANIE_ZMIANY, "actions/cache") == []
+    assert zadanie.get("continue-on-error") not in (True, "true")
+    for krok in zadanie["steps"]:
+        assert krok.get("continue-on-error") not in (True, "true"), krok
+    for linia in _linie_skryptow(ZADANIE_ZMIANY):
+        assert not UKRYCIE_BLEDU.search(linia), linia

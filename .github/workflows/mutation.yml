@@ -91,9 +91,57 @@ jobs:
           name: dowody-${{ matrix.shard }}
           path: dowody
 
+  # fix-mutanty-zmian-shardy: mutanty zmienionych funkcji w 4 shardach. Shard bierze co 4. mutant (po
+  # posortowanych nazwach), wiec kazdy dostaje te sama czesc kazdej funkcji; przy podziale po plikach jeden
+  # shard pelnego przebiegu trwal 105 min przy pozostalych 14-32. W HAR-181 ten krok w jednym jobie: 37 min.
+  mutation-zmiany:
+    if: github.event_name == 'pull_request'
+    needs:
+      - mutation-statystyki
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # Liczba shardow = LICZBA_SHARDOW_ZMIAN w kroku `mutanty zmienionych funkcji` (test pilnuje zgodnosci).
+        shard: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'dowody-*'
+          merge-multiple: true
+          path: dowody
+
+      - name: mutanty zmienionych funkcji shardu
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          SHARD_ZMIAN: ${{ matrix.shard }}
+          LICZBA_SHARDOW_ZMIAN: ${{ strategy.job-total }}
+        run: |
+          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - shard nic nie zmierzyl."; exit 1; }
+          git fetch origin "$BASE_REF"
+          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow=dowody
+          python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" --katalog-dowodow dowody --indeks-shardu "$SHARD_ZMIAN" --liczba-shardow "$LICZBA_SHARDOW_ZMIAN" --wynik-shardu "zmiany/shard-$SHARD_ZMIAN.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zmiany-${{ matrix.shard }}
+          path: zmiany
+
   mutation:
     if: github.event_name == 'pull_request' && always()
-    needs: [mutation-statystyki]
+    needs: [mutation-statystyki, mutation-zmiany]
     runs-on: ubuntu-24.04
     # bez limitu job wisial do domyslnych 360 min (HAR-106); sufit jak mutation-main
     timeout-minutes: 240
@@ -246,9 +294,16 @@ jobs:
           fi
           echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zmiany-*
+          merge-multiple: true
+          path: zmiany
+
       - name: mutanty zmienionych funkcji
         env:
           BASE_REF: ${{ github.base_ref }}
+          LICZBA_SHARDOW_ZMIAN: "4"
         run: |
           # Brak mutmuta to brak pomiaru, wiec czerwony krok, nie pominiecie.
           command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono, check nie moze przejsc"; exit 1; }
@@ -259,7 +314,8 @@ jobs:
           # sprawdzenia w podsumowaniu), inny = blad narzedzia (czerwony krok).
           # Przechwytujemy go do zmiennej, zeby trafil do `case` ponizej, a nie zostal polkniety.
           kod=0
-          python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" --katalog-dowodow dowody > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
+          # Statusy mutantow z shardow `mutation-zmiany`; brak dowodu ktoregokolwiek shardu to kod 2.
+          python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" --z-shardow zmiany --liczba-shardow "$LICZBA_SHARDOW_ZMIAN" > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
           # Krok `mutanty reczne` czyta ten kod: bez pliku nie wiadomo, czy mutmut pokryl zmiane.
           echo "$kod" > mutants/mutanty-zmian.kod
           {

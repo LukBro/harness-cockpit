@@ -1,0 +1,324 @@
+# fix-mutanty-zmian-shardy: mutanty zmienionych funkcji w 4 shardach na PR (job mutation-zmiany), sklejenie
+# wynikow w jobie mutation. tools/ i .github/ sa poza zasiegiem mutmuta.
+
+# --- statystyki_mutmuta.py: przydzial mutantow
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return wszystkie, wszystkie[indeks::liczba]"
+zamien = "return wszystkie, wszystkie[indeks:]"
+test = "tests/test_statystyki_mutmuta.py::test_przydzial_bierze_co_n_ty_mutant_z_posortowanych_nazw_pasujacych_do_wzorcow"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "wszystkie = sorted(n for n in set(nazwy) if n in wzorce or any("
+zamien = "wszystkie = list(n for n in set(nazwy) if n in wzorce or any("
+test = "tests/test_statystyki_mutmuta.py::test_przydzial_bierze_co_n_ty_mutant_z_posortowanych_nazw_pasujacych_do_wzorcow"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if n in wzorce or any(fnmatch.fnmatch(n, w) for w in wzorce))"
+zamien = "if any(fnmatch.fnmatch(n, w) for w in wzorce))"
+test = "tests/test_statystyki_mutmuta.py::test_przydzial_przyjmuje_dokladna_nazwe_mutanta_jak_filtr_mutmuta"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if n in wzorce or any(fnmatch.fnmatch(n, w) for w in wzorce))"
+zamien = "if n in wzorce)"
+test = "tests/test_statystyki_mutmuta.py::test_przydzial_bierze_co_n_ty_mutant_z_posortowanych_nazw_pasujacych_do_wzorcow"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "    podziel_testy([], indeks, liczba)  # ta sama walidacja indeksu i liczby shardow\n"
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_przydzial_ze_zlym_indeksem_shardu_to_blad"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "mutanty, dane_plikow = oryginal(mutant_names=())"
+zamien = "mutanty, dane_plikow = oryginal(mutant_names=mutant_names)"
+test = "tests/test_statystyki_mutmuta.py::test_wzorce_bez_mutantow_daja_pusty_przydzial_a_nie_blad_mutmuta"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "return [m for m in mutanty if m[1] in wybrane], dane_plikow"
+zamien = "return mutanty, dane_plikow"
+test = "tests/test_statystyki_mutmuta.py::test_zbieranie_shardu_zwraca_mutmutowi_tylko_mutanty_shardu"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "except OSError as blad_zapisu:\n            raise BladNarzedzia(f\"{args.przydzial}: nie da sie zapisac przydzialu"
+zamien = "except ValueError as blad_zapisu:\n            raise BladNarzedzia(f\"{args.przydzial}: nie da sie zapisac przydzialu"
+test = "tests/test_statystyki_mutmuta.py::test_nie_zapisany_przydzial_to_blad_narzedzia_z_nazwa_pliku"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if shard != (args.indeks_shardu is not None) or shard != (args.przydzial is not None):"
+zamien = "if shard != (args.indeks_shardu is not None):"
+test = "tests/test_statystyki_mutmuta.py::test_niepelne_flagi_shardu_mutantow_to_kod_2_bez_uruchamiania_mutmuta"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "if shard != (args.indeks_shardu is not None) or shard != (args.przydzial is not None):"
+zamien = "if shard != (args.przydzial is not None):"
+test = "tests/test_statystyki_mutmuta.py::test_niepelne_flagi_shardu_mutantow_to_kod_2_bez_uruchamiania_mutmuta[bez-indeksu]"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "    if shard:\n        podziel_testy([], args.indeks_shardu, args.liczba_shardow)\n"
+zamien = "    if shard:\n"
+test = "tests/test_statystyki_mutmuta.py::test_zly_indeks_shardu_mutantow_to_kod_2_bez_uruchamiania_mutmuta"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "            mm.glowny.collect_source_file_mutation_data = _zbieranie_shardu(oryginalne_zbieranie, args)\n"
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_mutmut_run_shardu_mutuje_tylko_mutanty_swojego_przydzialu_i_zapisuje_przydzial"
+
+[[mutant]]
+plik = "tools/statystyki_mutmuta.py"
+szukaj = "            if shard:\n                mm.glowny.collect_source_file_mutation_data = oryginalne_zbieranie\n"
+zamien = ""
+test = "tests/test_statystyki_mutmuta.py::test_po_przebiegu_shardu_mutmut_ma_z_powrotem_oryginalne_zbieranie_mutantow"
+
+# --- mutanty_zmian.py: sklejenie
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        if dane[\"wzorce\"] != wzorce:\n"
+zamien = "        if False:\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[inne-wzorce]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        elif dane[\"wszystkie\"] != wszystkie:\n"
+zamien = "        elif False:\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[inna-lista]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if klucz in statusy:\n"
+zamien = "            if False:\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[dwa-shardy]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if status == NIESPRAWDZONY:\n"
+zamien = "            if False:\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[niesprawdzony]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if brakujace or set(statusy) - set(wszystkie):\n"
+zamien = "    if set(statusy) - set(wszystkie):\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[brakujacy]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if brakujace or set(statusy) - set(wszystkie):\n"
+zamien = "    if brakujace:\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[nadmiarowy]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    except (OSError, UnicodeDecodeError, ValueError) as blad:\n        raise BladNarzedzia(f\"brak dowodu: {plik}: nie da sie odczytac wyniku shardu"
+zamien = "    except (UnicodeDecodeError, ValueError) as blad:\n        raise BladNarzedzia(f\"brak dowodu: {plik}: nie da sie odczytac wyniku shardu"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[brak-pliku]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        or not isinstance(dane.get(\"wyniki\"), dict)\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_sklejenie_bez_pelnego_dowodu_to_kod_2[zly-format]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            nowe_przezywajace = przezywajace(tekst, do_mutowania)\n"
+zamien = "            nowe_przezywajace = []\n"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_shardow_zglasza_przezywajacego_mutanta_z_dowolnego_shardu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        if wszystkie:\n            nowe_przezywajace"
+zamien = "        if True:\n            nowe_przezywajace"
+test = "tests/test_mutanty_zmian.py::test_shardy_bez_mutantow_dla_zmienionych_funkcji_daja_ostrzezenie_braku_dowodu"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if z_shardow is not None:"
+zamien = "    if False:"
+test = "tests/test_mutanty_zmian.py::test_sklejenie_shardow_z_zabitymi_mutantami_to_kod_0"
+
+# --- mutanty_zmian.py: shard
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if wynik_shardu is not None:\n        return _mutuj_shard("
+zamien = "    if False:\n        return _mutuj_shard("
+test = "tests/test_mutanty_zmian.py::test_shard_mutuje_swoja_czesc_i_zapisuje_statusy_tylko_swoich_mutantow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "    if wzorce:\n        poczatek"
+zamien = "    if True:\n        poczatek"
+test = "tests/test_mutanty_zmian.py::test_shard_bez_zmienionych_funkcji_zapisuje_pusty_wynik_bez_mutmuta"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "[*polecenie, \"--liczba-shardow\", str(liczba), \"--indeks-shardu\", str(indeks),"
+zamien = "[*polecenie, \"--liczba-shardow\", str(liczba), \"--indeks-shardu\", \"0\","
+test = "tests/test_mutanty_zmian.py::test_shard_mutuje_swoja_czesc_i_zapisuje_statusy_tylko_swoich_mutantow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            raise BladNarzedzia(f\"mutmut run shardu zakonczyl sie bledem"
+zamien = "            print(f\"mutmut run shardu zakonczyl sie bledem"
+test = "tests/test_mutanty_zmian.py::test_blad_mutmuta_w_shardzie_to_kod_2_bez_wyniku"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "raise BladNarzedzia(f\"brak dowodu: {przydzial}: brak przydzialu shardu: {blad}\") from blad"
+zamien = "dane = {\"wszystkie\": [], \"shard\": []}"
+test = "tests/test_mutanty_zmian.py::test_shard_bez_pliku_przydzialu_to_kod_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "wyniki = uruchom([sys.executable, \"-m\", \"mutmut\", \"results\", \"--all\", \"true\"])"
+zamien = "wyniki = uruchom([sys.executable, \"-m\", \"mutmut\", \"results\"])"
+test = "tests/test_mutanty_zmian.py::test_shard_mutuje_swoja_czesc_i_zapisuje_statusy_tylko_swoich_mutantow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        if brak:\n"
+zamien = "        if False:\n"
+test = "tests/test_mutanty_zmian.py::test_mutant_shardu_nieobecny_w_wynikach_mutmuta_to_kod_2"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "\"wyniki\": {m: statusy[m] for m in dane[\"shard\"]}}"
+zamien = "\"wyniki\": statusy}"
+test = "tests/test_mutanty_zmian.py::test_shard_mutuje_swoja_czesc_i_zapisuje_statusy_tylko_swoich_mutantow"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        katalog_wyniku.mkdir(parents=True, exist_ok=True)\n"
+zamien = "        pass\n"
+test = "tests/test_mutanty_zmian.py::test_shard_mutuje_swoja_czesc_i_zapisuje_statusy_tylko_swoich_mutantow"
+
+# --- mutanty_zmian.py: flagi
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if args.katalog_dowodow is None:\n                raise BladNarzedzia(\"tryb shardu wymaga --katalog-dowodow\")\n"
+zamien = ""
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[bez-dowodow]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if args.wynik_shardu is None or args.indeks_shardu is None or args.liczba_shardow is None:"
+zamien = "if args.wynik_shardu is None or args.indeks_shardu is None:"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[bez-liczby]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if args.wynik_shardu is None or args.indeks_shardu is None or args.liczba_shardow is None:"
+zamien = "if args.indeks_shardu is None or args.liczba_shardow is None:"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[bez-pliku]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if not 0 <= args.indeks_shardu < args.liczba_shardow:\n"
+zamien = "            if not 0 <= args.indeks_shardu:\n"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[zly-indeks]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        elif args.liczba_shardow is not None and shard is None:\n"
+zamien = "        elif False:\n"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[sama-liczba]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if args.liczba_shardow is None or shard is not None:\n"
+zamien = "            if shard is not None:\n"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[z-shardow-bez-liczby]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "            if args.liczba_shardow is None or shard is not None:\n"
+zamien = "            if args.liczba_shardow is None:\n"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[shard-i-sklejenie]"
+
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "        if args.od_przebiegu is not None and (shard is not None or z_shardow is not None):\n"
+zamien = "        if args.od_przebiegu is not None and shard is not None:\n"
+test = "tests/test_mutanty_zmian.py::test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta[z-shardow-przyrostowo]"
+
+# --- workflow
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "  mutation-zmiany:\n    if: github.event_name == 'pull_request'"
+zamien = "  mutation-zmiany:\n    if: github.event_name == 'push'"
+test = "tests/test_workflow_mutacje.py::test_shardy_zmian_odpalaja_sie_tylko_na_pull_request_po_statystykach"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "    needs:\n      - mutation-statystyki\n"
+zamien = "    needs:\n      - mutation\n"
+test = "tests/test_workflow_mutacje.py::test_shardy_zmian_odpalaja_sie_tylko_na_pull_request_po_statystykach"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "shard: [0,1,2,3]"
+zamien = "shard: [0,1,2]"
+test = "tests/test_workflow_mutacje.py::test_liczba_shardow_w_kroku_sklejenia_jest_rowna_macierzy_shardow_zmian"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "LICZBA_SHARDOW_ZMIAN: \"4\""
+zamien = "LICZBA_SHARDOW_ZMIAN: \"3\""
+test = "tests/test_workflow_mutacje.py::test_liczba_shardow_w_kroku_sklejenia_jest_rowna_macierzy_shardow_zmian"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "pattern: 'dowody-*'"
+zamien = "pattern: '*'"
+test = "tests/test_workflow_mutacje.py::test_shard_zmian_pobiera_dowody_statystyk_pod_nazwa_wgrywana_przez_shardy_statystyk"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "command -v mutmut >/dev/null || { echo \"::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - shard nic nie zmierzyl.\"; exit 1; }"
+zamien = "true"
+test = "tests/test_workflow_mutacje.py::test_shard_zmian_bez_mutmuta_na_runnerze_oblewa_krok_zanim_cokolwiek_uruchomi"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow=dowody\n"
+zamien = ""
+test = "tests/test_workflow_mutacje.py::test_shard_zmian_scala_statystyki_i_mutuje_swoja_czesc_mutantow_zmienionych_funkcji"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--indeks-shardu \"$SHARD_ZMIAN\""
+zamien = "--indeks-shardu 0"
+test = "tests/test_workflow_mutacje.py::test_shard_zmian_scala_statystyki_i_mutuje_swoja_czesc_mutantow_zmienionych_funkcji"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--wynik-shardu \"zmiany/shard-$SHARD_ZMIAN.json\""
+zamien = "--wynik-shardu \"zmiany/shard-0.json\""
+test = "tests/test_workflow_mutacje.py::test_shard_zmian_scala_statystyki_i_mutuje_swoja_czesc_mutantow_zmienionych_funkcji"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "name: zmiany-${{ matrix.shard }}"
+zamien = "name: wyniki-zmian-${{ matrix.shard }}"
+test = "tests/test_workflow_mutacje.py::test_wyniki_shardow_zmian_sa_wgrywane_pod_nazwa_i_sciezka_pobierana_przez_job_mutation"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "          pattern: zmiany-*\n          merge-multiple: true"
+zamien = "          pattern: zmiany-*\n          merge-multiple: false"
+test = "tests/test_workflow_mutacje.py::test_wyniki_shardow_zmian_sa_wgrywane_pod_nazwa_i_sciezka_pobierana_przez_job_mutation"

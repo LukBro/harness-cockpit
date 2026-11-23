@@ -856,6 +856,8 @@ class _Srodowisko:
             return self._wynik(argv, self.u["results_rc"], self.u["results"])
         if argv[2:3] == ["mutmut-run"]:
             # HAR-255: opakowanie mutmuta z dowodami shardow zamiast `-m mutmut run`.
+            if "--przydzial" in argv and self.u.get("przydzial") is not None:
+                Path(argv[argv.index("--przydzial") + 1]).write_text(json.dumps(self.u["przydzial"]), encoding="utf-8")
             return self._wynik(argv, self.u["run_rc"], self.u["run_out"], self.u["run_err"])
         raise AssertionError(f"nieoczekiwane polecenie: {argv}")
 
@@ -3215,3 +3217,176 @@ def test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_
             "tests/mutanty_reczne/",
         ]
     ]
+
+
+# --- shardy mutantow zmienionych funkcji (fix-mutanty-zmian-shardy) ----------------------------
+# Shard mutuje co N-ty mutant zmienionych funkcji i zapisuje statusy swoich mutantow; job `mutation`
+# skleja je (`--z-shardow`) i dopiero wtedy ocenia survivory. Brak dowodu w sklejeniu to kod 2.
+
+KLUCZ_INNA_1 = "cockpit.services.a.x_inna__mutmut_1"
+WSZYSTKIE_MUTANTY = [KLUCZ_INNA_1, KLUCZ_A]
+
+
+def _flagi_shardu(plik: Path, indeks: int = 0, liczba: int = 2) -> list[str]:
+    return ["--katalog-dowodow", "{dowody}", "--indeks-shardu", str(indeks), "--liczba-shardow", str(liczba),
+            "--wynik-shardu", str(plik)]
+
+
+def _shard_main(monkeypatch, tmp_path, s, plik, *dodatkowe, indeks=0):
+    katalog = _katalog_dowodow(tmp_path)
+    flagi = [a.replace("{dowody}", str(katalog)) for a in _flagi_shardu(plik, indeks)]
+    return _main(monkeypatch, tmp_path, s, *flagi, *dodatkowe)
+
+
+def test_shard_mutuje_swoja_czesc_i_zapisuje_statusy_tylko_swoich_mutantow(monkeypatch, tmp_path):
+    plik = tmp_path / "zmiany" / "shard-0.json"
+    s = _Srodowisko(
+        diff=DIFF_DWIE_FUNKCJE,
+        przydzial={"wszystkie": WSZYSTKIE_MUTANTY, "shard": [KLUCZ_INNA_1]},
+        results=_wyniki((KLUCZ_INNA_1, "survived"), (KLUCZ_A, "not checked")),
+    )
+
+    assert _shard_main(monkeypatch, tmp_path, s, plik, indeks=1) == 0
+    assert json.loads(plik.read_text(encoding="utf-8")) == {
+        "wzorce": WZORCE_DWOCH_FUNKCJI, "wszystkie": WSZYSTKIE_MUTANTY, "wyniki": {KLUCZ_INNA_1: "survived"},
+    }
+    (bieg,) = s.opakowane_run()
+    assert bieg[bieg.index("--liczba-shardow") + 1] == "2"
+    assert bieg[bieg.index("--indeks-shardu") + 1] == "1"
+    assert bieg[-2:] == WZORCE_DWOCH_FUNKCJI
+    assert s.mutmut("results")[0][4:] == ["--all", "true"]
+
+
+def test_shard_bez_zmienionych_funkcji_zapisuje_pusty_wynik_bez_mutmuta(monkeypatch, tmp_path):
+    plik = tmp_path / "shard-0.json"
+    s = _Srodowisko(diff=_diff_a(4))
+
+    assert _shard_main(monkeypatch, tmp_path, s, plik) == 0
+    assert json.loads(plik.read_text(encoding="utf-8")) == {"wzorce": [], "wszystkie": [], "wyniki": {}}
+    assert s.opakowane_run() == []
+
+
+def test_blad_mutmuta_w_shardzie_to_kod_2_bez_wyniku(monkeypatch, tmp_path):
+    plik = tmp_path / "shard-0.json"
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE, run_rc=1, przydzial={"wszystkie": [], "shard": []})
+
+    assert _shard_main(monkeypatch, tmp_path, s, plik) == 2
+    assert not plik.exists()
+
+
+def test_shard_bez_pliku_przydzialu_to_kod_2(monkeypatch, tmp_path):
+    plik = tmp_path / "shard-0.json"
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE, results=_wyniki((KLUCZ_A, "killed")))
+
+    assert _shard_main(monkeypatch, tmp_path, s, plik) == 2
+    assert not plik.exists()
+
+
+def test_mutant_shardu_nieobecny_w_wynikach_mutmuta_to_kod_2(monkeypatch, tmp_path):
+    plik = tmp_path / "shard-0.json"
+    s = _Srodowisko(
+        diff=DIFF_DWIE_FUNKCJE,
+        przydzial={"wszystkie": WSZYSTKIE_MUTANTY, "shard": [KLUCZ_INNA_1, KLUCZ_A]},
+        results=_wyniki((KLUCZ_INNA_1, "killed")),
+    )
+
+    assert _shard_main(monkeypatch, tmp_path, s, plik) == 2
+    assert not plik.exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--indeks-shardu", "0", "--liczba-shardow", "2", "--wynik-shardu", "w.json"],  # bez dowodow
+        ["--katalog-dowodow", "{dowody}", "--indeks-shardu", "0", "--wynik-shardu", "w.json"],
+        ["--katalog-dowodow", "{dowody}", "--indeks-shardu", "0", "--liczba-shardow", "2"],
+        ["--katalog-dowodow", "{dowody}", "--indeks-shardu", "2", "--liczba-shardow", "2", "--wynik-shardu", "w"],
+        ["--liczba-shardow", "2"],
+        ["--z-shardow", "k"],
+        ["--z-shardow", "k", "--liczba-shardow", "2", "--od-przebiegu", "s"],
+        ["--katalog-dowodow", "{dowody}", "--indeks-shardu", "0", "--liczba-shardow", "2", "--wynik-shardu", "w",
+         "--z-shardow", "k"],
+    ],
+    ids=["bez-dowodow", "bez-liczby", "bez-pliku", "zly-indeks", "sama-liczba", "z-shardow-bez-liczby",
+         "z-shardow-przyrostowo", "shard-i-sklejenie"],
+)
+def test_niespojne_flagi_shardow_to_kod_2_bez_gita_i_mutmuta(monkeypatch, tmp_path, argv):
+    katalog = _katalog_dowodow(tmp_path)
+    s = _Srodowisko(diff=DIFF_DWIE_FUNKCJE)
+
+    assert _main(monkeypatch, tmp_path, s, *[a.replace("{dowody}", str(katalog)) for a in argv]) == 2
+    assert s.wywolania == []
+
+
+# --- sklejenie wynikow shardow -------------------------------------------------------------------
+
+
+def _zapisz_shardy(katalog: Path, *shardy: dict) -> Path:
+    katalog.mkdir(exist_ok=True)
+    for indeks, dane in enumerate(shardy):
+        (katalog / f"shard-{indeks}.json").write_text(json.dumps(dane), encoding="utf-8")
+    return katalog
+
+
+def _shard(wyniki: dict, wszystkie=None, wzorce=None) -> dict:
+    return {"wzorce": WZORCE_DWOCH_FUNKCJI if wzorce is None else wzorce,
+            "wszystkie": WSZYSTKIE_MUTANTY if wszystkie is None else wszystkie, "wyniki": wyniki}
+
+
+def _sklej(monkeypatch, tmp_path, *shardy, liczba=None, diff=DIFF_DWIE_FUNKCJE, capsys=None):
+    katalog = _zapisz_shardy(tmp_path / "zmiany", *shardy)
+    s = _Srodowisko(diff=diff)
+    kod = _main(monkeypatch, tmp_path, s, "--z-shardow", str(katalog), "--liczba-shardow",
+                str(len(shardy) if liczba is None else liczba))
+    assert s.mutmut("run") == [] and s.opakowane_run() == [] and s.mutmut("results") == []
+    return kod
+
+
+def test_sklejenie_shardow_zglasza_przezywajacego_mutanta_z_dowolnego_shardu(monkeypatch, tmp_path, capsys):
+    kod = _sklej(monkeypatch, tmp_path, _shard({KLUCZ_INNA_1: "killed"}), _shard({KLUCZ_A: "survived"}))
+
+    assert kod == 1
+    assert capsys.readouterr().out.splitlines() == [KLUCZ_A]
+
+
+def test_sklejenie_shardow_z_zabitymi_mutantami_to_kod_0(monkeypatch, tmp_path):
+    assert _sklej(monkeypatch, tmp_path, _shard({KLUCZ_INNA_1: "killed"}), _shard({KLUCZ_A: "killed"})) == 0
+
+
+def test_shardy_bez_mutantow_dla_zmienionych_funkcji_daja_ostrzezenie_braku_dowodu(monkeypatch, tmp_path, capsys):
+    kod = _sklej(monkeypatch, tmp_path, _shard({}, wszystkie=[]), _shard({}, wszystkie=[]))
+
+    assert kod == 0
+    assert "OSTRZEZENIE: brak dowodu: 2 zmienionych funkcji bez mutantow" in capsys.readouterr().err
+
+
+def test_sklejenie_bez_zmienionych_funkcji_nie_czyta_shardow(monkeypatch, tmp_path):
+    s = _Srodowisko(diff=_diff_a(4))
+
+    assert _main(monkeypatch, tmp_path, s, "--z-shardow", str(tmp_path / "brak"), "--liczba-shardow", "2") == 0
+
+
+@pytest.mark.parametrize(
+    ("shardy", "liczba", "komunikat"),
+    [
+        ([_shard({KLUCZ_INNA_1: "killed", KLUCZ_A: "killed"})], 2, "shard-1.json: nie da sie odczytac"),
+        ([_shard({KLUCZ_INNA_1: "killed"}), _shard({KLUCZ_A: "killed"}, wzorce=WZORCE_DWOCH_FUNKCJI[:1])], 2,
+         "shard mutowal inne funkcje"),
+        ([_shard({KLUCZ_INNA_1: "killed"}), _shard({KLUCZ_A: "killed"}, wszystkie=[KLUCZ_A])], 2,
+         "inna lista mutantow niz w shardzie 0"),
+        ([_shard({KLUCZ_INNA_1: "killed", KLUCZ_A: "killed"}), _shard({KLUCZ_A: "killed"})], 2,
+         f"mutant {KLUCZ_A} w dwoch shardach"),
+        ([_shard({KLUCZ_INNA_1: "killed"}), _shard({KLUCZ_A: "not checked"})], 2,
+         f"mutant {KLUCZ_A} nie zostal sprawdzony"),
+        ([_shard({KLUCZ_INNA_1: "killed"}), _shard({})], 2, "shardy nie sprawdzily 1 mutantow"),
+        ([_shard({KLUCZ_INNA_1: "killed"}), _shard({KLUCZ_A: "killed", "obcy.x_f__mutmut_1": "killed"})], 2,
+         "shardy nie sprawdzily 0 mutantow"),
+        ([_shard({KLUCZ_INNA_1: "killed"}), {"wzorce": WZORCE_DWOCH_FUNKCJI, "wszystkie": WSZYSTKIE_MUTANTY}], 2,
+         "zly format wyniku shardu"),
+    ],
+    ids=["brak-pliku", "inne-wzorce", "inna-lista", "dwa-shardy", "niesprawdzony", "brakujacy", "nadmiarowy",
+         "zly-format"],
+)
+def test_sklejenie_bez_pelnego_dowodu_to_kod_2(monkeypatch, tmp_path, capsys, shardy, liczba, komunikat):
+    assert _sklej(monkeypatch, tmp_path, *shardy, liczba=liczba) == 2
+    assert komunikat in capsys.readouterr().err
