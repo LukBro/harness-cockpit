@@ -3390,3 +3390,121 @@ def test_sklejenie_bez_zmienionych_funkcji_nie_czyta_shardow(monkeypatch, tmp_pa
 def test_sklejenie_bez_pelnego_dowodu_to_kod_2(monkeypatch, tmp_path, capsys, shardy, liczba, komunikat):
     assert _sklej(monkeypatch, tmp_path, *shardy, liczba=liczba) == 2
     assert komunikat in capsys.readouterr().err
+
+
+# --- numeracja linii jak w AST (HAR-258) ---------------------------------------------------------
+# AST dzieli zrodlo tylko na `\n`, `\r\n` i `\r`; `str.splitlines()` dzieli tez na `\x0c`, `\x1c`,
+# `\x85`, ` ` i przesuwa numery linii wzgledem `lineno` z AST.
+
+ZNAKI_NIEBEDACE_KONCEM_LINII = ["\x0c", "\x1c", "\x85", " "]
+SCIEZKA_NOWEGO = "src/cockpit/services/n.py"
+
+
+def test_linie_zrodla_dziela_tylko_na_lf_crlf_i_samotny_cr():
+    assert mutanty_zmian.linie_zrodla("a\nb\r\nc\rd") == ["a", "b", "c", "d"]
+
+
+@pytest.mark.parametrize("znak", ZNAKI_NIEBEDACE_KONCEM_LINII)
+def test_linie_zrodla_nie_dziela_na_znakach_ktore_python_uznaje_za_zwykle(znak):
+    assert mutanty_zmian.linie_zrodla(f"a{znak}b\nc") == [f"a{znak}b", "c"]
+
+
+@pytest.mark.parametrize("znak", ZNAKI_NIEBEDACE_KONCEM_LINII)
+def test_odcisk_funkcji_po_linii_z_form_feed_to_hash_jej_wlasnego_tekstu(znak):
+    zrodlo = f"def f():\n    return 1  # {znak}\n\n\ndef g():\n    return 2\n"
+    odciski = mutanty_zmian.wzorce_z_odciskami_dla_pliku(SCIEZKA, zrodlo, {5, 6})
+    oczekiwany = hashlib.sha256("def g():\n    return 2".encode()).hexdigest()
+    assert odciski == {f"{MODUL}.x_g__mutmut_*": oczekiwany}
+
+
+def test_odcisk_funkcji_w_zrodle_z_samotnym_cr_to_hash_jej_wlasnego_tekstu():
+    zrodlo = "def f():\r    return 1\r\r\rdef g():\r    return 2\r"
+    odciski = mutanty_zmian.wzorce_z_odciskami_dla_pliku(SCIEZKA, zrodlo, {5, 6})
+    oczekiwany = hashlib.sha256("def g():\n    return 2".encode()).hexdigest()
+    assert odciski == {f"{MODUL}.x_g__mutmut_*": oczekiwany}
+
+
+@pytest.mark.parametrize("znak", ZNAKI_NIEBEDACE_KONCEM_LINII)
+def test_zmieniona_stala_po_linii_z_form_feed_jest_zgloszona_pod_wlasnym_numerem(znak):
+    zrodlo = f"X = 1  # {znak}\nY = 2\n\n\ndef f():\n    return 1\n"
+    assert _bez(zrodlo, 2) == [2]
+
+
+def test_zmieniona_stala_w_zrodle_z_samotnym_cr_jest_zgloszona_pod_wlasnym_numerem():
+    assert _bez("X = 1\rY = 2\r\r\rdef f():\r    return 1\r", 2) == [2]
+
+
+@pytest.mark.parametrize("znak", ZNAKI_NIEBEDACE_KONCEM_LINII)
+def test_nowy_plik_z_form_feed_ma_zmienione_tyle_linii_ile_ma_naprawde(tmp_path, znak):
+    _plik(tmp_path, SCIEZKA_NOWEGO, f"A = 1  # {znak}\nB = 2\n")
+    assert mutanty_zmian._nowe_pliki(f"{SCIEZKA_NOWEGO}\n", tmp_path) == {SCIEZKA_NOWEGO: {1, 2}}
+
+
+PLIK_Z_SAMOTNYM_CR = b"A = 1\rB = 2\rC = 3\n\n\ndef g():\n    return 3\n"  # AST: g w liniach 6-7, git: 4-5
+KOMUNIKAT_SAMOTNEGO_CR = (
+    "samotny \\r jako koniec linii - numery linii z git diff nie zgadzaja sie z AST; zamien go na \\n"
+)
+
+
+def _plik_bajty(korzen: Path, sciezka: str, tresc: bytes) -> None:
+    cel = korzen / sciezka
+    cel.parent.mkdir(parents=True, exist_ok=True)
+    cel.write_bytes(tresc)
+
+
+def test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji(tmp_path):
+    _plik_bajty(tmp_path, SCIEZKA, PLIK_Z_SAMOTNYM_CR)
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_zmian.wzorce_z_odciskami({SCIEZKA: {5}}, ["src/cockpit/services/"], tmp_path)
+    assert str(wyjatek.value) == f"{SCIEZKA}:1: {KOMUNIKAT_SAMOTNEGO_CR}"
+
+
+def test_plik_z_samotnym_cr_nie_daje_zielonego_wyniku_w_zgloszeniu_linii_bez_mutantow(tmp_path):
+    _plik_bajty(tmp_path, SCIEZKA, PLIK_Z_SAMOTNYM_CR)
+    with pytest.raises(BladNarzedzia, match=r"runs\.py:1: samotny"):
+        mutanty_zmian.bez_mutantow({SCIEZKA: {5}}, ["src/cockpit/services/"], tmp_path)
+
+
+def test_samotny_cr_w_dalszej_linii_jest_zgloszony_pod_numerem_ast(tmp_path):
+    _plik_bajty(tmp_path, SCIEZKA, b"A = 1\nB = 2\rC = 3\n")
+    with pytest.raises(BladNarzedzia, match=r"runs\.py:2: samotny"):
+        mutanty_zmian.wzorce_z_odciskami({SCIEZKA: {1}}, ["src/cockpit/services/"], tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("tresc", "numer"),
+    [
+        pytest.param(b"A = 1\n\rB = 2\n", 2, id="po_lf_samotny_cr_liczony_jako_koniec_linii"),
+        pytest.param(b"# a\x0cb\nA = 1\rB = 2\n", 2, id="form_feed_nie_jest_koncem_linii"),
+    ],
+)
+def test_numer_linii_w_bledzie_samotnego_cr_liczy_konce_linii_jak_ast(tmp_path, tresc, numer):
+    _plik_bajty(tmp_path, SCIEZKA, tresc)
+    with pytest.raises(BladNarzedzia) as wyjatek:
+        mutanty_zmian.zrodlo_z_dysku(tmp_path, SCIEZKA)
+    assert str(wyjatek.value) == f"{SCIEZKA}:{numer}: {KOMUNIKAT_SAMOTNEGO_CR}"
+
+
+def test_nowy_plik_z_samotnym_cr_to_blad_narzedzia(tmp_path):
+    _plik_bajty(tmp_path, SCIEZKA_NOWEGO, PLIK_Z_SAMOTNYM_CR)
+    with pytest.raises(BladNarzedzia, match=r"n\.py:1: samotny"):
+        mutanty_zmian._nowe_pliki(f"{SCIEZKA_NOWEGO}\n", tmp_path)
+
+
+def test_plik_z_koncami_linii_crlf_ma_te_same_numery_linii_co_git(tmp_path):
+    _plik_bajty(tmp_path, SCIEZKA, b"A = 1\r\n\r\n\r\ndef g():\r\n    return 3\r\n")
+    wynik = mutanty_zmian.wzorce_z_odciskami({SCIEZKA: {5}}, ["src/cockpit/services/"], tmp_path)
+    assert list(wynik) == [f"{MODUL}.x_g__mutmut_*"]
+
+
+@pytest.mark.parametrize(
+    ("tresc", "oczekiwane"),
+    [
+        pytest.param("", set(), id="pusty_plik"),
+        pytest.param("A = 1", {1}, id="bez_konca_linii"),
+        pytest.param("A = 1\n\n", {1, 2}, id="pusta_linia_na_koncu"),
+    ],
+)
+def test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej(tmp_path, tresc, oczekiwane):
+    _plik(tmp_path, SCIEZKA_NOWEGO, tresc)
+    assert mutanty_zmian._nowe_pliki(f"{SCIEZKA_NOWEGO}\n", tmp_path) == {SCIEZKA_NOWEGO: oczekiwane}

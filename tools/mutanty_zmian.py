@@ -98,6 +98,32 @@ def modul_ze_sciezki(sciezka: str) -> str:
     return nazwa.removesuffix(".__init__")
 
 
+def linie_zrodla(zrodlo: str) -> list[str]:
+    """Linie zrodla numerowane jak w AST: dziela tylko `\\n`, `\\r\\n` i `\\r` (nie `str.splitlines()`)."""
+    return re.split(r"\r\n|\n|\r", zrodlo)
+
+
+SAMOTNY_CR = re.compile(r"\r(?!\n)")
+
+
+def zrodlo_z_dysku(korzen: Path, sciezka: str) -> str:
+    """Surowe zrodlo pliku (bez tlumaczenia koncow linii); samotny `\\r` to blad narzedzia.
+
+    Git numeruje linie diffu tylko po `\\n`, AST tez po samotnym `\\r`: przy samotnym `\\r` numery
+    z diffu nie sa numerami AST, wiec nie wolno ich uzywac (brak dowodu, nigdy zielone).
+    """
+    with (korzen / sciezka).open(encoding="utf-8", newline="") as plik:
+        zrodlo = plik.read()
+    znaleziony = SAMOTNY_CR.search(zrodlo)
+    if znaleziony is not None:
+        numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))
+        raise BladNarzedzia(
+            f"{sciezka}:{numer}: samotny \\r jako koniec linii - numery linii z git diff "
+            "nie zgadzaja sie z AST; zamien go na \\n"
+        )
+    return zrodlo
+
+
 def _zakres(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, int]:
     start = min([wezel.lineno, *(d.lineno for d in wezel.decorator_list)])
     return start, wezel.end_lineno or wezel.lineno
@@ -117,7 +143,7 @@ def wzorce_z_odciskami_dla_pliku(sciezka: str, zrodlo: str, linie: set[int]) -> 
     modul = modul_ze_sciezki(sciezka)
     funkcje = (ast.FunctionDef, ast.AsyncFunctionDef)
     wynik: dict[str, str] = {}
-    fizyczne = zrodlo.splitlines()
+    fizyczne = linie_zrodla(zrodlo)
 
     def odcisk(wezel: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         start, koniec = _zakres(wezel)
@@ -161,7 +187,7 @@ def wzorce_z_odciskami(
         if not sciezka.endswith(".py") or not _w_zrodlach(sciezka, source_paths):
             continue
         try:
-            zrodlo = (korzen / sciezka).read_text(encoding="utf-8")
+            zrodlo = zrodlo_z_dysku(korzen, sciezka)
         except FileNotFoundError:
             continue
         except (OSError, UnicodeDecodeError) as blad:
@@ -255,7 +281,7 @@ def linie_bez_mutantow(zrodlo: str, linie: set[int], *, w_zrodlach: bool) -> lis
                 )
     bez_pragmy = _linie_pragmy(zrodlo)
 
-    fizyczne = zrodlo.splitlines()
+    fizyczne = linie_zrodla(zrodlo)
     wynik: list[int] = []
     for numer in sorted(linie):
         if not 1 <= numer <= len(fizyczne):
@@ -285,7 +311,7 @@ def bez_mutantow(zmiany: dict[str, set[int]], source_paths: list[str], korzen: P
         if not sciezka.endswith(".py") or not sciezka.startswith("src/"):
             continue
         try:
-            zrodlo = (korzen / sciezka).read_text(encoding="utf-8")
+            zrodlo = zrodlo_z_dysku(korzen, sciezka)
         except FileNotFoundError:
             continue
         except (OSError, UnicodeDecodeError) as blad:
@@ -386,12 +412,15 @@ def _nowe_pliki(wyjscie: str, korzen: Path) -> dict[str, set[int]]:
         if not sciezka.endswith(".py"):
             continue
         try:
-            tresc = (korzen / sciezka).read_text(encoding="utf-8")
+            tresc = zrodlo_z_dysku(korzen, sciezka)
         except FileNotFoundError:
             continue
         except (OSError, UnicodeDecodeError) as blad:
             raise BladNarzedzia(f"{sciezka}: nie da sie odczytac: {blad}") from blad
-        zmiany[sciezka] = set(range(1, len(tresc.splitlines()) + 1))
+        linie = linie_zrodla(tresc)
+        # podzial po ostatnim koncu linii (i pusty plik) daje pusty ostatni element, ktory nie jest linia
+        ile = len(linie) - 1 if linie[-1] == "" else len(linie)
+        zmiany[sciezka] = set(range(1, ile + 1))
     return zmiany
 
 
