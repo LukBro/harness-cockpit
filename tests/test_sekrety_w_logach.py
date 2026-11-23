@@ -677,6 +677,8 @@ def test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_ko
         pytest.param("mytool --token=ab\\", "mytool --token=***", id="ukosnik-na-koncu-napisu"),
         pytest.param('mytool --token "ab\\', "mytool --token ***", id="ukosnik-na-koncu-w-niedomknietym-cudzyslowie"),
         pytest.param('mytool --token ""x -v', "mytool --token *** -v", id="pusty-cudzyslow-potem-znak"),
+        pytest.param("mytool --token '' -v", "mytool --token *** -v", id="puste-apostrofy"),
+        pytest.param("mytool --token ab\\", "mytool --token ***", id="spacja-ukosnik-na-koncu-napisu"),
     ],
 )
 def test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu(

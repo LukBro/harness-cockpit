@@ -1,9 +1,8 @@
 # Tabela recznych mutantow HAR-239 (straz roli: pull, commit-tree, update-ref, wymuszone git branch;
 # maskowanie: wartosc przypisania i opcji zlozona z fragmentow): elementy zbiorow, warunki i
-# segmenty wyrazenia `_WARTOSC` w src/runner/straz_roli.py i src/runner/maskowanie.py.
+# segmenty wartosci w literalach `_PRZYPISANIE_SEKRETU` i `_OPCJA_SEKRETU` w src/runner/straz_roli.py i src/runner/maskowanie.py.
 # Kazdy wiersz zmienia jeden element; wskazany test musi na nim oblac.
-# Cale literaly (`_GIT_TWORZY_COMMIT`, `_PRZYPISANIE_SEKRETU`, `_OPCJA_SEKRETU`) i alternatywy
-# `_WARTOSC` (dq, apostrof, zwykle znaki) maja wiersze w HAR-219.toml.
+# Alternatywy wartosci (dq, apostrof, ucieczka, zwykle znaki) maja tu pary wierszy: po jednym na wzorzec.
 
 # _GIT_TWORZY_COMMIT: pull znika ze zbioru; `git --config-env k=v pull` omija `waliduj_definicje`.
 [[mutant]]
@@ -269,157 +268,203 @@ plik = "src/runner/straz_roli.py"
 linia_tekst = "elif token.startswith(\"-\") and any(znak in \"fMDC\" for znak in token[1:]):"
 uzasadnienie = "Zakres `token[1:]` zaczyna sie od drugiego znaku tylko po to, by pominac poczatkowy `-`; wariant `token[0:]` (cale slowo) daje ten sam wynik, bo `-` nie nalezy do zbioru `fMDC`, a do tego miejsca dochodza wylacznie tokeny zaczynajace sie od `-`. Zadne wejscie nie odroznia wersji. Wariant `token[2:]` ma osobny wiersz [[mutant]]."
 
-# _WARTOSC: niedomkniety cudzyslow nie maskuje do konca napisu (domkniecie wymagane).
+# Segmenty wartosci przypisania i opcji (po jednym wierszu na wzorzec; kazdy wzorzec to pelny literal,
+# wiec fragment wartosci wystepuje w pliku dwa razy, a `szukaj` jest doprecyzowany sasiednia linia).
+
+# _PRZYPISANIE_SEKRETU: niedomkniety cudzyslow nie maskuje do konca napisu (domkniecie wymagane).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\"|\\Z)"
-zamien = "(?:\\\")"
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\")\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: niedomkniety apostrof nie maskuje do konca napisu (domkniecie wymagane).
+# _OPCJA_SEKRETU: niedomkniety cudzyslow nie maskuje do konca napisu (domkniecie wymagane).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:'|\\Z)"
-zamien = "(?:')"
-test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
-
-# _WARTOSC: niedomkniety cudzyslow w opcji nie maskuje do konca napisu.
-[[mutant]]
-plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\"|\\Z)"
-zamien = "(?:\\\")"
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\")\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: niedomkniety apostrof w opcji nie maskuje do konca napisu.
+# _PRZYPISANIE_SEKRETU: niedomkniety apostrof nie maskuje do konca napisu (domkniecie wymagane).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:'|\\Z)"
-zamien = "(?:')"
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:')\""
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _OPCJA_SEKRETU: niedomkniety apostrof nie maskuje do konca napisu (domkniecie wymagane).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:')\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: cudzyslow bez ucieczek wewnatrz (`\"` w srodku wartosci).
+# _PRZYPISANIE_SEKRETU: cudzyslow bez ucieczek wewnatrz (`\"` w srodku wartosci).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])*"
-zamien = "(?:[^\\\"\\\\])*"
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:[^\\\"\\\\])*(?:\\\"|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: segment wnetrza cudzyslowu wymaga min. jednego znaku (`+` zamiast `*`) - pusty cudzyslow `""abc` nie jest wartoscia i `abc` wycieka.
+# _OPCJA_SEKRETU: cudzyslow bez ucieczek wewnatrz (`\"` w srodku wartosci).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])*"
-zamien = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])+"
-test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
-
-# _WARTOSC: to samo dla opcji (`--token ""x`).
-[[mutant]]
-plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])*"
-zamien = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])+"
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:[^\\\"\\\\])*(?:\\\"|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: ucieczka w cudzyslowie wymaga znaku po ukosniku (`\\[\s\S]` zamiast `\\[\s\S]?`) - `TOKEN="ab\` na koncu napisu przestaje byc niedomknietym cudzyslowem i `ab` wycieka.
+# _PRZYPISANIE_SEKRETU: segment wnetrza cudzyslowu wymaga min. jednego znaku (`+` zamiast `*`) - pusty cudzyslow `""x` nie jest wartoscia.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])*"
-zamien = "(?:\\\\[\\s\\S]|[^\\\"\\\\])*"
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])+(?:\\\"|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: to samo dla opcji (`--token "ab\`).
+# _OPCJA_SEKRETU: segment wnetrza cudzyslowu wymaga min. jednego znaku (`+` zamiast `*`) - pusty cudzyslow `""x` nie jest wartoscia.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "(?:\\\\[\\s\\S]?|[^\\\"\\\\])*"
-zamien = "(?:\\\\[\\s\\S]|[^\\\"\\\\])*"
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])+(?:\\\"|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-[[rownowazny]]
-plik = "src/runner/maskowanie.py"
-linia_tekst = "[^\\\"\\\\])*(?:\\\"|\\Z)"
-uzasadnienie = "Wariant `[^\\\"]` zamiast `[^\\\"\\\\]` w segmencie cudzyslowu: ukosnik trafia do tej klasy tylko wtedy, gdy nie pasuje alternatywa `\\\\[\\s\\S]?` stojaca przed nia, a ta pasuje do kazdego ukosnika (znak po nim jest opcjonalny). Alternatywa konczaca segment `(?:\\\"|\\Z)` pasuje zawsze na koncu petli, wiec nie ma nawrotu, ktory wymusilby druga droge. Wejscia, ktorego ukosnik dociera do klasy, nie ma."
-
-[[rownowazny]]
-plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"|[^\\s\\\"'\\\\])+\""
-uzasadnienie = "Wariant bez `\\\"` w klasie zwyklych znakow `[^\\s\\\"'\\\\]`: kazdy `\\\"` zaczyna alternatywe cudzyslowu stojaca w wyrazeniu przed klasa, a ta zawsze sie dopasowuje (domkniecie `\\\"` albo `\\Z`), wiec `\\\"` nigdy nie dociera do klasy i nie ma nawrotu, ktory by go tam skierowal. Wejscia, ktore odroznia wersje, nie ma."
-
-[[rownowazny]]
-plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"|[^\\s\\\"'\\\\])+\""
-uzasadnienie = "Wariant bez apostrofu w klasie zwyklych znakow `[^\\s\\\"'\\\\]`: kazdy `'` zaczyna alternatywe apostrofu `'[^']*(?:'|\\Z)` stojaca w wyrazeniu przed klasa, a ta zawsze sie dopasowuje (domkniecie `'` albo `\\Z`), wiec `'` nigdy nie dociera do klasy; po `_WARTOSC` nic w wyrazeniu nie stoi, wiec nie ma nawrotu, ktory skierowalby `'` do klasy. Wejscia, ktore odroznia wersje, nie ma."
-
-[[rownowazny]]
-plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"|[^\\s\\\"'\\\\])+\""
-uzasadnienie = "Wariant bez ukosnika w klasie zwyklych znakow `[^\\s\\\"'\\\\]`: kazdy `\\\\` zaczyna alternatywe ucieczki `\\\\[\\s\\S]?` stojaca w wyrazeniu przed klasa, a ta zawsze sie dopasowuje (znak po ukosniku jest opcjonalny, wiec pasuje takze ukosnik na koncu napisu), wiec ukosnik nigdy nie dociera do klasy; po `_WARTOSC` nic w wyrazeniu nie stoi, wiec nie ma nawrotu, ktory skierowalby go do klasy. Wejscia, ktore odroznia wersje, nie ma."
-
-# _WARTOSC: ucieczka poza cudzyslowem bez znaku po ukosniku opcjonalnego (`\\[\s\S]` zamiast `\\[\s\S]?`).
+# _PRZYPISANIE_SEKRETU: ucieczka w cudzyslowie wymaga znaku po ukosniku - `"ab\` na koncu napisu nie jest niedomknietym cudzyslowem.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|\\\\[\\s\\S]?\""
-zamien = "    r\"|\\\\[\\s\\S]\""
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]|[^\\\"\\\\])*(?:\\\"|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: ucieczka poza cudzyslowem nie pochlania spacji (`\\\S` zamiast `\\[\s\S]`).
+# _OPCJA_SEKRETU: ucieczka w cudzyslowie wymaga znaku po ukosniku - `"ab\` na koncu napisu nie jest niedomknietym cudzyslowem.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|\\\\[\\s\\S]?\""
-zamien = "    r\"|\\\\\\S?\""
-test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
-
-# _WARTOSC: ucieczka poza cudzyslowem pochlania tylko biale znaki (`\\\s`).
-[[mutant]]
-plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|\\\\[\\s\\S]?\""
-zamien = "    r\"|\\\\\\s?\""
-test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
-
-# _WARTOSC: alternatywa ucieczki poza cudzyslowem znika (ukosnik nie jest znakiem wartosci).
-[[mutant]]
-plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|\\\\[\\s\\S]?\""
-zamien = "    r\"|(?!)\""
-test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
-
-# _WARTOSC: ucieczka w opcji nie pochlania spacji.
-[[mutant]]
-plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|\\\\[\\s\\S]?\""
-zamien = "    r\"|\\\\\\S?\""
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]|[^\\\"\\\\])*(?:\\\"|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: zwykle znaki bez wykluczenia bialych znakow - wartosc pochlania reszte komendy.
+# _PRZYPISANIE_SEKRETU: apostrof wymaga min. jednego znaku - puste apostrofy nie sa wartoscia.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|[^\\s\\\"'\\\\])+\""
-zamien = "    r\"|[^\\\"'\\\\])+\""
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']+(?:'|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: apostrof bez `*` (jeden znak minimum w apostrofach): puste apostrofy nie sa wartoscia.
+# _OPCJA_SEKRETU: apostrof wymaga min. jednego znaku - puste apostrofy nie sa wartoscia.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|'[^']*(?:'|\\Z)\""
-zamien = "    r\"|'[^']+(?:'|\\Z)\""
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']+(?:'|\\Z)\""
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: apostrof pochlania najwyzej jeden znak - spacja w apostrofach ucina wartosc.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']?(?:'|\\Z)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: apostrof pochlania takze znaki spoza apostrofow (`[^']` zamiast `[^']*` - jeden znak) - spacja w apostrofach ucina wartosc.
+# _OPCJA_SEKRETU: apostrof pochlania najwyzej jeden znak - spacja w apostrofach ucina wartosc.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|'[^']*(?:'|\\Z)\""
-zamien = "    r\"|'[^']?(?:'|\\Z)\""
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']?(?:'|\\Z)\""
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: ucieczka poza cudzyslowem bez znaku po ukosniku opcjonalnego (`\\[\s\S]` zamiast `\\[\s\S]?`).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|\\\\[\\s\\S]\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: powtorzenie segmentow `+` zastapione jednym segmentem - sklejone fragmenty tokenu nie sa maskowane do konca.
+# _OPCJA_SEKRETU: ucieczka poza cudzyslowem bez znaku po ukosniku opcjonalnego (`\\[\s\S]` zamiast `\\[\s\S]?`).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|[^\\s\\\"'\\\\])+\""
-zamien = "    r\"|[^\\s\\\"'\\\\])\""
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|\\\\[\\s\\S]\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: ucieczka poza cudzyslowem nie pochlania spacji (`\\\S?`).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|\\\\\\S?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
 
-# _WARTOSC: powtorzenie segmentow `*` zamiast `+` - wartosc moze byc pusta, wiec `TOKEN= ls` jest maskowane.
+# _OPCJA_SEKRETU: ucieczka poza cudzyslowem nie pochlania spacji (`\\\S?`).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|[^\\s\\\"'\\\\])+\""
-zamien = "    r\"|[^\\s\\\"'\\\\])*\""
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|\\\\\\S?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: ucieczka poza cudzyslowem pochlania tylko biale znaki (`\\\s?`).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|\\\\\\s?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _OPCJA_SEKRETU: ucieczka poza cudzyslowem pochlania tylko biale znaki (`\\\s?`).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|\\\\\\s?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: alternatywa ucieczki poza cudzyslowem znika (ukosnik nie jest znakiem wartosci).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|(?!)\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _OPCJA_SEKRETU: alternatywa ucieczki poza cudzyslowem znika (ukosnik nie jest znakiem wartosci).
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|(?!)\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: zwykle znaki bez wykluczenia bialych znakow - wartosc pochlania reszte komendy.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|[^\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _OPCJA_SEKRETU: zwykle znaki bez wykluczenia bialych znakow - wartosc pochlania reszte komendy.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|[^\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: powtorzenie segmentow `+` zastapione jednym segmentem - sklejone fragmenty nie sa maskowane do konca.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|[^\\s\\\"'\\\\])\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _OPCJA_SEKRETU: powtorzenie segmentow `+` zastapione jednym segmentem - sklejone fragmenty nie sa maskowane do konca.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|[^\\s\\\"'\\\\])\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu"
+
+# _PRZYPISANIE_SEKRETU: powtorzenie segmentow `*` zamiast `+` - wartosc moze byc pusta, wiec `TOKEN= ls` jest maskowane.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|[^\\s\\\"'\\\\])*\",\n    re.IGNORECASE,\n)\n# ... oraz"
+test = "tests/test_sekrety_w_logach.py::test_pusta_wartosc_sekretu_nie_jest_maskowana_bo_nie_ma_czego_ukrywac"
+
+# _OPCJA_SEKRETU: powtorzenie segmentow `*` zamiast `+` - wartosc moze byc pusta, wiec `TOKEN= ls` jest maskowane.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|[^\\s\\\"'\\\\])*\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
 test = "tests/test_sekrety_w_logach.py::test_pusta_wartosc_sekretu_nie_jest_maskowana_bo_nie_ma_czego_ukrywac"
 
 # Linie prefiksow `_PRZYPISANIE_SEKRETU` i `_OPCJA_SEKRETU` (HAR-239, kod 3): czlony nazw, `\w*`, `\s+`
@@ -432,35 +477,35 @@ szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
 zamien = "(?:SECRET|PASSWORD|PASSWD|KEY|AUTH)"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
-# _PRZYPISANIE_SEKRETU bez czlonu SECRET.
+# _PRZYPISANIE_SEKRETU bez czlonu SECRET: zmienna z tym czlonem w nazwie nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
 szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
 zamien = "(?:TOKEN|PASSWORD|PASSWD|KEY|AUTH)"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
-# _PRZYPISANIE_SEKRETU bez czlonu PASSWORD.
+# _PRZYPISANIE_SEKRETU bez czlonu PASSWORD: zmienna z tym czlonem w nazwie nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
 szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
 zamien = "(?:TOKEN|SECRET|PASSWD|KEY|AUTH)"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
-# _PRZYPISANIE_SEKRETU bez czlonu PASSWD.
+# _PRZYPISANIE_SEKRETU bez czlonu PASSWD: zmienna z tym czlonem w nazwie nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
 szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
 zamien = "(?:TOKEN|SECRET|PASSWORD|KEY|AUTH)"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
-# _PRZYPISANIE_SEKRETU bez czlonu KEY.
+# _PRZYPISANIE_SEKRETU bez czlonu KEY: zmienna z tym czlonem w nazwie nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
 szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
 zamien = "(?:TOKEN|SECRET|PASSWORD|PASSWD|AUTH)"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
-# _PRZYPISANIE_SEKRETU bez czlonu AUTH.
+# _PRZYPISANIE_SEKRETU bez czlonu AUTH: zmienna z tym czlonem w nazwie nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
 szukaj = "(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)"
@@ -481,17 +526,24 @@ szukaj = "AUTH)\\w*=)\""
 zamien = "AUTH)=)\""
 test = "tests/test_sekrety_w_logach.py::test_nazwa_zmiennej_z_czlonem_sekretu_i_dalszym_ciagiem_tez_maskuje_wartosc"
 
-# _PRZYPISANIE_SEKRETU bez `+ _WARTOSC`: przypisanie pasuje bez wartosci, wiec nic nie jest maskowane.
+# _PRZYPISANIE_SEKRETU: wartosc nigdy nie pasuje, wiec nic nie jest maskowane.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "AUTH)\\w*=)\" + _WARTOSC,"
-zamien = "AUTH)\\w*=)\" + r\"(?!)\","
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|[^\\s\\\"'\\\\])+(?!)\",\n    re.IGNORECASE,\n)\n# ... oraz"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
+
+# _OPCJA_SEKRETU: wartosc nigdy nie pasuje, wiec nic nie jest maskowane.
+[[mutant]]
+plik = "src/runner/maskowanie.py"
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|[^\\s\\\"'\\\\])+(?!)\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
 
 # _PRZYPISANIE_SEKRETU nigdy nie pasuje (caly literal).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "_PRZYPISANIE_SEKRETU = re.compile(\n    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\" + _WARTOSC,\n    re.IGNORECASE,\n)"
+szukaj = "_PRZYPISANIE_SEKRETU = re.compile(\n    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\"\n    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)"
 zamien = "_PRZYPISANIE_SEKRETU = re.compile(r\"(?!)\")"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
@@ -530,36 +582,69 @@ szukaj = "(?:=|\\s+))"
 zamien = "(?:=|\\s))"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
 
-# _OPCJA_SEKRETU bez `+ _WARTOSC`: opcja pasuje bez wartosci, wiec nic nie jest maskowane.
-[[mutant]]
-plik = "src/runner/maskowanie.py"
-szukaj = "(?:=|\\s+))\" + _WARTOSC,"
-zamien = "(?:=|\\s+))\" + r\"(?!)\","
-test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
-
 # _OPCJA_SEKRETU nigdy nie pasuje (caly literal).
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "_OPCJA_SEKRETU = re.compile(\n    r\"(--(?:token|password|secret)(?:=|\\s+))\" + _WARTOSC,\n    re.IGNORECASE,\n)"
+szukaj = "_OPCJA_SEKRETU = re.compile(\n    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\"\n    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)"
 zamien = "_OPCJA_SEKRETU = re.compile(r\"(?!)\")"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
 
 [[rownowazny]]
 plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\" + _WARTOSC,"
-uzasadnienie = "Alternatywa `=` w `_OPCJA_SEKRETU` jest redundantna: kazda opcja `--token=`, `--password=` i `--secret=` ma w nazwie czlon z `_PRZYPISANIE_SEKRETU` (`\\b` stoi po `-`, IGNORECASE), a `maskuj_komende` uruchamia przypisanie przed opcja i zamienia cala wartosc na `***`. Opcja z `=` dostaje wiec `--token=***`, na ktorym wariant bez `=` nie pasuje i zostawia to samo. Zadne wejscie nie odroznia wersji. Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
+uzasadnienie = "kształt: regex. Wariant bez apostrofu `'` w klasie zwyklych znakow `[^\\s\\\"'\\\\]` w _PRZYPISANIE_SEKRETU: kazdy `'` zaczyna alternatywe apostrofu `'[^']*(?:'|\\Z)` stojaca w wyrazeniu przed klasa, a ta zawsze sie dopasowuje (domkniecie `'` albo `\\Z`), wiec `'` nigdy nie dociera do klasy. Wejscie, ktore odroznia wersje, nie istnieje (brak takiego wejscia sprawdzony wyczerpujaco po napisach do 6 znakow z alfabetu a, spacja, apostrof, cudzyslow, ukosnik, tabulator, dla przypisania i obu postaci opcji); po `+` w wyrazeniu nic nie stoi, wiec nie ma nawrotu, ktory skierowalby ten znak do klasy."
 
 [[rownowazny]]
 plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\" + _WARTOSC,"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
+uzasadnienie = "kształt: regex. Wariant bez cudzyslowu `\\\"` w klasie zwyklych znakow `[^\\s\\\"'\\\\]` w _PRZYPISANIE_SEKRETU: kazdy `\\\"` zaczyna alternatywe cudzyslowu stojaca przed klasa, a ta zawsze sie dopasowuje (domkniecie `\\\"` albo `\\Z`), wiec `\\\"` nigdy nie dociera do klasy. Wejscie, ktore odroznia wersje, nie istnieje (brak takiego wejscia sprawdzony wyczerpujaco po napisach do 6 znakow z alfabetu a, spacja, apostrof, cudzyslow, ukosnik, tabulator, dla przypisania i obu postaci opcji); po `+` w wyrazeniu nic nie stoi, wiec nie ma nawrotu, ktory skierowalby ten znak do klasy."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
+uzasadnienie = "kształt: regex. Wariant bez ukosnika `\\\\` w klasie zwyklych znakow `[^\\s\\\"'\\\\]` w _PRZYPISANIE_SEKRETU: kazdy `\\\\` zaczyna alternatywe ucieczki `\\\\[\\s\\S]?` stojaca przed klasa, a ta zawsze sie dopasowuje (znak po ukosniku jest opcjonalny, wiec takze ukosnik na koncu napisu), wiec ukosnik nigdy nie dociera do klasy. Wejscie, ktore odroznia wersje, nie istnieje (brak takiego wejscia sprawdzony wyczerpujaco po napisach do 6 znakow z alfabetu a, spacja, apostrof, cudzyslow, ukosnik, tabulator, dla przypisania i obu postaci opcji); po `+` w wyrazeniu nic nie stoi, wiec nie ma nawrotu, ktory skierowalby ten znak do klasy."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
+uzasadnienie = "kształt: regex. Wariant `[^\\\"]` zamiast `[^\\\"\\\\]` w segmencie cudzyslowu _PRZYPISANIE_SEKRETU: ukosnik trafia do tej klasy tylko wtedy, gdy nie pasuje alternatywa `\\\\[\\s\\S]?` stojaca przed nia, a ta pasuje do kazdego ukosnika (znak po nim jest opcjonalny). Alternatywa konczaca segment `(?:\\\"|\\Z)` pasuje zawsze po zakonczeniu petli, wiec nie ma nawrotu, ktory wymusilby druga droge. Wejscia, ktorego ukosnik dociera do klasy, nie ma (brak sprawdzony wyczerpujaco po napisach do 6 znakow)."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
+uzasadnienie = "kształt: regex. Wariant `[\\S]` zamiast `[\\s\\S]` w ucieczce wewnatrz cudzyslowu _PRZYPISANIE_SEKRETU (`\\\\[\\s\\S]?` w segmencie `\\\"...\\\"`): gdy znakiem po ukosniku jest bialy znak, ucieczka pochlania sam ukosnik, a bialy znak zjada nastepna iteracja petli klasa `[^\\\"\\\\]` (bialy znak nie jest ani cudzyslowem, ani ukosnikiem); petla jest zachlanna, a jej koniec `(?:\\\"|\\Z)` pasuje zawsze w tym samym miejscu, wiec dopasowany zakres jest identyczny. Wejscia, ktore odroznia wersje, nie ma (brak sprawdzony wyczerpujaco po napisach do 6 znakow). Ucieczka poza cudzyslowem `\\\\[\\s\\S]?` ma osobne wiersze [[mutant]]."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Wariant bez apostrofu `'` w klasie zwyklych znakow `[^\\s\\\"'\\\\]` w _OPCJA_SEKRETU: kazdy `'` zaczyna alternatywe apostrofu `'[^']*(?:'|\\Z)` stojaca w wyrazeniu przed klasa, a ta zawsze sie dopasowuje (domkniecie `'` albo `\\Z`), wiec `'` nigdy nie dociera do klasy. Wejscie, ktore odroznia wersje, nie istnieje (brak takiego wejscia sprawdzony wyczerpujaco po napisach do 6 znakow z alfabetu a, spacja, apostrof, cudzyslow, ukosnik, tabulator, dla przypisania i obu postaci opcji); po `+` w wyrazeniu nic nie stoi, wiec nie ma nawrotu, ktory skierowalby ten znak do klasy."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Wariant bez cudzyslowu `\\\"` w klasie zwyklych znakow `[^\\s\\\"'\\\\]` w _OPCJA_SEKRETU: kazdy `\\\"` zaczyna alternatywe cudzyslowu stojaca przed klasa, a ta zawsze sie dopasowuje (domkniecie `\\\"` albo `\\Z`), wiec `\\\"` nigdy nie dociera do klasy. Wejscie, ktore odroznia wersje, nie istnieje (brak takiego wejscia sprawdzony wyczerpujaco po napisach do 6 znakow z alfabetu a, spacja, apostrof, cudzyslow, ukosnik, tabulator, dla przypisania i obu postaci opcji); po `+` w wyrazeniu nic nie stoi, wiec nie ma nawrotu, ktory skierowalby ten znak do klasy."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Wariant bez ukosnika `\\\\` w klasie zwyklych znakow `[^\\s\\\"'\\\\]` w _OPCJA_SEKRETU: kazdy `\\\\` zaczyna alternatywe ucieczki `\\\\[\\s\\S]?` stojaca przed klasa, a ta zawsze sie dopasowuje (znak po ukosniku jest opcjonalny, wiec takze ukosnik na koncu napisu), wiec ukosnik nigdy nie dociera do klasy. Wejscie, ktore odroznia wersje, nie istnieje (brak takiego wejscia sprawdzony wyczerpujaco po napisach do 6 znakow z alfabetu a, spacja, apostrof, cudzyslow, ukosnik, tabulator, dla przypisania i obu postaci opcji); po `+` w wyrazeniu nic nie stoi, wiec nie ma nawrotu, ktory skierowalby ten znak do klasy."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Wariant `[^\\\"]` zamiast `[^\\\"\\\\]` w segmencie cudzyslowu _OPCJA_SEKRETU: ukosnik trafia do tej klasy tylko wtedy, gdy nie pasuje alternatywa `\\\\[\\s\\S]?` stojaca przed nia, a ta pasuje do kazdego ukosnika (znak po nim jest opcjonalny). Alternatywa konczaca segment `(?:\\\"|\\Z)` pasuje zawsze po zakonczeniu petli, wiec nie ma nawrotu, ktory wymusilby druga droge. Wejscia, ktorego ukosnik dociera do klasy, nie ma (brak sprawdzony wyczerpujaco po napisach do 6 znakow)."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Wariant `[\\S]` zamiast `[\\s\\S]` w ucieczce wewnatrz cudzyslowu _OPCJA_SEKRETU (`\\\\[\\s\\S]?` w segmencie `\\\"...\\\"`): gdy znakiem po ukosniku jest bialy znak, ucieczka pochlania sam ukosnik, a bialy znak zjada nastepna iteracja petli klasa `[^\\\"\\\\]` (bialy znak nie jest ani cudzyslowem, ani ukosnikiem); petla jest zachlanna, a jej koniec `(?:\\\"|\\Z)` pasuje zawsze w tym samym miejscu, wiec dopasowany zakres jest identyczny. Wejscia, ktore odroznia wersje, nie ma (brak sprawdzony wyczerpujaco po napisach do 6 znakow). Ucieczka poza cudzyslowem `\\\\[\\s\\S]?` ma osobne wiersze [[mutant]]."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Alternatywa `=` w `(?:=|\\s+)` jest redundantna: kazda opcja `--token=`, `--password=` i `--secret=` ma w nazwie czlon z `_PRZYPISANIE_SEKRETU` (`\\b` stoi po `-`, IGNORECASE), a `maskuj_komende` uruchamia przypisanie przed opcja i zamienia cala wartosc (te same segmenty co w opcji) na `***`. Opcja z `=` dostaje wiec `--token=***`, na ktorym wariant bez `=` nie pasuje i zostawia to samo. Brak wejscia, ktore odroznia wersje (sprawdzone wyczerpujaco po napisach do 6 znakow). Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
+
+[[rownowazny]]
+plik = "src/runner/maskowanie.py"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
 uzasadnienie = "Kotwica `\\b` na poczatku `_PRZYPISANIE_SEKRETU` jest redundantna: poczatek najbardziej wysunietego w lewo dopasowania nie moze stac za znakiem slowa, bo `\\w*` zaczynajace wczesniej pochlonie ten znak i tez dopasuje; po znaku niebedacym slowem granica `\\b` zachodzi sama. Wynik `sub` jest ten sam z kotwica i bez niej, zadne wejscie nie odroznia wersji. Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
-
-[[rownowazny]]
-plik = "src/runner/maskowanie.py"
-linia_tekst = "_WARTOSC = ("
-uzasadnienie = "Nawias otwierajacy przypisania `_WARTOSC = (` jest skladnia Pythona, nie elementem reguly maskowania: jego usuniecie albo zmiana daje blad skladni, wiec modul maskowanie.py nie daje sie zaimportowac i nie powstaje mutant, ktory dalby sie wykonac. Wejscia, na ktorym wersja z mutacja zwraca inny wynik niz oryginal, nie ma - dla niej nie ma zadnego wyniku. Tresc wyrazenia ma osobne wiersze [[mutant]]."
-
-[[rownowazny]]
-plik = "src/runner/maskowanie.py"
-linia_tekst = ")"
-uzasadnienie = "Nawias zamykajacy przypisania `_WARTOSC` jest skladnia Pythona: jego usuniecie daje blad skladni, wiec modul maskowanie.py nie daje sie zaimportowac i nie powstaje mutant, ktory dalby sie wykonac. Wejscia, na ktorym wersja z mutacja zwraca inny wynik niz oryginal, nie ma - dla niej nie ma zadnego wyniku. Tresc wyrazenia ma osobne wiersze [[mutant]]."

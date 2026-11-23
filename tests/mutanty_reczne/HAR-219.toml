@@ -533,28 +533,28 @@ test = "tests/test_sekrety_w_logach.py::test_nazwa_zmiennej_sekretu_jest_rozpozn
 # _PRZYPISANIE_SEKRETU bez wartosci w cudzyslowie: wartosc ze spacja maskowana do pierwszej spacji.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
-zamien = "r\"(?:(?!)\""
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:(?!)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_w_cudzyslowach_ze_spacja_jest_zamaskowana_cala"
 
 # _PRZYPISANIE_SEKRETU bez wartosci w apostrofach: wartosc ze spacja maskowana do pierwszej spacji.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|'[^']*(?:'|\\Z)\""
-zamien = "    r\"|(?!)\""
+szukaj = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|(?!)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_sekretu_w_cudzyslowach_ze_spacja_jest_zamaskowana_cala"
 
 # _PRZYPISANIE_SEKRETU bez alternatywy `\S+`: wartosc bez cudzyslowu nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|[^\\s\\\"'\\\\])+\""
-zamien = "    r\"|(?!))+\""
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n# ... oraz"
+zamien = "    r\"|(?!))+\",\n    re.IGNORECASE,\n)\n# ... oraz"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
 # _PRZYPISANIE_SEKRETU nigdy nie pasuje (caly literal): zadne przypisanie nie jest maskowane.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "_PRZYPISANIE_SEKRETU = re.compile(\n    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\" + _WARTOSC,\n    re.IGNORECASE,\n)"
+szukaj = "_PRZYPISANIE_SEKRETU = re.compile(\n    r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\"\n    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)"
 zamien = "_PRZYPISANIE_SEKRETU = re.compile(r\"(?!)\")"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_przypisania_ze_zmienna_o_nazwie_sekretu_jest_zastapiona_gwiazdkami"
 
@@ -599,22 +599,22 @@ test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_
 # _OPCJA_SEKRETU bez wartosci w cudzyslowie: wartosc ze spacja maskowana do pierwszej spacji.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
-zamien = "r\"(?:(?!)\""
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:(?!)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
 
 # _OPCJA_SEKRETU bez wartosci w apostrofach: wartosc ze spacja maskowana do pierwszej spacji.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|'[^']*(?:'|\\Z)\""
-zamien = "    r\"|(?!)\""
+szukaj = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\""
+zamien = "    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|(?!)\""
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_jest_zamaskowana_niezaleznie_od_ksztaltu"
 
 # _OPCJA_SEKRETU bez alternatywy `\S+`: wartosc bez cudzyslowu nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "    r\"|[^\\s\\\"'\\\\])+\""
-zamien = "    r\"|(?!))+\""
+szukaj = "    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
+zamien = "    r\"|(?!))+\",\n    re.IGNORECASE,\n)\n_GWIAZDKI"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
 
 # _OPCJA_SEKRETU bez flagi IGNORECASE: `--TOKEN x` wielkimi literami nie jest maskowane.
@@ -627,7 +627,7 @@ test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_z_sekretem_po_spacji_
 # _OPCJA_SEKRETU nigdy nie pasuje (caly literal): zadna opcja z sekretem nie jest maskowana.
 [[mutant]]
 plik = "src/runner/maskowanie.py"
-szukaj = "_OPCJA_SEKRETU = re.compile(\n    r\"(--(?:token|password|secret)(?:=|\\s+))\" + _WARTOSC,\n    re.IGNORECASE,\n)"
+szukaj = "_OPCJA_SEKRETU = re.compile(\n    r\"(--(?:token|password|secret)(?:=|\\s+))\"\n    r\"(?:\\\"(?:\\\\[\\s\\S]?|[^\\\"\\\\])*(?:\\\"|\\Z)\"\n    r\"|'[^']*(?:'|\\Z)\"\n    r\"|\\\\[\\s\\S]?\"\n    r\"|[^\\s\\\"'\\\\])+\",\n    re.IGNORECASE,\n)"
 zamien = "_OPCJA_SEKRETU = re.compile(r\"(?!)\")"
 test = "tests/test_sekrety_w_logach.py::test_wartosc_opcji_token_password_secret_jest_zastapiona_gwiazdkami"
 
@@ -654,11 +654,11 @@ test = "tests/test_straz_roli.py::test_podpolecenie_tworzace_commit_po_opcji_con
 
 [[rownowazny]]
 plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\" + _WARTOSC,"
-uzasadnienie = "Alternatywa `=` w `_OPCJA_SEKRETU` jest redundantna od HAR-239: kazda opcja `--token=`, `--password=` i `--secret=` ma w nazwie czlon z `_PRZYPISANIE_SEKRETU` (`\\b` stoi po `-`, IGNORECASE), a `maskuj_komende` uruchamia przypisanie przed opcja i zamienia cala wartosc (`_WARTOSC` obejmuje sklejone fragmenty) na `***`. Opcja z `=` dostaje wiec `--token=***`, na ktorym wariant bez `=` nie pasuje i zostawia to samo. Zadne wejscie nie odroznia wersji. Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
+linia_tekst = "r\"(--(?:token|password|secret)(?:=|\\s+))\""
+uzasadnienie = "kształt: regex. Alternatywa `=` w `_OPCJA_SEKRETU` jest redundantna od HAR-239: kazda opcja `--token=`, `--password=` i `--secret=` ma w nazwie czlon z `_PRZYPISANIE_SEKRETU` (`\\b` stoi po `-`, IGNORECASE), a `maskuj_komende` uruchamia przypisanie przed opcja i zamienia cala wartosc (te same segmenty co w opcji, w tym sklejone fragmenty) na `***`. Opcja z `=` dostaje wiec `--token=***`, na ktorym wariant bez `=` nie pasuje i zostawia to samo. Zadne wejscie nie odroznia wersji. Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
 
 [[rownowazny]]
 plik = "src/runner/maskowanie.py"
-linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\" + _WARTOSC,"
+linia_tekst = "r\"(\\b\\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\\w*=)\""
 uzasadnienie = "Kotwica `\\b` na poczatku `_PRZYPISANIE_SEKRETU` jest redundantna: poczatek najbardziej wysunietego w lewo dopasowania nie moze stac za znakiem slowa, bo `\\w*` zaczynajace wczesniej pochlonie ten znak i tez dopasuje; po znaku niebedacym slowem granica `\\b` zachodzi sama. Wynik `sub` jest ten sam z kotwica i bez niej, zadne wejscie nie odroznia wersji. Pozostale elementy tej linii maja osobne wiersze [[mutant]]."
 

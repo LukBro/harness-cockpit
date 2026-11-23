@@ -24,19 +24,23 @@ _BEARER = re.compile(r"(Bearer\s+)(\S+)")
 # `\x`. Niedomkniety cudzyslow albo apostrof maskuje do konca napisu (nie umiemy ocenic, gdzie konczy).
 # Ucieczka w cudzyslowie ma znak opcjonalny (`\\[\s\S]?`): samotny `\` na koncu napisu
 # (`TOKEN="ab\`) tez jest niedomknietym cudzyslowem, a nie brakiem dopasowania (wyciek `ab`).
-_WARTOSC = (
+# Wzorce sa pelnymi literalami (sasiednie literaly skleja ast), bo mutmut nie widzi wzorca zlozonego
+# przez `+` ani ze zmiennej; fragment wartosci jest wiec powtorzony w obu wzorcach.
+_PRZYPISANIE_SEKRETU = re.compile(
+    r"(\b\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\w*=)"
     r"(?:\"(?:\\[\s\S]?|[^\"\\])*(?:\"|\Z)"
     r"|'[^']*(?:'|\Z)"
     r"|\\[\s\S]?"
-    r"|[^\s\"'\\])+"
-)
-_PRZYPISANIE_SEKRETU = re.compile(
-    r"(\b\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\w*=)" + _WARTOSC,
+    r"|[^\s\"'\\])+",
     re.IGNORECASE,
 )
 # ... oraz wartosc opcji `--token x` i `--token=x` (takze `--password`, `--secret`).
 _OPCJA_SEKRETU = re.compile(
-    r"(--(?:token|password|secret)(?:=|\s+))" + _WARTOSC,
+    r"(--(?:token|password|secret)(?:=|\s+))"
+    r"(?:\"(?:\\[\s\S]?|[^\"\\])*(?:\"|\Z)"
+    r"|'[^']*(?:'|\Z)"
+    r"|\\[\s\S]?"
+    r"|[^\s\"'\\])+",
     re.IGNORECASE,
 )
 _GWIAZDKI = "***"
