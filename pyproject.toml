@@ -3,12 +3,15 @@ name = "harness-cockpit"
 version = "0.1.0"
 description = "Wizualny kokpit do skladania i obserwowania workflow agentowych"
 requires-python = ">=3.11"
+# fastapi i pydantic: gorna granica (HAR-155, HAR-69) - sama dolna granica wpuszcza wersje ze zmienionym
+# schematem OpenAPI; fastapi jest w serii 0.x, wiec nastepna glowna to 1.0. Podniesienie granicy to
+# swiadoma zmiana z regeneracja web/openapi.json.
 dependencies = [
-  "fastapi>=0.142",
+  "fastapi>=0.142,<1",
   "uvicorn[standard]>=0.54",
   "sqlalchemy[asyncio]>=2.1",
   "alembic>=1.20",
-  "pydantic>=2.13",
+  "pydantic>=2.13,<3",
   "pydantic-settings>=2.6",
   "asyncpg>=0.31",
   "sse-starlette>=3.5",

@@ -1,0 +1,16 @@
+# HAR-154: tablica kolektora (src/cockpit/web/index.html) nie cofa porazki fazy.
+# Mutmut nie mutuje JavaScriptu w HTML, wiec ta tabela jest jedyna egzekucja straznikow.
+
+# Straznik w phase_start: po porazce kolejny start fazy nie zmienia jej z powrotem na "running".
+[[mutant]]
+plik = "src/cockpit/web/index.html"
+szukaj = "if (r.failed) return;   // porazka jest ostateczna: kolejne zdarzenia fazy jej nie cofaja"
+zamien = "if (false) return;   // porazka jest ostateczna: kolejne zdarzenia fazy jej nie cofaja"
+test = "tests/e2e/test_tablica_porazka_fazy.py::test_faza_po_porazce_nie_wraca_do_w_toku_gdy_przychodzi_jej_ponowny_start"
+
+# Straznik w phase_end: po porazce zdarzenie zakonczenia nie robi z fazy "done".
+[[mutant]]
+plik = "src/cockpit/web/index.html"
+szukaj = "if (r.failed) return;   // faza po porazce nigdy nie robi sie zielona"
+zamien = "if (false) return;   // faza po porazce nigdy nie robi sie zielona"
+test = "tests/e2e/test_tablica_porazka_fazy.py::test_faza_po_porazce_nie_robi_sie_zielona_gdy_przychodzi_jej_zakonczenie"
