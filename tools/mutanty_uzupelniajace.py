@@ -60,7 +60,8 @@ import mutanty_zmian
 
 KSZTALTY = ("except", "instrukcja", "kolejnosc", "kolekcja", "wywolanie", "regex")
 WYWOLANIA_USUWALNE = ("sorted", "strip")
-LIMIT_DOMYSLNY = 300.0
+# 2026-11-23: 42 pliki testow app.py (HAR-181) to 494 s na wolnym 8-rdzeniowym serwerze; 300 s padalo zawsze
+LIMIT_DOMYSLNY = 1200.0
 RAPORT_JUNIT = ".mutanty-uzupelniajace-junit.xml"
 KATALOG_TABEL = mutanty_reczne.KATALOG_TABEL
 DLUGOSC_OPISU = 60
@@ -667,11 +668,12 @@ def _wymagaj_wykonanych(raport: Path, testy: list[str]) -> None:
         raise BladNarzedzia(f"{nazwa}: zaden test sie nie wykonal wedlug raportu JUnit - brak dowodu")
 
 
-def _uruchom_pytest(kopia: Path, testy: list[str], limit: float) -> int:
+def _uruchom_pytest(kopia: Path, testy: list[str], limit: float, do_pierwszego_bledu: bool = False) -> int:
+    """`do_pierwszego_bledu`: `-x` dla mutanta - jeden oblany test wystarcza, zeby byl zabity."""
     raport = kopia / RAPORT_JUNIT
     polecenie = [
         sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=",
-        f"--junitxml={raport}", *testy,
+        *(["-x"] if do_pierwszego_bledu else []), f"--junitxml={raport}", *testy,
     ]  # fmt: skip
     stare = os.environ.get("PYTHONPATH")
     sciezki = os.pathsep.join([str(kopia / "src"), *([stare] if stare else [])])
@@ -720,7 +722,7 @@ def _sprawdz_testy_bez_mutacji(korzen: Path, plik: str, bazowe: str, testy: list
 def _mutant_zabity(korzen: Path, mutant: Mutant, testy: list[str], limit: float) -> bool:
     with _kopia_repo(korzen) as kopia:
         _zapisz_w_kopii(kopia, mutant.plik, mutant.zrodlo)
-        return mutanty_reczne.ocen_kod_testu(_uruchom_pytest(kopia, testy, limit))
+        return mutanty_reczne.ocen_kod_testu(_uruchom_pytest(kopia, testy, limit, do_pierwszego_bledu=True))
 
 
 # --- wybor testow, tabele, diff -----------------------------------------------------------------
