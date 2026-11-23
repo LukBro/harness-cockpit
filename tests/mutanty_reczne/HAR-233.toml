@@ -291,8 +291,8 @@ test = "tests/test_workflow_mutacje.py::test_krok_zapadki_niczego_nie_zapisuje_w
 # Powrot zmiennej COMMIT_SHA do kroku zapadki.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "      - name: pelny przebieg mutacyjny i zapadka\n        run: |"
-zamien = "      - name: pelny przebieg mutacyjny i zapadka\n        env:\n          COMMIT_SHA: ${{ github.sha }}\n        run: |"
+szukaj = "      - name: pelny przebieg mutacyjny i zapadka\n        env:\n"
+zamien = "      - name: pelny przebieg mutacyjny i zapadka\n        env:\n          COMMIT_SHA: ${{ github.sha }}\n"
 test = "tests/test_workflow_mutacje.py::test_krok_zapadki_niczego_nie_zapisuje_w_repozytorium_wiec_nie_dostaje_commitu_scalenia"
 
 # Tresc komunikatu bledu zapadki.
@@ -305,16 +305,16 @@ test = "tests/test_workflow_mutacje.py::test_brak_artefaktu_poprzedniego_przebie
 # Tresc komunikatu braku mutmuta.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "Zapadka nie porownala."
-zamien = "Zapadka porownala."
-test = "tests/test_workflow_mutacje.py::test_brak_narzedzia_mutacyjnego_oblewa_krok_zapadki_pelnym_komunikatem"
+szukaj = 'nic nie zmierzono."; exit 1; }'
+zamien = 'nic."; exit 1; }'
+test = "tests/test_workflow_mutacje.py::test_shard_bez_mutmuta_na_runnerze_oblewa_krok_zanim_cokolwiek_uruchomi"
 
 # Tresc komunikatu bledu startu mutmuta.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "statystyk), sprawdz log mutmut run."
-zamien = "statystyk), sprawdz log."
-test = "tests/test_workflow_mutacje.py::test_blad_startu_testow_mutmuta_oblewa_krok_zapadki_pelnym_komunikatem"
+szukaj = "zakonczyl sie bledem - sprawdz log mutmut run."
+zamien = "zakonczyl sie bledem - sprawdz log."
+test = "tests/test_workflow_mutacje.py::test_blad_mutmut_run_shardu_oblewa_krok_i_nie_zbiera_wynikow"
 
 # Tresc komunikatu zera zabitych.
 [[mutant]]

@@ -8,6 +8,11 @@ name: mutation
 # - `mutation-main` (push na main, niewymagany): pelny przebieg mutmuta, raport i zapadka
 #   zapadka. Spadek score nie oblewa joba; przebieg, ktory niczego nie zmierzyl
 #   (testy nie wystartowaly, zero zabitych), oblewa go.
+# - `mutation-main-shard` (push na main): pelny przebieg w rownoleglych shardach po plikach zrodel
+#   (tools/shardy_mutantow.py). Jeden job przekroczyl 240 min przy 14799/15011 mutantow
+#   (run 45061686542); shard mutuje swoje pliki ze statystykami z `mutation-statystyki`, a
+#   `mutation-main` skleja wyniki shardow w raport i liczy zapadke. Czerwony shard pomija
+#   `mutation-main`, wiec przebieg nie jest zielony i nie staje sie odniesieniem zapadki.
 # - Odniesieniem zapadki (HAR-233) jest summary ostatniego zielonego przebiegu mutation-main
 #   (artefakt `mutation-report`), nie plik w repozytorium. Brak tego artefaktu to czerwony
 #   krok, nie cicha zapadka na starym wyniku; CI niczego nie commituje ani nie pushuje.
@@ -20,8 +25,10 @@ name: mutation
 # a mutanty zmienionych funkcji biegna z dowodami zamiast "clean tests" mutmuta.
 #
 # Cache mutmuta: jedyny stan mutmuta lezy w katalogu mutants/ (kopie zrodel, pliki .meta
-# z wynikami i hashami funkcji, mutmut-stats.json). Zapisuje go tylko mutation-main;
-# PR czyta (actions/cache/restore). Klucz w obu jobach:
+# z wynikami i hashami funkcji, mutmut-stats.json). Zapisywal go mutation-main; shardy go nie
+# zapisuja, bo `mutmut run <wzorce>` sprawdza nazwane mutanty od nowa (mutmut 3.8.0
+# __main__.py: `if not mutant_names and result is not None: continue`), wiec cache nic im nie
+# daje. PR czyta (actions/cache/restore), zwykle bez trafienia. Klucz:
 # mutmut-v1-<hash tests/** i pyproject.toml>-<hash src/**>.
 # Dowod w kodzie mutmut 3.8.0 (mutmut/__main__.py):
 # - zrodlo nowsze od kopii w mutants/ (swiezy checkout ma mtime "teraz", tar z cache
@@ -55,8 +62,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Na PR dla `mutation`, na push dla `mutation-main-shard`: te same statystyki calego zestawu.
   mutation-statystyki:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -152,7 +159,7 @@ jobs:
             exit 1
           fi
 
-      # Tylko odczyt: cache zapisuje mutation-main. Restore po checkoucie, wiec zrodla maja
+      # Tylko odczyt: cache zapisywal mutation-main (przed shardami). Restore po checkoucie, wiec zrodla maja
       # nowszy mtime niz kopie w mutants/ (mutmut generuje je od nowa, hashe decyduja o wynikach).
       # Bez golego prefiksu `mutmut-v1-`: kopia testow w mutants/ tylko przybywa, wiec cache
       # z innymi testami zachowalby test usuniety w PR i falszywie zabijal mutanty. Przy
@@ -509,19 +516,69 @@ jobs:
             mutants/mutanty-uzupelniajace.txt
             mutants/mutanty-uzupelniajace.err
 
+  mutation-main-shard:
+    if: github.event_name == 'push'
+    needs: mutation-statystyki
+    runs-on: ubuntu-24.04
+    # Pelny przebieg na jednym jobie: 240 min na 98,6% mutantow; shard ma ok. 1/8 linii zrodel.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # Liczba shardow = LICZBA_SHARDOW_MAIN w `mutation-main` (test pilnuje zgodnosci).
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "dowody-*"
+          merge-multiple: true
+          path: dowody
+
+      - name: mutanty shardu pelnego przebiegu
+        env:
+          SHARD_PELNY: ${{ matrix.shard }}
+          LICZBA_SHARDOW_PELNYCH: ${{ strategy.job-total }}
+        run: |
+          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono."; exit 1; }
+          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow dowody
+          python3 tools/shardy_mutantow.py wzorce --indeks "$SHARD_PELNY" --liczba "$LICZBA_SHARDOW_PELNYCH" > wzorce.txt
+          # Tablica, nie $(cat): gwiazdki we wzorcach nie moga rozwinac sie w nazwy plikow.
+          wzorce=()
+          while IFS= read -r wzorzec; do wzorce+=("$wzorzec"); done < wzorce.txt
+          if ! python3 tools/statystyki_mutmuta.py mutmut-run --katalog-dowodow dowody "${wzorce[@]}"; then
+            echo "::error::mutmut run shardu $SHARD_PELNY zakonczyl sie bledem - sprawdz log mutmut run."
+            exit 1
+          fi
+          mutmut results --all true > wyniki-mutmuta.txt
+          mkdir -p wyniki
+          python3 tools/shardy_mutantow.py wyniki --indeks "$SHARD_PELNY" --liczba "$LICZBA_SHARDOW_PELNYCH" --raport wyniki-mutmuta.txt > "wyniki/shard-$SHARD_PELNY.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wyniki-mutacji-${{ matrix.shard }}
+          path: wyniki
+
   mutation-main:
     if: github.event_name == 'push'
+    needs: [mutation-main-shard]
     runs-on: ubuntu-24.04
-    # Udane przebiegi z cache trwaly 104-119 min; przebieg bez cache (zmiana testow zmienia
-    # klucz) przekroczyl 120 min i zostal anulowany, a anulowany nie zapisuje cache - kazdy
-    # nastepny zaczynalby od zera i tez by sie nie zmiescil.
-    timeout-minutes: 240
+    # Sklejenie wynikow shardow i zapadka: minuty, bez mutmuta.
+    timeout-minutes: 30
     # Tylko odczyt kodu i przebiegow: `gh run list/download` potrzebuje actions: read.
     permissions:
       contents: read
       actions: read
-    # Dwa pelne przebiegi naraz tylko walcza o CPU i cache; nie przerywamy trwajacego,
-    # bo jego wynik jest odniesieniem dla nastepnego przebiegu.
+    # Dwa przebiegi naraz moglyby wziac za odniesienie wynik, ktory jeszcze sie liczy;
+    # nie przerywamy trwajacego, bo jego wynik jest odniesieniem dla nastepnego przebiegu.
     concurrency:
       group: mutation-main
       cancel-in-progress: false
@@ -533,19 +590,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-          cache: pip
 
-      - run: pip install -e ".[dev]"
-
-      # Odczyt i zapis: jedyny job, ktory zapisuje cache mutmuta. Przywraca tylko cache z tymi
-      # samymi testami i konfiguracja (jeden restore-key z hashem tests/** i pyproject.toml):
-      # zmiana testow nie kasuje werdyktow mutmuta, wiec stary cache zafalszowalby pelny przebieg.
-      - uses: actions/cache@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: mutants
-          key: mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-${{ hashFiles('src/**') }}
-          restore-keys: |
-            mutmut-v1-${{ hashFiles('tests/**', 'pyproject.toml') }}-
+          pattern: wyniki-mutacji-*
+          merge-multiple: true
+          path: wyniki
 
       # HAR-233: odniesienie zapadki to artefakt ostatniego zielonego przebiegu. Biezacy run
       # wylaczamy po identyfikatorze (pelna linia, `grep -x`): nie jest jeszcze zielony, ale
@@ -585,16 +635,16 @@ jobs:
           echo "poprzedni zielony przebieg: $poprzedni"
 
       - name: pelny przebieg mutacyjny i zapadka
+        env:
+          # Liczba elementow macierzy `mutation-main-shard` (test pilnuje zgodnosci).
+          LICZBA_SHARDOW_MAIN: "8"
         run: |
-          # Brak mutmuta to brak pomiaru, wiec czerwony krok, nie pominiecie.
-          command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono. Zapadka nie porownala."; exit 1; }
-          # mutmut exits non-zero when tests fail to start ("failed to collect stats");
-          # a stale results cache must not hide that, so the exit code is the gate.
-          if ! mutmut run; then
-            echo "::error::mutmut run zakonczyl sie bledem - testy nie wystartowaly w mutants/ (blad zbierania statystyk), sprawdz log mutmut run."
+          # Wyniki wszystkich shardow, kazdy mutant raz; brak shardu albo powtorzenie to brak dowodu.
+          mkdir -p mutants
+          if ! python3 tools/shardy_mutantow.py scal --liczba "$LICZBA_SHARDOW_MAIN" --katalog wyniki > mutants/mutmut-results.txt; then
+            echo "::error::wyniki shardow pelnego przebiegu sa niepelne albo sprzeczne - nic nie zmierzono."
             exit 1
           fi
-          mutmut results --all true > mutants/mutmut-results.txt
           python3 cicd/mutation_report.py --report mutants/mutmut-results.txt --format mutmut > mutation-summary.json
           # Zero killed out of many mutants means the tests never ran (e.g. import error
           # inside mutants/), not a weak suite - such a run must not become the next reference.
