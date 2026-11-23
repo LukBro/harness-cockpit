@@ -1859,6 +1859,15 @@ GIT_TWORZY_COMMIT = [
     pytest.param('git "merge" x', "merge", id="merge-podpolecenie-w-cudzyslowach"),
     pytest.param("git 'am' p.patch", "am", id="am-podpolecenie-w-apostrofach"),
     pytest.param('git "stash"', "stash", id="stash-podpolecenie-w-cudzyslowach"),
+    # HAR-239: `pull` to fetch + merge, `commit-tree` zapisuje obiekt commita bez `git commit`
+    pytest.param("git pull", "pull", id="pull"),
+    pytest.param("git pull origin main", "pull", id="pull-z-argumentami"),
+    pytest.param("git commit-tree HEAD^{tree} -m x", "commit-tree", id="commit-tree"),
+    pytest.param("git -C katalog pull", "pull", id="pull-po-opcji-C"),
+    pytest.param("git --no-pager commit-tree abc", "commit-tree", id="commit-tree-po-opcji"),
+    pytest.param("ls && git pull", "pull", id="pull-za-separatorem"),
+    pytest.param("git PULL", "pull", id="pull-wielkimi-literami"),
+    pytest.param('git "commit-tree" abc', "commit-tree", id="commit-tree-w-cudzyslowach"),
 ]
 
 
@@ -1942,6 +1951,141 @@ def test_polecenia_niebedace_commitem_ani_aliasem_nie_sa_odmawiane_przez_nowe_re
 @pytest.mark.parametrize("rola", ROLE_BEZ_ZAPISU, ids=_rola)
 @pytest.mark.parametrize("komenda", ["git status", "git diff", "git log", "git show HEAD"])
 def test_odczyt_gita_w_roli_bez_zapisu_nie_jest_odmawiany_przez_nowe_reguly_gita(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+# --- HAR-239: update-ref i wymuszone operacje na gałęziach przepisują historię bez `git commit` ----
+# Powód jak przy `git reset --hard` (niezmiennik no_git_write); element `git branch <opcja>` to opcja
+# tak, jak stoi w komendzie (po zdjęciu cudzysłowów).
+
+GIT_PRZEPISUJE_REFERENCJE = [
+    pytest.param("git update-ref refs/heads/x HEAD~1", "git update-ref", id="update-ref"),
+    pytest.param("git update-ref -d refs/heads/x", "git update-ref", id="update-ref-usuwanie"),
+    pytest.param("git -C katalog update-ref HEAD abc", "git update-ref", id="update-ref-po-opcji-C"),
+    pytest.param("ls && git update-ref HEAD abc", "git update-ref", id="update-ref-za-separatorem"),
+    pytest.param("git UPDATE-REF HEAD abc", "git update-ref", id="update-ref-wielkimi-literami"),
+    pytest.param("git branch -f x HEAD~1", "git branch -f", id="branch-f"),
+    pytest.param("git branch --force x HEAD~1", "git branch --force", id="branch-force"),
+    pytest.param("git branch -M stara nowa", "git branch -M", id="branch-M"),
+    pytest.param("git branch -D x", "git branch -D", id="branch-D"),
+    pytest.param("git branch x -f", "git branch -f", id="branch-f-za-nazwa-galezi"),
+    pytest.param("git branch x HEAD~1 --force", "git branch --force", id="branch-force-na-koncu"),
+    pytest.param("git branch -d -f x", "git branch -f", id="branch-d-razem-z-f"),
+    pytest.param("git branch --delete --force x", "git branch --force", id="branch-delete-force"),
+    pytest.param("git branch -fd x", "git branch -fd", id="branch-f-w-klastrze-opcji"),
+    pytest.param("git branch -vD x", "git branch -vD", id="branch-D-w-klastrze-opcji"),
+    pytest.param("git branch -aM x y", "git branch -aM", id="branch-M-w-klastrze-opcji"),
+    pytest.param("git branch '-D' x", "git branch -D", id="branch-D-w-apostrofach"),
+    pytest.param('git "branch" --force x', "git branch --force", id="branch-podpolecenie-w-cudzyslowach"),
+    pytest.param("git -C katalog branch -D x", "git branch -D", id="branch-D-po-opcji-C"),
+    pytest.param("ls && git branch -f x", "git branch -f", id="branch-f-za-separatorem"),
+    pytest.param("/usr/bin/git branch -D x", "git branch -D", id="branch-D-pelna-sciezka"),
+    # skrot `--force` rozpoznawany przez gita zaczyna sie od `--forc`; `-C` to kopia z nadpisaniem celu
+    pytest.param("git branch --forc main HEAD~5", "git branch --forc", id="branch-forc-skrot-force"),
+    pytest.param("git branch --forc=x y", "git branch --forc=x", id="branch-forc-z-rownasie"),
+    pytest.param("git branch --force=x y", "git branch --force=x", id="branch-force-z-rownasie"),
+    pytest.param("git branch -C stara main", "git branch -C", id="branch-C"),
+    pytest.param("git branch -vC x y", "git branch -vC", id="branch-C-w-klastrze-opcji"),
+]
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize("komenda,git", GIT_PRZEPISUJE_REFERENCJE)
+def test_git_przepisujacy_referencje_jest_odmowiony_w_kazdej_roli_z_dokladnym_powodem(
+    rola, komenda, git, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_GITA.format(git=git)
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda,git",
+    [
+        pytest.param("git --config-env k=v update-ref HEAD abc", "git update-ref", id="update-ref"),
+        pytest.param("git --config-env k=v branch -f x", "git branch -f", id="branch-f"),
+        pytest.param("git --config-env k=v branch --force x", "git branch --force", id="branch-force"),
+        pytest.param("git --config-env k=v branch -M a b", "git branch -M", id="branch-M"),
+        pytest.param("git --config-env k=v branch -D x", "git branch -D", id="branch-D"),
+        pytest.param("git --config-env=k=v branch -D x", "git branch -D", id="branch-D-config-env-z-rownasie"),
+    ],
+)
+def test_przepisanie_referencji_po_opcji_config_env_jest_odmowione_w_kazdej_roli(
+    rola, komenda, git, worktree
+):
+    powod = decyzja(_bash(komenda, cwd=worktree), rola, worktree)
+
+    assert powod == POWOD_GITA.format(git=git)
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git branch x", id="nowa-galaz"),
+        pytest.param("git branch nowa HEAD~1", id="nowa-galaz-z-punktu-startu"),
+        pytest.param("git branch --list", id="lista-galezi"),
+        pytest.param("git branch", id="bez-argumentow"),
+        pytest.param("git branch -a", id="wszystkie-galezie"),
+        pytest.param("git branch -avv", id="klaster-opcji-odczytu"),
+        pytest.param("git branch --show-current", id="biezaca-galaz"),
+        pytest.param("git branch --sort=refname", id="dluga-opcja-z-litera-f"),
+        pytest.param("git branch --format=x", id="dluga-opcja-z-litera-f-na-poczatku"),
+        pytest.param("git branch fix-f-force-D", id="nazwa-galezi-z-literami-opcji"),
+        pytest.param("git branch -d zmergowana", id="usuniecie-zmergowanej-galezi-malym-d"),
+        pytest.param("git branch -X x", id="opcja-X-nie-jest-wymuszeniem"),
+        pytest.param("git -C -D branch x", id="D-jako-wartosc-opcji-C-przed-podpoleceniem"),
+        pytest.param("git fetch", id="fetch"),
+        pytest.param("git fetch origin main", id="fetch-z-argumentami"),
+        # git nie wykona tych skrotow jako `--force` (niejednoznaczne z `--format` albo nie skrot)
+        pytest.param("git branch --f x", id="skrot-f-za-krotki"),
+        pytest.param("git branch --fo x", id="skrot-fo-za-krotki"),
+        pytest.param("git branch --for x", id="skrot-for-za-krotki"),
+        pytest.param("git branch --forcx x", id="forcx-nie-jest-skrotem-force"),
+        pytest.param("git branch --forcee x", id="forcee-dluzsze-niz-force"),
+        pytest.param("git branch -c a b", id="kopia-bez-nadpisania-malym-c"),
+        pytest.param("git --config-env k=v branch --list", id="config-env-lista-galezi"),
+        pytest.param("git --config-env k=v branch x", id="config-env-nowa-galaz"),
+        pytest.param("git --config-env k=v fetch", id="config-env-fetch"),
+        pytest.param("git log --grep=pull", id="pull-jako-argument-logu"),
+        pytest.param("git log update-ref", id="update-ref-jako-argument-logu"),
+        pytest.param("grep -rn commit-tree src", id="commit-tree-jako-argument-grepa"),
+    ],
+)
+def test_galaz_bez_wymuszenia_i_fetch_nie_sa_odmawiane_przez_reguly_przepisywania_referencji(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", WSZYSTKIE_ROLE, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git diff -M", id="diff-M-wykrywanie-przenosin"),
+        pytest.param("git diff -D", id="diff-D-bez-tresci-usunietych"),
+        pytest.param("git diff -M -D HEAD~1", id="diff-M-i-D-razem"),
+    ],
+)
+def test_opcje_diffu_o_nazwach_jak_wymuszenia_galezi_nie_sa_odmawiane_w_zadnej_roli(
+    rola, komenda, worktree
+):
+    assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
+
+
+@pytest.mark.parametrize("rola", ROLE_Z_ZAPISEM, ids=_rola)
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("git fetch -f", id="fetch-f"),
+        pytest.param("git fetch -f origin main", id="fetch-f-z-argumentami"),
+        pytest.param("git fetch --force", id="fetch-force"),
+    ],
+)
+def test_fetch_z_opcja_wymuszenia_nie_jest_odmawiany_bo_nie_dotyczy_galezi(
     rola, komenda, worktree
 ):
     assert decyzja(_bash(komenda, cwd=worktree), rola, worktree) is None
@@ -2866,6 +3010,8 @@ PODPOLECENIA_TWORZACE_COMMIT = [
     "rebase",
     "am",
     "stash",
+    "pull",
+    "commit-tree",
 ]
 
 
