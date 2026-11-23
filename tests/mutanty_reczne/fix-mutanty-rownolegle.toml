@@ -1,0 +1,121 @@
+# fix-mutanty-rownolegle: wiersze recznych i mutanty uzupelniajace biegna rownolegle (job mutation 13-38 min, HAR-181 3 h 23 min)
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "    if procesy <= 1:"
+zamien = "    if True:"
+test = "tests/test_mutanty_reczne.py::test_rownolegle_uruchamia_wiersze_naraz_gdy_jest_wiecej_niz_jeden_proces"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "ThreadPoolExecutor(max_workers=procesy)"
+zamien = "ThreadPoolExecutor(max_workers=1)"
+test = "tests/test_mutanty_reczne.py::test_rownolegle_uruchamia_wiersze_naraz_gdy_jest_wiecej_niz_jeden_proces"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "    if procesy <= 1:"
+zamien = "    if procesy <= 0:"
+test = "tests/test_mutanty_reczne.py::test_rownolegle_z_jednym_procesem_wykonuje_po_kolei_w_watku_wolajacego"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return [z.result() for z in zadania]"
+zamien = "return [z.result() for z in zadania[::-1]]"
+test = "tests/test_mutanty_reczne.py::test_rownolegle_zwraca_wyniki_w_kolejnosci_wierszy_a_nie_konczenia"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return [z.result() for z in zadania]"
+zamien = "return [z.result() for z in zadania[::-1]][::-1]"
+test = "tests/test_mutanty_reczne.py::test_rownolegle_przekazuje_blad_pierwszego_wiersza_wedlug_kolejnosci"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wynik = {m for m in mutanty if wymaga_frontu(m)}"
+zamien = "wynik = set()"
+test = "tests/test_mutanty_reczne.py::test_wiersz_frontu_jest_sekwencyjny_takze_bez_bazy"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if reszta and os.environ.get(ZMIENNA_URL_BAZY):"
+zamien = "if reszta:"
+test = "tests/test_mutanty_reczne.py::test_wiersz_frontu_jest_sekwencyjny_takze_bez_bazy"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wynik |= {m for m in reszta if _istnieje_node_id(m.test, baza)}"
+zamien = "wynik |= set()"
+test = "tests/test_mutanty_reczne.py::test_wiersz_testu_bazy_jest_sekwencyjny_gdy_baza_jest_ustawiona"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'limit, znacznik="baza")'
+zamien = "limit, znacznik=None)"
+test = "tests/test_mutanty_reczne.py::test_wiersz_testu_bazy_jest_sekwencyjny_gdy_baza_jest_ustawiona"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '*(["-m", znacznik] if znacznik else []), *pliki,'
+zamien = "*pliki,"
+test = "tests/test_mutanty_reczne.py::test_wiersz_testu_bazy_jest_sekwencyjny_gdy_baza_jest_ustawiona"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if znacznik and kod == KOD_PYTESTA_NIC_NIE_ZEBRANO:"
+zamien = "if kod == KOD_PYTESTA_NIC_NIE_ZEBRANO:"
+test = "tests/test_mutanty_reczne.py::test_kolekcja_bez_znacznika_z_kodem_5_dalej_jest_bledem_narzedzia"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if znacznik and kod == KOD_PYTESTA_NIC_NIE_ZEBRANO:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_bez_testow_bazy_kolekcja_ze_znacznikiem_daje_pusty_zbior_a_nie_blad"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        if m in po_kolei:"
+zamien = "        if False:"
+test = "tests/test_mutanty_reczne.py::test_kazdy_wiersz_jest_oceniony_raz_a_sekwencyjny_dopiero_gdy_nic_innego_nie_biegnie"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "naraz = [m for m in mutanty if m not in po_kolei]"
+zamien = "naraz = list(mutanty)"
+test = "tests/test_mutanty_reczne.py::test_kazdy_wiersz_jest_oceniony_raz_a_sekwencyjny_dopiero_gdy_nic_innego_nie_biegnie"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return [m for m in mutanty if not zabite[m]]"
+zamien = "return [m for m in mutanty if zabite[m]]"
+test = "tests/test_mutanty_reczne.py::test_kazdy_wiersz_jest_oceniony_raz_a_sekwencyjny_dopiero_gdy_nic_innego_nie_biegnie"
+
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "args.limit_budowy, os.cpu_count() or 1)"
+zamien = "args.limit_budowy, 1)"
+test = "tests/test_mutanty_reczne.py::test_main_ocenia_wiersze_na_wszystkich_rdzeniach"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "naraz = 1 if os.environ.get(mutanty_reczne.ZMIENNA_URL_BAZY) else procesy"
+zamien = "naraz = procesy"
+test = "tests/test_mutanty_uzupelniajace.py::test_z_ustawiona_baza_mutanty_biegna_po_kolei"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "naraz = 1 if os.environ.get(mutanty_reczne.ZMIENNA_URL_BAZY) else procesy"
+zamien = "naraz = 1"
+test = "tests/test_mutanty_uzupelniajace.py::test_bez_bazy_sprawdzenie_bazowe_i_mutanty_biegna_na_podanej_liczbie_procesow"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "przezyly = [m for m, zabity in zip(mutanty, zabite) if not zabity]"
+zamien = "przezyly = [m for m, zabity in zip(mutanty, zabite) if zabity]"
+test = "tests/test_mutanty_uzupelniajace.py::test_przezyly_mutant_z_rownoleglego_przebiegu_jest_zgloszony"
+
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = "args.limit, os.cpu_count() or 1)"
+zamien = "args.limit, 1)"
+test = "tests/test_mutanty_uzupelniajace.py::test_main_uruchamia_przebieg_na_wszystkich_rdzeniach"

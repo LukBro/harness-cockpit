@@ -572,15 +572,15 @@ test = "tests/test_mutanty_uzupelniajace.py::test_test_czerwony_bez_mutacji_to_k
 # Kontrola bez mutacji jest wykonywana.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "_sprawdz_testy_bez_mutacji(korzen, mutant.plik, bazowe[mutant.plik], testy, limit)"
-zamien = "pass"
+szukaj = '_sprawdz_testy_bez_mutacji(korzen, plik, bazowe[plik], testy_pliku[plik], limit)'
+zamien = 'None'
 test = "tests/test_mutanty_uzupelniajace.py::test_test_czerwony_bez_mutacji_to_kod_2_a_nie_zabity_mutant"
 
 # Kontrola bez mutacji idzie na `ast.unparse` pliku (tym samym tekstem co mutanty), nie na oryginale.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "bazowe[mutant.plik], testy, limit)"
-zamien = "zrodla[mutant.plik], testy, limit)"
+szukaj = 'bazowe[plik], testy_pliku[plik], limit)'
+zamien = 'zrodla[plik], testy_pliku[plik], limit)'
 test = "tests/test_mutanty_uzupelniajace.py::test_test_zalezny_od_tekstu_modulu_jest_czerwony_bez_mutacji_a_nie_zabija_kazdego_mutanta[test_zalezny_od_komentarza]"
 
 # Komunikat kontroli wskazuje sciezke czerwonego testu.
@@ -651,15 +651,15 @@ test = "tests/test_mutanty_uzupelniajace.py::test_ten_sam_element_z_testem_ochro
 # Zabity mutant nie jest zglaszany; ocena nie jest odwrocona.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "if not _mutant_zabity(korzen, mutant, testy, limit):"
-zamien = "if _mutant_zabity(korzen, mutant, testy, limit):"
+szukaj = 'przezyly = [m for m, zabity in zip(mutanty, zabite) if not zabity]'
+zamien = 'przezyly = [m for m, zabity in zip(mutanty, zabite) if zabity]'
 test = "tests/test_mutanty_uzupelniajace.py::test_element_bez_testu_ochronnego_daje_kod_1_i_miejsce_w_pliku[strip_w_funkcji]"
 
 # Przezywajacy mutant trafia na liste zgloszen.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "przezyly.append(mutant)"
-zamien = "pass"
+szukaj = 'przezyly = [m for m, zabity in zip(mutanty, zabite) if not zabity]'
+zamien = 'przezyly = []'
 test = "tests/test_mutanty_uzupelniajace.py::test_element_bez_testu_ochronnego_daje_kod_1_i_miejsce_w_pliku[strip_w_funkcji]"
 
 # Wiersz wyniku: `plik:linia: ksztalt: opis`.
@@ -1147,8 +1147,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_pusty_diff_daje_kod_0_i_brak_z
 # Baza porownania pochodzi z argumentu `--baza`.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "_przebieg(korzen, args.baza, args.limit)"
-zamien = '_przebieg(korzen, "origin/main", args.limit)'
+szukaj = '_przebieg(korzen, args.baza, args.limit, os.cpu_count() or 1)'
+zamien = '_przebieg(korzen, "origin/main", args.limit, os.cpu_count() or 1)'
 test = "tests/test_mutanty_uzupelniajace.py::test_pusty_diff_daje_kod_0_i_brak_zmienionych_funkcji"
 
 # Korzen pochodzi z argumentu `--korzen`.
@@ -1305,8 +1305,8 @@ test = "tests/test_mutanty_uzupelniajace.py::test_bez_flag_baza_to_origin_main_a
 # Limit z flagi trafia do przebiegu (nie stala domyslna).
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = "args.baza, args.limit)"
-zamien = "args.baza, LIMIT_DOMYSLNY)"
+szukaj = 'args.baza, args.limit, os.cpu_count()'
+zamien = 'args.baza, LIMIT_DOMYSLNY, os.cpu_count()'
 test = "tests/test_mutanty_uzupelniajace.py::test_flagi_baza_i_limit_trafiaja_do_przebiegu"
 
 # --- main: blad narzedzia mutantow zmian to tez kod 2 ------------------------------------------------
@@ -3301,36 +3301,36 @@ test = "tests/test_mutanty_uzupelniajace.py::test_zmieniony_plik_zrodlowy_nie_w_
 # Kontrola bez mutacji jest raz na plik (nie dla kazdego mutanta).
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'if mutant.plik not in sprawdzone:'
-zamien = 'if True:'
+szukaj = 'sorted(testy_pliku), naraz,'
+zamien = '[m.plik for m in mutanty], naraz,'
 test = "tests/test_mutanty_uzupelniajace.py::test_kopie_repozytorium_sa_sprzatane_po_przebiegu"
 
 # Plik trafia do `sprawdzone` po kontroli.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'sprawdzone.add(mutant.plik)'
-zamien = 'pass'
+szukaj = 'sorted(testy_pliku), naraz,'
+zamien = 'sorted(testy_pliku) * 2, naraz,'
 test = "tests/test_mutanty_uzupelniajace.py::test_kopie_repozytorium_sa_sprzatane_po_przebiegu"
 
 # Kontrola bez mutacji jest raz na kazdy plik (nie raz na przebieg).
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'if mutant.plik not in sprawdzone:'
-zamien = 'if not sprawdzone:'
+szukaj = 'sorted(testy_pliku), naraz,'
+zamien = 'sorted(testy_pliku)[:1], naraz,'
 test = "tests/test_mutanty_uzupelniajace.py::test_kontrola_bez_mutacji_jest_jedna_na_plik_wiec_dwa_pliki_z_dwoma_mutantami_to_szesc_kopii"
 
 # Limit dociera do kontroli bez mutacji.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'bazowe[mutant.plik], testy, limit)'
-zamien = 'bazowe[mutant.plik], testy, LIMIT_DOMYSLNY)'
+szukaj = 'bazowe[plik], testy_pliku[plik], limit)'
+zamien = 'bazowe[plik], testy_pliku[plik], LIMIT_DOMYSLNY)'
 test = "tests/test_mutanty_uzupelniajace.py::test_limit_z_wiersza_polecen_dociera_do_kontroli_bez_mutacji_i_do_kazdego_mutanta"
 
 # Limit dociera do kazdego mutanta.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"
-szukaj = 'if not _mutant_zabity(korzen, mutant, testy, limit):'
-zamien = 'if not _mutant_zabity(korzen, mutant, testy, LIMIT_DOMYSLNY):'
+szukaj = '_mutant_zabity(korzen, m, testy_pliku[m.plik], limit)'
+zamien = '_mutant_zabity(korzen, m, testy_pliku[m.plik], LIMIT_DOMYSLNY)'
 test = "tests/test_mutanty_uzupelniajace.py::test_limit_z_wiersza_polecen_dociera_do_kontroli_bez_mutacji_i_do_kazdego_mutanta"
 
 # Limit dociera do pytesta kontroli.

@@ -541,9 +541,9 @@ test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_li
 [[mutant]]
 plik = "tools/mutanty_reczne.py"
 szukaj = '''            return 0
-        przezywajace'''
+        zywe'''
 zamien = '''            pass
-        przezywajace'''
+        zywe'''
 test = "tests/test_mutanty_reczne.py::test_czy_front_wypisuje_dokladnie_jedna_linie_front_1_albo_front_0_i_konczy_sie_kodem_0"
 
 # front=1, gdy KTORYKOLWIEK mutant wymaga frontu (any, nie all).

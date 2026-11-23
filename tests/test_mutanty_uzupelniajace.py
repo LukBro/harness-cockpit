@@ -1440,7 +1440,7 @@ def test_limit_zero_z_wiersza_polecen_konczy_program_kodem_2_argparse():
 def _zlap_przebieg(monkeypatch) -> list[tuple[Path, str, float]]:
     zlapane: list[tuple[Path, str, float]] = []
 
-    def falszywy(korzen, baza, limit):
+    def falszywy(korzen, baza, limit, procesy):
         zlapane.append((korzen, baza, limit))
         return 0, ["zbadano 1"]
 
@@ -3779,3 +3779,66 @@ def test_MemoryError_parsera_testu_to_blad_narzedzia_z_nazwa_pliku(monkeypatch):
             wynik = blad
     assert isinstance(wynik, mutanty_uzupelniajace.BladNarzedzia), repr(wynik)
     assert str(wynik).startswith("tests/t.py: nie da sie sparsowac testu")
+
+
+# --- przebiegi rownolegle (fix-mutanty-rownolegle) -------------------------------------------------
+# HAR-181: krok liczyl mutanty po kolei i wisial 3 h 23 min do limitu joba.
+
+
+def _procesy_rownoleglych(monkeypatch) -> list[int]:
+    prawdziwa = mutanty_uzupelniajace.mutanty_reczne.rownolegle
+    procesy: list[int] = []
+
+    def zapisz(funkcja, elementy, n):
+        procesy.append(n)
+        return prawdziwa(funkcja, elementy, n)
+
+    monkeypatch.setattr(mutanty_uzupelniajace.mutanty_reczne, "rownolegle", zapisz)
+    return procesy
+
+
+def test_bez_bazy_sprawdzenie_bazowe_i_mutanty_biegna_na_podanej_liczbie_procesow(tmp_path, monkeypatch):
+    monkeypatch.delenv("COCKPIT_TEST_DATABASE_URL", raising=False)
+    przypadek = PRZYPADKI[0]
+    repo = _standardowy(tmp_path, przypadek.zrodlo, przypadek.mocny_test)
+    procesy = _procesy_rownoleglych(monkeypatch)
+
+    kod, linie = mutanty_uzupelniajace._przebieg(repo, "HEAD", float(LIMIT_TESTU_S), 3)
+
+    assert (kod, linie[0].startswith("zbadano ")) == (0, True)
+    assert procesy == [3, 3]
+
+
+def test_z_ustawiona_baza_mutanty_biegna_po_kolei(tmp_path, monkeypatch):
+    # testy `baza` dzielilyby jedna baze testowa
+    monkeypatch.setenv("COCKPIT_TEST_DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/x")
+    przypadek = PRZYPADKI[0]
+    repo = _standardowy(tmp_path, przypadek.zrodlo, przypadek.mocny_test)
+    procesy = _procesy_rownoleglych(monkeypatch)
+
+    kod, _ = mutanty_uzupelniajace._przebieg(repo, "HEAD", float(LIMIT_TESTU_S), 3)
+
+    assert kod == 0
+    assert procesy == [1, 1]
+
+
+def test_przezyly_mutant_z_rownoleglego_przebiegu_jest_zgloszony(tmp_path, monkeypatch):
+    monkeypatch.delenv("COCKPIT_TEST_DATABASE_URL", raising=False)
+    przypadek = PRZYPADKI[0]
+    repo = _standardowy(tmp_path, przypadek.zrodlo, przypadek.slaby_test)
+
+    kod, linie = mutanty_uzupelniajace._przebieg(repo, "HEAD", float(LIMIT_TESTU_S), 4)
+
+    assert kod == 1
+    assert linie and all(linia.startswith(f"{SCIEZKA}:") for linia in linie)
+
+
+def test_main_uruchamia_przebieg_na_wszystkich_rdzeniach(tmp_path, monkeypatch, capsys):
+    wywolania = []
+    monkeypatch.setattr(mutanty_uzupelniajace.os, "cpu_count", lambda: 5)
+    monkeypatch.setattr(
+        mutanty_uzupelniajace, "_przebieg", lambda *a: wywolania.append(a[-1]) or (0, ["brak zmienionych funkcji"])
+    )
+
+    assert mutanty_uzupelniajace.main(["--korzen", str(tmp_path)]) == 0
+    assert wywolania == [5]
