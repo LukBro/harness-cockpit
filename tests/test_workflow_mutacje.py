@@ -521,6 +521,8 @@ def test_brak_wynikow_jednego_shardu_oblewa_zadanie_zanim_zapadka_porowna_niepel
     assert (
         "::error::wyniki shardow pelnego przebiegu sa niepelne albo sprzeczne - nic nie zmierzono." in przebieg.linie
     ), przebieg.wyjscie
+    # Krok konczy sie na sklejeniu: raport z pustego wyniku nawet nie powstaje.
+    assert not (przebieg.praca / "mutation-summary.json").exists()
     assert not any(linia.startswith("MUTATION-BASELINE:") for linia in przebieg.linie)
     assert przebieg.baseline_niezmieniony
 
@@ -2714,7 +2716,7 @@ def test_zadanie_mutation_czeka_na_shardy_statystyk_i_zostaje_kluczem_bez_nazwy_
 
 def test_zadanie_po_scaleniu_czeka_na_shardy_mutantow_a_shardy_na_statystyki():
     assert _zadanie(ZADANIE_MAIN)["needs"] == [ZADANIE_MAIN_SHARD]
-    assert _zadanie(ZADANIE_MAIN_SHARD)["needs"] == [ZADANIE_SHARD]
+    assert _zadanie(ZADANIE_MAIN_SHARD)["needs"] == ZADANIE_SHARD
 
 
 def test_krok_wyniku_shardow_jest_pierwszym_krokiem_zadania_mutation_i_nie_ma_warunku():

@@ -152,8 +152,10 @@ test = "tests/test_workflow_mutacje.py::test_pobranie_dowodow_nie_lapie_artefakt
 # Bez merge-multiple kazdy shard trafia do podkatalogu i skrypt nie widzi plikow shard-N.json.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "merge-multiple: true"
-zamien = "merge-multiple: false"
+szukaj = '''path: dowody
+          merge-multiple: true'''
+zamien = '''path: dowody
+          merge-multiple: false'''
 test = "tests/test_workflow_mutacje.py::test_artefakty_dowodow_sa_pobierane_do_jednego_katalogu_pasujacego_do_nazw_wgranych_przez_shardy"
 
 # Pobranie do innego katalogu niz wgrany.
@@ -168,15 +170,19 @@ test = "tests/test_workflow_mutacje.py::test_artefakty_dowodow_sa_pobierane_do_j
 # Scalenie wolane z innym katalogiem niz pobrany.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "scal --katalog-dowodow dowody"
-zamien = "scal --katalog-dowodow inny"
+szukaj = '''run: |
+          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow dowody'''
+zamien = '''run: |
+          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow inny'''
 test = "tests/test_workflow_mutacje.py::test_krok_scalenia_woła_narzedzie_z_katalogiem_dowodow"
 
 # Scalenie wola zla podkomende.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "python3 tools/statystyki_mutmuta.py scal"
-zamien = "python3 tools/statystyki_mutmuta.py shard"
+szukaj = '''run: |
+          python3 tools/statystyki_mutmuta.py scal'''
+zamien = '''run: |
+          python3 tools/statystyki_mutmuta.py shard'''
 test = "tests/test_workflow_mutacje.py::test_krok_scalenia_woła_narzedzie_z_katalogiem_dowodow"
 
 # Krok scalenia pod inna nazwa.
@@ -198,8 +204,10 @@ test = "tests/test_workflow_mutacje.py::test_scalenie_statystyk_stoi_po_przywroc
 # Kolejnosc: pobranie dowodow po scaleniu.
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = "- uses: actions/download-artifact@v4"
-zamien = '''- name: scalenie statystyk shardów
+szukaj = '''czerwony krok (bez warunku, bez wyjatku od porazki).
+      - uses: actions/download-artifact@v4'''
+zamien = '''czerwony krok (bez warunku, bez wyjatku od porazki).
+      - name: scalenie statystyk shardów
         run: echo przesuniete przed pobranie
       - uses: actions/download-artifact@v4'''
 test = "tests/test_workflow_mutacje.py::test_scalenie_statystyk_stoi_po_przywroceniu_cache_i_pobraniu_dowodow_a_przed_mutantami_zmienionych_funkcji"
@@ -222,14 +230,15 @@ test = "tests/test_workflow_mutacje.py::test_narzedzie_mutantow_zmian_dostaje_ka
 # .github/workflows/mutation.yml: job shardow `mutation-statystyki`
 # ===========================================================================
 
-# Shardy na push zamiast na pull_request.
+# Shardy statystyk tylko na jednym zdarzeniu (fix-mutation-main-shardy: potrzebuja ich PR i push).
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
 szukaj = """  mutation-statystyki:
-    if: github.event_name == 'pull_request'"""
+"""
 zamien = """  mutation-statystyki:
-    if: github.event_name == 'push'"""
-test = "tests/test_workflow_mutacje.py::test_zadanie_statystyk_shardow_odpala_sie_tylko_na_pull_request"
+    if: github.event_name == 'pull_request'
+"""
+test = "tests/test_workflow_mutacje.py::test_zadanie_statystyk_shardow_odpala_sie_na_pull_request_i_na_push_bo_potrzebuja_go_oba_przebiegi"
 
 # Macierz bez shardu 0.
 [[mutant]]
@@ -1552,15 +1561,12 @@ test = "tests/test_statystyki_mutmuta.py::test_shard_z_indeksem_poza_zakresem_ko
 # .github/workflows/mutation.yml: uzupelnienie (zadanie po scaleniu, kroki dozwolone do porazki)
 # ===========================================================================
 
-# Job po scaleniu czeka na shardy statystyk (na push shardy sa pominiete, wiec job nigdy by nie ruszyl).
+# Job zapadki czeka na shardy statystyk zamiast na shardy mutantow (fix-mutation-main-shardy).
 [[mutant]]
 plik = ".github/workflows/mutation.yml"
-szukaj = """  mutation-main:
-    if: github.event_name == 'push'"""
-zamien = """  mutation-main:
-    if: github.event_name == 'push'
-    needs: [mutation-statystyki]"""
-test = "tests/test_workflow_mutacje.py::test_zadanie_po_scaleniu_nie_czeka_na_shardy_statystyk"
+szukaj = "    needs: [mutation-main-shard]"
+zamien = "    needs: [mutation-statystyki]"
+test = "tests/test_workflow_mutacje.py::test_zadanie_po_scaleniu_czeka_na_shardy_mutantow_a_shardy_na_statystyki"
 
 # Krok shardu dozwolony do porazki: czerwony shard nie oblewa joba shardow.
 [[mutant]]

@@ -518,7 +518,7 @@ jobs:
 
   mutation-main-shard:
     if: github.event_name == 'push'
-    needs: [mutation-statystyki]
+    needs: mutation-statystyki
     runs-on: ubuntu-24.04
     # Pelny przebieg na jednym jobie: 240 min na 98,6% mutantow; shard ma ok. 1/8 linii zrodel.
     timeout-minutes: 120
@@ -539,28 +539,28 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: dowody-*
-          path: dowody
+          pattern: "dowody-*"
           merge-multiple: true
+          path: dowody
 
       - name: mutanty shardu pelnego przebiegu
         env:
-          SHARD: ${{ matrix.shard }}
-          LICZBA_SHARDOW: ${{ strategy.job-total }}
+          SHARD_PELNY: ${{ matrix.shard }}
+          LICZBA_SHARDOW_PELNYCH: ${{ strategy.job-total }}
         run: |
           command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono."; exit 1; }
           python3 tools/statystyki_mutmuta.py scal --katalog-dowodow dowody
-          python3 tools/shardy_mutantow.py wzorce --indeks "$SHARD" --liczba "$LICZBA_SHARDOW" > wzorce.txt
+          python3 tools/shardy_mutantow.py wzorce --indeks "$SHARD_PELNY" --liczba "$LICZBA_SHARDOW_PELNYCH" > wzorce.txt
           # Tablica, nie $(cat): gwiazdki we wzorcach nie moga rozwinac sie w nazwy plikow.
           wzorce=()
           while IFS= read -r wzorzec; do wzorce+=("$wzorzec"); done < wzorce.txt
           if ! python3 tools/statystyki_mutmuta.py mutmut-run --katalog-dowodow dowody "${wzorce[@]}"; then
-            echo "::error::mutmut run shardu $SHARD zakonczyl sie bledem - sprawdz log mutmut run."
+            echo "::error::mutmut run shardu $SHARD_PELNY zakonczyl sie bledem - sprawdz log mutmut run."
             exit 1
           fi
           mutmut results --all true > wyniki-mutmuta.txt
           mkdir -p wyniki
-          python3 tools/shardy_mutantow.py wyniki --indeks "$SHARD" --liczba "$LICZBA_SHARDOW" --raport wyniki-mutmuta.txt > "wyniki/shard-$SHARD.txt"
+          python3 tools/shardy_mutantow.py wyniki --indeks "$SHARD_PELNY" --liczba "$LICZBA_SHARDOW_PELNYCH" --raport wyniki-mutmuta.txt > "wyniki/shard-$SHARD_PELNY.txt"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -594,8 +594,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: wyniki-mutacji-*
-          path: wyniki
           merge-multiple: true
+          path: wyniki
 
       # HAR-233: odniesienie zapadki to artefakt ostatniego zielonego przebiegu. Biezacy run
       # wylaczamy po identyfikatorze (pelna linia, `grep -x`): nie jest jeszcze zielony, ale

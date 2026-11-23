@@ -65,6 +65,7 @@ def test_wzorce_obejmuja_funkcje_i_metody_modulu_takze_pakietu(sh):
 # --- wyniki shardu -------------------------------------------------------------------------------
 
 RAPORT = """    cockpit.services.runs.x_a__mutmut_1: killed
+    cockpit.services.runs.x_a: killed
     cockpit.services.runs.xǁKlasaǁm__mutmut_2: survived
     cockpit.services.x_pakiet__mutmut_1: killed
     cockpit.services.inne.x_b__mutmut_1: not checked
@@ -186,3 +187,8 @@ def test_cli_scal_wypisuje_sklejone_wyniki_a_brak_shardu_to_kod_2(tmp_path):
     assert dobry.stdout == "a.x_f__mutmut_1: killed\nb.x_g__mutmut_1: killed\n"
     assert zly.returncode == 2
     assert "brak wynikow shardu 2" in zly.stderr
+
+
+def test_sklejenie_z_zerowa_liczba_shardow_to_blad(sh, tmp_path):
+    with pytest.raises(sh.BladNarzedzia, match="liczba shardow musi byc co najmniej 1"):
+        sh.scal(_zapisz(tmp_path / "w", {}), 0)
