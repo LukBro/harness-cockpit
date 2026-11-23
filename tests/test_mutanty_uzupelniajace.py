@@ -109,7 +109,7 @@ tej nazwie glebiej JEST przegladany), bez plikow nie-`.py`. Kopia z testami nie 
 `mutanty_reczne.ZMIENNA_WYMAGANIA_BAZY`.
 
 CLI: `main(["--korzen", KATALOG, "--baza", REF, "--limit", SEKUNDY])`; domyslnie korzen =
-biezacy katalog, baza = `origin/main`, limit = 300 s na jedno uruchomienie pytesta. Zmiany:
+biezacy katalog, baza = `origin/main`, limit = 1200 s na jedno uruchomienie pytesta. Zmiany:
 `git diff` wzgledem merge-base(baza, HEAD) dla `src/` plus nowe nieSledzone pliki `.py` pod
 `src/` (jak `tools/mutanty_zmian.py`).
 
@@ -157,6 +157,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1448,10 +1449,10 @@ def _zlap_przebieg(monkeypatch) -> list[tuple[Path, str, float]]:
     return zlapane
 
 
-def test_bez_flag_baza_to_origin_main_a_limit_to_300_sekund(tmp_path, monkeypatch):
+def test_bez_flag_baza_to_origin_main_a_limit_to_1200_sekund(tmp_path, monkeypatch):
     zlapane = _zlap_przebieg(monkeypatch)
     assert mutanty_uzupelniajace.main(["--korzen", str(tmp_path)]) == 0
-    assert zlapane == [(tmp_path, "origin/main", 300.0)]
+    assert zlapane == [(tmp_path, "origin/main", 1200.0)]
 
 
 def test_flagi_baza_i_limit_trafiaja_do_przebiegu(tmp_path, monkeypatch):
@@ -3210,6 +3211,34 @@ def test_pytest_w_kopii_dostaje_polecenie_katalog_limit_i_srodowisko_z_kopia_na_
     assert srodowisko["PYTHONPATH"] == os.pathsep.join([str(tmp_path / "src"), "/obca/sciezka"])
     assert srodowisko["PYTHONDONTWRITEBYTECODE"] == "1"
     assert srodowisko["ZNACZNIK_SRODOWISKA_TESTU"] == "tak"
+
+
+def test_pytest_mutanta_konczy_na_pierwszym_oblanym_tescie_a_bez_mutacji_idzie_do_konca(tmp_path, monkeypatch):
+    zlapane = _atrapa_procesu(monkeypatch)
+    mutanty_uzupelniajace._uruchom_pytest(tmp_path, [TEST_MODULU], 5.0, do_pierwszego_bledu=True)
+    mutanty_uzupelniajace._uruchom_pytest(tmp_path, [TEST_MODULU], 5.0)
+    assert "-x" in zlapane[0][0]
+    assert "-x" not in zlapane[1][0]
+
+
+def test_mutant_jest_sprawdzany_do_pierwszego_bledu_a_testy_bez_mutacji_w_calosci(tmp_path, monkeypatch):
+    wywolania = []
+
+    @contextmanager
+    def kopia(_korzen):
+        yield tmp_path
+
+    def pytest_atrapa(_kopia, _testy, _limit, do_pierwszego_bledu=False):
+        wywolania.append(do_pierwszego_bledu)
+        return 0
+
+    monkeypatch.setattr(mutanty_uzupelniajace, "_kopia_repo", kopia)
+    monkeypatch.setattr(mutanty_uzupelniajace, "_uruchom_pytest", pytest_atrapa)
+    (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
+    mutanty_uzupelniajace._sprawdz_testy_bez_mutacji(tmp_path, "m.py", "x = 1\n", [TEST_MODULU], 5.0)
+    mutant = mutanty_uzupelniajace.Mutant(plik="m.py", linia=1, ksztalt="instrukcja", opis="o", zrodlo="x = 2\n")
+    mutanty_uzupelniajace._mutant_zabity(tmp_path, mutant, [TEST_MODULU], 5.0)
+    assert wywolania == [False, True]
 
 
 def test_pytest_w_kopii_bez_wlasnej_sciezki_pythona_dostaje_sama_kopie_bez_separatora(tmp_path, monkeypatch):
