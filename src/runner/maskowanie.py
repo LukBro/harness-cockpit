@@ -19,13 +19,24 @@ _ZMIENNA_TOKENU = re.compile(r"COCKPIT_.*_TOKEN")
 _BEARER = re.compile(r"(Bearer\s+)(\S+)")
 # HAR-219: komenda Basha w zdarzeniu ToolDenied. Wartosc przypisania `NAZWA=wartosc`, gdy nazwa
 # (bez rozroznienia wielkosci liter) zawiera czlon sekretu; wartosc w cudzyslowach moze miec spacje.
+# HAR-239: powloka skleja sasiednie fragmenty w jeden token, wiec wartosc to ciag segmentow do
+# pierwszej spacji spoza cudzyslowu: tekst bez spacji, "..." (z ucieczkami `\"`), '...', ucieczka
+# `\x`. Niedomkniety cudzyslow albo apostrof maskuje do konca napisu (nie umiemy ocenic, gdzie konczy).
+# Ucieczka w cudzyslowie ma znak opcjonalny (`\\[\s\S]?`): samotny `\` na koncu napisu
+# (`TOKEN="ab\`) tez jest niedomknietym cudzyslowem, a nie brakiem dopasowania (wyciek `ab`).
+_WARTOSC = (
+    r"(?:\"(?:\\[\s\S]?|[^\"\\])*(?:\"|\Z)"
+    r"|'[^']*(?:'|\Z)"
+    r"|\\[\s\S]?"
+    r"|[^\s\"'\\])+"
+)
 _PRZYPISANIE_SEKRETU = re.compile(
-    r"(\b\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\w*=)(\"[^\"]*\"|'[^']*'|\S+)",
+    r"(\b\w*(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH)\w*=)" + _WARTOSC,
     re.IGNORECASE,
 )
 # ... oraz wartosc opcji `--token x` i `--token=x` (takze `--password`, `--secret`).
 _OPCJA_SEKRETU = re.compile(
-    r"(--(?:token|password|secret)(?:=|\s+))(\"[^\"]*\"|'[^']*'|\S+)",
+    r"(--(?:token|password|secret)(?:=|\s+))" + _WARTOSC,
     re.IGNORECASE,
 )
 _GWIAZDKI = "***"
