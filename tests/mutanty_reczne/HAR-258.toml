@@ -1488,6 +1488,20 @@ szukaj = 'isinstance(wzor.value, (str, bytes))'
 zamien = 'isinstance(wzor.value, str)'
 test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_bajtowy_w_re_funkcji_ma_mutanty_kotwic_jako_bajty[sub]'
 
+# Stala nietekstowa jako wzorzec `re.<funkcja>` (`re.match(None, 'a')`) to miejsce do sprawdzenia recznie, nie TypeError.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if isinstance(wzor, ast.Constant) and isinstance(wzor.value, (str, bytes)):'
+zamien = 'if isinstance(wzor, ast.Constant):'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_ze_wzorcem_nieliteralnym_to_miejsce_do_recznego_sprawdzenia[stala_none-match]'
+
+# Stala nietekstowa jako wzorzec `re.compile` (`re.compile(None)`) to miejsce do sprawdzenia recznie, nie TypeError.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if isinstance(pierwszy, ast.Constant) and isinstance(pierwszy.value, (str, bytes)):'
+zamien = 'if isinstance(pierwszy, ast.Constant):'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_compile_ze_wzorcem_nieliteralnym_w_dotknietym_zakresie_to_miejsce_do_recznego_sprawdzenia[stala_none]'
+
 # `re.sub` przyjmuje argument `pattern=`.
 [[mutant]]
 plik = "tools/mutanty_uzupelniajace.py"

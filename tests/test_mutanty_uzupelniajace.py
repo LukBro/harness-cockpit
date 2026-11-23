@@ -2741,6 +2741,8 @@ def _miejsca_nieliteralne(zrodlo: str, linie: set[int] | None = None) -> list[in
         pytest.param('import re\n\nX = re.compile(pattern=f"{P}a")\n', id="f_string_jako_pattern"),
         pytest.param("import re\n\nX = re.compile(WZORZEC, re.I)\n", id="zmienna_z_flagami"),
         pytest.param("import re\n\nX = re.compile(WZORZEC, flags=FLAGI)\n", id="zmienna_z_flagami_nieodczytywalnymi"),
+        pytest.param("import re\n\nX = re.compile(None)\n", id="stala_none"),
+        pytest.param("import re\n\nX = re.compile(5)\n", id="stala_liczba"),
     ],
 )
 def test_re_compile_ze_wzorcem_nieliteralnym_w_dotknietym_zakresie_to_miejsce_do_recznego_sprawdzenia(zrodlo):
@@ -4399,6 +4401,8 @@ def test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_
         pytest.param("pattern=WZORZEC, string='a'", id="zmienna_jako_pattern"),
         pytest.param("f'{P}a', 'a'", id="f_string"),
         pytest.param("zbuduj(), 'a'", id="wynik_wywolania"),
+        pytest.param("None, 'a'", id="stala_none"),
+        pytest.param("5, 'a'", id="stala_liczba"),
     ],
 )
 def test_re_funkcja_ze_wzorcem_nieliteralnym_to_miejsce_do_recznego_sprawdzenia(nazwa, argumenty):
