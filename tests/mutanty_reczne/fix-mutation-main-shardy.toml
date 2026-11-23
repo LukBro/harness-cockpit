@@ -1,0 +1,289 @@
+# fix-mutation-main-shardy: pelny przebieg mutmuta w shardach po plikach zrodel (tools/shardy_mutantow.py,
+# joby mutation-main-shard i mutation-main w .github/workflows/mutation.yml). Poza zasiegiem mutmuta.
+
+# --- przydzial plikow
+
+# Najwiekszy plik do najciezszego shardu.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "cel = min(range(liczba), key=lambda i: (sumy[i], i))"
+zamien = "cel = max(range(liczba), key=lambda i: (sumy[i], i))"
+test = "tests/test_shardy_mutantow.py::test_najwiekszy_plik_idzie_do_shardu_z_najmniejsza_suma_linii"
+
+# Remis sum do shardu o wyzszym indeksie.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "key=lambda i: (sumy[i], i))"
+zamien = "key=lambda i: (sumy[i], -i))"
+test = "tests/test_shardy_mutantow.py::test_przy_rownej_sumie_plik_idzie_do_shardu_o_nizszym_indeksie_a_rowne_pliki_ida_alfabetycznie"
+
+# Pliki od najmniejszego.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "key=lambda p: (-linie_plikow[p], p)"
+zamien = "key=lambda p: (linie_plikow[p], p)"
+test = "tests/test_shardy_mutantow.py::test_najwiekszy_plik_idzie_do_shardu_z_najmniejsza_suma_linii"
+
+# Rowne pliki w kolejnosci wejscia zamiast alfabetycznej.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "key=lambda p: (-linie_plikow[p], p)"
+zamien = "key=lambda p: -linie_plikow[p]"
+test = "tests/test_shardy_mutantow.py::test_przy_rownej_sumie_plik_idzie_do_shardu_o_nizszym_indeksie_a_rowne_pliki_ida_alfabetycznie"
+
+# Suma liczy pliki zamiast linii.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "sumy[cel] += linie_plikow[plik]"
+zamien = "sumy[cel] += 1"
+test = "tests/test_shardy_mutantow.py::test_najwiekszy_plik_idzie_do_shardu_z_najmniejsza_suma_linii"
+
+# Brak walidacji liczby shardow w przydziale.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "    podziel_testy([], 0, liczba)  # ta sama walidacja liczby shardow co w statystykach\n"
+zamien = ""
+test = "tests/test_shardy_mutantow.py::test_liczba_shardow_ponizej_jednego_to_blad"
+
+# Wzorce bez metod klas.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = 'f"{modul_ze_sciezki(p)}.x{ZNAK}*"'
+zamien = 'f"{modul_ze_sciezki(p)}.x_*"'
+test = "tests/test_shardy_mutantow.py::test_wzorce_obejmuja_funkcje_i_metody_modulu_takze_pakietu"
+
+# --- wyniki shardu
+
+# Modul mutanta liczony od poczatku nazwy.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = 'return klucz.rsplit(".", 1)[0]'
+zamien = 'return klucz.split(".", 1)[0]'
+test = "tests/test_shardy_mutantow.py::test_wyniki_shardu_to_tylko_mutanty_jego_modulow_nie_podmodulow_pakietu"
+
+# Pakiet wciaga mutanty podmodulow (dopasowanie po prefiksie).
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "_modul_mutanta(klucz) not in moduly"
+zamien = 'not any(klucz.startswith(m + ".") for m in moduly)'
+test = "tests/test_shardy_mutantow.py::test_wyniki_shardu_to_tylko_mutanty_jego_modulow_nie_podmodulow_pakietu"
+
+# Linia bez mutanta liczona jako mutant.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = 'if "__mutmut_" not in klucz or _modul_mutanta'
+zamien = "if _modul_mutanta"
+test = "tests/test_shardy_mutantow.py::test_wyniki_shardu_to_tylko_mutanty_jego_modulow_nie_podmodulow_pakietu"
+
+# Niesprawdzony mutant przechodzi.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "if status == NIESPRAWDZONY:"
+zamien = "if False:"
+test = "tests/test_shardy_mutantow.py::test_niesprawdzony_mutant_shardu_to_brak_dowodu"
+
+# Niesprawdzony mutant innego shardu oblewa shard (sprawdzenie przed filtrem modulu).
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = 'if "__mutmut_" not in klucz or _modul_mutanta(klucz) not in moduly:'
+zamien = "if status == NIESPRAWDZONY:\n            raise BladDowodu(\"x\")\n        if \"__mutmut_\" not in klucz or _modul_mutanta(klucz) not in moduly:"
+test = "tests/test_shardy_mutantow.py::test_niesprawdzony_mutant_innego_shardu_nie_oblewa_tego_shardu"
+
+# Shard bez mutantow przechodzi.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "    if not wynik:\n"
+zamien = "    if False:\n"
+test = "tests/test_shardy_mutantow.py::test_shard_bez_mutantow_w_raporcie_to_brak_dowodu"
+
+# --- sklejenie
+
+# Powtorzony mutant przechodzi.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "if klucz in widziane:"
+zamien = "if False:"
+test = "tests/test_shardy_mutantow.py::test_mutant_w_dwoch_shardach_to_brak_dowodu"
+
+# Pusty shard przechodzi.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "if not linie:"
+zamien = "if False:"
+test = "tests/test_shardy_mutantow.py::test_pusty_plik_shardu_to_brak_dowodu"
+
+# Puste linie liczone jako wynik.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "[linia for linia in tresc.splitlines() if linia.strip()]"
+zamien = "tresc.splitlines()"
+test = "tests/test_shardy_mutantow.py::test_pusty_plik_shardu_to_brak_dowodu"
+
+# Brak walidacji liczby shardow przy sklejaniu: liczba 0 daje pusty raport bez bledu.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "    podziel_testy([], 0, liczba)\n    widziane"
+zamien = "    widziane"
+test = "tests/test_shardy_mutantow.py::test_sklejenie_z_zerowa_liczba_shardow_to_blad"
+
+# --- CLI
+
+# Shard bez plikow przechodzi.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "    if not pliki:\n"
+zamien = "    if False:\n"
+test = "tests/test_shardy_mutantow.py::test_cli_shard_bez_plikow_to_kod_2"
+
+# Zly indeks dopiero przy indeksowaniu listy (IndexError, kod 1).
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "    podziel_testy([], args.indeks, args.liczba)  # zly indeks albo liczba: blad, zanim ruszymy mutmuta\n"
+zamien = ""
+test = "tests/test_shardy_mutantow.py::test_cli_indeks_poza_zakresem_to_kod_2"
+
+# Blad narzedzia z kodem 1.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "        return 2\n"
+zamien = "        return 1\n"
+test = "tests/test_shardy_mutantow.py::test_cli_indeks_poza_zakresem_to_kod_2"
+
+# Nieczytelny raport jako traceback.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "            except (OSError, UnicodeDecodeError) as blad:"
+zamien = "            except UnicodeDecodeError as blad:"
+test = "tests/test_shardy_mutantow.py::test_cli_wyniki_z_nieczytelnym_raportem_to_kod_2"
+
+# Sklejenie z CLI bez nowych linii miedzy mutantami.
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = 'print("\n".join(linie))'
+zamien = 'print("".join(linie))'
+test = "tests/test_shardy_mutantow.py::test_cli_scal_wypisuje_sklejone_wyniki_a_brak_shardu_to_kod_2"
+
+# Pliki spoza konfiguracji mutmuta (wszystkie .py z korzenia).
+[[mutant]]
+plik = "tools/shardy_mutantow.py"
+szukaj = "pliki = [Path(p).as_posix() for p in walk_mutatable_files()]"
+zamien = 'pliki = [p.as_posix() for p in Path(".").rglob("src/runner/*.py")]'
+test = "tests/test_shardy_mutantow.py::test_shardy_razem_obejmuja_kazdy_plik_mutmuta_dokladnie_raz"
+
+# --- workflow: job shardow
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "  mutation-main-shard:\n    if: github.event_name == 'push'"
+zamien = "  mutation-main-shard:\n    if: github.event_name == 'pull_request'"
+test = "tests/test_workflow_mutacje.py::test_shardy_pelnego_przebiegu_odpalaja_sie_tylko_na_push"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "    needs: mutation-statystyki\n"
+zamien = "    needs: mutation\n"
+test = "tests/test_workflow_mutacje.py::test_zadanie_po_scaleniu_czeka_na_shardy_mutantow_a_shardy_na_statystyki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "shard: [0, 1, 2, 3, 4, 5, 6, 7]"
+zamien = "shard: [0, 1, 2, 3, 4, 5, 6]"
+test = "tests/test_workflow_mutacje.py::test_liczba_shardow_w_kroku_zapadki_jest_rowna_macierzy_shardow_pelnego_przebiegu"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'LICZBA_SHARDOW_MAIN: "8"'
+zamien = 'LICZBA_SHARDOW_MAIN: "4"'
+test = "tests/test_workflow_mutacje.py::test_liczba_shardow_w_kroku_zapadki_jest_rowna_macierzy_shardow_pelnego_przebiegu"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'pattern: "dowody-*"'
+zamien = 'pattern: "*"'
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_pobiera_dowody_statystyk_pod_nazwa_wgrywana_przez_shardy_statystyk"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "pattern: \"dowody-*\"\n          merge-multiple: true"
+zamien = "pattern: \"dowody-*\"\n          merge-multiple: false"
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_pobiera_dowody_statystyk_pod_nazwa_wgrywana_przez_shardy_statystyk"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono."; exit 1; }'
+zamien = "true"
+test = "tests/test_workflow_mutacje.py::test_shard_bez_mutmuta_na_runnerze_oblewa_krok_zanim_cokolwiek_uruchomi"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "          python3 tools/statystyki_mutmuta.py scal --katalog-dowodow dowody\n          python3 tools/shardy_mutantow.py wzorce"
+zamien = "          python3 tools/shardy_mutantow.py wzorce"
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_scala_statystyki_mutuje_swoje_wzorce_i_zapisuje_swoje_wyniki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'wzorce --indeks "$SHARD_PELNY"'
+zamien = "wzorce --indeks 0"
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_scala_statystyki_mutuje_swoje_wzorce_i_zapisuje_swoje_wyniki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '"${wzorce[@]}"'
+zamien = "${wzorce[@]}"
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_scala_statystyki_mutuje_swoje_wzorce_i_zapisuje_swoje_wyniki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "sprawdz log mutmut run.\"\n            exit 1"
+zamien = "sprawdz log mutmut run.\"\n            true"
+test = "tests/test_workflow_mutacje.py::test_blad_mutmut_run_shardu_oblewa_krok_i_nie_zbiera_wynikow"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutmut results --all true > wyniki-mutmuta.txt"
+zamien = "mutmut results > wyniki-mutmuta.txt"
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_scala_statystyki_mutuje_swoje_wzorce_i_zapisuje_swoje_wyniki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'wyniki --indeks "$SHARD_PELNY"'
+zamien = "wyniki --indeks 0"
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_scala_statystyki_mutuje_swoje_wzorce_i_zapisuje_swoje_wyniki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '> "wyniki/shard-$SHARD_PELNY.txt"'
+zamien = '> "wyniki/shard-0.txt"'
+test = "tests/test_workflow_mutacje.py::test_shard_pelnego_przebiegu_scala_statystyki_mutuje_swoje_wzorce_i_zapisuje_swoje_wyniki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "name: wyniki-mutacji-${{ matrix.shard }}"
+zamien = "name: wyniki-${{ matrix.shard }}"
+test = "tests/test_workflow_mutacje.py::test_wyniki_shardow_sa_wgrywane_pod_nazwa_i_sciezka_pobierana_przez_zadanie_zapadki"
+
+# --- workflow: job zapadki
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "pattern: wyniki-mutacji-*"
+zamien = "pattern: wyniki-*"
+test = "tests/test_workflow_mutacje.py::test_wyniki_shardow_sa_wgrywane_pod_nazwa_i_sciezka_pobierana_przez_zadanie_zapadki"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'scal --liczba "$LICZBA_SHARDOW_MAIN"'
+zamien = "scal --liczba 1"
+test = "tests/test_workflow_mutacje.py::test_brak_wynikow_jednego_shardu_oblewa_zadanie_zanim_zapadka_porowna_niepelny_wynik"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "niepelne albo sprzeczne - nic nie zmierzono.\"\n            exit 1"
+zamien = "niepelne albo sprzeczne - nic nie zmierzono.\"\n            true"
+test = "tests/test_workflow_mutacje.py::test_brak_wynikow_jednego_shardu_oblewa_zadanie_zanim_zapadka_porowna_niepelny_wynik"
+
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--katalog wyniki > mutants/mutmut-results.txt"
+zamien = "--katalog wyniki > mutants/inne.txt"
+test = "tests/test_workflow_mutacje.py::test_pelny_przebieg_skleja_wyniki_wszystkich_shardow_w_jeden_raport_bez_uruchamiania_mutmuta"

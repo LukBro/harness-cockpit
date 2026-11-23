@@ -420,17 +420,17 @@ test = "tests/test_mutanty_reczne.py::test_kolekcja_zakonczona_kodem_innym_niz_z
 [[mutant]]
 plik = "tools/mutanty_reczne.py"
 szukaj = '''"-o", "addopts=",
-        *pliki,'''
-zamien = "*pliki,"
+        *(["-m", znacznik]'''
+zamien = '*(["-m", znacznik]'
 test = "tests/test_mutanty_reczne.py::test_test_oznaczony_markerem_wykluczonym_w_addopts_projektu_jest_zebrany_wiec_wiersz_istnieje"
 
 # `-p no:cacheprovider` w kolekcji: bez niego powstaje `.pytest_cache` w repozytorium użytkownika.
 [[mutant]]
 plik = "tools/mutanty_reczne.py"
 szukaj = '''"-p", "no:cacheprovider", "-o", "addopts=",
-        *pliki,'''
+        *(["-m", znacznik]'''
 zamien = '''"-o", "addopts=",
-        *pliki,'''
+        *(["-m", znacznik]'''
 test = "tests/test_mutanty_reczne.py::test_sprawdzenie_z_blednym_plikiem_testu_nie_zostawia_cache_pytesta_w_repozytorium_uzytkownika"
 
 # `PYTHONDONTWRITEBYTECODE` w kolekcji: bez niego powstaje `__pycache__` w repozytorium użytkownika.

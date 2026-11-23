@@ -1,7 +1,10 @@
 """Statystyki mutmuta liczone w shardach i scalane w jeden plik (HAR-255).
 Podkomendy: `shard` liczy statystyki podzbioru testow i zapisuje dowod `shard-<n>.json`;
 `scal` sklada dowody w `mutants/mutmut-stats.json`; `mutmut-run` uruchamia `mutmut run` tak,
-ze zamiast "clean tests" sprawdza dowody shardow.
+ze zamiast "clean tests" sprawdza dowody shardow. Z `--liczba-shardow N --indeks-shardu I --przydzial PLIK`
+mutuje tylko co N-ty mutant (od I) z posortowanych nazw pasujacych do wzorcow i zapisuje w PLIKU wszystkie
+nazwy oraz nazwy shardu: kazdy shard dostaje te sama czesc kazdej funkcji, wiec ciezka funkcja nie laduje w
+jednym shardzie (fix-mutanty-zmian-shardy; podzial po plikach dal shard 105 min przy pozostalych 14-32 min).
 Kody wyjscia: 0 - sukces, 2 - blad narzedzia albo brak dowodu (komunikat `blad: ...` na stderr).
 Brak dowodu (brak pliku shardu, inny commit albo zrodla, kod pytesta, brakujacy albo powtorzony
 test) to kod 2, nigdy zielony wynik. Shardy zawsze licza statystyki od zera i nie wczytuja
@@ -492,9 +495,42 @@ def _scal(args: argparse.Namespace) -> int:
     return 0
 
 
+def przydziel_mutanty(nazwy: Iterable[str], wzorce: Iterable[str], indeks: int, liczba: int) -> tuple[list[str], list[str]]:
+    """(wszystkie nazwy pasujace do wzorcow jak filtr mutmuta, co `liczba`-ta z nich od `indeks`)."""
+    podziel_testy([], indeks, liczba)  # ta sama walidacja indeksu i liczby shardow
+    wzorce = list(wzorce)
+    wszystkie = sorted(n for n in set(nazwy) if n in wzorce or any(fnmatch.fnmatch(n, w) for w in wzorce))
+    return wszystkie, wszystkie[indeks::liczba]
+
+
+def _zbieranie_shardu(oryginal: Callable[..., Any], args: argparse.Namespace) -> Callable[..., Any]:
+    """`collect_source_file_mutation_data` mutmuta zawezone do mutantow shardu; przydzial idzie do pliku."""
+
+    def zbierz(*, mutant_names: Any) -> Any:
+        mutanty, dane_plikow = oryginal(mutant_names=())  # bez filtra: zero dopasowan to pusty przydzial, nie assert
+        wszystkie, moje = przydziel_mutanty(
+            (nazwa for _, nazwa, _ in mutanty), mutant_names, args.indeks_shardu, args.liczba_shardow
+        )
+        przydzial = {"indeks": args.indeks_shardu, "liczba": args.liczba_shardow, "wszystkie": wszystkie, "shard": moje}
+        try:
+            args.przydzial.write_text(json.dumps(przydzial, indent=2), encoding="utf-8")
+        except OSError as blad_zapisu:
+            raise BladNarzedzia(f"{args.przydzial}: nie da sie zapisac przydzialu: {blad_zapisu}") from blad_zapisu
+        wybrane = set(moje)
+        return [m for m in mutanty if m[1] in wybrane], dane_plikow
+
+    return zbierz
+
+
 def _mutmut_run(args: argparse.Namespace) -> int:
     korzen = args.korzen.absolute()
     katalog = args.katalog_dowodow.absolute()
+    shard = args.liczba_shardow is not None
+    if shard != (args.indeks_shardu is not None) or shard != (args.przydzial is not None):
+        raise BladNarzedzia("--liczba-shardow, --indeks-shardu i --przydzial podaje sie razem")
+    if shard:
+        podziel_testy([], args.indeks_shardu, args.liczba_shardow)
+        args.przydzial = args.przydzial.absolute()
     sha = _sha_commita(korzen)
     odcisk = odcisk_zrodel(korzen)
     with _w_katalogu(korzen):
@@ -510,10 +546,15 @@ def _mutmut_run(args: argparse.Namespace) -> int:
             return runner
 
         mm.glowny.get_mutant_runner = runner_z_dowodami
+        if shard:
+            oryginalne_zbieranie = mm.glowny.collect_source_file_mutation_data
+            mm.glowny.collect_source_file_mutation_data = _zbieranie_shardu(oryginalne_zbieranie, args)
         try:
             mm.glowny._run(tuple(args.wzorce), args.max_children)
         finally:
             mm.glowny.get_mutant_runner = oryginal
+            if shard:
+                mm.glowny.collect_source_file_mutation_data = oryginalne_zbieranie
     return 0
 
 
@@ -534,6 +575,9 @@ def main(argv: list[str] | None = None) -> int:
             podparser.add_argument("--liczba", type=int, required=True, help="liczba shardow")
         if nazwa == "mutmut-run":
             podparser.add_argument("--max-children", type=int, default=None, help="procesy mutmuta (mutanty_zmian.py)")
+            podparser.add_argument("--liczba-shardow", type=int, default=None, help="liczba shardow mutantow")
+            podparser.add_argument("--indeks-shardu", type=int, default=None, help="numer shardu mutantow od 0")
+            podparser.add_argument("--przydzial", type=Path, default=None, help="plik JSON z przydzialem mutantow")
             podparser.add_argument("wzorce", nargs="+", help="wzorce mutantow mutmuta")
     args = parser.parse_args(argv)
     try:

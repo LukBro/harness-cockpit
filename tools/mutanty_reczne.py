@@ -4,6 +4,8 @@ Czyta `tests/mutanty_reczne/<ticket>.toml` (wpisy `[[mutant]]` z polami `plik`, 
 `zamien`, `test`), naklada kazda mutacje w NOWEJ kopii repozytorium w katalogu tymczasowym
 i sprawdza, ze wskazany test oblewa. Najpierw ten sam test musi przejsc na kopii bez
 mutacji - inaczej czerwony test "zabilby" kazdego mutanta.
+Wiersze biegna rownolegle (po jednym na rdzen, kazdy w swojej kopii); sekwencyjnie tylko
+wiersze frontu/e2e (port 8799) i testy `baza` przy ustawionej bazie (jedna baza testowa).
 Kody wyjscia: 0 - wszystkie mutanty zabite, 1 - sa przezywajace (stdout: po jednej linii
 `plik: szukaj → zamien`), 2 - blad narzedzia (brak dowodu: zla tabela, `szukaj` nie raz,
 test czerwony bez mutacji (kod 1), kod pytesta inny niz 0/1 w przebiegu bazowym albo po
@@ -49,6 +51,7 @@ import sys
 import tempfile
 import tomllib
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,6 +64,9 @@ LIMIT_BUDOWY = 900.0
 CZEKANIE_PO_ZABICIU = 10.0
 RAPORT_JUNIT = ".mutanty-reczne-junit.xml"
 ZMIENNA_WYMAGANIA_BAZY = "COCKPIT_WYMAGAJ_BAZY"
+ZMIENNA_URL_BAZY = "COCKPIT_TEST_DATABASE_URL"
+# pytest: nic nie zebrano (np. `-m baza` odznaczyl wszystko)
+KOD_PYTESTA_NIC_NIE_ZEBRANO = 5
 KONCOWKA_WYJSCIA = 2000
 KONCOWKA_KOLEKCJI = 2000
 KOD_BLEDU_NARZEDZIA = 2
@@ -382,6 +388,36 @@ def ocen_kod_testu(kod: int) -> bool:
     )
 
 
+def rownolegle(funkcja, elementy: list, procesy: int) -> list:
+    """`[funkcja(e) for e in elementy]`, do `procesy` naraz; wyjatek pierwszego wg kolejnosci leci dalej."""
+    if procesy <= 1:
+        return [funkcja(e) for e in elementy]
+    with ThreadPoolExecutor(max_workers=procesy) as pula:
+        zadania = [pula.submit(funkcja, e) for e in elementy]
+    return [z.result() for z in zadania]
+
+
+def sekwencyjne(korzen: Path, mutanty: list[Mutant], limit: float) -> set[Mutant]:
+    """Wiersze, ktorych testy nie moga biec naraz: front/e2e (port 8799, build) i `baza` przy ustawionej bazie."""
+    wynik = {m for m in mutanty if wymaga_frontu(m)}
+    reszta = [m for m in mutanty if m not in wynik]
+    if reszta and os.environ.get(ZMIENNA_URL_BAZY):
+        baza = _zbierz_node_id(korzen, sorted({_plik_testu(m.test) for m in reszta}), limit, znacznik="baza")
+        wynik |= {m for m in reszta if _istnieje_node_id(m.test, baza)}
+    return wynik
+
+
+def przezywajace(korzen: Path, mutanty: list[Mutant], limit: float, limit_budowy: float, procesy: int) -> list[Mutant]:
+    """Przezywajace mutanty w kolejnosci tabel; najpierw rownolegla czesc, potem sekwencyjna."""
+    po_kolei = sekwencyjne(korzen, mutanty, limit)
+    naraz = [m for m in mutanty if m not in po_kolei]
+    zabite = dict(zip(naraz, rownolegle(lambda m: _zabity(korzen, m, limit, limit_budowy), naraz, procesy)))
+    for m in mutanty:
+        if m in po_kolei:
+            zabite[m] = _zabity(korzen, m, limit, limit_budowy)
+    return [m for m in mutanty if not zabite[m]]
+
+
 def _zabity(korzen: Path, mutant: Mutant, limit: float, limit_budowy: float) -> bool:
     try:
         kopia = Path(tempfile.mkdtemp(prefix="mutanty-reczne-"))
@@ -490,8 +526,10 @@ def _blad_pliku_testu(korzen: Path, test: str) -> str | None:
     return None if istnieje else f"test {test} nie istnieje: brak pliku {plik_testu}"
 
 
-def _zbierz_node_id(korzen: Path, pliki: list[str], limit: float) -> set[str]:
-    """Jedna kolekcja pytesta (`--collect-only`) dla plikow testow; kod inny niz 0 to `BladNarzedzia`."""
+def _zbierz_node_id(korzen: Path, pliki: list[str], limit: float, znacznik: str | None = None) -> set[str]:
+    """Jedna kolekcja pytesta (`--collect-only`, opcjonalnie `-m znacznik`) dla plikow testow.
+
+    Kod inny niz 0 to `BladNarzedzia`; ze znacznikiem kod 5 (wszystko odznaczone) to pusty zbior."""
     stare = os.environ.get("PYTHONPATH")
     sciezki = os.pathsep.join([str(korzen / "src"), *([stare] if stare else [])])
     srodowisko = {**os.environ, "PYTHONPATH": sciezki}
@@ -499,9 +537,11 @@ def _zbierz_node_id(korzen: Path, pliki: list[str], limit: float) -> set[str]:
     srodowisko["PYTHONDONTWRITEBYTECODE"] = "1"
     polecenie = [
         sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", "-o", "addopts=",
-        *pliki,
+        *(["-m", znacznik] if znacznik else []), *pliki,
     ]  # fmt: skip
     kod, wyjscie = _uruchom_proces(polecenie, korzen, srodowisko, limit, "kolekcji testow")
+    if znacznik and kod == KOD_PYTESTA_NIC_NIE_ZEBRANO:
+        return set()
     if kod:
         raise BladNarzedzia(
             f"kolekcja testow zakonczyla sie kodem {kod} (nie 0): brak dowodu, ze node id istnieja: "
@@ -698,14 +738,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.czy_front:
             print(f"front={int(any(wymaga_frontu(m) for m in mutanty))}")
             return 0
-        przezywajace = [m for m in mutanty if not _zabity(korzen, m, args.limit, args.limit_budowy)]
+        zywe = przezywajace(korzen, mutanty, args.limit, args.limit_budowy, os.cpu_count() or 1)
     except BladNarzedzia as blad:
         print(f"blad: {blad}", file=sys.stderr)
         return 2
-    for m in przezywajace:
+    for m in zywe:
         szukaj, zamien = (t.replace("\n", "\\n") for t in (m.szukaj, m.zamien))
         print(f"{m.plik}: {szukaj} → {zamien}")
-    return 1 if przezywajace else 0
+    return 1 if zywe else 0
 
 
 if __name__ == "__main__":

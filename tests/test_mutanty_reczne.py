@@ -4095,3 +4095,143 @@ def test_skrypt_uruchomiony_jako_program_z_pokrycie_kod3_konczy_sie_kodem_1_i_wy
     assert kod == 1, blad
     assert wyjscie == f"{PLIK_P}:5\n"
     assert blad.rstrip("\n") == _brak_dowodu(1)
+
+
+# --- wiersze rownolegle (fix-mutanty-rownolegle) ----------------------------------------------------
+# Job `mutation` tracil 13-38 min na wierszach wykonywanych po kolei; kazdy wiersz ma swoja kopie repo.
+
+import threading  # noqa: E402
+
+M_ZWYKLY = mutanty_reczne.Mutant("src/a.py", "x", "y", "tests/test_a.py::test_zwykly")
+M_BAZA = mutanty_reczne.Mutant("src/a.py", "x", "z", "tests/test_a.py::test_bazy")
+M_FRONT = mutanty_reczne.Mutant("web/src/App.tsx", "x", "y", "tests/test_a.py::test_zwykly")
+TESTY_ZE_ZNACZNIKIEM_BAZY = (
+    "import pytest\n\n\n@pytest.mark.baza\ndef test_bazy():\n    pass\n\n\ndef test_zwykly():\n    pass\n"
+)
+PYPROJECT_ZNACZNIKOW = '[tool.pytest.ini_options]\nmarkers = ["baza: test bazy"]\n'
+
+
+def _korzen_z_testami(tmp_path: Path, testy: str = TESTY_ZE_ZNACZNIKIEM_BAZY) -> Path:
+    korzen = tmp_path / "k"
+    (korzen / "tests").mkdir(parents=True)
+    (korzen / "pyproject.toml").write_text(PYPROJECT_ZNACZNIKOW, encoding="utf-8")
+    (korzen / "tests" / "test_a.py").write_text(testy, encoding="utf-8")
+    return korzen
+
+
+def test_rownolegle_uruchamia_wiersze_naraz_gdy_jest_wiecej_niz_jeden_proces():
+    # Bariera przepuszcza dopiero dwa watki naraz; wykonanie po kolei konczy sie BrokenBarrierError.
+    bariera = threading.Barrier(2, timeout=10)
+
+    def czekaj(e):
+        bariera.wait(10)
+        return e * 10
+
+    assert mutanty_reczne.rownolegle(czekaj, [1, 2], 2) == [10, 20]
+
+
+def test_rownolegle_z_jednym_procesem_wykonuje_po_kolei_w_watku_wolajacego():
+    watki = []
+
+    def zapisz(e):
+        watki.append(threading.current_thread())
+        return e
+
+    assert mutanty_reczne.rownolegle(zapisz, [3, 1, 2], 1) == [3, 1, 2]
+    assert watki == [threading.main_thread()] * 3
+
+
+def test_rownolegle_zwraca_wyniki_w_kolejnosci_wierszy_a_nie_konczenia():
+    pierwszy_skonczony = threading.Event()
+
+    def wolny_pierwszy(e):
+        if e == 0:
+            assert pierwszy_skonczony.wait(10)
+        else:
+            pierwszy_skonczony.set()
+        return e
+
+    assert mutanty_reczne.rownolegle(wolny_pierwszy, [0, 1], 2) == [0, 1]
+
+
+def test_rownolegle_przekazuje_blad_pierwszego_wiersza_wedlug_kolejnosci():
+    drugi_rzucil = threading.Event()
+
+    def rzuc(e):
+        if e == 0:
+            assert drugi_rzucil.wait(10)
+        else:
+            drugi_rzucil.set()
+        raise mutanty_reczne.BladNarzedzia(f"wiersz {e}")
+
+    with pytest.raises(mutanty_reczne.BladNarzedzia, match="wiersz 0"):
+        mutanty_reczne.rownolegle(rzuc, [0, 1], 2)
+
+
+def test_wiersz_frontu_jest_sekwencyjny_takze_bez_bazy(tmp_path, monkeypatch):
+    monkeypatch.delenv(mutanty_reczne.ZMIENNA_URL_BAZY, raising=False)
+    korzen = _korzen_z_testami(tmp_path)
+
+    assert mutanty_reczne.sekwencyjne(korzen, [M_ZWYKLY, M_FRONT, M_BAZA], 120) == {M_FRONT}
+
+
+def test_wiersz_testu_bazy_jest_sekwencyjny_gdy_baza_jest_ustawiona(tmp_path, monkeypatch):
+    monkeypatch.setenv(mutanty_reczne.ZMIENNA_URL_BAZY, "postgresql+asyncpg://u:p@localhost:5432/x")
+    korzen = _korzen_z_testami(tmp_path)
+
+    assert mutanty_reczne.sekwencyjne(korzen, [M_ZWYKLY, M_FRONT, M_BAZA], 120) == {M_FRONT, M_BAZA}
+
+
+def test_bez_testow_bazy_kolekcja_ze_znacznikiem_daje_pusty_zbior_a_nie_blad(tmp_path, monkeypatch):
+    # pytest konczy sie kodem 5, gdy `-m baza` odznaczy wszystkie testy
+    monkeypatch.setenv(mutanty_reczne.ZMIENNA_URL_BAZY, "postgresql+asyncpg://u:p@localhost:5432/x")
+    korzen = _korzen_z_testami(tmp_path, "def test_zwykly():\n    pass\n")
+
+    assert mutanty_reczne.sekwencyjne(korzen, [M_ZWYKLY], 120) == set()
+
+
+def test_kolekcja_bez_znacznika_z_kodem_5_dalej_jest_bledem_narzedzia(tmp_path):
+    korzen = _korzen_z_testami(tmp_path, "")
+
+    with pytest.raises(mutanty_reczne.BladNarzedzia, match="kodem 5"):
+        mutanty_reczne._zbierz_node_id(korzen, ["tests/test_a.py"], 120)
+
+
+def test_kazdy_wiersz_jest_oceniony_raz_a_sekwencyjny_dopiero_gdy_nic_innego_nie_biegnie(tmp_path, monkeypatch):
+    monkeypatch.delenv(mutanty_reczne.ZMIENNA_URL_BAZY, raising=False)
+    drugi = mutanty_reczne.Mutant("src/b.py", "x", "y", "tests/test_a.py::test_zwykly")
+    bariera = threading.Barrier(2, timeout=10)
+    zamek = threading.Lock()
+    trwa = {"teraz": 0}
+    oceny = []
+
+    def zabity(korzen, mutant, limit, limit_budowy):
+        with zamek:
+            trwa["teraz"] += 1
+            oceny.append((mutant, trwa["teraz"]))
+        if mutant is not M_FRONT:
+            bariera.wait(10)
+        with zamek:
+            trwa["teraz"] -= 1
+        return mutant is not drugi
+
+    monkeypatch.setattr(mutanty_reczne, "_zabity", zabity)
+    korzen = _korzen_z_testami(tmp_path)
+
+    zywe = mutanty_reczne.przezywajace(korzen, [M_FRONT, M_ZWYKLY, drugi], 120, 900, 4)
+
+    assert zywe == [drugi]
+    assert sorted(m.plik for m, _ in oceny) == sorted([M_FRONT.plik, M_ZWYKLY.plik, drugi.plik])
+    assert [naraz for m, naraz in oceny if m is M_FRONT] == [1]
+
+
+def test_main_ocenia_wiersze_na_wszystkich_rdzeniach(tmp_path, monkeypatch):
+    korzen = tmp_path / "k"
+    (korzen / "tests" / "mutanty_reczne").mkdir(parents=True)
+    (korzen / "tests" / "mutanty_reczne" / "HAR-1.toml").write_text(_mutant("c = 3", "c = 4", plik=PLIK_P), encoding="utf-8")
+    wywolania = []
+    monkeypatch.setattr(mutanty_reczne.os, "cpu_count", lambda: 7)
+    monkeypatch.setattr(mutanty_reczne, "przezywajace", lambda *a: wywolania.append(a[-1]) or [])
+
+    assert mutanty_reczne.main(["--korzen", str(korzen), "tests/mutanty_reczne/HAR-1.toml"]) == 0
+    assert wywolania == [7]
