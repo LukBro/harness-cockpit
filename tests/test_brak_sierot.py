@@ -53,6 +53,10 @@ LIMIT_START = 20.0
 # anulowaniu to karencja straznika (5 s) plus fork/exec, ktore pod obciazeniem trwaja dluzej
 # niz 15 s. Skutek (agent nie zostaje sierota) sprawdza `grupa_umarla`, nie zegar.
 LIMIT_KONCA_KROKU = 120.0
+# Karencja po SIGTERM z kontraktu straznika (docstring modulu). Zapisana tu jawnie, nie czytana
+# z `straznik.CZAS_NA_ZAKONCZENIE_S`: test importuje kod z tego samego drzewa co straznik, wiec
+# skrocona stala skracalaby tez oczekiwanie testu i mutant by przezyl.
+KARENCJA_Z_KONTRAKTU_S = 5.0
 
 # Agent: opcjonalnie ignoruje SIGTERM, zapisuje "pid pgid" (atomowo), potem spi.
 KOD_SPIACEGO_AGENTA = r"""
@@ -305,7 +309,7 @@ async def uruchom_straznika(
     )
 
 
-async def test_agent_ignorujacy_sigterm_zyje_jeszcze_po_2_s_a_ginie_w_10_s_po_eof(
+async def test_agent_ignorujacy_sigterm_ginie_po_eof_dopiero_po_calej_karencji_straznika(
     tmp_path, katalog_kroku, pgid_do_sprzatania
 ):
     plik = tmp_path / "agent.pid"
@@ -315,12 +319,20 @@ async def test_agent_ignorujacy_sigterm_zyje_jeszcze_po_2_s_a_ginie_w_10_s_po_eo
     _, pgid = await czekaj_na_agenta(plik, straznik)
     pgid_do_sprzatania.append(pgid)
 
+    # Dolna granica to mechanizm: straznik liczy karencje od chwili, gdy zobaczyl EOF, a ta
+    # jest pozniejsza niz nasze zamkniecie wejscia - grupa nie moze zniknac wczesniej niz
+    # karencja z kontraktu (5 s) od `close()`, jakkolwiek wolno pracuje maszyna. Obciazenie
+    # wydluza czas, nie skraca go, wiec dolna granica nie jest zalezna od tempa.
+    # Gorny limit to tylko bezpiecznik przed zawieszeniem, nie oczekiwany czas.
+    zamkniecie = time.monotonic()
     straznik.stdin.close()
-    await asyncio.sleep(2)
-    zyje_po_2_s = grupa_istnieje(pgid)
+    umarla = await grupa_umarla(pgid, limit=LIMIT_KONCA_KROKU)
+    od_eof_s = time.monotonic() - zamkniecie
 
-    assert zyje_po_2_s, "SIGKILL przyszedl przed uplywem 5 s karencji po SIGTERM"
-    assert await grupa_umarla(pgid, limit=LIMIT_ZNIKNIECIA)
+    assert umarla, "agent ignorujacy SIGTERM nie zostal zabity SIGKILL-em straznika"
+    assert od_eof_s >= KARENCJA_Z_KONTRAKTU_S, (
+        f"SIGKILL przyszedl po {od_eof_s:.2f} s od EOF - przed uplywem karencji po SIGTERM"
+    )
 
 
 async def test_agent_ktory_konczy_sie_na_sigterm_ginie_po_eof_przed_uplywem_karencji(

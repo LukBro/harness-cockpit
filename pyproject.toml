@@ -3,12 +3,15 @@ name = "harness-cockpit"
 version = "0.1.0"
 description = "Wizualny kokpit do skladania i obserwowania workflow agentowych"
 requires-python = ">=3.11"
+# fastapi i pydantic: gorna granica (HAR-155, HAR-69) - sama dolna granica wpuszcza wersje ze zmienionym
+# schematem OpenAPI; fastapi jest w serii 0.x, wiec nastepna glowna to 1.0. Podniesienie granicy to
+# swiadoma zmiana z regeneracja web/openapi.json.
 dependencies = [
-  "fastapi>=0.142",
+  "fastapi>=0.142,<1",
   "uvicorn[standard]>=0.54",
   "sqlalchemy[asyncio]>=2.1",
   "alembic>=1.20",
-  "pydantic>=2.13",
+  "pydantic>=2.13,<3",
   "pydantic-settings>=2.6",
   "asyncpg>=0.31",
   "sse-starlette>=3.5",
@@ -22,9 +25,10 @@ dependencies = [
 # ruff: minor zmienia reguly/defaulty; czerwone CI ma znaczyc "twoja zmiana", nie "nowy ruff".
 # pytest: 9.2 usunal Item._nodeid, ktorego uzywa harness mutmut 3.8.0; zdjac gorna granice, gdy mutmut to obsluzy.
 # pytest-xdist: -n 4 tylko w poleceniach (CI, testy_pelne.sh, toolchain), nigdy w addopts - mutmut woła pytest per mutant.
+# pytest-testmon: `tools/testy.py --dotkniete` (HAR-256); 3.x zmienia format bazy i wybor testow, wiec gorna granica.
 # mutmut: dokladnie 3.8.0 - tools/mutanty_zmian.py liczy zasieg z reguł zainstalowanego mutmuta (HAR-144,
 # HAR-152), a 3.8.1 inaczej traktuje pragme w nawiasach; zmiana wersji to osobny ticket z nowymi oczekiwaniami.
-dev = ["ruff>=0.17,<0.18", "pytest>=8,<9.2", "pytest-asyncio>=1.4", "pytest-xdist>=3.8,<4", "aiosqlite>=0.20", "mutmut==3.8.0", "pytest-playwright>=0.7"]
+dev = ["ruff>=0.17,<0.18", "pytest>=8,<9.2", "pytest-asyncio>=1.4", "pytest-xdist>=3.8,<4", "aiosqlite>=0.20", "mutmut==3.8.0", "pytest-playwright>=0.7", "pytest-testmon>=2.1,<3"]
 
 [project.scripts]
 cockpit = "cockpit.__main__:main"

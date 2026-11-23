@@ -1,0 +1,16 @@
+# Tabela recznych mutantow HAR-235: test agenta ignorujacego SIGTERM sprawdza mechanizm
+# (dolna granica czasu smierci grupy od EOF = karencja straznika), nie okno 2 s.
+
+# Krotsza karencja: SIGKILL przychodzi ok. 1 s po EOF, ponizej CZAS_NA_ZAKONCZENIE_S - test oblewa.
+[[mutant]]
+plik = "src/runner/straznik.py"
+szukaj = "CZAS_NA_ZAKONCZENIE_S = 5     # tyle agent ma na SIGTERM, potem SIGKILL"
+zamien = "CZAS_NA_ZAKONCZENIE_S = 1     # tyle agent ma na SIGTERM, potem SIGKILL"
+test = "tests/test_brak_sierot.py::test_agent_ignorujacy_sigterm_ginie_po_eof_dopiero_po_calej_karencji_straznika"
+
+# Brak karencji: koniec petli od razu, SIGKILL natychmiast po SIGTERM.
+[[mutant]]
+plik = "src/runner/straznik.py"
+szukaj = "        if time.monotonic() >= termin:\n            break"
+zamien = "        if True:\n            break"
+test = "tests/test_brak_sierot.py::test_agent_ignorujacy_sigterm_ginie_po_eof_dopiero_po_calej_karencji_straznika"

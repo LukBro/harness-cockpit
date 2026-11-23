@@ -14,9 +14,11 @@ w katalogu tymczasowym; atrapa mutmuta nie dowiodlaby, ze scalone statystyki prz
 Modul importujemy w fixture, wiec brak implementacji oblewa kazdy test osobno.
 """
 import json
+import importlib
 import os
 import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,6 +36,55 @@ def sm():
     import statystyki_mutmuta
 
     return statystyki_mutmuta
+
+
+ZMIENNE_MUTMUTA = ("PY_IGNORE_IMPORTMISMATCH", "MUTMUT_DEPENDENCY_DEPTH")
+
+
+@contextmanager
+def zachowany_mutmut_procesu():
+    """Konfiguracja, stan i zmienne srodowiska mutmuta wracaja po bloku do stanu sprzed niego."""
+    import mutmut.configuration as konfiguracja
+    stan = importlib.import_module("mutmut.state")  # mutmut.state jako atrybut to funkcja state()
+
+    zapisane = (konfiguracja._config, stan._state)
+    zmienne = {nazwa: os.environ.get(nazwa) for nazwa in ZMIENNE_MUTMUTA}
+    try:
+        yield
+    finally:
+        konfiguracja._config, stan._state = zapisane
+        for nazwa, wartosc in zmienne.items():
+            if wartosc is None:
+                os.environ.pop(nazwa, None)
+            else:
+                os.environ[nazwa] = wartosc
+
+
+@pytest.fixture(autouse=True)
+def _mutmut_procesu_nietkniety():
+    # Pod `mutmut run` ten plik biegnie w procesie mutmuta (pytest.main): reset_config()/reset_state() z modulu
+    # podmienialy mu konfiguracje na miniature z tmp_path i kasowaly statystyki - mutation-main mial 0/0 mutantow.
+    with zachowany_mutmut_procesu():
+        yield
+
+
+def test_wywolanie_mutmuta_z_testu_nie_zmienia_konfiguracji_stanu_ani_srodowiska_procesu_mutmuta(sm, tmp_path):
+    import mutmut.configuration as konfiguracja
+    stan = importlib.import_module("mutmut.state")  # mutmut.state jako atrybut to funkcja state()
+
+    os.environ["MUTMUT_DEPENDENCY_DEPTH"] = "7"
+    os.environ.pop("PY_IGNORE_IMPORTMISMATCH", None)
+    przed = (konfiguracja.config(), stan.state())
+
+    with zachowany_mutmut_procesu():
+        sm._mutmut()  # reset_config() i reset_state(), jak w odcisk_zrodel i shardzie
+        os.environ["MUTMUT_DEPENDENCY_DEPTH"] = "0"  # jak _dowod_shardu
+        os.environ["PY_IGNORE_IMPORTMISMATCH"] = "1"
+
+    assert konfiguracja._config is przed[0]
+    assert stan._state is przed[1]
+    assert os.environ["MUTMUT_DEPENDENCY_DEPTH"] == "7"
+    assert "PY_IGNORE_IMPORTMISMATCH" not in os.environ
 
 
 # --- dane wspolne testow czystych --------------------------------------------------------------
@@ -1820,7 +1871,7 @@ def test_odcisk_konfiguracji_mutmuta_ze_zla_izolacja_to_blad_narzedzia_z_konfigu
 # imporcie `mutmut.__main__` (mutmut/utils/safe_setproctitle.py wola `config()` na poziomie modulu).
 WYRAZENIE_MUTMUT_RUN_BEZ_WALIDACJI = (
     '(setattr(s, "_sha_commita", lambda k: "x"), setattr(s, "odcisk_zrodel", lambda k: "x"), '
-    's._mutmut_run(SimpleNamespace(korzen=Path.cwd(), katalog_dowodow=Path("d"), wzorce=["x"])))'
+    's._mutmut_run(SimpleNamespace(korzen=Path.cwd(), katalog_dowodow=Path("d"), wzorce=["x"], liczba_shardow=None, indeks_shardu=None, przydzial=None)))'
 )
 
 
@@ -2173,3 +2224,123 @@ def test_mutmut_run_przekazuje_mutmutowi_liczbe_procesow_z_mutanty_zmian(sm, tmp
     kod = sm.main(["mutmut-run", "--korzen", str(tmp_path), "--katalog-dowodow", str(tmp_path), *argumenty, "w.*"])
     assert kod == 0
     assert wywolania == [(("w.*",), oczekiwane)]
+
+
+# --- shard mutantow w mutmut-run (fix-mutanty-zmian-shardy) -------------------------------------
+# Shard bierze co N-ty mutant z posortowanych nazw pasujacych do wzorcow: kazdy shard dostaje te sama czesc
+# kazdej funkcji, wiec ciezka funkcja nie laduje w jednym shardzie (podzial po plikach: shard 105 min, reszta 14-32).
+
+
+def test_przydzial_bierze_co_n_ty_mutant_z_posortowanych_nazw_pasujacych_do_wzorcow(sm):
+    nazwy = ["m.x_b__mutmut_2", "m.x_a__mutmut_1", "m.x_b__mutmut_1", "m.x_a__mutmut_2", "inny.x_c__mutmut_1"]
+
+    wszystkie, shard = sm.przydziel_mutanty(nazwy, ["m.x_*"], 1, 2)
+
+    assert wszystkie == ["m.x_a__mutmut_1", "m.x_a__mutmut_2", "m.x_b__mutmut_1", "m.x_b__mutmut_2"]
+    assert shard == ["m.x_a__mutmut_2", "m.x_b__mutmut_2"]
+
+
+def test_przydzial_przyjmuje_dokladna_nazwe_mutanta_jak_filtr_mutmuta(sm):
+    # mutmut: `key in mutant_names or any(fnmatch(key, n))`; nazwa z `[` nie jest wzorcem fnmatch.
+    assert sm.przydziel_mutanty(["m.x_a[1]__mutmut_1"], ["m.x_a[1]__mutmut_1"], 0, 1) == (
+        ["m.x_a[1]__mutmut_1"], ["m.x_a[1]__mutmut_1"]
+    )
+
+
+def test_przydzial_ze_zlym_indeksem_shardu_to_blad(sm):
+    with pytest.raises(sm.BladNarzedzia, match="indeks shardu 2 poza zakresem 0..1"):
+        sm.przydziel_mutanty(["m.x_a__mutmut_1"], ["m.x_*"], 2, 2)
+
+
+def _mutmut_run_shardu(projekt: Path, katalog: Path, indeks: int, liczba: int, przydzial: Path, *wzorce: str):
+    return _skrypt(
+        projekt, "mutmut-run", "--korzen", str(projekt), "--katalog-dowodow", str(katalog),
+        "--liczba-shardow", str(liczba), "--indeks-shardu", str(indeks), "--przydzial", str(przydzial),
+        *(wzorce or WZORCE_MINI),
+    )
+
+
+def test_mutmut_run_shardu_mutuje_tylko_mutanty_swojego_przydzialu_i_zapisuje_przydzial(sm, projekt_po_shardach, tmp_path):
+    kopia = _kopia(projekt_po_shardach, tmp_path)
+    assert _scal(kopia, kopia / "dowody").returncode == 0
+    przed = _log_testow(kopia)
+
+    wynik = _mutmut_run_shardu(kopia, kopia / "dowody", 1, 2, tmp_path / "przydzial.json")
+
+    assert wynik.returncode == 0, wynik.stderr
+    przydzial = json.loads((tmp_path / "przydzial.json").read_text(encoding="utf-8"))
+    assert przydzial["indeks"] == 1 and przydzial["liczba"] == 2
+    assert przydzial["wszystkie"] == ["pakiet.liczby.x_dodaj__mutmut_1", "pakiet.liczby.x_odejmij__mutmut_1"]
+    assert przydzial["shard"] == ["pakiet.liczby.x_odejmij__mutmut_1"]
+    uruchomione = {wpis.strip("'") for wpis in _log_testow(kopia)[len(przed):] if "__mutmut_" in wpis}
+    assert uruchomione == set(przydzial["shard"])
+
+
+def test_wzorce_bez_mutantow_daja_pusty_przydzial_a_nie_blad_mutmuta(sm, projekt_po_shardach, tmp_path):
+    kopia = _kopia(projekt_po_shardach, tmp_path)
+    assert _scal(kopia, kopia / "dowody").returncode == 0
+
+    wynik = _mutmut_run_shardu(kopia, kopia / "dowody", 0, 2, tmp_path / "p.json", "pakiet.liczby.x_brak__mutmut_*")
+
+    assert wynik.returncode == 0, wynik.stderr
+    assert json.loads((tmp_path / "p.json").read_text(encoding="utf-8"))["wszystkie"] == []
+
+
+@pytest.mark.parametrize(
+    "argumenty",
+    [["--liczba-shardow", "2"], ["--liczba-shardow", "2", "--indeks-shardu", "0"], ["--przydzial", "p.json"],
+     ["--liczba-shardow", "2", "--przydzial", "p.json"]],
+    ids=["bez-indeksu-i-pliku", "bez-pliku", "sam-plik", "bez-indeksu"],
+)
+def test_niepelne_flagi_shardu_mutantow_to_kod_2_bez_uruchamiania_mutmuta(sm, tmp_path, monkeypatch, capsys, argumenty):
+    monkeypatch.setattr(sm, "_mutmut", lambda: pytest.fail("mutmut nie powinien ruszyc"))
+    kod = sm.main(["mutmut-run", "--korzen", str(tmp_path), "--katalog-dowodow", str(tmp_path), *argumenty, "w.*"])
+
+    assert kod == 2
+    assert "--liczba-shardow, --indeks-shardu i --przydzial podaje sie razem" in capsys.readouterr().err
+
+
+def test_zly_indeks_shardu_mutantow_to_kod_2_bez_uruchamiania_mutmuta(sm, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sm, "_mutmut", lambda: pytest.fail("mutmut nie powinien ruszyc"))
+    kod = sm.main(["mutmut-run", "--korzen", str(tmp_path), "--katalog-dowodow", str(tmp_path),
+                   "--liczba-shardow", "2", "--indeks-shardu", "2", "--przydzial", str(tmp_path / "p.json"), "w.*"])
+
+    assert kod == 2
+    assert "indeks shardu 2 poza zakresem 0..1" in capsys.readouterr().err
+
+
+def test_po_przebiegu_shardu_mutmut_ma_z_powrotem_oryginalne_zbieranie_mutantow(sm, tmp_path, monkeypatch):
+    oryginal = object()
+    glowny = SimpleNamespace(get_mutant_runner=lambda *a, **k: None, collect_source_file_mutation_data=oryginal,
+                             _run=lambda wzorce, dzieci: None)
+    monkeypatch.setattr(sm, "_sha_commita", lambda k: "x")
+    monkeypatch.setattr(sm, "odcisk_zrodel", lambda k: "x")
+    monkeypatch.setattr(sm, "_mutmut", lambda: SimpleNamespace(glowny=glowny))
+
+    kod = sm.main(["mutmut-run", "--korzen", str(tmp_path), "--katalog-dowodow", str(tmp_path),
+                   "--liczba-shardow", "2", "--indeks-shardu", "0", "--przydzial", str(tmp_path / "p.json"), "w.*"])
+
+    assert kod == 0
+    assert glowny.collect_source_file_mutation_data is oryginal
+
+
+def test_nie_zapisany_przydzial_to_blad_narzedzia_z_nazwa_pliku(sm, tmp_path):
+    zbierz = sm._zbieranie_shardu(
+        lambda *, mutant_names: ([(None, "m.x_a__mutmut_1", None)], {}),
+        SimpleNamespace(indeks_shardu=0, liczba_shardow=1, przydzial=tmp_path / "brak" / "p.json"),
+    )
+    with pytest.raises(sm.BladNarzedzia, match="nie da sie zapisac przydzialu"):
+        zbierz(mutant_names=("m.x_*",))
+
+
+def test_zbieranie_shardu_zwraca_mutmutowi_tylko_mutanty_shardu(sm, tmp_path):
+    mutanty = [(None, f"m.x_a__mutmut_{i}", None) for i in range(1, 5)]
+    zbierz = sm._zbieranie_shardu(
+        lambda *, mutant_names: (mutanty, {"dane": 1}),
+        SimpleNamespace(indeks_shardu=0, liczba_shardow=2, przydzial=tmp_path / "p.json"),
+    )
+
+    wybrane, dane = zbierz(mutant_names=("m.x_*",))
+
+    assert [m[1] for m in wybrane] == ["m.x_a__mutmut_1", "m.x_a__mutmut_3"]
+    assert dane == {"dane": 1}
