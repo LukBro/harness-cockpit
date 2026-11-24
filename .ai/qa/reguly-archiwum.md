@@ -595,6 +595,8 @@ krotki w `except`, elementy stałych zbiorów i wyrażeń regularnych, hooki pyt
 HAR-144) — raport test-writera zawiera tabelę **ręcznych mutantów**:
 `element | mutacja | test, który oblewa`. Po jednym wierszu na każdy zmieniony element.
 
+> Nieaktualne od 2026-11-24 (HAR-260): `tools/mutanty_reczne.py` i tabele `tests/mutanty_reczne/` usunięte.
+
 Źródło: HAR-150. Tabela jest wykonywalna: żyje jako `tests/mutanty_reczne/<ticket>.toml`,
 a wiersz to wpis `[[mutant]]` z polami `plik` (ścieżka względna od korzenia repo), `szukaj`
 (musi wystąpić w pliku dokładnie raz), `zamien` (różne od `szukaj`) i `test` (node id pytesta):
@@ -690,6 +692,8 @@ oddaje pracę przed przejściem własnej listy. Nowe kształty:
 
 ##### Cudze tabele ręcznych mutantów
 
+> Nieaktualne od 2026-11-24 (HAR-260): tabele i `tools/mutanty_reczne.py` usunięte.
+
 Źródło: HAR-81 (przeniesienie kodu do `WidokRunu.tsx` zepsuło wpisy HAR-77 i HAR-156),
 HAR-221 (zepsuł dwa wiersze HAR-156), HAR-223 (po nim `HAR-0.toml` #7 nie trafia w kod).
 Na `origin/main` po M1.7 cztery wiersze nie trafiają w kod (HAR-0 #2, #7, #10, HAR-79 #35),
@@ -709,6 +713,8 @@ elementu = **-25**; PR, po którym wiersz cudzej tabeli przestaje trafiać w kod
 Źródło: 3 z 4 ticketów M1.8 dostały -25 z tej reguły u test-writera (HAR-172 dwie rundy z rzędu,
 „korekta WRACA”; HAR-173; HAR-225 „korekta WRACA” za HAR-141/HAR-133). Za każdym razem brakujące
 wiersze znalazł krytyk, nie autor tabeli. Nowe kształty:
+
+> Wiersze tabel ręcznych mutantów w tej sekcji: nieaktualne od 2026-11-24 (HAR-260).
 
 - **Lista kodu 3 to lista wierszy tabeli** — każda linia, którą `tools/mutanty_zmian.py` wypisuje
   jako „bez mutantów — sprawdź ręcznie”, ma w tabeli ręcznych mutantów wiersz albo uzasadnienie
@@ -733,6 +739,8 @@ wiersze znalazł krytyk, nie autor tabeli. Nowe kształty:
 Tekst reguły znów nie wystarczył — egzekucja „każda linia kodu 3 ma wiersz albo uzasadnienie”
 jako sprawdzenie w CI to ticket z retro M1.8.
 
+(Nieaktualne od 2026-11-24 (HAR-260): egzekucja wierszy tabeli nie istnieje.)
+
 Co sprawdzić w review: linia z listy kodu 3 bez wiersza i bez uzasadnienia = **-25**; każdy
 z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-25**.
 
@@ -741,6 +749,8 @@ z powyższych kształtów bez testu, który oblewa po usunięciu elementu = **-2
 
 Źródło: 4 z 5 ticketów M1.9 dostały odjęcie z tej reguły w rundzie 1 (HAR-174 test-writer -25, HAR-176 test-writer -25 i
 backend-python -25, HAR-178 test-writer -25, HAR-228 test-writer -15). Za każdym razem brak wskazał krytyk, nie autor. Nowe kształty:
+
+> Wiersze tabel ręcznych mutantów (`[[rownowazny]]`, „wiersz tabeli”) w tej sekcji: nieaktualne od 2026-11-24 (HAR-260).
 
 - **Każdy element wyrażenia regularnego w stałej modułu** — klasa znaków, wykluczony znak (`[^\[\]:]`), kotwica i końcowy
   literał (`\]`) mają wejście, na którym tylko ten element decyduje o dopasowaniu (HAR-176, `KOTWICA` w `src/runner/kotwice.py`).
@@ -765,6 +775,8 @@ Co sprawdzić w review: każdy z powyższych kształtów bez testu, który oblew
 wiersze dla listy kodu 3 dopisywane osobnym commitem po pierwszym commicie ticketu (HAR-179 `62894f3`, HAR-230
 `5699ba9`, HAR-234 `65d4126`), cudze tabele zepsute w HAR-179 i HAR-170. Nowe kształty:
 
+> Punkty o wierszach tabel ręcznych mutantów (wiersz z testem, `exit 1`, kod 3) w tej sekcji: nieaktualne od 2026-11-24 (HAR-260).
+
 - **Kolejność i filtr rodzaju zbudowane w Pythonie** — sortowanie stanów po słowniku i filtr `kind == "step_finished"`
   (HAR-170, `src/cockpit/services/odbior_dowody.py`) mają test, w którym tylko one decydują: dla sortowania wejście,
   w którym kolejność wstawiania różni się od kolejności wyniku (powtórzony klucz przepleciony innym), dla filtra
@@ -775,6 +787,7 @@ wiersze dla listy kodu 3 dopisywane osobnym commitem po pierwszym commicie ticke
   bez wskazania, że żadne wejście nie odróżnia wersji, nie zwalnia z wiersza.
 - **Każda gałąź `exit 1` w skrypcie CI** (HAR-233, krok poprzedniego zielonego wyniku: pięć gałęzi błędu) ma wiersz
   ręcznego mutanta usuwający `exit 1` — komunikat `::error::` bez wyjścia z kodem 1 to zielony krok.
+- *(Dwa następne punkty: nieaktualne od 2026-11-24 (HAR-260) — `tools/mutanty_reczne.py` usunięty.)*
 - **Lista kodu 3 przed pierwszym commitem** — test-writer uruchamia `python tools/mutanty_reczne.py --pokrycie-kod3
   <lista> tests/mutanty_reczne/<ticket>.toml` przed oddaniem pracy, nie po czerwonym kroku CI; trzy tickety M1.10
   dopisywały te wiersze osobnym commitem.
