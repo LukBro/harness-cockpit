@@ -34,6 +34,13 @@ KOD_INFRA = 97  # przygotowanie kopii na maszynie zdalnej nie wyszlo
 KOD_SSH = 255
 LIMIT_S = 9000
 TEST_LOCK = Path(__file__).with_name("test_lock.py")
+# Linux: /proc; macOS (Mac w puli, 2026-11-24): sysctl i vm_stat. Ten sam format: rdzenie obciazenie bajty.
+POMIAR = ("if [ -r /proc/loadavg ]; then echo $(nproc) $(cut -d' ' -f1 /proc/loadavg) "
+          "$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo); else echo $(sysctl -n hw.ncpu) "
+          "$(sysctl -n vm.loadavg | awk '{print $2}') $(vm_stat | awk '/page size of/{ps=$8} "
+          "/^Pages (free|inactive|speculative):/{gsub(/\\./,\"\",$NF); s+=$NF} END{print s*ps}'); fi")
+# sesja ssh na macOS nie ma /usr/local/bin w PATH (docker, flock z brew)
+PATH_ZDALNY = "export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 
 class BladMaszyny(Exception):
@@ -77,9 +84,7 @@ def obciazenie_lokalne() -> dict:
 
 def obciazenie_zdalne(m: dict) -> dict:
     try:
-        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", m["ssh"],
-                            "echo $(nproc) $(cut -d' ' -f1 /proc/loadavg) "
-                            "$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo)"],
+        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", m["ssh"], POMIAR],
                            capture_output=True, text=True, timeout=30)
         rdzenie, obciazenie, pamiec = r.stdout.split()
         return {"rdzenie": int(rdzenie), "obciazenie": float(obciazenie), "pamiec_gb": float(pamiec) / 1024 ** 3}
@@ -107,6 +112,7 @@ def skrypt_zdalny(m: dict, praca: str, sha: str, argv: list[str]) -> str:
     docker = f"docker run --rm -v $D/repo:/repo -w /repo {q(m['obraz'])} bash -c {q(komenda)}"
     return "\n".join([
         "set -u",
+        PATH_ZDALNY,
         f"D={k}/praca/{praca}; mkdir -p $D && tar -x -C $D -f $D.tar || exit {KOD_INFRA}",
         f"flock {k}/repo.lock git -C {k}/repo fetch -q origin || exit {KOD_INFRA}",
         f"[ -s $D/zmiany.bundle ] && {{ flock {k}/repo.lock git -C {k}/repo fetch -q $D/zmiany.bundle || exit {KOD_INFRA}; }}",
