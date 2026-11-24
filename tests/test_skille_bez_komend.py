@@ -37,6 +37,7 @@ OCZEKIWANE_CAPABILITIES = {
     "typecheck",
     "contract",
     "smoke",
+    "mutate_diff",
 }
 
 OCZEKIWANE_NEEDS = {

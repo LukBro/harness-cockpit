@@ -127,7 +127,8 @@ def test_skill_planu_jest_recenzentem_bez_prawa_zapisu_i_tworzy_plan_md(tmp_path
 
 RECENZENCI = ["contract-check", "review-unknown", "explain-change"]
 CAPABILITIES_REPO = {
-    "test_narrow", "test_full", "test_e2e", "lint", "layers", "typecheck", "contract", "smoke"}
+    "test_narrow", "test_full", "test_e2e", "lint", "layers", "typecheck", "contract", "smoke",
+    "mutate_diff"}
 
 
 def krok_po_id(workflow: Workflow, id_kroku: str):
@@ -144,11 +145,12 @@ def test_workflow_budowy_ma_krok_diff_systemowy_bez_skilla_zaraz_po_scenariuszu_
     assert diff.optional is False
 
 
-def test_krokami_systemowymi_budowy_sa_diff_i_dwa_kroki_check(tmp_path):
+def test_krokami_systemowymi_budowy_sa_diff_i_trzy_kroki_check(tmp_path):
     workflow, _, _ = wczytaj(tmp_path)
     systemowe = [k for k in workflow.kroki if k.system is not None]
-    assert sorted(k.id for k in systemowe) == ["contract", "diff", "typecheck"]
-    assert [k.skill for k in systemowe] == [None, None, None]
+    assert sorted(k.id for k in systemowe) == [
+        "contract", "diff", "mutate-diff", "typecheck"]
+    assert [k.skill for k in systemowe] == [None, None, None, None]
 
 
 @pytest.mark.parametrize(
@@ -177,7 +179,7 @@ def test_kazdy_krok_check_budowy_ma_komende_capability_w_project_yaml_repozytori
     projekt, problemy = wczytaj_projekt(KORZEN_REPO)
     assert projekt is not None, problemy
     capability_krokow = {k.capability for k in workflow.kroki if k.system == "check"}
-    assert capability_krokow == {"typecheck", "contract"}
+    assert capability_krokow == {"typecheck", "contract", "mutate_diff"}
     assert capability_krokow <= set(projekt.capabilities)
 
 
@@ -233,9 +235,43 @@ def test_po_zakonczonym_kroku_diff_startuja_oba_checki_i_dwaj_recenzenci_a_recen
     wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO, stany)
 
     assert sorted(wynik.do_startu) == sorted(
-        ["typecheck", "contract", "review-unknown", "explain-change"])
+        ["typecheck", "contract", "mutate-diff", "review-unknown", "explain-change"])
     assert "contract-check" not in wynik.do_startu
     assert wynik.do_pominiecia == {}
+
+
+def test_krok_mutanty_budowy_czeka_na_diff_i_na_zatwierdzone_testy_zadania(tmp_path):
+    workflow, _, _ = wczytaj(tmp_path)
+    krok = krok_po_id(workflow, "mutate-diff")
+    assert (krok.system, krok.capability, krok.skill) == ("check", "mutate_diff", None)
+    assert krok.needs == ["diff", "tdd-task"]
+    assert krok.optional is False
+    assert krok.fail_on_survivors is False
+
+
+def test_projekt_bez_capability_mutate_diff_pomija_tylko_krok_mutantow_z_powodem_brak_capability(
+    tmp_path,
+):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    stany = stany_po_pracy_autora(workflow, diff=StanKroku.ZAKONCZONY)
+
+    wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO - {"mutate_diff"}, stany)
+
+    assert wynik.powody == {"mutate-diff": PowodPominiecia.BRAK_CAPABILITY}
+    assert wynik.do_pominiecia == {"mutate-diff": "brak capability mutate_diff"}
+    assert sorted(wynik.do_startu) == sorted(
+        ["typecheck", "contract", "review-unknown", "explain-change"])
+
+
+def test_po_nieudanym_kroku_diff_krok_mutantow_traci_wejscie_zmienione_linie(tmp_path):
+    workflow, rejestr, _ = wczytaj(tmp_path)
+    stany = stany_po_pracy_autora(workflow, diff=StanKroku.NIEUDANY)
+
+    wynik = nastepne(workflow, rejestr, CAPABILITIES_REPO, stany)
+
+    assert wynik.powody["mutate-diff"] == PowodPominiecia.BRAK_WEJSCIA
+    assert wynik.do_pominiecia["mutate-diff"] == (
+        "brak wejścia: zmienione-linie.json z kroku diff")
 
 
 def test_recenzent_kontraktu_startuje_dopiero_gdy_oba_checki_sa_zakonczone(tmp_path):
