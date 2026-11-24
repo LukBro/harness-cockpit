@@ -40,7 +40,7 @@ OCZEKIWANE_CAPABILITIES = {
 }
 
 OCZEKIWANE_NEEDS = {
-    "smoke": ["smoke"],
+    "smoke": [],  # HAR-220: capability smoke uruchamia silnik krokiem smoke-check
     "e2e-scenario": ["test_e2e"],
     "contract-check": [],  # HAR-177: dowody komend daja kroki check silnika (R8)
     "tdd-task": ["test_narrow"],

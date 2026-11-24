@@ -233,6 +233,11 @@ async def runner_stream(
                 if await request.is_disconnected():
                     break
                 polecenie = await q.get()
+                # zapytanie, na ktore kokpit juz nie czeka (timeout, anulowanie), nie jedzie do
+                # runnera: wykonaloby skutek bez odbiorcy odpowiedzi (HAR-201)
+                req_id = polecenie.get("req_id")
+                if req_id is not None and not bus.oczekuje(req_id):
+                    continue
                 # polecenie przerwanego runu nie idzie do runnera po powrocie (HAR-37)
                 async with db_session.SessionLocal() as s2:
                     aktualne = await uslugi.polecenie_aktualne(
