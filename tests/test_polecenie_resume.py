@@ -9,6 +9,7 @@ Nazwy testow w jezyku dziedziny, nie technologii (CLAUDE.md).
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -53,7 +54,7 @@ def wznowienie(monkeypatch) -> Wznowienie:
 
 async def _po_przetworzeniu(kokpit: Kokpit, req_id: str) -> None:
     """Ping za poleceniem: odpowiedz na niego dowodzi, ze polecenie przed nim juz przetworzono."""
-    kokpit.wyslij({"type": "ping", "req_id": req_id})
+    kokpit.wyslij({"type": "ping", "req_id": req_id, "nadano_o": time.time(), "wazne_s": 15.0})
     await _poczekaj(lambda: any(o["req_id"] == req_id for o in kokpit.odpowiedzi),
                     f"odpowiedz na {req_id}")
 

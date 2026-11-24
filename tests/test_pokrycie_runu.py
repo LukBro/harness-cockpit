@@ -341,6 +341,7 @@ async def test_element_listy_krokow_weryfikujacych_dluzszy_niz_200_znakow_jest_o
 
 
 async def test_element_listy_krokow_weryfikujacych_o_200_znakach_jest_przyjety(swiat):
+    await _wykonany(swiat, "lint")      # run bez ukonczonego kroku nie jest do odbioru (HAR-207)
     r = await _zdarzenie(swiat, "run_finished", kroki_weryfikujace=["k" * 200])
 
     assert r.status_code == 200
@@ -359,6 +360,7 @@ async def test_lista_krokow_weryfikujacych_dluzsza_niz_1000_elementow_jest_odrzu
 
 
 async def test_lista_krokow_weryfikujacych_o_1000_elementach_jest_przyjeta(swiat):
+    await _wykonany(swiat, "lint")      # run bez ukonczonego kroku nie jest do odbioru (HAR-207)
     r = await _zdarzenie(swiat, "run_finished",
                          kroki_weryfikujace=[f"k{i}" for i in range(1000)])
 
@@ -482,6 +484,7 @@ async def test_samo_zdarzenie_pominiecia_bez_wiersza_stanu_kroku_daje_brak_pokry
                     text=BRAK_CAPABILITY_LINT))
         await s.commit()
     assert await _liczba(StepRun) == 0
+    await _wykonany(swiat, "build")     # run musi miec ukonczony krok, ale nie "lint" (HAR-207)
 
     await _koniec(swiat, ["lint"])
 
@@ -512,7 +515,8 @@ async def test_krok_weryfikujacy_ktorego_jeden_agent_jest_w_toku_a_drugi_skonczy
     await _ok(swiat, "step_finished", step_id="lint", agent_id="b")
     await _koniec(swiat, ["lint"])
 
-    assert await _status(swiat.run_id) == RunStatus.to_accept
+    # agent "a" nie skonczyl: run bez dowodu ukonczenia (HAR-207) i bez pokrycia
+    assert await _status(swiat.run_id) == RunStatus.failed
     assert await _kolumny(swiat.run_id) == BRAK_POMIARU
 
 
@@ -523,7 +527,8 @@ async def test_krok_weryfikujacy_ktorego_jeden_agent_czeka_a_drugi_skonczyl_daje
     await _ok(swiat, "step_finished", step_id="lint", agent_id="b")
     await _koniec(swiat, ["lint"])
 
-    assert await _status(swiat.run_id) == RunStatus.to_accept
+    # agent "a" czeka: run bez dowodu ukonczenia (HAR-207) i bez pokrycia
+    assert await _status(swiat.run_id) == RunStatus.failed
     assert await _kolumny(swiat.run_id) == BRAK_POMIARU
 
 

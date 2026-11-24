@@ -21,7 +21,9 @@ from .errors import (
     WymagaPotwierdzenia,
 )
 from .invariants import Niezmiennik
-from .kroki import kroki_runu, nieudane_kroki, zastosuj_zdarzenie_kroku
+from .kroki import (
+    brak_dowodu_ukonczenia, kroki_runu, nieudane_kroki, zastosuj_zdarzenie_kroku,
+)
 from .pokrycie import (
     PokrycieBramek, WynikBramki, WynikKrokuWeryfikujacego, pokrycie_bramek,
 )
@@ -284,14 +286,23 @@ RODZAJE_CZLOWIEKA: frozenset[str] = frozenset({
 })
 # `step_aborted` nie rusza runu `waiting` (HAR-47)
 _STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})
-_STATUSY_Z_SUKCESEM_PO_RUN_FINISHED = frozenset({RunStatus.running, RunStatus.waiting})
-_STATUSY_ROZSTRZYGANE_RUN_FINISHED = _STATUSY_Z_SUKCESEM_PO_RUN_FINISHED | {RunStatus.to_accept}
+# Statusy, w ktorych `run_finished` wymaga dowodu ukonczenia krokow (takze `to_accept`:
+# krok dodany po odbiorze bez konca nie zostawia runu do odbioru).
+_STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED = frozenset({RunStatus.running, RunStatus.to_accept})
+# `waiting` czeka na decyzje czlowieka: `run_finished` go nie konczy, ale nieudany krok tak
+_STATUSY_ROZSTRZYGANE_RUN_FINISHED = _STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED | {
+    RunStatus.waiting,
+}
+POWOD_BRAK_DOWODU = "brak dowodu ukończenia kroków"
 
 
 def nastepny_status(
-    obecny: RunStatus, kind: str, nieudane: Sequence[str] = (),
+    obecny: RunStatus, kind: str, nieudane: Sequence[str] = (), bez_dowodu: bool = False,
 ) -> RunStatus:
-    """Czysta maszyna przejsc runu; `failed`, `aborted`, `skipped`, `pending` sa koncowe."""
+    """Czysta maszyna przejsc runu; `failed`, `aborted`, `skipped`, `pending` sa koncowe.
+
+    `bez_dowodu`: brak krokow albo krok bez konca przy `run_finished`; run `running`
+    albo `to_accept` dostaje wtedy `failed` zamiast `to_accept` (`evidence_required`)."""
     if kind == "step_waiting" and obecny == RunStatus.running:
         return RunStatus.waiting
     if kind == "step_started" and obecny == RunStatus.waiting:
@@ -302,8 +313,8 @@ def nastepny_status(
         # porazka kroku przykrywa sukces, ale sukces nie cofa porazki
         if nieudane:
             return RunStatus.failed
-        if obecny in _STATUSY_Z_SUKCESEM_PO_RUN_FINISHED:
-            return RunStatus.to_accept
+        if obecny in _STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED:
+            return RunStatus.failed if bez_dowodu else RunStatus.to_accept
     return obecny
 
 
@@ -483,13 +494,22 @@ async def zapisz_zdarzenie(
                 cost_usd=cost_usd, tokens_in=tokens_in, tokens_out=tokens_out,
                 num_turns=num_turns, session_id=session_id)
             nieudane = await nieudane_kroki(s, run) if kind == _KONIEC_RUNU else []
-            run.status = nastepny_status(status_przed, kind, nieudane)
+            # Trzy czlony tylko oszczedzaja zapytanie (wynik daje `nastepny_status`, ktory
+            # czyta `bez_dowodu` wylacznie dla tych statusow, `run_finished` i braku nieudanych).
+            bez_dowodu = (
+                kind == _KONIEC_RUNU and not nieudane
+                and status_przed in _STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED
+                and await brak_dowodu_ukonczenia(s, run)
+            )
+            run.status = nastepny_status(status_przed, kind, nieudane, bez_dowodu)
             if (kind == "step_aborted" and status_przed != RunStatus.aborted
                     and run.status == RunStatus.aborted):
                 run.reason = zapisany
             if (kind == _KONIEC_RUNU and status_przed != RunStatus.failed
                     and run.status == RunStatus.failed):
-                run.reason = powod_nieudanych_krokow(nieudane)
+                run.reason = (
+                    powod_nieudanych_krokow(nieudane) if nieudane else POWOD_BRAK_DOWODU
+                )
             if kind == _KONIEC_RUNU and run.status in _STATUSY_Z_POKRYCIEM:
                 pokrycie = await pokrycie_runu(s, run, kroki_weryfikujace)
                 if pokrycie is not None:

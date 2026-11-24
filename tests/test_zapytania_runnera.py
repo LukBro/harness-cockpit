@@ -162,12 +162,74 @@ async def test_odpowiedz_runnera_trafia_do_zapytania_po_req_id(zapytania_w_tle):
     assert await asyncio.wait_for(zadanie, 5) == cialo
 
 
-async def test_polecenie_zapytania_niesie_typ_req_id_i_pola_z_dane_i_nic_ponadto(zapytania_w_tle):
-    _, polecenie = await zapytania_w_tle.start(B1, "czytaj", {"sciezka": "a/b", "limit": 3})
+async def test_polecenie_zapytania_niesie_typ_req_id_czas_nadania_limit_waznosci_pola_z_dane_i_nic_ponadto(
+    zapytania_w_tle,
+):
+    przed = time.time()
+    _, polecenie = await zapytania_w_tle.start(
+        B1, "czytaj", {"sciezka": "a/b", "limit": 3}, timeout_s=7.5)
+    po = time.time()
 
     assert isinstance(polecenie["req_id"], str) and polecenie["req_id"]
     assert polecenie == {"type": "czytaj", "req_id": polecenie["req_id"],
-                         "sciezka": "a/b", "limit": 3}
+                         "sciezka": "a/b", "limit": 3,
+                         "nadano_o": polecenie["nadano_o"], "wazne_s": 7.5}
+    assert isinstance(polecenie["nadano_o"], float)
+    assert przed <= polecenie["nadano_o"] <= po       # czas nadania z zegara kokpitu (epoch, s)
+
+
+@pytest.mark.parametrize("timeout_s", [0.5, 15.0, 40.0])
+async def test_polecenie_zapytania_jest_wazne_dokladnie_tyle_ile_kokpit_czeka_na_odpowiedz(
+    zapytania_w_tle, timeout_s,
+):
+    _, polecenie = await zapytania_w_tle.start(B1, "ping", timeout_s=timeout_s)
+
+    assert polecenie["wazne_s"] == timeout_s
+
+
+async def test_dane_zapytania_nie_nadpisuja_czasu_nadania_ani_waznosci(zapytania_w_tle):
+    przed = time.time()
+    _, polecenie = await zapytania_w_tle.start(
+        B1, "ping", {"nadano_o": 1.0, "wazne_s": 99999.0}, timeout_s=5.0)
+
+    assert polecenie["nadano_o"] >= przed
+    assert polecenie["wazne_s"] == 5.0
+
+
+# --- HAR-201: kokpit wie, czy zapytanie jeszcze czeka na odpowiedz ----------------------
+
+async def test_zapytanie_czekajace_na_odpowiedz_jest_oczekujace(zapytania_w_tle):
+    _, polecenie = await zapytania_w_tle.start(B1)
+
+    assert bus.oczekuje(polecenie["req_id"]) is True
+
+
+async def test_zapytanie_po_odpowiedzi_runnera_nie_jest_juz_oczekujace(zapytania_w_tle):
+    zadanie, polecenie = await zapytania_w_tle.start(B1)
+    bus.odpowiedz(B1, polecenie["req_id"], {"ok": True})
+    await asyncio.wait_for(zadanie, 5)
+
+    assert bus.oczekuje(polecenie["req_id"]) is False
+
+
+async def test_zapytanie_po_przekroczeniu_czasu_nie_jest_juz_oczekujace(zapytania_w_tle):
+    zadanie, polecenie = await zapytania_w_tle.start(B1, "ping", timeout_s=0.05)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(zadanie, 5)
+
+    assert bus.oczekuje(polecenie["req_id"]) is False
+
+
+async def test_zapytanie_anulowane_nie_jest_juz_oczekujace(zapytania_w_tle):
+    zadanie, polecenie = await zapytania_w_tle.start(B1)
+    zadanie.cancel()
+    await asyncio.wait({zadanie}, timeout=5)
+
+    assert bus.oczekuje(polecenie["req_id"]) is False
+
+
+async def test_zapytanie_ktorego_kokpit_nigdy_nie_wyslal_nie_jest_oczekujace():
+    assert bus.oczekuje("nigdy-nie-wyslany") is False
 
 
 async def test_dane_zapytania_nie_nadpisuja_typu_ani_req_id(zapytania_w_tle):
@@ -739,6 +801,25 @@ def _klient_z_atrapa(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
+def _swieze(polecenie: dict, **nadpisz) -> dict:
+    """Polecenie tak, jak nadaje je kokpit (HAR-201): z czasem nadania i limitem waznosci."""
+    return {**polecenie, "nadano_o": time.time(), "wazne_s": 15.0, **nadpisz}
+
+
+async def _odpowiedzi_runnera_na(polecenie: dict) -> list[dict]:
+    """Runner obsluguje `polecenie`; zwraca ciala POST-ow na /api/runners/odpowiedzi."""
+    odpowiedzi: list[dict] = []
+
+    def handler(request):
+        odpowiedzi.append(json.loads(request.content))
+        return httpx.Response(204)
+
+    runner = RunnerKlient("http://kokpit.test", SEKRET)
+    async with _klient_z_atrapa(handler) as klient:
+        await asyncio.wait_for(runner._odpowiedz_na_zapytanie(klient, polecenie), 5)
+    return odpowiedzi
+
+
 async def test_runner_odpowiada_na_zapytanie_postem_z_tokenem_i_wynikiem_operacji():
     zadania: list[httpx.Request] = []
 
@@ -748,7 +829,7 @@ async def test_runner_odpowiada_na_zapytanie_postem_z_tokenem_i_wynikiem_operacj
 
     runner = RunnerKlient("http://kokpit.test/", SEKRET)
     async with _klient_z_atrapa(handler) as klient:
-        await runner._odpowiedz_na_zapytanie(klient, {"type": "ping", "req_id": "r1"})
+        await runner._odpowiedz_na_zapytanie(klient, _swieze({"type": "ping", "req_id": "r1"}))
 
     assert len(zadania) == 1
     assert zadania[0].method == "POST"
@@ -791,7 +872,8 @@ async def test_wynik_operacji_nieserializowalny_do_json_wraca_do_kokpitu_jako_bl
     runner = RunnerKlient("http://kokpit.test", SEKRET)
     async with _klient_z_atrapa(handler) as klient:
         await asyncio.wait_for(
-            runner._odpowiedz_na_zapytanie(klient, {"type": "x", "req_id": "r-nieser"}), 5)
+            runner._odpowiedz_na_zapytanie(
+                klient, _swieze({"type": "x", "req_id": "r-nieser"})), 5)
 
     assert len(zadania) == 1
     assert zadania[0].method == "POST"
@@ -825,7 +907,8 @@ async def test_poprawny_wynik_operacji_idzie_do_kokpitu_bez_zmian_mimo_straznika
     runner = RunnerKlient("http://kokpit.test", SEKRET)
     async with _klient_z_atrapa(handler) as klient:
         await asyncio.wait_for(
-            runner._odpowiedz_na_zapytanie(klient, {"type": "x", "req_id": "r-ok"}), 5)
+            runner._odpowiedz_na_zapytanie(
+                klient, _swieze({"type": "x", "req_id": "r-ok"})), 5)
 
     assert len(zadania) == 1
     assert json.loads(zadania[0].content) == {
@@ -836,7 +919,7 @@ async def test_poprawny_wynik_operacji_idzie_do_kokpitu_bez_zmian_mimo_straznika
 async def test_odpowiedz_przyjeta_przez_kokpit_niczego_nie_wypisuje(status, capsys):
     runner = RunnerKlient("http://kokpit.test", SEKRET)
     async with _klient_z_atrapa(lambda request: httpx.Response(status)) as klient:
-        await runner._odpowiedz_na_zapytanie(klient, {"type": "ping", "req_id": "r1"})
+        await runner._odpowiedz_na_zapytanie(klient, _swieze({"type": "ping", "req_id": "r1"}))
 
     assert capsys.readouterr().err == ""
 
@@ -850,7 +933,7 @@ async def test_odpowiedz_odrzucona_przez_kokpit_to_jedna_linia_na_stderr_bez_wyj
         lambda request: httpx.Response(status, text=f"tresc z {SEKRET}")
     ) as klient:
         wynik = await runner._odpowiedz_na_zapytanie(
-            klient, {"type": "ping", "req_id": "zapytanie-7f3"})
+            klient, _swieze({"type": "ping", "req_id": "zapytanie-7f3"}))
 
     err = capsys.readouterr().err
     assert wynik is None
@@ -876,13 +959,290 @@ async def test_awaria_sieci_przy_odpowiedzi_to_jedna_linia_na_stderr_bez_wyjatku
     runner = RunnerKlient("http://kokpit.test", SEKRET)
     async with _klient_z_atrapa(handler) as klient:
         wynik = await runner._odpowiedz_na_zapytanie(
-            klient, {"type": "ping", "req_id": "zapytanie-7f3"})
+            klient, _swieze({"type": "ping", "req_id": "zapytanie-7f3"}))
 
     err = capsys.readouterr().err
     assert wynik is None
     assert len(err.splitlines()) == 1
     assert SEKRET not in err
     assert err == f"odpowiedz na zapytanie zapytanie-7f3 niewyslana ({nazwa})\n"
+
+
+# --- HAR-201: runner nie wykonuje zapytania, na ktore kokpit juz nie czeka --------------------
+
+async def test_swieze_zapytanie_jest_wykonane_a_pola_protokolu_nie_trafiaja_do_operacji(
+    monkeypatch,
+):
+    dostala: list[dict] = []
+
+    async def podsluchaj(dane):
+        dostala.append(dict(dane))
+        return "zrobione"
+
+    monkeypatch.setitem(operacje.OPERACJE, "podsluchaj", podsluchaj)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        _swieze({"type": "podsluchaj", "req_id": "r-s", "a": 1}))
+
+    assert dostala == [{"a": 1}]
+    assert odpowiedzi == [{"req_id": "r-s", "ok": True, "wynik": "zrobione"}]
+
+
+def _operacja_liczaca_wywolania(monkeypatch) -> list[dict]:
+    wywolania: list[dict] = []
+
+    async def licz(dane):
+        wywolania.append(dict(dane))
+        return "wykonano"
+
+    monkeypatch.setitem(operacje.OPERACJE, "licz", licz)
+    return wywolania
+
+
+@pytest.mark.parametrize("wiek_s", [16.0, 100.0, 86400.0])
+async def test_zapytanie_starsze_niz_limit_waznosci_jest_odrzucone_jako_przeterminowane_bez_wykonania(
+    monkeypatch, wiek_s,
+):
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        _swieze({"type": "licz", "req_id": "r-st"}, nadano_o=time.time() - wiek_s))
+
+    assert wywolania == []
+    assert odpowiedzi == [{"req_id": "r-st", "ok": False, "blad": _BLAD_PRZETERMINOWANE,
+                           "kod": "przeterminowane"}]
+
+
+async def test_zapytanie_w_polowie_limitu_waznosci_jest_jeszcze_wykonane(monkeypatch):
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        _swieze({"type": "licz", "req_id": "r-pol"}, nadano_o=time.time() - 5.0, wazne_s=15.0))
+
+    assert len(wywolania) == 1
+    assert odpowiedzi == [{"req_id": "r-pol", "ok": True, "wynik": "wykonano"}]
+
+
+async def test_wiek_zapytania_jest_liczony_wzgledem_jego_wlasnego_limitu_a_nie_stalej_runnera(
+    monkeypatch,
+):
+    """Ten sam wiek (10 s): przy limicie 5 s zapytanie jest przeterminowane, przy 30 s wazne."""
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+    nadano = time.time() - 10.0
+
+    krotki = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-5", "nadano_o": nadano, "wazne_s": 5.0})
+    dlugi = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-30", "nadano_o": nadano, "wazne_s": 30.0})
+
+    assert krotki[0]["kod"] == "przeterminowane"
+    assert dlugi[0]["ok"] is True
+    assert len(wywolania) == 1
+
+
+_BRAK = object()
+
+
+@pytest.mark.parametrize(
+    ("nadano_o", "wazne_s"),
+    [
+        (_BRAK, 15.0), (None, 15.0), ("123.0", 15.0), (True, 15.0), ([1.0], 15.0),
+        (float("nan"), 15.0), (float("inf"), 15.0),
+        (None, None),
+    ],
+    ids=["brak_nadano_o", "nadano_o_null", "nadano_o_napis", "nadano_o_logiczne", "nadano_o_lista",
+         "nadano_o_nan", "nadano_o_inf", "oba_null"],
+)
+async def test_zapytanie_z_nieprawidlowym_czasem_nadania_jest_odrzucone_bez_wykonania(
+    monkeypatch, nadano_o, wazne_s,
+):
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+    polecenie = {"type": "licz", "req_id": "r-zle", "nadano_o": time.time(), "wazne_s": wazne_s}
+    if nadano_o is _BRAK:
+        del polecenie["nadano_o"]
+    else:
+        polecenie["nadano_o"] = nadano_o
+
+    odpowiedzi = await _odpowiedzi_runnera_na(polecenie)
+
+    assert wywolania == []
+    assert odpowiedzi == [{"req_id": "r-zle", "ok": False, "blad": _BLAD_CZAS_NADANIA,
+                           "kod": "zly_czas_nadania"}]
+
+
+_BLAD_CZAS_NADANIA = "zapytanie bez poprawnego czasu nadania (nadano_o)"
+_BLAD_LIMIT_WAZNOSCI = "zapytanie bez poprawnego limitu waznosci (wazne_s)"
+_BLAD_PRZETERMINOWANE = "zapytanie przeterminowane: kokpit nie czeka juz na odpowiedz"
+
+
+async def test_czas_nadania_ponad_zakres_liczby_zmiennoprzecinkowej_jest_odrzucony_bez_wykonania(
+    monkeypatch,
+):
+    """`float(10**400)` rzuca OverflowError: to jest zly czas nadania, a nie awaria runnera."""
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-ov-n", "nadano_o": 10**400, "wazne_s": 15.0})
+
+    assert wywolania == []
+    assert odpowiedzi == [{"req_id": "r-ov-n", "ok": False, "blad": _BLAD_CZAS_NADANIA,
+                           "kod": "zly_czas_nadania"}]
+
+
+async def test_limit_waznosci_ponad_zakres_liczby_zmiennoprzecinkowej_jest_odrzucony_bez_wykonania(
+    monkeypatch,
+):
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-ov-w", "nadano_o": time.time(), "wazne_s": 10**400})
+
+    assert wywolania == []
+    assert odpowiedzi == [{"req_id": "r-ov-w", "ok": False, "blad": _BLAD_LIMIT_WAZNOSCI,
+                           "kod": "zly_limit_waznosci"}]
+
+
+@pytest.mark.parametrize(
+    "wazne_s",
+    [_BRAK, None, "15", True, [15], float("nan"), float("inf"), float("-inf"), -1.0, -1, 0, 0.0],
+    ids=["brak", "null", "napis", "logiczne", "lista", "nan", "inf", "minus_inf", "ujemne",
+         "ujemne_calkowite", "zero_calkowite", "zero"],
+)
+async def test_zapytanie_z_nieprawidlowym_limitem_waznosci_jest_odrzucone_bez_wykonania(
+    monkeypatch, wazne_s,
+):
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+    polecenie = {"type": "licz", "req_id": "r-zle", "nadano_o": time.time()}
+    if wazne_s is not _BRAK:
+        polecenie["wazne_s"] = wazne_s
+
+    odpowiedzi = await _odpowiedzi_runnera_na(polecenie)
+
+    assert wywolania == []
+    assert odpowiedzi == [{"req_id": "r-zle", "ok": False, "blad": _BLAD_LIMIT_WAZNOSCI,
+                           "kod": "zly_limit_waznosci"}]
+
+
+# Wstrzykniety `teraz` = 1000: wiek to dokladnie `1000 - nadano_o`, bez zegara i bez wyscigu.
+_TERAZ = 1000.0
+
+
+@pytest.mark.parametrize(
+    ("polecenie", "oczekiwana"),
+    [
+        # zly czas nadania: odrzuca go tylko straznik czasu (limit jest poprawny)
+        ({"nadano_o": None, "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": "990.0", "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": [990.0], "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        # logiczne True to nie liczba 1.0: gdyby przeszlo, wiek 999 s dalby "przeterminowane"
+        ({"nadano_o": True, "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": False, "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": float("nan"), "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": float("inf"), "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": float("-inf"), "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": 10**400, "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        ({"nadano_o": -(10**400), "wazne_s": 15.0}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        # oba pola zle: najpierw czas nadania
+        ({"nadano_o": None, "wazne_s": None}, ("zly_czas_nadania", _BLAD_CZAS_NADANIA)),
+        # zly limit waznosci: odrzuca go tylko straznik limitu (czas jest poprawny)
+        ({"nadano_o": 999.0}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": None}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": "15"}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": [15]}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        # logiczne True to nie limit 1.0: gdyby przeszlo, wiek 0 s zostawilby zapytanie waznym
+        ({"nadano_o": _TERAZ, "wazne_s": True}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": float("nan")}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": float("inf")}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": 10**400}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 999.0, "wazne_s": -(10**400)}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        # limit zerowy i ujemny przy wieku 0 s (gdyby przeszedl, wiek 0 nie przekracza 0)
+        ({"nadano_o": _TERAZ, "wazne_s": 0}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": _TERAZ, "wazne_s": 0.0}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        # limit ujemny przy czasie nadania w przyszlosci (wiek -1000 s): gdyby przeszedl,
+        # -1000 > -1 jest falszem i zapytanie zostaloby wykonane
+        ({"nadano_o": 2000.0, "wazne_s": -1.0}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        ({"nadano_o": 2000.0, "wazne_s": -1}, ("zly_limit_waznosci", _BLAD_LIMIT_WAZNOSCI)),
+        # przeterminowane: oba pola poprawne, decyduje tylko wiek
+        ({"nadano_o": 984.5, "wazne_s": 15.0}, ("przeterminowane", _BLAD_PRZETERMINOWANE)),
+        ({"nadano_o": 0.0, "wazne_s": 15}, ("przeterminowane", _BLAD_PRZETERMINOWANE)),
+    ],
+    ids=["czas_null", "czas_brak", "czas_napis", "czas_lista", "czas_logiczne_prawda",
+         "czas_logiczne_falsz", "czas_nan", "czas_inf", "czas_minus_inf", "czas_ponad_zakres",
+         "czas_minus_ponad_zakres", "oba_null",
+         "limit_brak", "limit_null", "limit_napis", "limit_lista", "limit_logiczne_prawda",
+         "limit_nan", "limit_inf", "limit_ponad_zakres", "limit_minus_ponad_zakres",
+         "limit_zero_calkowite", "limit_zero", "limit_ujemny_czas_w_przyszlosci",
+         "limit_ujemny_calkowity_czas_w_przyszlosci",
+         "wiek_o_pol_sekundy_ponad_limit", "wiek_od_poczatku_epoki"],
+)
+def test_odmowa_zapytania_ma_dokladny_kod_i_komunikat_zalezne_od_jedynej_wadliwej_rzeczy(
+    polecenie, oczekiwana,
+):
+    assert runner_client._odmowa_zapytania(polecenie, _TERAZ) == oczekiwana
+
+
+@pytest.mark.parametrize(
+    "polecenie",
+    [
+        {"nadano_o": 985.0, "wazne_s": 15.0},        # wiek rowny limitowi: jeszcze wazne (porownanie `>`)
+        {"nadano_o": 985, "wazne_s": 15},            # to samo na liczbach calkowitych
+        {"nadano_o": 990.0, "wazne_s": 15.0},        # wiek 10 s
+        {"nadano_o": _TERAZ, "wazne_s": 0.001},      # najmniejszy dodatni limit przechodzi
+        {"nadano_o": 1005.0, "wazne_s": 15.0},       # czas nadania w przyszlosci (skos zegarow) nie jest wiekiem ponad limit
+    ],
+    ids=["wiek_rowny_limitowi", "wiek_rowny_limitowi_calkowite", "wiek_w_limicie",
+         "limit_dodatni_ulamkowy", "czas_nadania_w_przyszlosci"],
+)
+def test_zapytanie_w_granicach_waznosci_nie_jest_odrzucane(polecenie):
+    assert runner_client._odmowa_zapytania(polecenie, _TERAZ) is None
+
+
+@pytest.mark.parametrize("nadmiar_s", [0.001, 0.5, 1.0])
+def test_zapytanie_starsze_od_limitu_choc_o_ulamek_sekundy_jest_przeterminowane(nadmiar_s):
+    polecenie = {"nadano_o": _TERAZ - 15.0 - nadmiar_s, "wazne_s": 15.0}
+
+    assert runner_client._odmowa_zapytania(polecenie, _TERAZ) == (
+        "przeterminowane", _BLAD_PRZETERMINOWANE)
+
+
+async def test_zapytanie_o_wieku_rownym_limitowi_jest_wykonane_a_o_ulamek_starsze_odrzucone(
+    monkeypatch,
+):
+    """Przez prawdziwy `_odpowiedz_na_zapytanie` z zamrozonym zegarem runnera."""
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+    monkeypatch.setattr(runner_client, "time", SimpleNamespace(time=lambda: _TERAZ))
+
+    na_granicy = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-gr", "nadano_o": _TERAZ - 15.0, "wazne_s": 15.0})
+    ponad = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-po", "nadano_o": _TERAZ - 15.5, "wazne_s": 15.0})
+
+    assert na_granicy == [{"req_id": "r-gr", "ok": True, "wynik": "wykonano"}]
+    assert ponad == [{"req_id": "r-po", "ok": False, "blad": _BLAD_PRZETERMINOWANE,
+                      "kod": "przeterminowane"}]
+    assert len(wywolania) == 1
+
+
+async def test_zapytanie_z_calkowitymi_liczbami_w_czasie_i_limicie_jest_wykonane(monkeypatch):
+    """Liczba calkowita to poprawna liczba (JSON nie odroznia 15 od 15.0); odrzuca sie tylko
+    wartosci, ktore nie sa liczbami."""
+    wywolania = _operacja_liczaca_wywolania(monkeypatch)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        {"type": "licz", "req_id": "r-int", "nadano_o": int(time.time()), "wazne_s": 15})
+
+    assert len(wywolania) == 1
+    assert odpowiedzi[0]["ok"] is True
+
+
+async def test_odpowiedz_o_przeterminowaniu_nie_zdradza_tresci_zapytania(monkeypatch):
+    _operacja_liczaca_wywolania(monkeypatch)
+
+    odpowiedzi = await _odpowiedzi_runnera_na(
+        _swieze({"type": "licz", "req_id": "r-sek", "token": SEKRET}, nadano_o=time.time() - 100))
+
+    assert SEKRET not in json.dumps(odpowiedzi)
 
 
 # =================================================================================
@@ -1114,7 +1474,7 @@ async def test_zamkniecie_strumienia_przez_kokpit_anuluje_trwajace_zapytanie_prz
             return httpx.Response(200, json={"runner_id": "r-1", "heartbeat_co_s": 30})
         if request.url.path == "/api/runners/stream":
             return httpx.Response(200, stream=_StrumienZZapytaniemKonczacySiePoStarcieOperacji(
-                {"type": "wolna", "req_id": "zapytanie-1"}, ruszyla))
+                _swieze({"type": "wolna", "req_id": "zapytanie-1"}), ruszyla))
         return httpx.Response(204)
 
     stan: dict = {}
@@ -1163,3 +1523,99 @@ async def test_plik_o_rozmiarze_domyslnego_limitu_odczytu_z_samych_znakow_steruj
 
     assert wynik["rozmiar"] == 512 * 1024
     assert wynik["tresc"] == "\x01" * (512 * 1024)
+
+
+# --- HAR-201: strumien polecen nie wysyla runnerowi zapytania, na ktore kokpit juz nie czeka ---
+
+async def _odbierz_z_prawdziwego_strumienia(runner_id: str, ile: int, limit_s: float = 3.0) -> list[dict]:
+    """Otwiera prawdziwy `GET /api/runners/stream` prawdziwej aplikacji i zwraca polecenia, ktore
+    runner by dostal (pierwsze `ile`; po limicie czasu te, ktore doszly)."""
+    odebrane: list[dict] = []
+
+    async def czytaj(klient: AsyncClient) -> None:
+        async with klient.stream("GET", "/api/runners/stream", headers=_naglowek(runner_id)) as r:
+            assert r.status_code == 200
+            async for linia in r.aiter_lines():
+                if linia.startswith("data:"):
+                    odebrane.append(json.loads(linia.removeprefix("data:").strip()))
+                    if len(odebrane) >= ile:
+                        return
+
+    async with AsyncClient(transport=TransportASGIStrumieniujacy(app_mod.app),
+                           base_url="http://test") as klient:
+        try:
+            await asyncio.wait_for(czytaj(klient), limit_s)
+        except TimeoutError:
+            pass
+    return odebrane
+
+
+async def _zapytanie_po_ktorym_kokpit_juz_nie_czeka() -> None:
+    """Polecenie zapytania trafia do kolejki runnera (brak otwartego strumienia), a kokpit
+    konczy czekanie timeoutem: w kolejce zostaje zapytanie, ktorego nikt nie oczekuje."""
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(bus.zapytaj(B1, "ping", {}, 0.05), 5)
+    assert bus._oczekujace == {}
+    assert bus.runner_queue(B1).qsize() == 1
+
+
+async def test_zapytanie_po_timeoucie_kokpitu_nie_trafia_do_strumienia_runnera(swiat):
+    run_id = await _utworz_run(swiat.browarek, B1)
+    await _zapytanie_po_ktorym_kokpit_juz_nie_czeka()
+    # znacznik: polecenie bez req_id za zapytaniem; gdy dojdzie, zapytanie juz byloby wyslane
+    await bus.send_to_runner(B1, {"type": "run_workflow", "run_id": run_id})
+
+    odebrane = await _odbierz_z_prawdziwego_strumienia(B1, ile=2)
+
+    assert [p["type"] for p in odebrane] == ["polaczono", "run_workflow"]
+    assert not any("req_id" in p for p in odebrane)
+
+
+async def test_zapytanie_oczekujace_na_odpowiedz_trafia_do_strumienia_runnera(
+    swiat, zapytania_w_tle,
+):
+    zadanie = asyncio.create_task(bus.zapytaj(B1, "ping", {"x": 1}, 10.0))
+    zapytania_w_tle.zadania.append(zadanie)
+    await _poczekaj(lambda: len(bus._oczekujace) == 1)
+    req_id = next(iter(bus._oczekujace))
+
+    odebrane = await _odbierz_z_prawdziwego_strumienia(B1, ile=2)
+
+    assert [p["type"] for p in odebrane] == ["polaczono", "ping"]
+    assert odebrane[1]["req_id"] == req_id
+    assert odebrane[1]["x"] == 1
+    assert odebrane[1]["wazne_s"] == 10.0 and isinstance(odebrane[1]["nadano_o"], float)
+
+
+async def test_przeterminowane_zapytanie_jest_pominiete_a_oczekujace_za_nim_dochodzi(
+    swiat, zapytania_w_tle,
+):
+    await _zapytanie_po_ktorym_kokpit_juz_nie_czeka()
+    zadanie = asyncio.create_task(bus.zapytaj(B1, "ping", {}, 10.0))
+    zapytania_w_tle.zadania.append(zadanie)
+    await _poczekaj(lambda: len(bus._oczekujace) == 1)
+    req_id = next(iter(bus._oczekujace))
+
+    odebrane = await _odbierz_z_prawdziwego_strumienia(B1, ile=2)
+
+    assert [p.get("req_id") for p in odebrane] == [None, req_id]       # "polaczono", potem swieze
+
+
+@pytest.mark.parametrize("typ", ["run_workflow", "cancel_run", "resume"])
+async def test_polecenie_bez_req_id_dochodzi_do_runnera_mimo_filtra_przeterminowanych(swiat, typ):
+    run_id = await _utworz_run(swiat.browarek, B1)
+    await bus.send_to_runner(B1, {"type": typ, "run_id": run_id})
+
+    odebrane = await _odbierz_z_prawdziwego_strumienia(B1, ile=2)
+
+    assert [p["type"] for p in odebrane] == ["polaczono", typ]
+
+
+async def test_run_step_w_strumieniu_dochodzi_do_runnera_gdy_run_trwa(swiat):
+    run_id = await _utworz_run(swiat.browarek, B1)
+    await bus.send_to_runner(B1, {"type": "run_step", "run_id": run_id, "step_id": "s0",
+                                  "operacja": "x"})
+
+    odebrane = await _odbierz_z_prawdziwego_strumienia(B1, ile=2)
+
+    assert [p["type"] for p in odebrane] == ["polaczono", "run_step"]

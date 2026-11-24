@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, update
@@ -2050,3 +2051,91 @@ async def test_wzorzec_rozroznia_wielkosc_liter_w_nazwach_plikow(projekt):
 
     assert odp["ok"] is True, odp
     assert [p["sciezka"] for p in odp["wynik"]["pliki"]] == [str(projekt.korzen / "b.TXT")]
+
+
+# =================================================================================
+# HAR-201: zapytanie po timeoucie kokpitu nie zostawia skutku w plikach
+# =================================================================================
+
+
+async def _runner_obsluguje(polecenie: dict) -> list[dict]:
+    """Prawdziwy runner (`_odpowiedz_na_zapytanie`) i prawdziwe operacje na dysku; kokpit to atrapa
+    zapisujaca odpowiedzi. Zwraca ciala POST-ow z odpowiedziami."""
+    odpowiedzi: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        odpowiedzi.append(json.loads(request.content))
+        return httpx.Response(204)
+
+    runner = RunnerKlient("http://kokpit.test", SEKRET)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as klient:
+        await asyncio.wait_for(runner._odpowiedz_na_zapytanie(klient, polecenie), 10)
+    return odpowiedzi
+
+
+def _nadane(typ: str, wiek_s: float, **dane) -> dict:
+    """Polecenie z limitem 15 s nadane `wiek_s` sekund temu (kokpit odpowiedzial juz timeoutem)."""
+    return {"type": typ, "req_id": "r-201", "nadano_o": time.time() - wiek_s, "wazne_s": 15.0, **dane}
+
+
+async def test_przeterminowany_zapis_pliku_nie_tworzy_pliku_na_dysku(projekt):
+    plik = projekt.korzen / "nowy.txt"
+
+    odpowiedzi = await _runner_obsluguje(
+        _nadane("write_file", 120.0, sciezka=str(plik), tresc="skutek"))
+
+    assert not plik.exists()
+    assert _nazwy(projekt.korzen) == []
+    assert len(odpowiedzi) == 1
+    assert odpowiedzi[0]["ok"] is False
+    assert odpowiedzi[0]["kod"] == "przeterminowane"
+
+
+async def test_swiezy_zapis_pliku_tworzy_plik_na_dysku(projekt):
+    plik = projekt.korzen / "nowy.txt"
+
+    odpowiedzi = await _runner_obsluguje(
+        _nadane("write_file", 1.0, sciezka=str(plik), tresc="skutek"))
+
+    assert plik.read_text(encoding="utf-8") == "skutek"
+    assert odpowiedzi[0]["ok"] is True
+
+
+async def test_przeterminowany_zapis_nie_nadpisuje_istniejacego_pliku(projekt):
+    plik = projekt.korzen / "stary.txt"
+    plik.write_text("oryginal", encoding="utf-8")
+
+    await _runner_obsluguje(_nadane("write_file", 120.0, sciezka=str(plik), tresc="nowe"))
+
+    assert plik.read_text(encoding="utf-8") == "oryginal"
+
+
+async def test_przeterminowane_usuniecie_pliku_nie_usuwa_go_z_dysku(projekt):
+    plik = projekt.korzen / "zostaje.txt"
+    plik.write_text("tresc", encoding="utf-8")
+
+    odpowiedzi = await _runner_obsluguje(_nadane("delete_file", 120.0, sciezka=str(plik)))
+
+    assert plik.read_text(encoding="utf-8") == "tresc"
+    assert odpowiedzi[0]["kod"] == "przeterminowane"
+
+
+async def test_swieze_usuniecie_pliku_usuwa_go_z_dysku(projekt):
+    plik = projekt.korzen / "do_usuniecia.txt"
+    plik.write_text("tresc", encoding="utf-8")
+
+    odpowiedzi = await _runner_obsluguje(_nadane("delete_file", 1.0, sciezka=str(plik)))
+
+    assert not plik.exists()
+    assert odpowiedzi[0]["ok"] is True
+
+
+async def test_zapis_z_nieprawidlowym_czasem_nadania_nie_tworzy_pliku_na_dysku(projekt):
+    plik = projekt.korzen / "nowy.txt"
+    polecenie = _nadane("write_file", 0.0, sciezka=str(plik), tresc="skutek")
+    del polecenie["nadano_o"]
+
+    odpowiedzi = await _runner_obsluguje(polecenie)
+
+    assert not plik.exists()
+    assert odpowiedzi[0]["ok"] is False
