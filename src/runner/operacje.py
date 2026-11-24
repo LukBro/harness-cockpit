@@ -10,6 +10,7 @@ import asyncio
 import codecs
 import contextlib
 import fnmatch
+import math
 import os
 import re
 import stat
@@ -42,6 +43,7 @@ DOMYSLNY_LIMIT_ODCZYTU_KB = 512
 # "\x01" -> "\u0001"), wiec 6 * 512 KB = 3072 KB miesci sie w `runner_odpowiedz_max_kb`
 # kokpitu (4096 KB) z zapasem na ramke odpowiedzi.
 LIMIT_ARTEFAKTU_B = 512 * 1024
+LIMIT_SONDY_S = 60.0   # domyslny limit czasu jednej komendy sondy (HAR-171)
 _ZMIENNA_LIMITU = "COCKPIT_MAX_READ_KB"
 _CYFRY_ASCII = re.compile(r"[0-9]{1,12}")   # fullmatch: "$" przepuscilby "5\n"
 _TRYB_NOWEGO_PLIKU = 0o644
@@ -501,6 +503,33 @@ async def detect_stack(dane: dict) -> dict:
     return await asyncio.to_thread(_wykryj_stos, sciezka)
 
 
+def _limit_sondy(dane: dict) -> float:
+    """Brak pola to domyslny limit; obecne musi byc liczba skonczona > 0 (bool to nie liczba)."""
+    if "limit_s" not in dane:
+        return LIMIT_SONDY_S
+    limit = dane["limit_s"]
+    zly = BladOperacji("zle_dane", "pole limit_s musi byc liczba wieksza od zera")
+    if isinstance(limit, bool) or not isinstance(limit, (int, float)):
+        raise zly
+    try:
+        wartosc = float(limit)   # int ze 401 cyframi: OverflowError
+    except OverflowError:
+        raise zly from None
+    if not math.isfinite(wartosc) or wartosc <= 0:
+        raise zly
+    return wartosc
+
+
+async def probe(dane: dict) -> dict:
+    """Sonda ekosystemu repozytorium w zakresie runnera (HAR-171): wynik to propozycja
+    `project.yaml`, nic nie jest zapisywane. Zakres, katalog i stos jak w `detect_stack`."""
+    from runner import sonda   # import w funkcji: `runner.sonda` importuje ten modul
+    sciezka = _tekst(dane, "sciezka")
+    limit = _limit_sondy(dane)
+    wykryty = await asyncio.to_thread(_wykryj_stos, sciezka)
+    return await sonda.zaproponuj(Path(wykryty["sciezka"]), limit, wykryty["stack"])
+
+
 def _worktree_runu(run_id: str, base_commit: str) -> Path:
     """Worktree runu policzony przez runnera z `run_id`; sciezek od kokpitu runner nie bierze."""
     try:
@@ -596,6 +625,7 @@ OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "delete_file": delete_file,
     "katalog_definicji": katalog_definicji,
     "detect_stack": detect_stack,
+    "probe": probe,
     "collect": collect,
     "integrate": integrate,
     "commit": commit,
