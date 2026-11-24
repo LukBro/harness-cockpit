@@ -67,10 +67,16 @@ def _sprzatnij(rid: str) -> None:
     bus._runner_queues.pop(rid, None)
 
 
-def _cialo_strumienia(rid: str):
-    """Prawdziwy `runner_stream`; zwraca cialo odpowiedzi (generator) jeszcze nieczytane."""
+def _cialo_strumienia(rid: str, rozlaczenia: list[bool] | None = None):
+    """Prawdziwy `runner_stream`; zwraca cialo odpowiedzi (generator) jeszcze nieczytane.
+
+    `rozlaczenia`: kolejne odpowiedzi `is_disconnected` (po wyczerpaniu: rozlaczony)."""
+    odpowiedzi = None if rozlaczenia is None else list(rozlaczenia)
+
     async def nie_rozlaczony() -> bool:
-        return False
+        if odpowiedzi is None:
+            return False
+        return odpowiedzi.pop(0) if odpowiedzi else True
 
     return asyncio.ensure_future(runner_stream(
         request=SimpleNamespace(is_disconnected=nie_rozlaczony),
@@ -486,3 +492,52 @@ async def test_polecenie_nieaktualne_sprawdzane_w_chwili_otwarcia_nowego_strumie
         assert _zawartosc_kolejki(runner_id) == []      # nieaktualne nie wraca do kolejki
     finally:
         await _zamknij(stary, *([nowy] if nowy else []), zadania=[pobiera])
+
+
+# --- zapytanie, na ktore kokpit juz nie czeka (HAR-201), w strumieniu po HAR-200 ---
+
+async def test_zapytanie_ktorego_nikt_nie_oczekuje_nie_jedzie_do_runnera_ani_nie_wraca_do_kolejki(
+    brama, runner_id,
+):
+    odpowiedz = await asyncio.wait_for(
+        _cialo_strumienia(runner_id, rozlaczenia=[False]), timeout=LIMIT_S)
+    strumien = odpowiedz.body_iterator
+    await asyncio.wait_for(strumien.__anext__(), timeout=LIMIT_S)        # `polaczono`
+    przeterminowane = {"type": "pobierz_tickety", "req_id": "nikt-nie-czeka"}
+    assert bus.oczekuje("nikt-nie-czeka") is False
+    await bus.send_to_runner(runner_id, przeterminowane)
+    czeka = _czeka_na_polecenie(strumien)       # pobiera je; zaraz potem klient sie rozlacza
+    try:
+        assert await _wynik(czeka) == KONIEC    # nic nie wyslane do runnera
+        assert _zawartosc_kolejki(runner_id) == []
+    finally:
+        await _zamknij(strumien, zadania=[czeka])
+
+
+async def test_po_odrzuconym_zapytaniu_nastepne_polecenia_docieraja_do_runnera_dokladnie_raz(
+    brama, runner_id,
+):
+    strumien = await _otworz(runner_id)
+    zapytanie = asyncio.ensure_future(
+        bus.zapytaj(runner_id, "pobierz_tickety", {}, timeout_s=LIMIT_S * 5))
+    czeka = None
+    try:
+        # kolejka: zapytanie, na ktore nikt nie czeka, potem oczekiwane zapytanie, potem run
+        await bus.send_to_runner(
+            runner_id, {"type": "pobierz_tickety", "req_id": "nikt-nie-czeka"})
+        await asyncio.sleep(0)                  # `zapytaj` rejestruje wpis i wysyla za nim
+        await bus.send_to_runner(runner_id, _run_step(3))
+        assert bus.runner_queue(runner_id).qsize() == 3
+
+        pierwsze = await _wynik(_czeka_na_polecenie(strumien))
+        assert pierwsze["type"] == "pobierz_tickety"
+        assert pierwsze["req_id"] != "nikt-nie-czeka"       # przeterminowane pominiete
+        assert bus.oczekuje(pierwsze["req_id"]) is True
+        assert await _wynik(_czeka_na_polecenie(strumien)) == _run_step(3)
+
+        czeka = _czeka_na_polecenie(strumien)
+        await asyncio.sleep(0.05)
+        assert not czeka.done()                             # nic wiecej, zadnego duplikatu
+        assert bus.runner_queue(runner_id).qsize() == 0
+    finally:
+        await _zamknij(strumien, zadania=[zapytanie, *([czeka] if czeka else [])])

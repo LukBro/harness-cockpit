@@ -10,6 +10,7 @@ kokpitu nie gubil polecenia (BRO-75).
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -195,11 +196,22 @@ async def zapytaj(
     # wpis przed wysylka: szybki runner moze odpowiedziec, zanim send_to_runner wroci
     _oczekujace[req_id] = (runner_id, fut)
     try:
-        # type i req_id na koncu: dane nie moga ich nadpisac
-        await send_to_runner(runner_id, {**dane, "type": typ, "req_id": req_id})
+        # Pola protokolu na koncu: dane nie moga ich nadpisac. `nadano_o` (zegar kokpitu, epoch)
+        # i `wazne_s` (= czas czekania kokpitu) pozwalaja runnerowi odrzucic zapytanie, na ktore
+        # kokpit juz nie czeka, zamiast wykonac je po fakcie (HAR-201).
+        await send_to_runner(runner_id, {
+            **dane, "type": typ, "req_id": req_id,
+            "nadano_o": time.time(), "wazne_s": timeout_s,
+        })
         return await asyncio.wait_for(fut, timeout_s)
     finally:
         _oczekujace.pop(req_id, None)
+
+
+def oczekuje(req_id: str) -> bool:
+    """Czy kokpit nadal czeka na odpowiedz na zapytanie `req_id` (nie: odpowiedziane,
+    przeterminowane, anulowane ani nigdy niewyslane)."""
+    return req_id in _oczekujace
 
 
 def odpowiedz(runner_id: str, req_id: str, cialo: dict[str, Any]) -> bool:

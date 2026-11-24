@@ -236,6 +236,12 @@ async def runner_stream(
                 pobrane = await bus.nastepne_polecenie(strumien)
                 if pobrane is None:
                     break    # strumien zastapiony nowszym
+                # zapytanie, na ktore kokpit juz nie czeka (timeout, anulowanie), nie jedzie do
+                # runnera: wykonaloby skutek bez odbiorcy odpowiedzi (HAR-201)
+                req_id = pobrane.get("req_id")
+                if req_id is not None and not bus.oczekuje(req_id):
+                    pobrane = None
+                    continue
                 # polecenie przerwanego runu nie idzie do runnera po powrocie (HAR-37)
                 async with db_session.SessionLocal() as s2:
                     aktualne = await uslugi.polecenie_aktualne(
