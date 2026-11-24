@@ -36,8 +36,9 @@ from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_se
 LIMIT_WYNIKOW = 2000
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
 DOMYSLNY_LIMIT_ODCZYTU_KB = 512
-# Podglad artefaktu (HAR-182): bajty. JSON rozdyma znaki spoza ASCII do 3x, wiec 3 * limit
-# miesci sie w `runner_odpowiedz_max_kb` kokpitu (4096 KB) z zapasem na ramke odpowiedzi.
+# Podglad artefaktu (HAR-182): bajty. Najgorszy rozrost w JSON to 6x (znak sterujacy C0, np.
+# "\x01" -> "\u0001"), wiec 6 * 512 KB = 3072 KB miesci sie w `runner_odpowiedz_max_kb`
+# kokpitu (4096 KB) z zapasem na ramke odpowiedzi.
 LIMIT_ARTEFAKTU_B = 512 * 1024
 _ZMIENNA_LIMITU = "COCKPIT_MAX_READ_KB"
 _CYFRY_ASCII = re.compile(r"[0-9]{1,12}")   # fullmatch: "$" przepuscilby "5\n"
@@ -141,8 +142,14 @@ def _czytaj_artefakt(run_id: str, sciezka: str, limit: int) -> dict:
     if (sciezka.startswith("/") or os.path.isabs(sciezka)
             or ".." in sciezka.replace("\\", "/").split("/")):
         raise BladOperacji("poza_zakresem", KOMUNIKAT_POZA_ZAKRESEM)
-    katalog = katalog.absolute()
-    cel = _rozwiaz(Zakres([katalog]), str(katalog / sciezka))
+    try:
+        katalog = katalog.absolute()
+        zakres = Zakres([katalog])   # resolve() katalogu runu: petla dowiazan to RuntimeError
+    except RuntimeError:
+        raise BladOperacji("poza_zakresem", KOMUNIKAT_POZA_ZAKRESEM) from None
+    except OSError as e:
+        raise _blad_dysku(e) from None
+    cel = _rozwiaz(zakres, str(katalog / sciezka))
     try:
         tryb = os.stat(cel).st_mode
         if stat.S_ISDIR(tryb):

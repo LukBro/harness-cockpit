@@ -469,3 +469,51 @@ async def test_odczyt_artefaktu_nie_zmienia_bazy_ani_pliku_na_dysku(swiat, katal
         assert (await s.execute(select(func.count()).select_from(Run))).scalar_one() == przed
     assert plik.read_bytes() == b"plan"
     assert json.loads(odp.text)["text"] == "plan"
+
+
+async def test_obserwator_zespolu_czyta_artefakt_swojego_runu(swiat, katalog_runow):
+    run_id = await _utworz_run(swiat, swiat.tenant_a, swiat.runner_a)
+    _artefakt_na_dysku(katalog_runow, run_id, "plan.md", b"plan dla obserwatora")
+    klient = await swiat.zalogowany(swiat.obserwator_a)
+
+    odp = await _pobierz_http(klient, run_id, "plan.md")
+
+    assert odp.status_code == 200, odp.text
+    assert odp.json()["text"] == "plan dla obserwatora"
+    assert [w[1] for w in swiat.runner.wywolania] == ["read_artifact"]
+
+
+async def test_sciezka_artefaktu_dluzsza_niz_4096_znakow_to_422_a_dokladnie_4096_przechodzi_walidacje(
+    swiat, katalog_runow,
+):
+    run_id = await _utworz_run(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await swiat.zalogowany(swiat.wlasciciel_a)
+
+    za_dluga = await _pobierz_http(klient, run_id, "a" * 4097)
+    przed_pytaniem = list(swiat.runner.wywolania)
+    graniczna = await _pobierz_http(klient, run_id, "a" * 4096)
+
+    assert za_dluga.status_code == 422
+    assert przed_pytaniem == []   # odmowa przed pytaniem runnera
+    assert graniczna.status_code == 409   # walidacja przeszla; skladnik 4096 znakow to ENAMETOOLONG -> runner zwraca blad_dysku
+    assert [w[1] for w in swiat.runner.wywolania] == ["read_artifact"]
+
+
+async def test_pusty_artefakt_wraca_jako_pusty_tekst_bez_obciecia_z_pelna_dlugoscia_zero(
+    swiat, katalog_runow,
+):
+    run_id = await _utworz_run(swiat, swiat.tenant_a, swiat.runner_a)
+    _artefakt_na_dysku(katalog_runow, run_id, "pusty.md", b"")
+    klient = await swiat.zalogowany(swiat.wlasciciel_a)
+
+    odp = await _pobierz_http(klient, run_id, "pusty.md")
+
+    assert odp.status_code == 200, odp.text
+    assert odp.json() == {"path": "pusty.md", "text": "", "truncated": False, "full_len": 0}
+
+
+async def test_artefakt_o_pelnej_dlugosci_zero_z_runnera_to_pomiar_zero_a_nie_zly_ksztalt(zespoly):
+    wynik, _ = await _pobierz(zespoly, "pusty.md", odpowiedz={
+        "ok": True, "wynik": {"text": "", "truncated": False, "full_len": 0}})
+
+    assert _slownik(wynik) == {"path": "pusty.md", "text": "", "truncated": False, "full_len": 0}

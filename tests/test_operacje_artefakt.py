@@ -10,8 +10,8 @@ Kontrakt (przyjety przez test-writera, opisany w raporcie):
  * odmowy: `..`, sciezka bezwzgledna, dowiazanie wychodzace z katalogu runu, sekret -> `poza_zakresem`;
    NUL w sciezce, pusta sciezka, zly `run_id`, pole nie-napis -> `zle_dane`; binarny -> `binarny`;
    katalog -> `to_katalog`; brak pliku albo katalogu runu -> `nie_istnieje`; FIFO -> `blad_dysku`;
- * limit jest mniejszy niz `runner_odpowiedz_max_kb` z zapasem na rozdmuchanie JSON (do 3x dla
-   znakow spoza ASCII), wiec odpowiedz z pelnym limitem nie jest odrzucona przez kokpit.
+ * limit jest mniejszy niz `runner_odpowiedz_max_kb` z zapasem na rozdmuchanie JSON (do 6x dla
+   znakow sterujacych C0: jeden bajt to szesc znakow w JSON), wiec odpowiedz z pelnym limitem nie jest odrzucona przez kokpit.
 Testy chodza przez `operacje.wykonaj` (prawdziwy punkt wejscia runnera) na prawdziwych plikach.
 Nazwy testow w jezyku dziedziny, nie technologii (CLAUDE.md).
 """
@@ -20,10 +20,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from cockpit.services import artefakty
 from cockpit.services import zapytania_runnera as zapytania
 from cockpit.settings import settings
 from runner import operacje
@@ -275,12 +277,13 @@ async def test_artefakt_z_bajtem_zerowym_w_poczatku_pliku_wiekszego_niz_limit_je
 
 
 async def test_limit_artefaktu_jest_dodatni_i_miesci_sie_w_limicie_odpowiedzi_runnera_z_zapasem():
-    # JSON rozdyma znaki spoza ASCII do 3x (emoji: 4 bajty -> 12 znakow `😀`)
+    # najgorszy rozrost w JSON to 6x: znak sterujacy C0 ("\x01" -> "\u0001"); emoji to 3x
     assert 0 < operacje.LIMIT_ARTEFAKTU_B
-    assert operacje.LIMIT_ARTEFAKTU_B * 3 < settings.runner_odpowiedz_max_kb * 1024
+    assert operacje.LIMIT_ARTEFAKTU_B * 6 < settings.runner_odpowiedz_max_kb * 1024
 
 
-@pytest.mark.parametrize("znak", ["ą", "€", "😀"], ids=["dwa_bajty", "trzy_bajty", "cztery_bajty"])
+@pytest.mark.parametrize("znak", ["ą", "€", "😀", "\x01"],
+                         ids=["dwa_bajty", "trzy_bajty", "cztery_bajty", "znak_sterujacy_szesciokrotny_rozrost"])
 async def test_artefakt_dokladnie_o_dlugosci_limitu_ze_znakow_spoza_ascii_przechodzi_limit_odpowiedzi_kokpitu(
     swiat, znak,
 ):
@@ -608,3 +611,92 @@ async def test_artefakt_dokladnie_o_dlugosci_limitu_z_urwanym_znakiem_na_koncu_j
     odp = await _czytaj("uciety.md")
 
     _blad(odp, "binarny", "plik nie jest tekstem UTF-8")
+
+
+# =================================================================================
+# 7. Rozmiar z fstat, wzgledny katalog runow, petla dowiazan, blad dysku przy budowie zakresu
+# =================================================================================
+
+async def test_pelna_dlugosc_nie_jest_mniejsza_niz_przeczytane_bajty_gdy_rozmiar_z_systemu_jest_zanizony(
+    swiat, monkeypatch,
+):
+    # plik urosl miedzy `fstat` a odczytem: pelna dlugosc to co najmniej tyle, ile przeczytano,
+    # bo kokpit odrzuca `full_len` krotszy niz przyslany tekst
+    tresc = b"0123456789" * 5
+    _zapisz(swiat, "rosnie.md", tresc)
+    prawdziwy_os = os
+
+    class _Os:
+        @staticmethod
+        def fstat(fd):
+            return SimpleNamespace(st_size=10)   # zanizony rozmiar
+
+        def __getattr__(self, nazwa):
+            return getattr(prawdziwy_os, nazwa)
+
+    monkeypatch.setattr(operacje, "os", _Os())
+
+    async def wyslij(runner_id, typ, dane, timeout_s):
+        return await operacje.wykonaj({"type": typ, "req_id": "r-1", **dane})
+
+    wynik = await zapytania._wyslij_i_sprawdz(
+        "runner-x", "read_artifact", {"run_id": RUN_ID, "sciezka": "rosnie.md"}, wyslij)
+
+    assert wynik == {"text": tresc.decode(), "truncated": False, "full_len": len(tresc)}
+    assert artefakty._ksztalt_artefaktu(wynik) == (tresc.decode(), False, len(tresc))
+
+
+async def test_wzgledny_katalog_runow_nie_blokuje_odczytu_artefaktu_bo_runner_liczy_sciezke_bezwzgledna(
+    swiat, monkeypatch,
+):
+    _zapisz(swiat, "plan.md", b"plan z katalogu wzglednego")
+    monkeypatch.chdir(swiat.baza)
+    monkeypatch.setenv("COCKPIT_RUNS_DIR", "runy")   # wzgledny wobec biezacego katalogu
+
+    odp = await _czytaj("plan.md")
+
+    assert odp["ok"] is True, odp
+    assert odp["wynik"]["text"] == "plan z katalogu wzglednego"
+
+
+def _resolve_rzuca_dla(monkeypatch, cel, wyjatek) -> None:
+    """Path.resolve rzuca `wyjatek` tylko dla `cel`, pozostale sciezki rozwiazuje naprawde.
+    Prawdziwa petla dowiazan daje RuntimeError tylko na czesci wersji Pythona (3.13 go nie rzuca),
+    wiec wstrzykujemy wyjatek zamiast polegac na zachowaniu `resolve`."""
+    oryginal = Path.resolve
+
+    def owijka(self, *a, **kw):
+        if self == cel:
+            raise wyjatek("sztuczny blad resolve")
+        return oryginal(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "resolve", owijka)
+
+
+async def test_petla_dowiazan_w_miejscu_katalogu_runu_to_odmowa_poza_zakresem_a_nie_blad_operacji(
+    swiat, monkeypatch,
+):
+    _zapisz(swiat, "plan.md", TRESC_SEKRETNA.encode())
+    _resolve_rzuca_dla(monkeypatch, swiat.katalog, RuntimeError)
+
+    odp = await _czytaj("plan.md")
+
+    _blad(odp, "poza_zakresem", operacje.KOMUNIKAT_POZA_ZAKRESEM)
+    assert TRESC_SEKRETNA not in json.dumps(odp)
+
+
+async def test_blad_dysku_przy_budowie_zakresu_artefaktu_ma_kod_bledu_dysku_a_nie_ogolny_blad_operacji(
+    swiat, monkeypatch,
+):
+    # np. usuniety biezacy katalog przy wzglednym katalogu runow: `absolute()` pyta o cwd
+    monkeypatch.setenv("COCKPIT_RUNS_DIR", "runy")
+
+    def brak_praw():
+        raise PermissionError("tajna-sciezka-cwd")
+
+    monkeypatch.setattr(os, "getcwd", brak_praw)
+
+    odp = await _czytaj("plan.md")
+
+    _blad(odp, "brak_uprawnien", "brak uprawnien do pliku lub katalogu")
+    assert "tajna-sciezka-cwd" not in json.dumps(odp)

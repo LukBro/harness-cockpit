@@ -371,18 +371,7 @@ test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodn
 # Odpowiedz 404 trasy POST /api/runs.
 [[mutant]]
 plik = "web/openapi.json"
-szukaj = '''                "$ref": "#/components/schemas/RunCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunUtworzony"
+szukaj = '''                  "$ref": "#/components/schemas/RunUtworzony"
                 }
               }
             },
@@ -409,18 +398,7 @@ szukaj = '''                "$ref": "#/components/schemas/RunCreate"
             "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
           },
           "404": {'''
-zamien = '''                "$ref": "#/components/schemas/RunCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunUtworzony"
+zamien = '''                  "$ref": "#/components/schemas/RunUtworzony"
                 }
               }
             },
