@@ -155,6 +155,8 @@ async def test_ponowione_zdarzenie_nie_nadpisuje_tresci_zapisanej_za_pierwszym_r
 
 
 async def test_ponowiony_koniec_runu_nie_zmienia_statusu_runu_ustawionego_po_pierwszym_zapisie(swiat):
+    await _post(swiat, _tresc(swiat.run_id, kind="step_started"))
+    await _post(swiat, _tresc(swiat.run_id, kind="step_finished"))
     tresc = _tresc(swiat.run_id, kind="run_finished")
     await _post(swiat, tresc)
     assert (await _run_w_bazie(swiat.run_id)).status == RunStatus.to_accept
