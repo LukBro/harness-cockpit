@@ -55,18 +55,32 @@ class WpisManifestuIn(BaseModel):
 _ListaManifestu = Annotated[list[WpisManifestuIn], Field(max_length=1000)]
 
 
+RodzajZdarzenia = (
+    Literal[
+        "output", "step_started", "step_finished", "step_failed", "step_aborted",
+        "step_skipped", "step_waiting", "run_finished", "resume_ignored", "context_manifest",
+        # zarezerwowane dla czlowieka (services.runs.RODZAJE_CZLOWIEKA)
+        "decision", "integrated", "committed", "acceptance", "run_cancelled",
+    ]
+    | Annotated[str, StringConstraints(pattern=r"^hook:[A-Za-z0-9_]{1,45}$", max_length=50)]
+)
+
+
 class EventIn(BaseModel):
     run_id: str = Field(max_length=36)     # kolumny String(n): max_length = n (HAR-242)
     event_id: str = Field(min_length=1, max_length=36)    # nadaje runner; idempotencja (HAR-39)
     step_id: str = Field(min_length=1, max_length=100)
     agent_id: str = Field(default="", max_length=100)
     agent_type: str = Field(default="", max_length=100)
-    kind: str = Field(max_length=50)
+    # rodzaje silnika i czlowieka (te drugie odrzuca serwis niezmiennikiem approval_required)
+    # albo `hook:<zdarzenie>` (runner buduje rodzaj hooka jako "hook:" + nazwa; HAR-208)
+    kind: RodzajZdarzenia
     text: str = ""
     cost_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)  # None = brak pomiaru, nigdy 0 (BRO-87)
-    cost_source: str = Field(default="unavailable", max_length=20)
-    tokens: int | None = None
-    duration_ms: int | None = None
+    cost_source: Literal["measured", "unavailable"] = "unavailable"
+    # int4 PostgreSQL (HAR-208): wieksza wartosc to 422, nie 500
+    tokens: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    duration_ms: int | None = Field(default=None, ge=0, le=2_147_483_647)
     wyslane_output: int | None = None      # ile output runner probowal wyslac (HAR-24)
     # pelna dlugosc tekstu przed obcieciem przez runnera; le = int4 PostgreSQL (HAR-56)
     text_full_len: int | None = Field(default=None, ge=0, le=2_147_483_647)

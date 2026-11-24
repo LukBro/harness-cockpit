@@ -256,11 +256,27 @@ def sprawdz_katalog_runu(run_dir: Path, repo: Path) -> Naruszenie | None:
 
 
 def sprawdz_pomiar(cost_usd: float | None, cost_source: str) -> Naruszenie | None:
+    """`unavailable` wtedy i tylko wtedy, gdy kosztu brak; zrodlo spoza listy to naruszenie."""
+    if cost_source not in ("measured", "unavailable"):
+        return Naruszenie(
+            Niezmiennik.measured_or_null,
+            f"zrodlo kosztu {cost_source!r} spoza listy: measured, unavailable",
+        )
     if cost_usd == 0.0 and cost_source == "unavailable":
         # BRO-87: zero znaczy ZMIERZONE zero. Brak pomiaru to None.
         return Naruszenie(
             Niezmiennik.measured_or_null,
             "koszt 0 przy zrodle 'unavailable' - brak pomiaru zapisz jako None",
+        )
+    if cost_usd is not None and cost_source == "unavailable":
+        return Naruszenie(
+            Niezmiennik.measured_or_null,
+            f"koszt {cost_usd} przy zrodle 'unavailable' - zrodlo 'unavailable' oznacza brak kosztu",
+        )
+    if cost_usd is None and cost_source == "measured":
+        return Naruszenie(
+            Niezmiennik.measured_or_null,
+            "zrodlo 'measured' bez kosztu - brak pomiaru to zrodlo 'unavailable'",
         )
     return None
 

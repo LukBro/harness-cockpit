@@ -754,7 +754,7 @@ TRASY_RUNNERA = {
     "heartbeat": ("POST", "/api/runners/heartbeat", None),
     "odpowiedz": ("POST", "/api/runners/odpowiedzi", {"req_id": "r", "ok": True}),
     "zdarzenie": ("POST", "/api/events",
-                  {"run_id": "x", "event_id": "e", "step_id": "s", "kind": "log"}),
+                  {"run_id": "x", "event_id": "e", "step_id": "s", "kind": "output"}),
     "strumien_polecen": ("GET", "/api/runners/stream", None),
 }
 

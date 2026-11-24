@@ -215,11 +215,11 @@ async def test_run_i_runner_dzialaja_dalej_po_zamknieciu_strumienia_wygasla_sesj
     odpowiedz = await runner.post(
         "/api/events",
         headers={"Authorization": f"Bearer {TOKEN_RUNNERA}"},
-        json={"run_id": swiat.run, "event_id": "e1", "step_id": "s0", "kind": "log", "text": "x"},
+        json={"run_id": swiat.run, "event_id": "e1", "step_id": "s0", "kind": "output", "text": "x"},
     )
     assert odpowiedz.status_code == 200
     zapisane = await _zdarzenia_w_bazie(swiat)
-    assert [(e.event_id, e.kind, e.tenant_id) for e in zapisane] == [("e1", "log", swiat.tenant)]
+    assert [(e.event_id, e.kind, e.tenant_id) for e in zapisane] == [("e1", "output", swiat.tenant)]
     assert await _stan_runu(swiat) == RunStatus.running
 
 

@@ -281,7 +281,7 @@ async def test_powod_porazki_kroku_to_ten_sam_obcienty_tekst_co_w_zdarzeniu(swia
     assert (await _kroki(swiat.run_id))[("s0", "", 1)][1] == "abcd"
 
 
-@pytest.mark.parametrize("kind", ["output", "run_finished", "cost"])
+@pytest.mark.parametrize("kind", ["output", "run_finished", "resume_ignored"])
 async def test_zdarzenie_niebedace_zdarzeniem_kroku_nie_tworzy_wiersza_kroku(swiat, kind):
     await _ok(swiat, kind, text="tresc")
     assert await _liczba_wierszy_krokow() == 0

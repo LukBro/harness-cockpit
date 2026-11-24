@@ -208,7 +208,7 @@ async def test_zdarzenie_innego_rodzaju_w_tym_samym_kroku_nie_psuje_kompletnego_
     # i run dostalby falszywe oznaczenie.
     await _wyslij(swiat, "step_started")
     await _outputy(swiat, 2)
-    await _wyslij(swiat, "tool_call", text="narzedzie")
+    await _wyslij(swiat, "resume_ignored", text="narzedzie")
     await _wyslij(swiat, "step_finished", wyslane_output=2)
 
     assert await _reason_w_bazie(swiat.run_id) is None
