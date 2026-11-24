@@ -169,7 +169,8 @@ def test_szablon_puszcza_pelne_testy_przez_semafor_dwoch_slotow():
     # pomiar kroku 0: pytest -n 4 zajmuje ok. 4 z 8 rdzeni serwera
     b = _bramka_z_szablonu("testy")
     i = b["argv"].index("--")
-    assert b["argv"][:i] == ["python", ".claude/skills/praca-ticketu/scripts/test_lock.py", "--sloty", "2",
+    # 2026-11-24: przez rozdzielacz, ktory lokalnie woła test_lock.py z tymi samymi slotami
+    assert b["argv"][:i] == ["python", ".claude/skills/praca-ticketu/scripts/rozdzielacz.py", "--sloty", "2",
                              "--timeout", "3600"]
     assert (KORZEN / b["argv"][1]).is_file()
     assert b["argv"][i + 1:i + 3] == ["python", "tools/testy.py"]
