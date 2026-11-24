@@ -28,10 +28,19 @@ from procesy import (
     zapamietaj_proces,
 )
 from runner.bufor import BladBufora, BrakMiejsca, Bufor
-from runner.client import Runner, TokenOdrzucony
+from runner.client import NiewaznePoleZdarzenia, Runner, TokenOdrzucony
 
 RUN_ID = "run-1"
 STEP_ID = "krok-1"
+
+
+@pytest.fixture(autouse=True)
+def katalog_runow_runnera(tmp_path, monkeypatch):
+    """`cancel_run` zamyka checkpoint runu w katalogu runow runnera (HAR-126): testy czytaja
+    i pisza tylko w katalogu testu, nigdy w prawdziwym `~/.cockpit/runs`."""
+    katalog = tmp_path / "katalog-runow-runnera"
+    monkeypatch.setenv("COCKPIT_RUNS_DIR", str(katalog))
+    return katalog
 
 
 class Odczekania:
@@ -1366,10 +1375,13 @@ class StrumienPolecen(httpx.AsyncByteStream):
 
 def kokpit_ze_strumieniem(
     strumien: StrumienPolecen, runner_id: str = "r-42", status_zdarzen: int = 200,
+    statusy_wg_rodzaju: dict[str, int] | None = None,
 ):
     """Atrapa kokpitu ze strumieniem z testu. Zwraca (transport, zdarzenia): lista dostaje
-    ciala wszystkich zadan POST /api/events (kazde odpowiedziane `status_zdarzen`)."""
+    ciala wszystkich zadan POST /api/events (kazde odpowiedziane `status_zdarzen`, a zdarzenia
+    rodzajow z `statusy_wg_rodzaju` - podanym kodem)."""
     zdarzenia: list[dict] = []
+    statusy_wg_rodzaju = statusy_wg_rodzaju or {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         sciezka = request.url.path
@@ -1380,8 +1392,9 @@ def kokpit_ze_strumieniem(
             return httpx.Response(
                 200, stream=strumien, headers={"content-type": "text/event-stream"})
         if sciezka == "/api/events":
-            zdarzenia.append(json.loads(request.content))
-            return httpx.Response(status_zdarzen)
+            zdarzenie = json.loads(request.content)
+            zdarzenia.append(zdarzenie)
+            return httpx.Response(statusy_wg_rodzaju.get(zdarzenie["kind"], status_zdarzen))
         return httpx.Response(200)
 
     return httpx.MockTransport(handler), zdarzenia
@@ -1436,13 +1449,26 @@ async def test_polecenie_cancel_run_odebrane_w_trakcie_kroku_zabija_cala_grupe_p
     assert not wynik.runner_zatrzymany
 
 
-async def test_anulowany_krok_nie_zglasza_konca_kroku_ani_konca_runu(monkeypatch, tmp_path):
+TEKST_ANULOWANIA = "anulowany przez człowieka"
+RODZAJE_KONCA = {"step_finished", "step_failed", "run_finished"}
+
+
+def _step_aborted(zdarzenia: list[dict]) -> list[tuple[str, str, str]]:
+    return [(z["run_id"], z["step_id"], z["text"]) for z in zdarzenia if z["kind"] == "step_aborted"]
+
+
+async def test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania(
+    monkeypatch, tmp_path,
+):
     wynik = await _krok_anulowany_w_trakcie(monkeypatch, tmp_path)
 
     assert wynik.grupa_umarla
-    rodzaje = {z["kind"] for z in wynik.zdarzenia}
-    # kokpit i tak zostawilby aborted, ale runner nie ma nawet probowac nadpisac wyniku
-    assert not rodzaje & {"step_finished", "step_failed", "run_finished"}
+    assert _step_aborted(wynik.zdarzenia) == [(RUN_ID, "s0", TEKST_ANULOWANIA)]
+    # run_step nie ma agenta ani proby: kokpit czyta jego zdarzenia jako ("", 1), wiec abort tez
+    assert [(z["agent_id"], z["attempt"]) for z in wynik.zdarzenia
+            if z["kind"] == "step_aborted"] == [("", 1)]
+    # runner nie nadpisuje wyniku runu: stan `aborted` zapisal kokpit
+    assert not {z["kind"] for z in wynik.zdarzenia} & RODZAJE_KONCA
 
 
 async def test_cancel_run_jednego_runu_nie_zabija_procesu_kroku_innego_runu(
@@ -2304,7 +2330,7 @@ async def test_porazka_kroku_bez_step_id_przy_niedzialajacym_buforze_daje_step_a
         ("step_aborted", "r1", "run", POWOD_BUFORA)]
 
 
-async def test_krok_bez_step_id_z_za_dlugim_run_id_zostawia_log_bez_zdarzen_i_bez_wyjatku(capsys):
+async def test_krok_bez_step_id_z_za_dlugim_id_runu_zostawia_tylko_wpis_w_logu_i_nie_psuje_runnera(capsys):
     wyslane: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -2346,7 +2372,7 @@ async def test_nasluch_zatrzymany_przez_stop_po_zapamietanym_odrzuceniu_tokenu_k
     assert nasluch.cancelling() == 0
 
 
-async def test_nasluch_przerwany_odrzuconym_tokenem_zadania_runu_nie_zostawia_prosby_o_anulowanie(
+async def test_nasluch_zakonczony_odrzuconym_tokenem_zadania_runu_wraca_do_stanu_bez_anulowania(
     monkeypatch,
 ):
     # prosba o anulowanie, ktora zadanie runu wystawilo nasluchowi, jest zdjeta przed podniesieniem
@@ -2427,3 +2453,570 @@ async def test_nieudane_zgloszenie_porazki_zadania_runu_zostawia_w_logu_obciete_
     assert "sekret-xyz" not in odczyt.err + odczyt.out
     assert odczyt.out == ""
     assert zdarzenia == []
+
+
+# --- HAR-126: step_aborted trwajacych krokow po cancel_run --------------------------------------
+
+POLECENIA_RUNU = {
+    "run_workflow": {"type": "run_workflow", "run_id": RUN_ID, "workflow": "w", "sciezka": "/repo"},
+    "resume": {"type": "resume", "run_id": RUN_ID, "step_id": "s0", "decyzja": "approve"},
+}
+
+
+def _silnik_ktory_emituje_i_wisi(monkeypatch, emitowane: list[dict]) -> asyncio.Event:
+    """Atrapa silnika (workflow i wznowienia): emituje `emitowane` (z run_id polecenia), potem wisi.
+    Zwrocone zdarzenie jest ustawiane po wyemitowaniu wszystkich zdarzen (tuz przed zawieszeniem)."""
+    wystartowal = asyncio.Event()
+
+    async def zawies(emit, run_id: str) -> None:
+        for zdarzenie in emitowane:
+            with contextlib.suppress(NiewaznePoleZdarzenia):     # zdarzenie ponad limit pola
+                await emit({"run_id": run_id, **zdarzenie})
+        wystartowal.set()
+        await asyncio.sleep(300)
+
+    async def wykonaj(cmd, emit):
+        await zawies(emit, cmd["run_id"])
+
+    async def wznow(run_id, step_id, decyzja, emit, powod=None):
+        await zawies(emit, run_id)
+
+    monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
+    monkeypatch.setattr(runner_client.silnik, "wznow_run", wznow)
+    return wystartowal
+
+
+async def _anuluj_run_z_krokami_w_toku(
+    monkeypatch, rodzaj: str, emitowane: list[dict], *,
+    dochodzi_do_kokpitu: int | None = None, statusy_wg_rodzaju: dict[str, int] | None = None,
+) -> tuple[Runner, list[dict]]:
+    """Run (`run_workflow` albo `resume`) emituje `emitowane` i wisi; potem `cancel_run`.
+    Wraca po koncu zadania runu i `stop()`: zdarzenia kokpitu sa kompletne.
+    `dochodzi_do_kokpitu`: ile zdarzen silnika dotrze do kokpitu (domyslnie wszystkie)."""
+    wystartowal = _silnik_ktory_emituje_i_wisi(monkeypatch, emitowane)
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(
+        strumien, statusy_wg_rodzaju=statusy_wg_rodzaju)
+    runner, _ = _runner(transport=transport)
+    oczekiwane = len(emitowane) if dochodzi_do_kokpitu is None else dochodzi_do_kokpitu
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij(POLECENIA_RUNU[rodzaj])
+            await czekaj(wystartowal.wait(), LIMIT_ANULOWANIA_S, "silnik wyemitowal zdarzenia")
+            await czekaj_na_warunek(
+                lambda: len(zdarzenia) >= oczekiwane, LIMIT_ANULOWANIA_S,
+                "zdarzenia silnika w kokpicie")
+            strumien.wyslij({"type": "cancel_run", "run_id": RUN_ID})
+            await czekaj_na_warunek(
+                lambda: not runner._runy, LIMIT_ANULOWANIA_S, "koniec zadania runu")
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+    return runner, zdarzenia
+
+
+def _start(step_id: str) -> dict:
+    return {"step_id": step_id, "kind": "step_started"}
+
+
+@pytest.mark.parametrize("rodzaj", ["run_workflow", "resume"])
+async def test_po_cancel_run_kokpit_dostaje_step_aborted_kroku_w_toku_z_workflow_i_z_wznowienia(
+    monkeypatch, rodzaj,
+):
+    runner, zdarzenia = await _anuluj_run_z_krokami_w_toku(monkeypatch, rodzaj, [_start("s1")])
+
+    assert _step_aborted(zdarzenia) == [(RUN_ID, "s1", TEKST_ANULOWANIA)]
+    assert not {z["kind"] for z in zdarzenia} & RODZAJE_KONCA
+    # po koncu zadania runner nie trzyma sladu po runie ani po anulowanym zadaniu
+    assert runner._kroki_w_toku == {}
+    assert runner._anulowane_przez_czlowieka == set()
+    assert runner._zamykania == set()
+
+
+@pytest.mark.parametrize("rodzaj", ["run_step", "run_workflow", "resume"])
+async def test_stop_runnera_z_trwajacym_krokiem_nie_zglasza_step_aborted_bo_to_nie_anulowanie_przez_czlowieka(
+    monkeypatch, tmp_path, rodzaj,
+):
+    plik = tmp_path / "agent.pid"
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {"spij": _agent_kroku(plik)})
+    _silnik_ktory_emituje_i_wisi(monkeypatch, [_start("s1")])
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    runner, _ = _runner(transport=transport)
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            if rodzaj == "run_step":
+                strumien.wyslij(_krok(RUN_ID, "spij"))
+                await _czekaj_na_agenta(plik)
+            else:
+                strumien.wyslij(POLECENIA_RUNU[rodzaj])
+                await czekaj_na_warunek(
+                    lambda: any(z["kind"] == "step_started" for z in zdarzenia),
+                    LIMIT_ANULOWANIA_S, "start kroku w silniku")
+            assert RUN_ID in runner._runy           # krok trwa, zadanie runu zyje
+            await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+            assert runner._runy == {}               # zadanie runu skonczylo sie przed powrotem stop()
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    assert _step_aborted(zdarzenia) == []
+    assert not {z["kind"] for z in zdarzenia} & RODZAJE_KONCA
+
+
+async def test_dwanascie_krokow_w_toku_jednego_runu_dostaje_step_aborted_po_kolei_posortowane(
+    monkeypatch,
+):
+    kroki = [f"s{n:02d}" for n in range(12)]
+
+    _, zdarzenia = await _anuluj_run_z_krokami_w_toku(
+        monkeypatch, "run_workflow", [_start(s) for s in reversed(kroki)])
+
+    assert _step_aborted(zdarzenia) == [(RUN_ID, s, TEKST_ANULOWANIA) for s in kroki]
+
+
+@pytest.mark.parametrize("koniec", ["step_finished", "step_failed"])
+@pytest.mark.parametrize("rodzaj", ["run_workflow", "resume"])
+async def test_krok_zakonczony_przed_cancel_run_nie_dostaje_step_aborted_a_trwajacy_dostaje(
+    monkeypatch, koniec, rodzaj,
+):
+    emitowane = [_start("s1"), {"step_id": "s1", "kind": koniec}, _start("s2")]
+
+    _, zdarzenia = await _anuluj_run_z_krokami_w_toku(monkeypatch, rodzaj, emitowane)
+
+    assert _step_aborted(zdarzenia) == [(RUN_ID, "s2", TEKST_ANULOWANIA)]
+
+
+@pytest.mark.parametrize("rodzaj", ["run_workflow", "resume"])
+async def test_step_aborted_niesie_agenta_i_proba_ze_step_started_dla_dwoch_prob_i_dwoch_agentow_jednego_kroku(
+    monkeypatch, rodzaj,
+):
+    def start(step_id, agent_id=None, attempt=None):
+        zdarzenie = _start(step_id)
+        if agent_id is not None:
+            zdarzenie["agent_id"] = agent_id
+        if attempt is not None:
+            zdarzenie["attempt"] = attempt
+        return zdarzenie
+
+    emitowane = [
+        start("s1", "a1", 1), start("s1", "a2", 1),
+        {"step_id": "s1", "agent_id": "a1", "attempt": 1, "kind": "step_finished"},
+        start("s1", "a1", 2), start("s2"),
+    ]
+
+    _, zdarzenia = await _anuluj_run_z_krokami_w_toku(monkeypatch, rodzaj, emitowane)
+
+    aborty = [z for z in zdarzenia if z["kind"] == "step_aborted"]
+    # pierwsza proba agenta a1 jest zakonczona; zostaja: a1 w probie 2, a2 w probie 1 i s2 bez agenta
+    assert [(z["step_id"], z["agent_id"], z["attempt"], z["text"]) for z in aborty] == [
+        ("s1", "a1", 2, TEKST_ANULOWANIA), ("s1", "a2", 1, TEKST_ANULOWANIA),
+        ("s2", "", 1, TEKST_ANULOWANIA)]
+    assert {z["run_id"] for z in aborty} == {RUN_ID}
+
+
+@pytest.mark.parametrize("przyczyna, koniec, statusy, dochodzi", [
+    ("pole_ponad_limit", {"step_id": "s1", "kind": "step_finished", "cost_usd": -1}, None, 1),
+    ("kokpit_odrzucil_koniec", {"step_id": "s1", "kind": "step_finished"},
+     {"step_finished": 400}, 2),
+], ids=["pole_ponad_limit", "kokpit_odrzucil_koniec"])
+@pytest.mark.parametrize("rodzaj", ["run_workflow", "resume"])
+async def test_krok_ktorego_koniec_nie_dotarl_do_kokpitu_dostaje_po_anulowaniu_step_aborted(
+    monkeypatch, rodzaj, przyczyna, koniec, statusy, dochodzi,
+):
+    # kokpit nie zna konca kroku s1 (pole ponad limit nie wychodzi z runnera, kokpit odpowiada 400),
+    # wiec krok jest dla niego nadal w toku i runner ma go przerwac
+    _, zdarzenia = await _anuluj_run_z_krokami_w_toku(
+        monkeypatch, rodzaj, [_start("s1"), koniec],
+        dochodzi_do_kokpitu=dochodzi, statusy_wg_rodzaju=statusy)
+
+    assert _step_aborted(zdarzenia) == [(RUN_ID, "s1", TEKST_ANULOWANIA)]
+
+
+async def test_zdarzenie_inne_niz_start_kroku_nie_robi_z_kroku_trwajacego_w_cancel_run(monkeypatch):
+    emitowane = [{"step_id": "o1", "kind": "output", "text": "x"}, _start("s1")]
+
+    _, zdarzenia = await _anuluj_run_z_krokami_w_toku(monkeypatch, "run_workflow", emitowane)
+
+    assert _step_aborted(zdarzenia) == [(RUN_ID, "s1", TEKST_ANULOWANIA)]
+
+
+@pytest.mark.parametrize("emitowane, oczekiwane_otwarcia", [
+    ([], 0),
+    ([_start("s1")], 1),
+], ids=["bez_krokow_w_toku", "z_krokiem_w_toku"])
+async def test_anulowanie_runu_bez_krokow_w_toku_nie_laczy_sie_z_kokpitem_a_z_krokiem_zglasza_mu_przerwanie(
+    monkeypatch, emitowane, oczekiwane_otwarcia,
+):
+    wystartowal = _silnik_ktory_emituje_i_wisi(monkeypatch, emitowane)
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    runner, _ = _runner(transport=transport)
+    otwarcia: list[int] = []
+    prawdziwy_klient = runner._klient_http
+
+    def klient_z_licznikiem():
+        otwarcia.append(1)
+        return prawdziwy_klient()
+
+    runner._klient_http = klient_z_licznikiem
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij(POLECENIA_RUNU["run_workflow"])
+            await czekaj(wystartowal.wait(), LIMIT_ANULOWANIA_S, "start atrapy silnika")
+            await czekaj_na_warunek(
+                lambda: len(zdarzenia) >= len(emitowane), LIMIT_ANULOWANIA_S,
+                "zdarzenia silnika w kokpicie")
+            przed_anulowaniem = len(otwarcia)
+            strumien.wyslij({"type": "cancel_run", "run_id": RUN_ID})
+            await czekaj_na_warunek(
+                lambda: not runner._runy, LIMIT_ANULOWANIA_S, "koniec zadania runu")
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    assert len(otwarcia) - przed_anulowaniem == oczekiwane_otwarcia
+
+
+@pytest.mark.parametrize("rodzaj", ["run_workflow", "resume"])
+async def test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted(
+    monkeypatch, capsys, rodzaj,
+):
+    za_dlugi = "a" * 101            # sortuje sie przed "s0", wiec idzie pierwszy
+    wystartowal = asyncio.Event()
+
+    async def przebieg(emit, run_id):
+        with contextlib.suppress(NiewaznePoleZdarzenia):
+            await emit({"run_id": run_id, **_start(za_dlugi)})   # krok sledzony, start odrzucony
+        await emit({"run_id": run_id, **_start("s0")})
+        wystartowal.set()
+        await asyncio.sleep(300)
+
+    async def wykonaj(cmd, emit):
+        await przebieg(emit, cmd["run_id"])
+
+    async def wznow(run_id, step_id, decyzja, emit, powod=None):
+        await przebieg(emit, run_id)
+
+    monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
+    monkeypatch.setattr(runner_client.silnik, "wznow_run", wznow)
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    runner, _ = _runner(transport=transport)
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij(POLECENIA_RUNU[rodzaj])
+            await czekaj(wystartowal.wait(), LIMIT_ANULOWANIA_S, "start kroku s0")
+            zadanie_runu = runner._runy[RUN_ID]
+            strumien.wyslij({"type": "cancel_run", "run_id": RUN_ID})
+            await czekaj_na_warunek(
+                lambda: not runner._runy, LIMIT_ANULOWANIA_S, "koniec zadania runu")
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    err = capsys.readouterr().err
+    assert _step_aborted(zdarzenia) == [(RUN_ID, "s0", TEKST_ANULOWANIA)]
+    assert f"step_aborted niewyslany: run {RUN_ID!r} - pola ponad limit" in err.splitlines()
+    assert "zakonczone bledem" not in err
+    assert zadanie_runu.cancelled()                 # anulowanie leci dalej mimo bledu pola
+
+
+async def test_step_aborted_z_za_dlugim_run_id_zostawia_w_logu_obciete_do_36_znakow_id_i_nic_w_kokpicie(
+    monkeypatch, capsys,
+):
+    run_id = "w" * 40
+    wystartowal = asyncio.Event()
+
+    async def wykonaj(cmd, emit):
+        with contextlib.suppress(NiewaznePoleZdarzenia):
+            await emit({"run_id": cmd["run_id"], **_start("s1")})        # krok sledzony, start odrzucony
+        wystartowal.set()
+        await asyncio.sleep(300)
+
+    monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    runner, _ = _runner(transport=transport)
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij({**POLECENIA_RUNU["run_workflow"], "run_id": run_id})
+            await czekaj(wystartowal.wait(), LIMIT_ANULOWANIA_S, "start kroku")
+            strumien.wyslij({"type": "cancel_run", "run_id": run_id})
+            await czekaj_na_warunek(
+                lambda: not runner._runy, LIMIT_ANULOWANIA_S, "koniec zadania runu")
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    assert zdarzenia == []
+    assert (f"step_aborted niewyslany: run {'w' * 36!r} - pola ponad limit"
+            in capsys.readouterr().err.splitlines())
+
+
+async def test_odrzucony_token_przy_wysylce_step_aborted_konczy_nasluch_bledem_tokenu(monkeypatch):
+    _silnik_ktory_emituje_i_wisi(monkeypatch, [_start("s1")])
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien, statusy_wg_rodzaju={"step_aborted": 401})
+    runner, _ = _runner(transport=transport)
+    strumien.wyslij(POLECENIA_RUNU["run_workflow"])
+    nasluch = asyncio.ensure_future(runner.listen())
+    try:
+        await czekaj_na_warunek(
+            lambda: any(z["kind"] == "step_started" for z in zdarzenia),
+            LIMIT_ANULOWANIA_S, "start kroku w kokpicie")
+        strumien.wyslij({"type": "cancel_run", "run_id": RUN_ID})
+        with pytest.raises(TokenOdrzucony):
+            await czekaj_bez_anulowania(nasluch, LIMIT_ANULOWANIA_S, "koniec nasluchu po 401")
+    finally:
+        if not nasluch.done():
+            nasluch.cancel()
+            await asyncio.wait({nasluch}, timeout=LIMIT_ANULOWANIA_S)
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+
+def _runner_z_krokiem_w_toku_i_kokpitem_odrzucajacym_token() -> Runner:
+    runner = Runner("http://kokpit.test", TOKEN, transport=httpx.MockTransport(
+        lambda request: httpx.Response(401)))
+    runner._kroki_w_toku = {RUN_ID: {("s1", "", 1)}}
+    return runner
+
+
+async def test_odrzucony_token_przy_step_aborted_bez_nasluchu_jest_zapamietany_bez_bledu():
+    # `_zadanie` (zadanie `listen()`) nie istnieje: nie ma czego anulowac i nie wolno siegac po nie
+    runner = _runner_z_krokiem_w_toku_i_kokpitem_odrzucajacym_token()
+    assert runner._zadanie is None
+
+    await czekaj(runner._zglos_anulowanie_krokow(RUN_ID), LIMIT_ANULOWANIA_S, "step_aborted")
+
+    assert isinstance(runner._token_odrzucony, TokenOdrzucony)
+
+
+class _NasluchAtrapa:
+    """Zadanie nasluchu z licznikiem anulowan; `zakonczone` mowi, czy zadanie juz sie skonczylo."""
+
+    def __init__(self, zakonczone: bool) -> None:
+        self.zakonczone = zakonczone
+        self.anulowania = 0
+
+    def done(self) -> bool:
+        return self.zakonczone
+
+    def cancel(self) -> None:
+        self.anulowania += 1
+
+
+@pytest.mark.parametrize("zakonczone, oczekiwane_anulowania", [(True, 0), (False, 1)],
+                         ids=["nasluch_juz_zakonczony", "nasluch_trwa"])
+async def test_odrzucony_token_przy_step_aborted_anuluje_nasluch_tylko_gdy_ten_jeszcze_trwa(
+    zakonczone, oczekiwane_anulowania,
+):
+    runner = _runner_z_krokiem_w_toku_i_kokpitem_odrzucajacym_token()
+    runner._zadanie = _NasluchAtrapa(zakonczone)
+
+    await czekaj(runner._zglos_anulowanie_krokow(RUN_ID), LIMIT_ANULOWANIA_S, "step_aborted")
+
+    assert isinstance(runner._token_odrzucony, TokenOdrzucony)
+    assert runner._zadanie.anulowania == oczekiwane_anulowania
+
+
+@pytest.mark.parametrize("run_id, zdarzenie", [
+    (5, _start("s")),
+    (None, _start("s")),
+    (["r"], _start("s")),
+    ("r", _start(7)),
+    ("r", _start(None)),
+    ("r", _start(["s"])),
+    ("r", {"kind": "step_started"}),
+    ("r", {"kind": "output", "step_id": "s"}),
+    ("r", {"kind": "step_finished", "step_id": "s"}),
+    ("r", {"step_id": "s"}),
+    ("r", {**_start("s"), "agent_id": 7}),
+    ("r", {**_start("s"), "attempt": "2"}),
+    ("r", {**_start("s"), "attempt": True}),
+], ids=["run_id_liczba", "run_id_null", "run_id_lista", "step_id_liczba", "step_id_null",
+        "step_id_lista", "brak_step_id", "output", "step_finished", "brak_rodzaju",
+        "agent_id_liczba", "attempt_napis", "attempt_bool"])
+async def test_krok_nie_jest_sledzony_bez_step_started_z_poprawna_tozsamoscia(
+    run_id, zdarzenie,
+):
+    runner = Runner("http://kokpit.test", TOKEN)
+
+    runner._sledz_start_kroku(run_id, zdarzenie)
+
+    assert runner._kroki_w_toku == {}
+
+
+async def test_start_kroku_dopisuje_tozsamosc_kroku_do_trwajacych_tego_runu_obok_wczesniejszych():
+    runner = Runner("http://kokpit.test", TOKEN)
+
+    runner._sledz_start_kroku("r", _start("s"))
+    runner._sledz_start_kroku("r", _start("t"))
+    runner._sledz_start_kroku("r", {**_start("s"), "agent_id": "a", "attempt": 2})
+    runner._sledz_start_kroku("q", _start("s"))
+
+    assert runner._kroki_w_toku == {
+        "r": {("s", "", 1), ("t", "", 1), ("s", "a", 2)}, "q": {("s", "", 1)}}
+
+
+@pytest.mark.parametrize("zdarzenie, oczekiwana", [
+    ({"step_id": "s"}, ("s", "", 1)),
+    ({"step_id": "s", "agent_id": "a", "attempt": 3}, ("s", "a", 3)),
+    ({"step_id": "s", "agent_id": "", "attempt": 0}, ("s", "", 0)),
+    ({"step_id": "s", "attempt": 2}, ("s", "", 2)),
+    ({"step_id": "s", "agent_id": "a"}, ("s", "a", 1)),
+    ({"step_id": "s", "agent_id": None, "attempt": None}, ("s", "", 1)),
+    ({"step_id": "s", "agent_id": None, "attempt": 4}, ("s", "", 4)),
+    ({"step_id": "s", "agent_id": "a", "attempt": None}, ("s", "a", 1)),
+    ({"step_id": 7}, None),
+    ({"step_id": None}, None),
+    ({}, None),
+    ({"step_id": "s", "agent_id": 7}, None),
+    ({"step_id": "s", "attempt": "2"}, None),
+    ({"step_id": "s", "attempt": 1.5}, None),
+    ({"step_id": "s", "attempt": True}, None),
+    ({"step_id": "s", "attempt": False}, None),
+], ids=["domyslne", "pelna", "proba_zero", "domyslny_agent", "domyslna_proba",
+        "jawne_null_w_agencie_i_probie", "jawne_null_w_agencie", "jawne_null_w_probie",
+        "step_id_liczba", "step_id_null", "pusty", "agent_id_liczba", "attempt_napis",
+        "attempt_ulamek", "attempt_true", "attempt_false"])
+def test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1(
+    zdarzenie, oczekiwana,
+):
+    assert runner_client._tozsamosc_kroku(zdarzenie) == oczekiwana
+
+
+@pytest.mark.parametrize("kind", ["step_finished", "step_failed"])
+async def test_koniec_kroku_zdejmuje_z_trwajacych_tylko_krok_o_tej_samej_tozsamosci_w_swoim_runie(
+    kind,
+):
+    runner = Runner("http://kokpit.test", TOKEN)
+    runner._kroki_w_toku = {
+        "r": {("s", "", 1), ("s", "a", 2), ("s", "b", 2), ("s", "a", 3), ("t", "", 1)},
+        "q": {("s", "", 1)},
+    }
+
+    runner._sledz_koniec_kroku("r", {"kind": kind, "step_id": "s", "agent_id": "a", "attempt": 2})
+    runner._sledz_koniec_kroku("r", {"kind": kind, "step_id": "s"})
+
+    assert runner._kroki_w_toku == {
+        "r": {("s", "b", 2), ("s", "a", 3), ("t", "", 1)}, "q": {("s", "", 1)}}
+
+
+@pytest.mark.parametrize("run_id, zdarzenie", [
+    ("r", {"kind": "output", "step_id": "s"}),
+    ("r", {"kind": "step_started", "step_id": "s"}),
+    ("r", {"kind": "step_aborted", "step_id": "s"}),
+    ("r", {"step_id": "s"}),
+    ("r", {"kind": "step_finished", "step_id": "inny"}),
+    ("r", {"kind": "step_finished", "step_id": 7}),
+    ("r", {"kind": "step_finished", "step_id": ["s"]}),
+    ("r", {"kind": "step_finished"}),
+    ("nieznany", {"kind": "step_finished", "step_id": "s"}),
+    (5, {"kind": "step_finished", "step_id": "s"}),
+    (["r"], {"kind": "step_finished", "step_id": "s"}),
+    ("r", {"kind": "step_finished", "step_id": "s", "agent_id": "inny"}),
+    ("r", {"kind": "step_finished", "step_id": "s", "attempt": 2}),
+    ("r", {"kind": "step_finished", "step_id": "s", "agent_id": 7}),
+    ("r", {"kind": "step_finished", "step_id": "s", "attempt": "1"}),
+    ("r", {"kind": "step_finished", "step_id": "s", "attempt": True}),
+], ids=["output", "start", "przerwanie", "brak_rodzaju", "inny_krok", "step_id_liczba",
+        "step_id_lista", "brak_step_id", "nieznany_run", "run_id_liczba", "run_id_lista",
+        "inny_agent", "inna_proba", "agent_id_liczba", "attempt_napis", "attempt_bool"])
+async def test_zdarzenie_ktore_nie_konczy_kroku_runu_zostawia_trwajace_kroki_bez_zmian(
+    run_id, zdarzenie,
+):
+    runner = Runner("http://kokpit.test", TOKEN)
+    runner._kroki_w_toku = {"r": {("s", "", 1)}}
+
+    runner._sledz_koniec_kroku(run_id, zdarzenie)
+
+    assert runner._kroki_w_toku == {"r": {("s", "", 1)}}
+
+
+@pytest.mark.parametrize("run_id, step_id, w_chwili_wywolania", [
+    ("r1", "s0", {"r1": {("s0", "", 1)}}),
+    ("r1", None, {}),
+    ("r1", "", {}),
+    ("r1", 7, {}),
+    (5, "s0", {}),
+    ("", "s0", {}),
+    (None, "s0", {}),
+    (["r1"], "s0", {}),
+], ids=["poprawne", "brak_step_id", "pusty_step_id", "step_id_liczba", "run_id_liczba",
+        "pusty_run_id", "brak_run_id", "run_id_lista"])
+async def test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow(
+    monkeypatch, run_id, step_id, w_chwili_wywolania,
+):
+    migawki: list[dict] = []
+
+    async def krok(self, client, cmd):
+        migawki.append({k: set(v) for k, v in self._kroki_w_toku.items()})
+
+    monkeypatch.setattr(Runner, "_krok_z_polecenia", krok)
+    runner = Runner("http://kokpit.test", TOKEN, transport=httpx.MockTransport(
+        lambda request: httpx.Response(200)))
+    polecenie = {"type": "run_step", "run_id": run_id, "step_id": step_id, "operacja": "x"}
+
+    await czekaj(runner._krok_runu(polecenie), LIMIT_ANULOWANIA_S, "krok runu")
+
+    assert migawki == [w_chwili_wywolania]
+    # po powrocie z kroku nie jest juz w toku (wpis runu znika dopiero z koncem zadania)
+    assert runner._kroki_w_toku == ({"r1": set()} if w_chwili_wywolania else {})
+
+
+async def test_krok_ktory_skonczyl_sie_przed_cancel_run_nie_dostaje_step_aborted_gdy_run_ma_nowsze_zadanie(
+    monkeypatch, tmp_path,
+):
+    # run_step s_a konczy sie, ale `_runy` wskazuje juz na nowsze zadanie runu (s_b): wpis s_a
+    # zniknie z trwajacych tylko dzieki zdjeciu kroku w `_krok_runu`, nie dzieki koncowi zadania
+    plik = tmp_path / "agent.pid"
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {
+        "szybki": ("sh", "-c", "sleep 0.3; echo hej"), "spij": _agent_kroku(plik)})
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    runner, _ = _runner(transport=transport)
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij({**_krok(RUN_ID, "szybki"), "step_id": "s_a"})
+            strumien.wyslij({**_krok(RUN_ID, "spij"), "step_id": "s_b"})
+            pgid = await _czekaj_na_agenta(plik)
+            await czekaj_na_warunek(
+                lambda: any(z["step_id"] == "s_a" and z["kind"] == "step_finished"
+                            for z in zdarzenia),
+                LIMIT_ANULOWANIA_S, "koniec kroku s_a")
+            strumien.wyslij({"type": "cancel_run", "run_id": RUN_ID})
+            assert await grupa_umarla(pgid, limit=LIMIT_ANULOWANIA_S)
+            await czekaj_na_warunek(
+                lambda: not runner._runy, LIMIT_ANULOWANIA_S, "koniec zadania runu")
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    assert _step_aborted(zdarzenia) == [(RUN_ID, "s_b", TEKST_ANULOWANIA)]
+
+
+async def test_krok_konczacy_sie_po_nowszym_zadaniu_tego_samego_runu_konczy_sie_bez_bledu(
+    monkeypatch, capsys,
+):
+    # nowsze zadanie (s_b) konczy sie pierwsze i zdejmuje wpis runu; starszy krok (s_a) nie ma
+    # juz czego zdejmowac, ale jego koniec nie moze sie wywrocic
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {
+        "wolny": ("sh", "-c", "sleep 0.5; echo hej"), "szybki": ("sh", "-c", "echo hej")})
+    prawdziwy_krok_runu = Runner._krok_runu
+    zakonczone: list[str] = []
+
+    async def krok_runu_z_zapisem_konca(self, cmd):
+        await prawdziwy_krok_runu(self, cmd)
+        zakonczone.append(cmd["step_id"])
+
+    monkeypatch.setattr(Runner, "_krok_runu", krok_runu_z_zapisem_konca)
+    strumien = StrumienPolecen()
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    runner, _ = _runner(transport=transport)
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij({**_krok(RUN_ID, "wolny"), "step_id": "s_a"})
+            strumien.wyslij({**_krok(RUN_ID, "szybki"), "step_id": "s_b"})
+            await czekaj_na_warunek(
+                lambda: sorted(zakonczone) == ["s_a", "s_b"], LIMIT_ANULOWANIA_S,
+                "koniec obu krokow")
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    assert zakonczone == ["s_b", "s_a"]
+    assert "zakonczone bledem" not in capsys.readouterr().err

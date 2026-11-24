@@ -97,6 +97,13 @@ WSTRZYKNIETE = {
     "_zapisz": ("bramka", "wznowienie_druga_bramka"),
     "_pauza_testowa": ("bramka", "wznowienie_druga_bramka"),
     "zapisz_checkpoint": ("bramka", "wznowienie", "odrzucenie"),
+    # granica dysku (HAR-126): zapis checkpointu w watku, ktorego nie przerywa anulowanie. Blad zapisu
+    # (nie `CancelledError`) leci z niej jak z `zapisz_checkpoint`: `_zapisz` tlumaczy blad
+    # checkpointu na `step_failed`, a inne wyjatki zamienia wolajacy na porazke i `run_finished`;
+    # `_przyjmij_decyzje` (approve i reject) konczy je `_porazka_wznowienia`. Droga anulowania
+    # (czekanie na watek, kolejne anulowanie, blad zapisu przy anulowaniu) swiadomie nie konczy runu
+    # zdarzeniem i ma osobne testy w `test_zamykanie_checkpointu.py`.
+    "_zapis_do_konca": ("bramka", "wznowienie", "odrzucenie"),
     "_przyjmij_decyzje": ("wznowienie",),
     "katalog_runu": ("wznowienie",),
     "wczytaj_checkpoint": ("wznowienie",),
@@ -158,6 +165,13 @@ CZYSTE = {
         "asyncio.Lock", "asyncio.create_task", "asyncio.gather", "asyncio.sleep",
         "asyncio.to_thread", "asyncio.wait", "zadanie.cancel", "zadanie.result",
         "_BLOKADY.setdefault",
+        "asyncio.ensure_future", "asyncio.shield",
+    ),
+    **_grupa(
+        "metoda zadania zapisu `zapis` (`_zapis_do_konca`): odczyt stanu po jego zakonczeniu bez "
+        "I/O; `exception()` jest wolane tylko dla zakonczonego i nieanulowanego zadania, wiec nie "
+        "rzuca, a blad zapisu przy anulowaniu jest w ten sposob odebrany (test_zamykanie_checkpointu)",
+        "zapis.done", "zapis.cancelled", "zapis.exception",
     ),
 }
 
@@ -517,7 +531,7 @@ WYJATKI = [
 
 ASYNCHRONICZNE = {
     "_krok", "_krok_systemowy", "wykonaj_diff", "wykonaj_check", "_zapisz", "_pauza_testowa",
-    "_wykonaj_plan", "_przyjmij_decyzje", "_obsluz_porazke",
+    "_wykonaj_plan", "_przyjmij_decyzje", "_obsluz_porazke", "_zapis_do_konca",
 }
 
 

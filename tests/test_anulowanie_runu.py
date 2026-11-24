@@ -23,6 +23,7 @@ import sys
 import uuid
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
@@ -31,7 +32,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Event, RolaWZespole, Run, Runner, RunStatus
+from cockpit.db.models import (
+    Base,
+    Event,
+    RolaWZespole,
+    Run,
+    Runner,
+    RunStatus,
+    StepRun,
+    StepStatus,
+)
 from cockpit.services import runs as uslugi
 from cockpit.services.errors import NaruszonyNiezmiennik, NieZnaleziono, StanNiemozliwy
 from procesy import (
@@ -62,6 +72,12 @@ tylko_postgres = pytest.mark.skipif(
     reason="wyscig dwoch sesji wymaga PostgreSQL: ustaw "
     "COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../cockpit_test",
 )
+
+
+@pytest.fixture(autouse=True)
+def katalog_runow_runnera(tmp_path, monkeypatch):
+    """`cancel_run` zamyka checkpoint runu w katalogu runow runnera: testy nie dotykaja ~/.cockpit."""
+    monkeypatch.setenv("COCKPIT_RUNS_DIR", str(tmp_path / "katalog-runow-runnera"))
 
 
 # --- swiat: dwa zespoly; w A wlasciciel, czlonek (autor anulowania) i obserwator ----------------
@@ -662,6 +678,117 @@ async def test_anulowanie_przez_api_zabija_grupe_procesow_kroku_u_runnera_i_run_
 
     assert await _stan(swiat, run_id) == (RunStatus.aborted, POWOD)
     assert not {z["kind"] for z in zdarzenia} & {"step_finished", "step_failed", "run_finished"}
+
+
+# --- step_aborted po anulowaniu: zdarzenia runnera trafiaja do prawdziwej bazy ----------------------
+
+def _kokpit_z_prawdziwa_aplikacja(strumien: StrumienPolecen, klient_app: AsyncClient):
+    """Rejestracja i strumien polecen to atrapa; zdarzenia runnera ida do prawdziwej aplikacji
+    (token runnera, baza), a runner dostaje jej kod odpowiedzi."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        sciezka = request.url.path
+        if sciezka == "/api/runners/register":
+            return httpx.Response(
+                200, json={"runner_id": "r-42", "tenant_id": "t1", "heartbeat_co_s": 15})
+        if sciezka == "/api/runners/stream":
+            return httpx.Response(
+                200, stream=strumien, headers={"content-type": "text/event-stream"})
+        if sciezka == "/api/events":
+            odp = await klient_app.post(
+                "/api/events", content=request.content,
+                headers={"Authorization": f"Bearer {TOKEN_A}",
+                         "content-type": "application/json"})
+            return httpx.Response(odp.status_code)
+        return httpx.Response(200)
+
+    return httpx.MockTransport(handler)
+
+
+async def _kroki(swiat, run_id: str) -> list[tuple]:
+    async with swiat.maker() as s:
+        wiersze = (await s.execute(
+            select(StepRun).where(StepRun.run_id == run_id)
+            .order_by(StepRun.step_id, StepRun.agent_id, StepRun.attempt))).scalars().all()
+        return [(w.step_id, w.agent_id, w.attempt, w.status, w.reason) for w in wiersze]
+
+
+async def test_po_anulowaniu_przez_api_runner_zglasza_step_aborted_a_w_bazie_krok_nie_jest_w_toku(
+    swiat, tmp_path, monkeypatch,
+):
+    plik = tmp_path / "agent.pid"
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {
+        "spij": (sys.executable, "-I", "-c", KOD_AGENTA_Z_WNUKIEM, str(plik))})
+    run_id = await swiat.run(swiat.tenant_a, swiat.runner_a, RunStatus.running)
+    klient = await swiat.zalogowany(swiat.czlonek_a)
+    klient_runnera = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    strumien = StrumienPolecen()
+    runner = RunnerKlienta("http://kokpit.test", TOKEN_A, odczekaj=Odczekania(),
+                           transport=_kokpit_z_prawdziwa_aplikacja(strumien, klient_runnera))
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij({"type": "run_step", "run_id": run_id, "step_id": "s0",
+                             "operacja": "spij"})
+            await czekaj_na_warunek(plik.exists, LIMIT_S, "agent zapisal pid i pgid")
+            _, pgid, _ = (int(x) for x in plik.read_text().split())
+            zapamietaj_proces(pgid)
+
+            assert (await _anuluj(klient, run_id)).status_code == 200
+            (polecenie,) = _polecenia(swiat.runner_a)
+            strumien.wyslij(polecenie)
+
+            assert await grupa_umarla(pgid, limit=LIMIT_S), "grupa procesow kroku przezyla anulowanie"
+            await czekaj_na_warunek(lambda: not runner._runy, LIMIT_S, "koniec zadania kroku")
+    finally:
+        await czekaj(runner.stop(), LIMIT_S, "stop() runnera")
+        await klient_runnera.aclose()
+
+    # skutki w bazie, nie w odpowiedzi HTTP: krok jest nieudany z powodem anulowania
+    assert await _kroki(swiat, run_id) == [("s0", "", 1, StepStatus.failed, POWOD)]
+    assert not [k for k in await _kroki(swiat, run_id) if k[3] == StepStatus.running]
+    assert await _stan(swiat, run_id) == (RunStatus.aborted, POWOD)      # powod runu zostaje
+    assert await _rodzaje(swiat, run_id) == [KIND, "step_aborted"]
+
+
+async def test_po_anulowaniu_przez_api_krok_workflow_z_agentem_i_proba_nie_zostaje_w_bazie_w_toku(
+    swiat, monkeypatch,
+):
+    # silnik zglasza start kroku z agentem i numerem proby: wiersz kroku w bazie ma ten klucz,
+    # wiec `step_aborted` musi trafic w ten sam wiersz, a nie zalozyc drugi
+    run_id = await swiat.run(swiat.tenant_a, swiat.runner_a, RunStatus.running)
+    wystartowal = asyncio.Event()
+
+    async def wykonaj(cmd, emit):
+        await emit({"run_id": cmd["run_id"], "kind": "step_started", "step_id": "b",
+                    "agent_id": "b", "attempt": 2, "text": ""})
+        wystartowal.set()
+        await asyncio.sleep(300)
+
+    monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
+    klient = await swiat.zalogowany(swiat.czlonek_a)
+    klient_runnera = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    strumien = StrumienPolecen()
+    runner = RunnerKlienta("http://kokpit.test", TOKEN_A, odczekaj=Odczekania(),
+                           transport=_kokpit_z_prawdziwa_aplikacja(strumien, klient_runnera))
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            strumien.wyslij({"type": "run_workflow", "run_id": run_id, "workflow": "w",
+                             "sciezka": "/repo"})
+            await czekaj(wystartowal.wait(), LIMIT_S, "start kroku w silniku")
+            assert await _kroki(swiat, run_id) == [("b", "b", 2, StepStatus.running, None)]
+
+            assert (await _anuluj(klient, run_id)).status_code == 200
+            (polecenie,) = _polecenia(swiat.runner_a)
+            strumien.wyslij(polecenie)
+            await czekaj_na_warunek(lambda: not runner._runy, LIMIT_S, "koniec zadania runu")
+    finally:
+        await czekaj(runner.stop(), LIMIT_S, "stop() runnera")
+        await klient_runnera.aclose()
+
+    # ten sam wiersz (b, b, 2) zmienil stan: bez drugiego wiersza i bez wiersza w toku
+    assert await _kroki(swiat, run_id) == [("b", "b", 2, StepStatus.failed, POWOD)]
+    assert await _stan(swiat, run_id) == (RunStatus.aborted, POWOD)
+    assert await _rodzaje(swiat, run_id) == ["step_started", KIND, "step_aborted"]
 
 
 # --- wyscig cancel <-> run_finished na PostgreSQL ------------------------------------------------

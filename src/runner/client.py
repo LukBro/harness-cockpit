@@ -23,6 +23,7 @@ import httpx
 from pydantic import ValidationError
 
 from cockpit.api.schematy import EventIn
+from cockpit.services.errors import BladDziedziny
 from runner import operacje, silnik
 from runner.bufor import BladBufora, BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
@@ -45,6 +46,27 @@ OPERACJE_RUNU: Mapping[str, tuple[str, ...]] = MappingProxyType({
 POWOD_SPOZA_LISTY = "operacja spoza listy dozwolonych"
 POWOD_BRAK_STEP_ID = "polecenie run_step bez poprawnego step_id"
 POWOD_BUFOR_NIEDOSTEPNY = "bufor zdarzen runnera niedostepny: zapis albo odczyt nie powiodl sie"
+TEKST_ANULOWANIA = "anulowany przez człowieka"
+
+
+# Klucz wiersza kroku w kokpicie bez runu: (step_id, agent_id, attempt); brak agent_id to "",
+# brak attempt to 1 (jak `zastosuj_zdarzenie_kroku`, ktory czyta takze jawne None jako 1), wiec
+# w krotce nigdy None i sorted nie rzuca TypeError.
+TozsamoscKroku = tuple[str, str, int]
+
+
+def _tozsamosc_kroku(zdarzenie: Mapping[str, Any]) -> TozsamoscKroku | None:
+    """Tozsamosc kroku ze zdarzenia silnika; `None` w agent_id i attempt to brak pola (domyslne
+    "" i 1), pole o zlym typie to `None` zamiast tozsamosci (krok nie jest sledzony)."""
+    step_id = zdarzenie.get("step_id")
+    agent_id = zdarzenie.get("agent_id")
+    attempt = zdarzenie.get("attempt")
+    agent_id = "" if agent_id is None else agent_id
+    attempt = 1 if attempt is None else attempt
+    if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):
+        return None
+    return (step_id, agent_id, attempt)
 
 
 def argv_operacji(cmd: Mapping[str, Any]) -> tuple[str, ...] | None:
@@ -161,6 +183,13 @@ class Runner:
         self._runy: dict[str, asyncio.Task] = {}
         # runy anulowane przez czlowieka (najnowsze na koncu): spozniony `resume` jest ignorowany
         self._anulowane: dict[str, None] = {}
+        # zadania anulowane przez `cancel_run` (nie przez stop()): tylko one zglaszaja `step_aborted`
+        self._anulowane_przez_czlowieka: set[asyncio.Task] = set()
+        # kroki trwajace per run (step_started bez konca; run_step od polecenia do konca kroku):
+        # to je zglasza `step_aborted` po anulowaniu, zeby StepRun nie zostal `running`
+        self._kroki_w_toku: dict[str, set[TozsamoscKroku]] = {}
+        # zamykanie checkpointu anulowanego runu (zadania w tle; stop() je odczekuje)
+        self._zamykania: set[asyncio.Task] = set()
         self._zapis_zdarzen = asyncio.Lock()    # jeden zapis do bufora naraz: kolejnosc zdarzen
 
     async def register(self, client: httpx.AsyncClient) -> None:
@@ -460,10 +489,15 @@ class Runner:
     ) -> None:
         """Wspolny punkt dla `run_step`, `run_workflow` i `resume`: wyjatek zadania nie moze
         zostawic runu w `running` bez konca kroku i runu (evidence_required).
-        `CancelledError` przechodzi bez zdarzen (stan `aborted` zapisal kokpit).
+        `CancelledError` przechodzi bez konca kroku i runu (stan `aborted` zapisal kokpit); po
+        `cancel_run` (nie po stop()) trwajace kroki dostaja `step_aborted`, a anulowanie leci dalej.
         `TokenOdrzucony` idzie do petli nasluchu (kod 2 z komunikatem o nowym tokenie)."""
         try:
             await korutyna
+        except asyncio.CancelledError:
+            if asyncio.current_task() in self._anulowane_przez_czlowieka:
+                await self._zglos_anulowanie_krokow(run_id)
+            raise
         except TokenOdrzucony as e:
             self._token_odrzucony = e
             zadanie = self._zadanie
@@ -488,6 +522,47 @@ class Runner:
             print(f"zadanie runu {run_id[:36]!r} zakonczone bledem: {nazwa_typu}",
                   file=sys.stderr)
 
+    async def _zglos_anulowanie_krokow(self, run_id: str) -> None:
+        """`step_aborted` dla kazdego trwajacego kroku anulowanego runu, w nowym kliencie HTTP
+        (klient zadania jest juz zamkniety) i poza buforem: jedna proba, bez ponawiania, zeby
+        anulowanie sie nie zawieszalo. Bez `step_finished`, `step_failed` i `run_finished`."""
+        kroki = sorted(self._kroki_w_toku.get(run_id, ()))
+        if not kroki:
+            return
+        try:
+            async with self._klient_http() as client:
+                for step_id, agent_id, attempt in kroki:
+                    try:
+                        # ta sama tozsamosc co `step_started` (wiersz kroku: run, krok, agent,
+                        # proba): inaczej kokpit zalozylby drugi wiersz, a pierwszy zostalby `running`
+                        await self._wyslij_bezposrednio(
+                            client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)
+                    except NiewaznePoleZdarzenia:
+                        print(f"step_aborted niewyslany: run {run_id[:36]!r} - pola ponad limit",
+                              file=sys.stderr)
+        except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()
+
+    def _sledz_start_kroku(self, run_id: object, zdarzenie: Mapping[str, Any]) -> None:
+        """Przed wyslaniem `step_started`: krok trwa od tej chwili (anulowanie w trakcie wysylki
+        tez ma go zglosic). Run bez poprawnego `run_id` nie jest sledzony."""
+        tozsamosc = _tozsamosc_kroku(zdarzenie)
+        if (zdarzenie.get("kind") == "step_started" and isinstance(run_id, str)
+                and tozsamosc is not None):
+            self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)
+
+    def _sledz_koniec_kroku(self, run_id: object, zdarzenie: Mapping[str, Any]) -> None:
+        """Po PRZYJECIU konca kroku przez kokpit (wolajacy wola to tylko, gdy `send_event` dal
+        True): krok (ta sama tozsamosc co przy starcie) nie jest w toku. Odrzucony koniec kroku
+        zostawia go w `_kroki_w_toku`, wiec anulowanie zglosi `step_aborted`."""
+        tozsamosc = _tozsamosc_kroku(zdarzenie)
+        if (zdarzenie.get("kind") in ("step_finished", "step_failed") and isinstance(run_id, str)
+                and tozsamosc is not None):
+            self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
+
     def _zarejestruj_run(self, run_id: str, cmd: dict, korutyna: Awaitable[None]) -> None:
         """Zadanie runu w mapie `run_id -> zadanie`; po jego koncu wpis znika, o ile nie
         zajelo go nowsze zadanie tego runu (np. `resume` po `run_workflow`)."""
@@ -495,8 +570,10 @@ class Runner:
         self._runy[run_id] = zadanie
 
         def po_zakonczeniu(z: asyncio.Task) -> None:
+            self._anulowane_przez_czlowieka.discard(z)
             if self._runy.get(run_id) is z:
                 del self._runy[run_id]
+                self._kroki_w_toku.pop(run_id, None)
             if not z.cancelled() and z.exception() is not None:
                 # bez tego wyjatek zadania ginie bez sladu; nazwa typu, bez tresci (moze niesc sekret)
                 print(f"zadanie runu {run_id[:36]!r} zakonczone bledem: "
@@ -506,8 +583,10 @@ class Runner:
 
     def _anuluj_run(self, cmd: dict) -> None:
         """`cancel_run`: anuluje zadanie runu (`CancelledError` -> `_zakoncz_krok` zabija grupe
-        procesow). Po anulowaniu runner nie zglasza konca kroku ani runu: stan `aborted`
-        zapisal kokpit. Run bez zadania (`waiting`, zakonczony, nieznany) to nie blad."""
+        procesow), potem trwajace kroki dostaja `step_aborted` (`_pilnuj_zadania`). Runner nie
+        zglasza konca kroku ani runu: stan `aborted` zapisal kokpit. Checkpoint runu zostaje
+        zamkniety (bez `waiting_on`), takze dla runu bez zadania (`waiting`): inaczej `resume`
+        po restarcie runnera wznowilby anulowany run. Run zakonczony albo nieznany to nie blad."""
         run_id = cmd.get("run_id")
         if not isinstance(run_id, str) or not run_id:
             print(f"cancel_run odrzucone: niepoprawne polecenie {cmd!r}", file=sys.stderr)
@@ -519,14 +598,43 @@ class Runner:
         zadanie = self._runy.get(run_id)
         if zadanie is None:
             print(f"cancel_run: run {run_id[:36]!r} nie ma zadania u runnera", file=sys.stderr)
-            return
-        zadanie.cancel()
+        else:
+            self._anulowane_przez_czlowieka.add(zadanie)
+            zadanie.cancel()
+        zamykanie = asyncio.create_task(self._zamknij_checkpoint(run_id, zadanie))
+        self._zamykania.add(zamykanie)
+        zamykanie.add_done_callback(self._zamykania.discard)
+
+    async def _zamknij_checkpoint(self, run_id: str, zadanie: asyncio.Task | None) -> None:
+        """Checkpoint anulowanego runu bez `waiting_on`, pod ta sama blokada co `wznow_run`.
+        Zadanie runu dostaje czas na koniec; zapisy checkpointu silnika koncza sie przed wyjsciem
+        anulowania z zadania i ida pod ta sama blokada runu (`silnik._zapis_do_konca`,
+        `_zapisz`), wiec zamkniecie ich nie wyprzedzi. Blad dziedziny (zapis, odczyt, katalog runu) to log z typem bledu: anulowanie
+        nie wywraca petli polecen. Brak checkpointu (run nieznany albo zakonczony) to nie blad."""
+        if zadanie is not None:
+            await asyncio.wait([zadanie])
+        try:
+            await silnik.zamknij_checkpoint(run_id)
+        except BladDziedziny as e:
+            print(f"cancel_run: checkpoint runu {run_id[:36]!r} niezamkniety: {type(e).__name__}",
+                  file=sys.stderr)
 
     async def _krok_runu(self, cmd: dict) -> None:
         """Krok `run_step` w wlasnym kliencie HTTP, jak `_run_workflow`: zamkniecie strumienia
-        polecen nie zrywa klienta kroku."""
+        polecen nie zrywa klienta kroku. Krok trwa od polecenia do powrotu z `_krok_z_polecenia`;
+        przy `CancelledError` zostaje w `_kroki_w_toku` dla `_zglos_anulowanie_krokow`."""
+        run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
+        if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):
+            # zle polecenie: `_krok_z_polecenia` zglosi je sam, nie ma kroku do anulowania
+            async with self._klient_http() as client:
+                await self._krok_z_polecenia(client, cmd)
+            return
+        # `run_command` wysyla zdarzenia kroku bez agent_id i attempt: kokpit czyta je jako ("", 1)
+        tozsamosc = (step_id, "", 1)
+        self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)
         async with self._klient_http() as client:
             await self._krok_z_polecenia(client, cmd)
+        self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
 
     async def _anuluj_runy(self) -> None:
         zadania = list(self._runy.values())
@@ -534,6 +642,9 @@ class Runner:
             zadanie.cancel()
         if zadania:
             await asyncio.wait(zadania)
+        zamykania = list(self._zamykania)       # krotkie: zamkniecie checkpointu dobiega konca
+        if zamykania:
+            await asyncio.wait(zamykania)
 
     def _klient_http(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -547,8 +658,12 @@ class Runner:
         async with self._klient_http() as client:
 
             async def emit(zdarzenie: dict) -> None:
+                run_id = cmd.get("run_id")
+                self._sledz_start_kroku(run_id, zdarzenie)
                 async with self._zapis_zdarzen:
-                    await self.send_event(client, **zdarzenie)
+                    przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
 
             try:
                 await silnik.wykonaj_run(cmd, emit)
@@ -582,8 +697,11 @@ class Runner:
         async with self._klient_http() as client:
 
             async def emit(zdarzenie: dict) -> None:
+                self._sledz_start_kroku(run_id, zdarzenie)
                 async with self._zapis_zdarzen:
-                    await self.send_event(client, **zdarzenie)
+                    przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
 
             try:
                 await silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)
