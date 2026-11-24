@@ -7,6 +7,7 @@ bez `str(OSError)`, sciezek i tresci pliku (moga niesc sekret).
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
 import fnmatch
 import os
@@ -35,6 +36,9 @@ from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_se
 LIMIT_WYNIKOW = 2000
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
 DOMYSLNY_LIMIT_ODCZYTU_KB = 512
+# Podglad artefaktu (HAR-182): bajty. JSON rozdyma znaki spoza ASCII do 3x, wiec 3 * limit
+# miesci sie w `runner_odpowiedz_max_kb` kokpitu (4096 KB) z zapasem na ramke odpowiedzi.
+LIMIT_ARTEFAKTU_B = 512 * 1024
 _ZMIENNA_LIMITU = "COCKPIT_MAX_READ_KB"
 _CYFRY_ASCII = re.compile(r"[0-9]{1,12}")   # fullmatch: "$" przepuscilby "5\n"
 _TRYB_NOWEGO_PLIKU = 0o644
@@ -122,6 +126,44 @@ def _czytaj_plik(sciezka: str, limit: int) -> dict:
     if "\0" in tresc:
         raise BladOperacji("binarny", "plik nie jest tekstem (zawiera bajt NUL)")
     return {"sciezka": str(cel), "tresc": tresc, "rozmiar": len(surowe)}
+
+
+def _czytaj_artefakt(run_id: str, sciezka: str, limit: int) -> dict:
+    """Artefakt z katalogu runu (HAR-182). Katalog liczy runner z `run_id`; sciezka jest wzgledna,
+    a zakres to wylacznie ten katalog (dowiazanie na zewnatrz i sekret to odmowa). Plik wiekszy
+    niz limit wraca obciety, z pelnym rozmiarem w bajtach; sciezek dysku runnera nie zwracamy."""
+    try:
+        katalog = katalog_runu(run_id)
+    except BladWorktree:
+        raise BladOperacji("zle_dane", "niedozwolony identyfikator runu") from None
+    if not sciezka or "\0" in sciezka:
+        raise BladOperacji("zle_dane", "sciezka artefaktu jest pusta albo zawiera znak NUL")
+    if (sciezka.startswith("/") or os.path.isabs(sciezka)
+            or ".." in sciezka.replace("\\", "/").split("/")):
+        raise BladOperacji("poza_zakresem", KOMUNIKAT_POZA_ZAKRESEM)
+    katalog = katalog.absolute()
+    cel = _rozwiaz(Zakres([katalog]), str(katalog / sciezka))
+    try:
+        tryb = os.stat(cel).st_mode
+        if stat.S_ISDIR(tryb):
+            raise BladOperacji("to_katalog", "sciezka jest katalogiem")
+        if not stat.S_ISREG(tryb):   # FIFO czy urzadzenie: open() moglby zawisnac
+            raise BladOperacji("blad_dysku", "sciezka nie jest zwyklym plikiem")
+        with open(cel, "rb") as f:
+            rozmiar = os.fstat(f.fileno()).st_size
+            surowe = f.read(limit)
+    except OSError as e:
+        raise _blad_dysku(e) from None
+    obciety = rozmiar > limit
+    if b"\0" in surowe:
+        raise BladOperacji("binarny", "plik nie jest tekstem (zawiera bajt NUL)")
+    try:
+        # przy obcieciu urwany na koncu znak wielobajtowy odpada, a nie robi z tekstu binarnego
+        # mutant UTF-8 jest rownowazny (nazwa kodeka bez rozroznienia wielkosci liter)
+        tekst = codecs.getincrementaldecoder("utf-8")().decode(surowe, final=not obciety)  # pragma: no mutate
+    except UnicodeDecodeError:
+        raise BladOperacji("binarny", "plik nie jest tekstem UTF-8") from None
+    return {"text": tekst, "truncated": obciety, "full_len": max(rozmiar, len(surowe))}
 
 
 def _wykryj_stos(sciezka: str) -> dict:
@@ -408,6 +450,12 @@ async def read_file(dane: dict) -> dict:
     return await asyncio.to_thread(_czytaj_plik, sciezka, limit)
 
 
+async def read_artifact(dane: dict) -> dict:
+    run_id = _tekst(dane, "run_id")
+    sciezka = _tekst(dane, "sciezka")
+    return await asyncio.to_thread(_czytaj_artefakt, run_id, sciezka, LIMIT_ARTEFAKTU_B)
+
+
 async def list_files(dane: dict) -> dict:
     sciezka = _tekst(dane, "sciezka")
     wzorzec = _tekst({"wzorzec": "*", **dane}, "wzorzec")
@@ -531,6 +579,7 @@ async def ticket_zapisz_wynik(dane: dict) -> Any:
 OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "ping": ping,
     "read_file": read_file,
+    "read_artifact": read_artifact,
     "list_files": list_files,
     "write_file": write_file,
     "delete_file": delete_file,
