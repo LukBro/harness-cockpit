@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from cockpit.services.invariants import profil_roli
 from cockpit.services.kroki_systemowe import KROKI_SYSTEMOWE, SYSTEM_CHECK, opis_kroku
 from cockpit.services.skills import Rejestr, Skill
 from cockpit.services.walidacja import KLUCZ_ROLI, KLUCZE_DEFINICJI, waliduj_definicje
@@ -33,6 +34,7 @@ NIEZNANY_KROK_SYSTEMOWY = "nieznany_krok_systemowy"
 CHECK_BEZ_CAPABILITY = "check_bez_capability"
 ZLA_NAZWA_CAPABILITY = "zla_nazwa_capability"
 CAPABILITY_BEZ_CHECK = "capability_bez_check"
+CAPABILITY_BEZ_UPRAWNIEN_ROLI = "capability_bez_uprawnien_roli"
 LIMIT_NA_KROKU_SYSTEMOWYM = "limit_na_kroku_systemowym"
 
 # Nazwa capability trafia do nazwy pliku dowodu (`dowod-<capability>.json`).
@@ -172,6 +174,21 @@ def _problemy_capability(krok: Krok) -> list[Problem]:
     return []
 
 
+def _problemy_roli_capability(krok: Krok, skill: Skill | None) -> list[Problem]:
+    """Skill z `needs` (capabilities) wymaga Basha, a rola bez prawa zapisu go nie ma
+    (FLAGI_BEZ_ZAPISU w runnerze go wylacza): to blad kroku, nie cicha ignorancja (HAR-220).
+    Krok systemowy i nieznany skill (`skill is None`) pomijamy."""
+    if skill is None or not skill.needs or profil_roli(skill.role).zapis:
+        return []
+    return [Problem(
+        krok.id,
+        CAPABILITY_BEZ_UPRAWNIEN_ROLI,
+        f"skill {skill.id} wymaga capabilities {', '.join(skill.needs)}, a rola "
+        f"{skill.role.value} nie ma prawa zapisu: rola bez zapisu nie ma Basha "
+        "(FLAGI_BEZ_ZAPISU wylacza go)",
+    )]
+
+
 def _problemy_limitow_kroku_systemowego(krok: Krok) -> list[Problem]:
     """Krok systemowy nie uruchamia agenta, wiec `budget_usd` i `max_turns` nie maja skutku
     (silnik wraca przez `_krok_systemowy` przed `SpecKroku`): ustawione pole to blad, nie
@@ -265,6 +282,7 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
         else:
             konsumowane = tuple(skill.consumes)
         problemy.extend(_problemy_capability(krok))
+        problemy.extend(_problemy_roli_capability(krok, skill))
         problemy.extend(_problemy_limitow_kroku_systemowego(krok))
         problemy.extend(_niezmienniki_kroku(krok, skill, workflow))
         dostepne = _produkowane(przodkowie, produkcja)
