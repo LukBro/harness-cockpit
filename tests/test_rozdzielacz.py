@@ -148,3 +148,20 @@ def test_lokalny_przebieg_idzie_przez_test_lock_z_tymi_samymi_slotami_i_limitem(
     assert mod.uruchom_lokalnie(2, 3600, ["python", "tools/testy.py"]) == 3
     assert wolane[0][1].endswith("test_lock.py")
     assert wolane[0][2:] == ["--sloty", "2", "--timeout", "3600", "--", "python", "tools/testy.py"]
+
+
+def test_pomiar_zdalny_dziala_na_linuksie_i_na_macos(mod):
+    assert "/proc/loadavg" in mod.POMIAR and "sysctl -n hw.ncpu" in mod.POMIAR and "vm_stat" in mod.POMIAR
+
+
+def test_pomiar_zdalny_czyta_rdzenie_obciazenie_i_pamiec_z_wyjscia_maszyny(mod, monkeypatch):
+    wolane = []
+    monkeypatch.setattr(mod.subprocess, "run", lambda argv, **k: wolane.append(argv)
+                        or type("R", (), {"stdout": "12 4.77 5368709120\n", "returncode": 0})())
+    assert mod.obciazenie_zdalne(BROWAR) == {"rdzenie": 12, "obciazenie": 4.77, "pamiec_gb": 5.0}
+    assert wolane[0][-1] == mod.POMIAR
+
+
+def test_skrypt_zdalny_dodaje_katalogi_brew_do_path_przed_pierwsza_komenda(mod):
+    linie = mod.skrypt_zdalny(BROWAR, "p", "abc", ["x"]).split("\n")
+    assert linie[1] == mod.PATH_ZDALNY and "/usr/local/bin" in linie[1]
