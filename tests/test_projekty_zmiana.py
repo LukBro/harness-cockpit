@@ -1134,3 +1134,58 @@ async def test_projekt_zespolu_bez_jawnej_prosby_nie_blokuje_wiersza():
     await projekt_zespolu(Sesja(), "t", "p", blokuj=True)
     assert "FOR" not in zapytania[0]
     assert zapytania[1].rstrip().endswith("FOR NO KEY UPDATE")
+
+
+# =================================================================================
+# Zapis i usuniecie pliku projektu przez runnera projektu (HAR-181), bez trasy HTTP
+# =================================================================================
+
+class _NagrywarkaRunnera:
+    """Atrapa `wyslij`: zapisuje, kto i o co zostal zapytany, i odpowiada sukcesem."""
+
+    def __init__(self) -> None:
+        self.wywolania: list[tuple] = []
+
+    async def __call__(self, runner_id, typ, dane, timeout_s):
+        self.wywolania.append((runner_id, typ, dane))
+        return {"ok": True, "wynik": {"sciezka": dane["sciezka"]}}
+
+
+@pytest.mark.parametrize("runner_projektu", ["runner_a", "runner_a2"])
+async def test_zapis_pliku_projektu_wysyla_runnerowi_projektu_write_file_z_trescia_i_tworzeniem_katalogow(
+    swiat, runner_projektu,
+):
+    from cockpit.services import projekty
+
+    runner_id = getattr(swiat, runner_projektu)
+    projekt = SimpleNamespace(path="/repo", runner_id=runner_id)
+    nagrywarka = _NagrywarkaRunnera()
+
+    async with swiat.maker() as s:
+        await projekty.zapisz_plik_projektu(
+            s, swiat.tenant_a, projekt, ".cockpit/skills/x/SKILL.md", "tresc\n",
+            frozenset({swiat.runner_a, swiat.runner_a2, swiat.runner_b}), nagrywarka)
+
+    assert nagrywarka.wywolania == [(runner_id, "write_file", {
+        "sciezka": "/repo/.cockpit/skills/x/SKILL.md", "tresc": "tresc\n",
+        "utworz_katalogi": True})]
+    assert nagrywarka.wywolania[0][2]["utworz_katalogi"] is True
+
+
+@pytest.mark.parametrize("runner_projektu", ["runner_a", "runner_a2"])
+async def test_usuniecie_pliku_projektu_wysyla_runnerowi_projektu_delete_file_ze_sciezka(
+    swiat, runner_projektu,
+):
+    from cockpit.services import projekty
+
+    runner_id = getattr(swiat, runner_projektu)
+    projekt = SimpleNamespace(path="/repo", runner_id=runner_id)
+    nagrywarka = _NagrywarkaRunnera()
+
+    async with swiat.maker() as s:
+        await projekty.usun_plik_projektu(
+            s, swiat.tenant_a, projekt, ".cockpit/skills/x/SKILL.md",
+            frozenset({swiat.runner_a, swiat.runner_a2, swiat.runner_b}), nagrywarka)
+
+    assert nagrywarka.wywolania == [(
+        runner_id, "delete_file", {"sciezka": "/repo/.cockpit/skills/x/SKILL.md"})]

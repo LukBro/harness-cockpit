@@ -56,6 +56,7 @@ BEZ_TRESCI_204 = {
     ("POST", "/api/konto/wyloguj"),
     ("POST", "/api/konto/wyloguj-wszedzie"),
     ("POST", "/api/konto/haslo"),
+    ("DELETE", "/api/skills/{skill_id}"),   # HAR-181: usuniecie skilla
 }
 STRUMIENIE_SSE = {
     ("GET", "/api/runners/stream"),
@@ -178,6 +179,9 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/projects"), ("POST", "/api/projects"),
         ("PATCH", "/api/projects/{project_id}"),
         ("GET", "/api/skills"), ("GET", "/api/skills/{skill_id}"),
+        ("PUT", "/api/skills/{skill_id}"), ("POST", "/api/skills"),
+        ("GET", "/api/workflows"), ("PUT", "/api/workflows/{name}"),
+        ("GET", "/api/workflows/{name}/validate"),
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
     })
@@ -250,6 +254,11 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("PATCH", "/api/projects/{project_id}"): ("CapabilitiesProjektu", False),
         ("GET", "/api/skills"): ("ListaSkilli", False),
         ("GET", "/api/skills/{skill_id}"): ("SkillSzczegoly", False),
+        ("PUT", "/api/skills/{skill_id}"): ("SkillSzczegoly", False),
+        ("POST", "/api/skills"): ("SkillSzczegoly", False),
+        ("GET", "/api/workflows"): ("WorkflowNaLiscie", True),
+        ("PUT", "/api/workflows/{name}"): ("OdpowiedzWalidacji", False),
+        ("GET", "/api/workflows/{name}/validate"): ("OdpowiedzWalidacji", False),
         ("POST", "/api/konto/rejestracja"): ("TokenCsrf", False),
         ("POST", "/api/konto/logowanie"): ("TokenCsrf", False),
         ("GET", "/api/konto/ja"): ("Profil", False),
@@ -313,6 +322,12 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("PATCH", "/api/projects/{project_id}"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/skills"), {"401", "404", "422", "500"}),
     (("GET", "/api/skills/{skill_id}"), {"401", "403", "404", "409", "422", "500"}),
+    (("PUT", "/api/skills/{skill_id}"), {"401", "403", "404", "409", "422", "500"}),
+    (("POST", "/api/skills"), {"401", "403", "404", "409", "422", "500"}),
+    (("DELETE", "/api/skills/{skill_id}"), {"401", "403", "404", "409", "422", "500"}),
+    (("GET", "/api/workflows"), {"401", "403", "404", "409", "422", "500"}),
+    (("PUT", "/api/workflows/{name}"), {"401", "403", "404", "409", "422", "500"}),
+    (("GET", "/api/workflows/{name}/validate"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/runs"), {"401", "422", "500"}),
     (("GET", "/api/runs/{run_id}"), {"401", "404", "500"}),
     (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
@@ -409,6 +424,13 @@ POLA_MODELI = {
     "SkillSzczegoly": {"id": {S}, "name": {S}, "role": {S}, "consumes": {"array"},
                        "produces": {"array"}, "zakres": {S}, "sciezka": {S}, "frontmatter": {S},
                        "brief": {S}},
+    # HAR-181: zapis skilli i workflow z UI; lista i walidacja workflow z kanwy
+    "ZapisSkilla": {"scope": {S}, "frontmatter": {S}, "brief": {S}},
+    "NowySkill": {"id": {S}, "scope": {S}, "frontmatter": {S}, "brief": {S}},
+    "ZapisWorkflowu": {"tresc": {S}},
+    "WorkflowNaLiscie": {"name": {S}, "liczba_krokow": {INT}, "liczba_bledow": {INT}},
+    "ProblemKroku": {"poziom": {S}, "krok": {S, N}, "komunikat": {S}},
+    "OdpowiedzWalidacji": {"problemy": {"array"}, "run_startuje_ze": {S}, "stan": {S}},
     "DiffRunu": {"diff": {S}},
     "PlikOdczytany": {"sciezka": {S}, "tresc": {S}, "rozmiar": {INT}},
     "WpisPliku": {"sciezka": {S}, "katalog": {B}},
@@ -468,6 +490,7 @@ def test_rodzaj_runnera_w_schemacie_to_zamknieta_lista_rodzajow(schemat):
     ("Katalog", "definicje", "DefinicjaKatalogu"),
     ("KatalogOdswiezony", "definicje", "DefinicjaKatalogu"),
     ("ListaSkilli", "skille", "SkillNaLiscie"),
+    ("OdpowiedzWalidacji", "problemy", "ProblemKroku"),
     ("DowodyRunu", "twierdzenia", "TwierdzenieRunu"),
     ("DowodyRunu", "dowody", "DowodKroku"),
     ("DowodyRunu", "werdykty", "WerdyktKroku"),
@@ -489,6 +512,9 @@ def test_pole_listowe_modelu_wskazuje_model_elementu(schemat, model, pole, eleme
     ("DowodIn", "source", {"engine", "agent"}),
     ("SkillNaLiscie", "zakres", {"globalny", "lokalny", "nadpisany"}),
     ("SkillSzczegoly", "zakres", {"globalny", "lokalny", "nadpisany"}),
+    ("ZapisSkilla", "scope", {"project", "global"}),
+    ("NowySkill", "scope", {"project", "global"}),
+    ("ProblemKroku", "poziom", {"blad", "ostrzezenie"}),
 ])
 def test_pole_odbioru_w_schemacie_to_zamknieta_lista_wartosci(schemat, model, pole, wartosci):
     wlasciwosc = schemat["components"]["schemas"][model]["properties"][pole]
@@ -600,6 +626,101 @@ def test_identyfikator_projektu_w_sciezce_zmiany_ma_limit_36_znakow(schemat):
     parametry = {p["name"]: p for p in _operacja(
         schemat, ("PATCH", "/api/projects/{project_id}"))["parameters"]}
     assert parametry["project_id"]["schema"]["maxLength"] == 36
+
+
+# --- HAR-181: zapis skilli i workflow, lista i walidacja workflow --------------------------------
+
+TRASY_DEFINICJI_Z_PROJEKTEM = [
+    ("PUT", "/api/skills/{skill_id}"), ("POST", "/api/skills"),
+    ("DELETE", "/api/skills/{skill_id}"), ("GET", "/api/workflows"),
+    ("PUT", "/api/workflows/{name}"), ("GET", "/api/workflows/{name}/validate"),
+]
+
+
+@pytest.mark.parametrize("klucz", TRASY_DEFINICJI_Z_PROJEKTEM, ids=lambda k: f"{k[0]} {k[1]}")
+def test_nowe_trasy_definicji_maja_wymagany_parametr_projektu_z_limitem_36_znakow(schemat, klucz):
+    parametry = {p["name"]: p for p in _operacja(schemat, klucz)["parameters"]}
+    assert parametry["project"]["required"] is True
+    assert parametry["project"]["in"] == "query"
+    assert parametry["project"]["schema"]["maxLength"] == 36
+
+
+@pytest.mark.parametrize(("klucz", "parametr"), [
+    (("PUT", "/api/skills/{skill_id}"), "skill_id"),
+    (("DELETE", "/api/skills/{skill_id}"), "skill_id"),
+    (("PUT", "/api/workflows/{name}"), "name"),
+    (("GET", "/api/workflows/{name}/validate"), "name"),
+], ids=lambda v: f"{v[0]} {v[1]}" if isinstance(v, tuple) else v)
+def test_nowe_trasy_z_identyfikatorem_w_sciezce_opisuja_go_jako_wymagany_parametr_sciezki(
+    schemat, klucz, parametr,
+):
+    parametry = {p["name"]: p for p in _operacja(schemat, klucz)["parameters"]}
+    assert parametry[parametr]["in"] == "path"
+    assert parametry[parametr]["required"] is True
+
+
+def test_usuniecie_skilla_wymaga_zakresu_project_albo_global_w_zapytaniu(schemat):
+    parametry = {p["name"]: p for p in _operacja(
+        schemat, ("DELETE", "/api/skills/{skill_id}"))["parameters"]}
+    assert parametry["scope"]["required"] is True
+    assert parametry["scope"]["in"] == "query"
+    assert set(_rozwin(schemat, parametry["scope"]["schema"])["enum"]) == {"project", "global"}
+
+
+@pytest.mark.parametrize(("model", "wymagane"), [
+    ("ZapisSkilla", {"scope", "frontmatter", "brief"}),
+    ("NowySkill", {"id", "scope", "frontmatter", "brief"}),
+    ("ZapisWorkflowu", {"tresc"}),
+])
+def test_cialo_zapisu_definicji_wymaga_wszystkich_pol_i_zabrania_obcych(schemat, model, wymagane):
+    wejscie = schemat["components"]["schemas"][model]
+    assert set(wejscie["required"]) == wymagane
+    assert wejscie["additionalProperties"] is False
+
+
+def test_trasy_zapisu_definicji_biora_cialo_z_wlasciwego_modelu(schemat):
+    oczekiwane = {
+        ("PUT", "/api/skills/{skill_id}"): "ZapisSkilla",
+        ("POST", "/api/skills"): "NowySkill",
+        ("PUT", "/api/workflows/{name}"): "ZapisWorkflowu",
+    }
+    rzeczywiste = {
+        klucz: _nazwa_ref(_operacja(schemat, klucz)["requestBody"]["content"]["application/json"]["schema"])
+        for klucz in oczekiwane}
+    assert rzeczywiste == oczekiwane
+
+
+def test_odpowiedz_walidacji_workflow_ma_zamkniete_wartosci_stanu_startu_runu(schemat):
+    pola = schemat["components"]["schemas"]["OdpowiedzWalidacji"]["properties"]
+    wartosci = {
+        nazwa: set(_rozwin(schemat, pola[nazwa]).get("enum", [_rozwin(schemat, pola[nazwa]).get("const")]))
+        for nazwa in ("run_startuje_ze", "stan")}
+    assert wartosci == {"run_startuje_ze": {"HEAD"}, "stan": {"kopia robocza"}}
+
+
+def test_dodanie_skilla_odpowiada_kodem_201_a_zapis_skilla_i_workflow_200():
+    assert TRASY[("POST", "/api/skills")].status_code == 201
+    assert (TRASY[("PUT", "/api/skills/{skill_id}")].status_code or 200) == 200
+    assert (TRASY[("PUT", "/api/workflows/{name}")].status_code or 200) == 200
+    assert TRASY[("DELETE", "/api/skills/{skill_id}")].status_code == 204
+
+
+@pytest.mark.parametrize(("model", "pole"), [
+    ("ZapisSkilla", "frontmatter"), ("ZapisSkilla", "brief"),
+    ("NowySkill", "frontmatter"), ("NowySkill", "brief"),
+])
+def test_pole_zapisywanego_skilla_ma_limit_zmieszczony_w_limicie_odczytu_runnera(
+    schemat, model, pole,
+):
+    wlasciwosc = schemat["components"]["schemas"][model]["properties"][pole]
+    # (512 KB - 8 bajtow linii granicznych) / (2 pola * 4 bajty na znak)
+    assert wlasciwosc["maxLength"] == 65535
+
+
+def test_tresc_zapisywanego_workflow_ma_limit_zmieszczony_w_limicie_odczytu_runnera(schemat):
+    # runner czyta plik do 512 KB BAJTOW, a znak ma do 4 bajtow: 512 * 1024 / 4 znakow
+    wlasciwosc = schemat["components"]["schemas"]["ZapisWorkflowu"]["properties"]["tresc"]
+    assert wlasciwosc["maxLength"] == 131072
 
 
 def test_model_katalogu_po_odswiezeniu_ma_pole_pominiete_a_sam_katalog_nie(schemat):
