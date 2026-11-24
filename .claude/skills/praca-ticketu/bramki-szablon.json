@@ -1,6 +1,6 @@
 [
  {"nazwa": "lint", "argv": ["ruff", "check", "."], "timeout": 600},
  {"nazwa": "warstwy", "argv": ["python", "tools/check_layers.py"], "timeout": 300},
- {"nazwa": "testy", "argv": ["python", ".claude/skills/praca-ticketu/scripts/test_lock.py", "--sloty", "2", "--timeout",
+ {"nazwa": "testy", "argv": ["python", ".claude/skills/praca-ticketu/scripts/rozdzielacz.py", "--sloty", "2", "--timeout",
   "3600", "--", "python", "tools/testy.py", "--bez-postepu", "600", "-q", "-n", "4"], "timeout": 9000}
 ]
