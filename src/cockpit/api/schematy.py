@@ -263,6 +263,57 @@ class SkillSzczegoly(BaseModel):
     brief: str         # wszystko po zamykajacej linii granicznej, bajt w bajt
 
 
+ZakresZapisuSkilla = Literal["project", "global"]
+# Runner czyta plik do 512 KB BAJTOW, a znak w UTF-8 ma do 4 bajtow. Zlozony plik to dwa pola plus
+# 8 bajtow linii granicznych (`---\n` x2), wiec limit na pole = (512 KB - 8) / (2 * 4) znakow:
+# najgorszy przypadek miesci sie w 512 KB. Serwis i tak liczy bajty zlozonego pliku.
+LIMIT_POLA_SKILLA = (512 * 1024 - len("---\n---\n")) // 8
+
+
+class ZapisSkilla(BaseModel):
+    """Zapis skilla z UI (HAR-181): kokpit sklada `---` + frontmatter + `---` + brief i waliduje
+    plik przed zapisem. `project` to repo projektu, `global` to katalog domowy runnera."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scope: ZakresZapisuSkilla
+    frontmatter: str = Field(max_length=LIMIT_POLA_SKILLA)
+    brief: str = Field(max_length=LIMIT_POLA_SKILLA)
+
+
+class NowySkill(ZapisSkilla):
+    id: str   # nazwa katalogu skilla; wzorzec bezpiecznej nazwy sprawdza serwis
+
+
+# Runner czyta plik do 512 KB BAJTOW (`DOMYSLNY_LIMIT_ODCZYTU_KB`); `max_length` liczy znaki,
+# a znak w UTF-8 ma do 4 bajtow, wiec 512 KB / 4 gwarantuje, ze zapisany plik da sie odczytac.
+LIMIT_TRESCI_WORKFLOWU = 512 * 1024 // 4
+
+
+class ZapisWorkflowu(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tresc: str = Field(max_length=LIMIT_TRESCI_WORKFLOWU)
+
+
+class WorkflowNaLiscie(BaseModel):
+    name: str
+    liczba_krokow: int
+    liczba_bledow: int
+
+
+class ProblemKroku(BaseModel):
+    poziom: Literal["blad", "ostrzezenie"]
+    krok: str | None   # null = problem calego pliku
+    komunikat: str
+
+
+class OdpowiedzWalidacji(BaseModel):
+    problemy: list[ProblemKroku]
+    run_startuje_ze: Literal["HEAD"]      # run startuje z HEAD...
+    stan: Literal["kopia robocza"]        # ...a walidowany jest plik z kopii roboczej
+
+
 class DiffRunu(BaseModel):
     diff: str
 

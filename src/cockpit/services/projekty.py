@@ -153,6 +153,29 @@ async def czytaj_plik_projektu(
     return wynik["tresc"]
 
 
+async def zapisz_plik_projektu(
+    s: AsyncSession, tenant_id: str, projekt: Project, wzgledna: str, tresc: str,
+    polaczone: frozenset[str], wyslij: Wyslij,
+) -> None:
+    """Zapis pliku WYLACZNIE przez runnera tego projektu (HAR-181), z utworzeniem brakujacych
+    katalogow. Odmowa runnera to PlikPozaZakresem albo StanNiemozliwy z jego komunikatem."""
+    await zapytania_runnera.zapytaj_runnera_online(
+        s, tenant_id, "write_file",
+        {"sciezka": sciezka_pliku_projektu(projekt, wzgledna), "tresc": tresc,
+         "utworz_katalogi": True},
+        polaczone, wyslij, runner_id=projekt.runner_id)
+
+
+async def usun_plik_projektu(
+    s: AsyncSession, tenant_id: str, projekt: Project, wzgledna: str,
+    polaczone: frozenset[str], wyslij: Wyslij,
+) -> None:
+    """Usuniecie pliku (nie katalogu) WYLACZNIE przez runnera tego projektu (HAR-181)."""
+    await zapytania_runnera.zapytaj_runnera_online(
+        s, tenant_id, "delete_file", {"sciezka": sciezka_pliku_projektu(projekt, wzgledna)},
+        polaczone, wyslij, runner_id=projekt.runner_id)
+
+
 async def zmien_projekt(
     s: AsyncSession, tenant_id: str, project_id: str, capabilities: dict[str, str | None],
     polaczone: frozenset[str], wyslij: Wyslij,

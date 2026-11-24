@@ -33,7 +33,7 @@ from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import (
     decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
-    skille_api, tickety,
+    skille_api, tickety, workflowy_api,
 )
 from cockpit.services import runs as uslugi
 from cockpit.services.dostep import Kontekst, Uprawnienie
@@ -56,6 +56,8 @@ from .schematy import (
     KrokRunu,
     ListaPlikow,
     ListaSkilli,
+    NowySkill,
+    OdpowiedzWalidacji,
     PlikOdczytany,
     PlikZapisany,
     PokrycieRunu,
@@ -69,7 +71,11 @@ from .schematy import (
     SkillSzczegoly,
     SkrotTicketu,
     TicketPobrany,
+    WorkflowNaLiscie,
     Zacommitowano,
+    ZakresZapisuSkilla,
+    ZapisSkilla,
+    ZapisWorkflowu,
     ZdarzeniePrzyjete,
     ZdarzenieRunu,
     Zdrowie,
@@ -682,6 +688,94 @@ async def szczegoly_skilla(
     dostep.wymagaj(k, Uprawnienie.podglad)
     return await skille_api.skill_projektu(
         s, k.tenant_id, project, skill_id, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.put("/api/skills/{skill_id}", response_model=SkillSzczegoly,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def zapisz_skill(
+    skill_id: str,
+    body: ZapisSkilla,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)   # przed zapytaniem: viewer nie budzi runnera
+    return await skille_api.zapisz_skill(
+        s, k.tenant_id, project, skill_id, body.scope, body.frontmatter, body.brief,
+        bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.post("/api/skills", response_model=SkillSzczegoly,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422), status_code=201)
+async def dodaj_skill(
+    body: NowySkill,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)
+    return await skille_api.dodaj_skill(
+        s, k.tenant_id, project, body.id, body.scope, body.frontmatter, body.brief,
+        bus.connected_runner_ids(), bus.zapytaj)
+
+
+async def usun_skill(
+    skill_id: str,
+    scope: ZakresZapisuSkilla = Query(),
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Response:
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)
+    await skille_api.usun_skill(
+        s, k.tenant_id, project, skill_id, scope, bus.connected_runner_ids(), bus.zapytaj)
+    return Response(status_code=204)
+
+
+# `add_api_route` zamiast `@app.delete`: check_layers traktuje kazde `.delete(` w api/ jako
+# zapytanie do bazy, a to jest metoda HTTP (trasa ma zero dostepu do bazy)
+app.add_api_route(
+    "/api/skills/{skill_id}", usun_skill, methods=["DELETE"], status_code=204,
+    response_model=None, responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+
+
+@app.get("/api/workflows", response_model=list[WorkflowNaLiscie],
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def lista_workflow(
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await workflowy_api.lista_workflow(
+        s, k.tenant_id, project, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.put("/api/workflows/{name}", response_model=OdpowiedzWalidacji,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def zapisz_workflow(
+    name: str,
+    body: ZapisWorkflowu,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.edycja_definicji)
+    return await workflowy_api.zapisz(
+        s, k.tenant_id, project, name, body.tresc, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.get("/api/workflows/{name}/validate", response_model=OdpowiedzWalidacji,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def waliduj_workflow(
+    name: str,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await workflowy_api.waliduj(
+        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj)
 
 
 @app.get("/api/tickety", response_model=list[SkrotTicketu],

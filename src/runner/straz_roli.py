@@ -13,9 +13,11 @@ kod != 0 to kod 2, czyli blokada narzedzia.
 
 Reguly (niezmienniki z CLAUDE.md):
 - no_git_write: w kazdej roli odmowa dla `git commit`, `git push` (sprawdza `waliduj_definicje`),
-  podpolecen gita tworzacych commity (`_GIT_TWORZY_COMMIT`, takze `git stash`), aliasow
-  ustawianych przez `-c alias.*`, `--config-env alias.*` i `git config alias.*`, `git reset --hard`
-  i `git checkout`; komenda jest sprawdzana tez po zdjeciu cudzyslowow, ucieczek i `$` przed
+  podpolecen gita tworzacych commity (`_GIT_TWORZY_COMMIT`, takze `git stash`, `git pull`
+  i `git commit-tree`), aliasow ustawianych przez `-c alias.*`, `--config-env alias.*` i
+  `git config alias.*`, `git reset --hard`, `git checkout`, `git update-ref` oraz
+  `git branch` z opcja wymuszajaca albo usuwajaca (`-f`, `--force` i skroty od `--forc`, `-M`, `-D`, `-C`, takze w klastrze
+  opcji, np. `-vD`; wielkosc liter ma znaczenie, wiec `-d` i `-m` przechodza; HAR-239); komenda jest sprawdzana tez po zdjeciu cudzyslowow, ucieczek i `$` przed
   cudzyslowem (`"g"it commit`, `gi\\t commit`, `$'g'it commit`);
 - reviewer_readonly: rola bez prawa zapisu nie uzywa Write/Edit/MultiEdit/NotebookEdit, a Bash
   tylko z bialej listy polecenia odczytu i bez metaznakow powloki; opcje zapisujace albo
@@ -113,6 +115,8 @@ _GIT_TWORZY_COMMIT = frozenset({
     "rebase",
     "am",
     "stash",
+    "pull",  # HAR-239: fetch + merge
+    "commit-tree",  # HAR-239: zapisuje obiekt commita bez `git commit`
 })
 # Opcje `git diff|log|show` zapisujace plik albo uruchamiajace zewnetrzne polecenie; dopasowanie
 # po prefiksie tokenu (git przyjmuje jednoznaczne skroty: `--ou` to `--output`).
@@ -172,6 +176,25 @@ def _alias_przez_opcje(tokeny: Sequence[str], j: int) -> str | None:
     return nazwa if nazwa == "--config-env" and _zaczyna_alias(wartosc) else None
 
 
+def _opcja_branch_przepisujaca(tokeny: Sequence[str]) -> str | None:
+    """Pierwsza opcja `git branch` wymuszajaca albo usuwajaca galaz bez sprawdzenia (HAR-239).
+
+    Opcje rozrozniane wielkoscia liter: `-f`, `-M`, `-D`, `-C` (kopia z nadpisaniem celu; tez w
+    klastrze, `-vD`) i `--force` razem z jednoznacznymi skrotami; male `-d`, `-m` i `-c` dzialaja
+    tylko na zmergowanych galeziach albo bez nadpisania, wiec przechodza.
+    """
+    for token in tokeny:
+        if token.startswith("--"):
+            # git przyjmuje jednoznaczny prefiks opcji; `--fo` i `--for` sa niejednoznaczne
+            # z `--format` (blad gita), wiec najkrotszy skrot to `--forc`
+            nazwa = token[2:].partition("=")[0]
+            if len(nazwa) >= len("forc") and "force".startswith(nazwa):
+                return token
+        elif token.startswith("-") and any(znak in "fMDC" for znak in token[1:]):
+            return token
+    return None
+
+
 def _powod_git(tokeny: Sequence[str], i: int) -> str | None:
     """Powod odmowy dla `git` na pozycji `i` (opcje globalne, potem podpolecenie) albo None."""
     j = i + 1
@@ -189,6 +212,12 @@ def _powod_git(tokeny: Sequence[str], i: int) -> str | None:
             return _powod_niezmiennika_git("git checkout")
         if podpolecenie == "reset" and "--hard" in [t.lower() for t in tokeny[j + 1:]]:
             return _powod_niezmiennika_git("git reset --hard")
+        if podpolecenie == "update-ref":
+            return _powod_niezmiennika_git("git update-ref")
+        if podpolecenie == "branch":
+            opcja = _opcja_branch_przepisujaca(tokeny[j + 1:])
+            if opcja is not None:
+                return _powod_niezmiennika_git(f"git branch {opcja}")
         if podpolecenie == "config" and any(_zaczyna_alias(t) for t in tokeny[j + 1:]):
             return f"{_PREFIKS}no_git_write — alias gita przez git config"
     return None

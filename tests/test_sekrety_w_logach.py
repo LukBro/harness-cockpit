@@ -624,3 +624,75 @@ def test_opcja_z_wartoscia_po_rownasie_w_cudzyslowie_sklejona_z_reszta_tokenu_je
 @pytest.mark.parametrize("komenda", ["echo --token", "ls --tokens", "deploy --secretive x"])
 def test_opcja_bez_wartosci_albo_o_innej_nazwie_nie_jest_zmieniana(komenda):
     assert maskuj_komende(komenda) == komenda
+
+
+# HAR-239: powłoka skleja sąsiednie fragmenty w jeden token; maskujemy go do pierwszej spacji
+# spoza cudzysłowu, inaczej reszta sekretu zostaje w logu.
+@pytest.mark.parametrize(
+    "komenda,oczekiwana",
+    [
+        pytest.param("X TOKEN='abc'def", "X TOKEN=***", id="apostrofy-potem-znaki"),
+        pytest.param('X TOKEN="abc"def', "X TOKEN=***", id="cudzyslow-potem-znaki"),
+        pytest.param("X TOKEN=ab'cd ef'gh ls", "X TOKEN=*** ls", id="znaki-apostrofy-znaki"),
+        pytest.param("X TOKEN='ab cd'ef gh", "X TOKEN=*** gh", id="spacja-w-apostrofach-i-ogon"),
+        pytest.param('X TOKEN="ab cd"ef gh', "X TOKEN=*** gh", id="spacja-w-cudzyslowie-i-ogon"),
+        pytest.param("X TOKEN='ab'\"cd ef\" ls", "X TOKEN=*** ls", id="apostrofy-potem-cudzyslow"),
+        pytest.param("X TOKEN=ab\\ cd ls", "X TOKEN=*** ls", id="ucieczka-spacji"),
+        pytest.param("X TOKEN=ab\\ cd\\ ef ls", "X TOKEN=*** ls", id="dwie-ucieczki-spacji"),
+        pytest.param("X TOKEN=a\\'b ls", "X TOKEN=*** ls", id="ucieczka-apostrofu"),
+        pytest.param('X TOKEN=a\\"b c', "X TOKEN=*** c", id="ucieczka-cudzyslowu"),
+        pytest.param("X TOKEN='' ls", "X TOKEN=*** ls", id="puste-apostrofy"),
+        pytest.param("X TOKEN=abc ls", "X TOKEN=*** ls", id="zwykla-wartosc-bez-cudzyslowu"),
+        pytest.param("X TOKEN='ab cd", "X TOKEN=***", id="niedomkniety-apostrof-do-konca"),
+        pytest.param('X TOKEN="ab cd ef', "X TOKEN=***", id="niedomkniety-cudzyslow-do-konca"),
+        pytest.param("X TOKEN=ab'cd ef gh", "X TOKEN=***", id="niedomkniety-apostrof-w-srodku"),
+        pytest.param('X TOKEN="a\\"b c" d', "X TOKEN=*** d", id="ucieczka-cudzyslowu-w-cudzyslowie"),
+        pytest.param("X TOKEN=ab\\", "X TOKEN=***", id="ukosnik-na-koncu-napisu"),
+        pytest.param('X TOKEN="ab\\', "X TOKEN=***", id="ukosnik-na-koncu-w-niedomknietym-cudzyslowie"),
+        pytest.param('X TOKEN=""abc ls', "X TOKEN=*** ls", id="pusty-cudzyslow-potem-znaki"),
+    ],
+)
+def test_wartosc_przypisania_sekretu_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu(
+    komenda, oczekiwana
+):
+    assert maskuj_komende(komenda) == oczekiwana
+
+
+@pytest.mark.parametrize(
+    "komenda,oczekiwana",
+    [
+        pytest.param("mytool --token x'a b'", "mytool --token ***", id="znak-potem-apostrofy"),
+        pytest.param('mytool --token x"a b"', "mytool --token ***", id="znak-potem-cudzyslow"),
+        pytest.param("mytool --token 'a b'x -v", "mytool --token *** -v", id="apostrofy-potem-znak"),
+        pytest.param('mytool --token "a b"x -v', "mytool --token *** -v", id="cudzyslow-potem-znak"),
+        pytest.param("mytool --token a\\ b -v", "mytool --token *** -v", id="ucieczka-spacji"),
+        pytest.param("mytool --token a\\'b -v", "mytool --token *** -v", id="ucieczka-apostrofu"),
+        pytest.param("mytool --token='a b'c -v", "mytool --token=*** -v", id="rowna-sie-apostrofy"),
+        pytest.param('mytool --password=p"q r"s -v', "mytool --password=*** -v", id="password-rowna-sie"),
+        pytest.param("mytool --secret x'a b'y -v", "mytool --secret *** -v", id="secret-spacja"),
+        pytest.param("mytool --token x'a b", "mytool --token ***", id="niedomkniety-apostrof"),
+        pytest.param('mytool --token "a b', "mytool --token ***", id="niedomkniety-cudzyslow"),
+        pytest.param("mytool --token=ab\\ cd", "mytool --token=***", id="rowna-sie-ucieczka-spacji"),
+        pytest.param('mytool --token "a\\"b c" -v', "mytool --token *** -v", id="ucieczka-w-cudzyslowie"),
+        pytest.param("mytool --token=ab\\", "mytool --token=***", id="ukosnik-na-koncu-napisu"),
+        pytest.param('mytool --token "ab\\', "mytool --token ***", id="ukosnik-na-koncu-w-niedomknietym-cudzyslowie"),
+        pytest.param('mytool --token ""x -v', "mytool --token *** -v", id="pusty-cudzyslow-potem-znak"),
+        pytest.param("mytool --token '' -v", "mytool --token *** -v", id="puste-apostrofy"),
+        pytest.param("mytool --token ab\\", "mytool --token ***", id="spacja-ukosnik-na-koncu-napisu"),
+    ],
+)
+def test_wartosc_opcji_z_sekretem_zlozona_z_fragmentow_jest_zamaskowana_do_konca_tokenu(
+    komenda, oczekiwana
+):
+    assert maskuj_komende(komenda) == oczekiwana
+
+
+@pytest.mark.parametrize(
+    "komenda",
+    [
+        pytest.param("X TOKEN= ls", id="przypisanie-z-pusta-wartoscia"),
+        pytest.param("mytool --token= -v", id="opcja-z-pusta-wartoscia"),
+    ],
+)
+def test_pusta_wartosc_sekretu_nie_jest_maskowana_bo_nie_ma_czego_ukrywac(komenda):
+    assert maskuj_komende(komenda) == komenda

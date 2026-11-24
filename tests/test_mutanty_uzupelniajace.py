@@ -57,8 +57,16 @@ Kazdy mutant to dokladnie jedna zmiana:
   rozebrac, to BLAD NARZEDZIA `plik:linia: nie umiem rozebrac wzorca (powod)`, nigdy zero
   mutantow: nawias albo `[` w komentarzu `(?x)`, `\\N{` bez `}`, grupa z `|` nierozpoznanego
   rodzaju (np. warunkowa `(?(1)a|b)`), flaga `re.X`/`re.VERBOSE` (takze w `re.I | re.VERBOSE`),
-  flagi nieodczytywalne z kodu (zmienna, nieznana nazwa, wiele argumentow, `*args`,
+  flaga `re.T`/`re.TEMPLATE` (takze jako liczba 1 albo bit w sumie; razem z VERBOSE zglaszana jest
+  VERBOSE), flagi nieodczytywalne z kodu (zmienna, nieznana nazwa, wiele argumentow, `*args`,
   nieznany argument nazwany) i flagi niezgodne z wzorcem (`rb"ab", re.U`).
+  Flagi globalne z poczatku wzorca moga byc rozdzielone komentarzem `(?#...)` (po `(?x)` takze
+  bialym znakiem i komentarzem `#...`): usuniecie pierwszej alternatywy nie rusza ich ani tego, co
+  je rozdziela. Petle rozbioru wzorca maja straznik postepu: indeks, ktory stoi, to blad
+  `rozbior wzorca nie posuwa sie naprzod (znak N)`, a nie zawieszenie.
+  To samo dotyczy `re.sub`, `re.subn`, `re.split`, `re.match`, `re.search`, `re.fullmatch`, `re.findall`
+  i `re.finditer` (flagi na miejscu danej funkcji, cudzy argument nazwany to blad); inne `re.*` bez wzorca
+  (`re.escape`) nie sa objete bramka.
 
 OPIS (`Mutant.opis`, ostatnia czesc linii wyniku `plik:linia: ksztalt: opis` - opis jest w
 calej linii, nie tylko jej poczatku). Wymagane formaty:
@@ -156,6 +164,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -2554,7 +2563,7 @@ def test_flaga_verbose_w_wywolaniu_to_blad_narzedzia_bo_zmienia_skladnie_wzorca(
     ],
 )
 def test_flagi_nieodczytywalne_z_kodu_to_blad_narzedzia_z_wyrazeniem_a_nie_zero_mutantow(reszta, wyrazenie):
-    oczekiwany = _komunikat_wzorca(f"nie umiem odczytac flag re.compile: {wyrazenie}")
+    oczekiwany = _komunikat_wzorca(f"nie umiem odczytac flag wywolania re: {wyrazenie}")
     assert _blad_zrodla(_regex_zrodlo("^a$", reszta=reszta)) == oczekiwany
 
 
@@ -2733,6 +2742,8 @@ def _miejsca_nieliteralne(zrodlo: str, linie: set[int] | None = None) -> list[in
         pytest.param('import re\n\nX = re.compile(pattern=f"{P}a")\n', id="f_string_jako_pattern"),
         pytest.param("import re\n\nX = re.compile(WZORZEC, re.I)\n", id="zmienna_z_flagami"),
         pytest.param("import re\n\nX = re.compile(WZORZEC, flags=FLAGI)\n", id="zmienna_z_flagami_nieodczytywalnymi"),
+        pytest.param("import re\n\nX = re.compile(None)\n", id="stala_none"),
+        pytest.param("import re\n\nX = re.compile(5)\n", id="stala_liczba"),
     ],
 )
 def test_re_compile_ze_wzorcem_nieliteralnym_w_dotknietym_zakresie_to_miejsce_do_recznego_sprawdzenia(zrodlo):
@@ -2745,8 +2756,8 @@ def test_re_compile_bez_argumentow_i_z_literalem_nie_sa_miejscami_do_recznego_sp
     assert _miejsca_nieliteralne(_regex_zrodlo("^a$", "rb")) == []
 
 
-def test_wywolanie_inne_niz_re_compile_ze_zmienna_nie_jest_miejscem_do_recznego_sprawdzenia():
-    zrodlo = "import re\n\nX = re.sub(WZORZEC, '', 'a')\nY = zbuduj.compile(WZORZEC)\nZ = compile(WZORZEC)\n"
+def test_wywolanie_compile_nie_z_modulu_re_ze_zmienna_nie_jest_miejscem_do_recznego_sprawdzenia():
+    zrodlo = "import re\n\nY = zbuduj.compile(WZORZEC)\nZ = compile(WZORZEC)\n"
     assert _miejsca_nieliteralne(zrodlo) == []
 
 
@@ -3376,7 +3387,9 @@ class _AstZAwariaUnparse:
             if isinstance(wezel, ast.Module):
                 self._moduly += 1
                 # pierwszy `unparse` modulu to zrodlo bazowe, drugi to pierwszy mutant
-                if self._kiedy == "mutant" and self._moduly == 2:
+                if (self._kiedy == "mutant" and self._moduly == 2) or (
+                    self._kiedy == "zrodlo_bazowe" and self._moduly == 1
+                ):
                     raise self._wyjatek("awaria testowa")
             elif self._kiedy == "opis":
                 raise self._wyjatek("awaria testowa")
@@ -3391,6 +3404,7 @@ class _AstZAwariaUnparse:
     [
         pytest.param("opis", "nie da sie opisac mutantow", id="opis_elementu"),
         pytest.param("mutant", "nie da sie odtworzyc mutanta", id="zrodlo_mutanta"),
+        pytest.param("zrodlo_bazowe", "nie da sie odtworzyc zrodla", id="zrodlo_bazowe"),
     ],
 )
 def test_awaria_unparse_przy_opisie_i_przy_odtwarzaniu_mutanta_to_blad_narzedzia_z_wlasnym_komunikatem(
@@ -3871,3 +3885,571 @@ def test_main_uruchamia_przebieg_na_wszystkich_rdzeniach(tmp_path, monkeypatch, 
 
     assert mutanty_uzupelniajace.main(["--korzen", str(tmp_path)]) == 0
     assert wywolania == [5]
+
+
+# --- HAR-258: flaga TEMPLATE jak VERBOSE ------------------------------------------------------------------------
+
+POWOD_TEMPLATE = "flaga re.TEMPLATE zmienia dopasowanie wzorca, narzedzie jej nie obsluguje"
+
+
+@pytest.mark.parametrize(
+    "reszta",
+    [
+        pytest.param(", re.T", id="skrot_template"),
+        pytest.param(", re.TEMPLATE", id="pelna_nazwa_template"),
+        pytest.param(", flags=re.T", id="template_jako_argument_nazwany"),
+        pytest.param(", re.I | re.T", id="template_w_sumie_z_inna_flaga_po_prawej"),
+        pytest.param(", re.T | re.M", id="template_w_sumie_z_inna_flaga_po_lewej"),
+        pytest.param(", 1", id="template_jako_liczba"),
+        pytest.param(", 3", id="template_jako_bit_w_liczbie"),
+        pytest.param(", flags=1", id="template_jako_liczba_nazwana"),
+    ],
+)
+def test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow(reszta):
+    assert _blad_zrodla(_regex_zrodlo("^a$", reszta=reszta)) == _komunikat_wzorca(POWOD_TEMPLATE)
+
+
+@pytest.mark.parametrize("reszta", [", re.X | re.T", ", re.T | re.X", ", 65"])
+def test_verbose_razem_z_template_zglasza_verbose_bo_ta_flaga_jest_sprawdzana_pierwsza(reszta):
+    assert _blad_zrodla(_regex_zrodlo("^a$", reszta=reszta)) == _komunikat_wzorca(POWOD_VERBOSE)
+
+
+@pytest.mark.parametrize(
+    ("reszta", "wyrazenie"),
+    [
+        pytest.param(", x.T", "x.T", id="skrot_template_nie_z_modulu_re"),
+        pytest.param(", a.re.TEMPLATE", "a.re.TEMPLATE", id="template_z_atrybutu_atrybutu_modulu_re"),
+        pytest.param(", re.TX", "re.TX", id="nazwa_podobna_do_template_ale_nie_ta"),
+    ],
+)
+def test_nazwa_flagi_podobna_do_template_ale_nie_z_modulu_re_to_flaga_nieodczytywalna(reszta, wyrazenie):
+    oczekiwany = _komunikat_wzorca(f"nie umiem odczytac flag wywolania re: {wyrazenie}")
+    assert _blad_zrodla(_regex_zrodlo("^a$", reszta=reszta)) == oczekiwany
+
+
+# --- HAR-258: flagi globalne rozdzielone komentarzem albo bialym znakiem --------------------------------------------
+
+
+def _bez_alternatywy(naglowek: str, pierwsza: str = "ab") -> list[tuple[str, str]]:
+    """Oczekiwane warianty wzorca `<naglowek><pierwsza>|cd`: kazda alternatywa znika sama, naglowek zostaje."""
+    return [
+        (f"usunieto alternatywe {pierwsza!r} z grupy", f"{naglowek}cd"),
+        (OPIS_ALT_CD, f"{naglowek}{pierwsza}"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "naglowek",
+    [
+        pytest.param("(?#komentarz)(?i)", id="komentarz_przed_pierwsza_flaga"),
+        pytest.param("(?i)(?#komentarz)(?m)", id="komentarz_miedzy_flagami"),
+        pytest.param("(?#jeden)(?#dwa)(?i)", id="dwa_komentarze_przed_flaga"),
+        pytest.param("(?i)(?#jeden)(?#dwa)(?m)", id="dwa_komentarze_miedzy_flagami"),
+        pytest.param("(?#jeden)(?i)(?#dwa)(?m)", id="komentarze_przed_i_miedzy_flagami"),
+    ],
+)
+def test_flagi_globalne_po_komentarzu_grupy_zostaja_poza_pierwsza_alternatywa(naglowek):
+    assert mutanty_uzupelniajace._warianty_wzorca(naglowek + "ab|cd") == _bez_alternatywy(naglowek)
+
+
+def test_komentarz_grupy_za_ostatnia_flaga_nalezy_do_pierwszej_alternatywy():
+    assert mutanty_uzupelniajace._warianty_wzorca("(?i)(?#komentarz)ab|cd") == [
+        ("usunieto alternatywe '(?#komentarz)ab' z grupy", "(?i)cd"),
+        (OPIS_ALT_CD, "(?i)(?#komentarz)ab"),
+    ]
+
+
+def test_komentarz_grupy_bez_flag_nalezy_do_pierwszej_alternatywy():
+    assert mutanty_uzupelniajace._warianty_wzorca("(?#komentarz)ab|cd") == [
+        ("usunieto alternatywe '(?#komentarz)ab' z grupy", "cd"),
+        (OPIS_ALT_CD, "(?#komentarz)ab"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "znak",
+    [
+        pytest.param(" ", id="spacja"),
+        pytest.param("\t", id="tabulator"),
+        pytest.param("\n", id="nowa_linia"),
+        pytest.param("\r", id="powrot_karetki"),
+        pytest.param("\v", id="tabulator_pionowy"),
+        pytest.param("\f", id="wysuw_strony"),
+    ],
+)
+def test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa(znak):
+    naglowek = f"(?x){znak}(?i)"
+    assert mutanty_uzupelniajace._warianty_wzorca(naglowek + "ab|cd") == _bez_alternatywy(naglowek)
+
+
+@pytest.mark.parametrize(
+    "naglowek",
+    [
+        pytest.param("(?x)# komentarz\n(?i)", id="komentarz_do_konca_linii_miedzy_flagami"),
+        pytest.param("(?x)(?i)# komentarz\n(?m)", id="komentarz_do_konca_linii_po_drugiej_fladze"),
+        pytest.param("(?x)  \n(?i)", id="kilka_bialych_znakow_pod_rzad"),
+        pytest.param("(?x)(?#komentarz) (?i)", id="komentarz_grupy_i_bialy_znak"),
+        pytest.param("(?x) (?#komentarz)(?i)", id="bialy_znak_i_komentarz_grupy"),
+        pytest.param("(?ix) (?m)", id="x_obok_innej_litery_w_jednej_grupie"),
+        pytest.param("(?x)(?#komentarz)(?i) (?m)", id="x_w_pierwszej_grupie_a_bialy_znak_za_trzecia"),
+        pytest.param("(?i)(?#komentarz)(?x) (?m)", id="x_dopiero_w_drugiej_grupie_flag"),
+    ],
+)
+def test_flagi_globalne_po_fladze_x_rozdzielone_komentarzem_albo_bialym_znakiem_zostaja_poza_alternatywa(naglowek):
+    assert mutanty_uzupelniajace._warianty_wzorca(naglowek + "ab|cd") == _bez_alternatywy(naglowek)
+
+
+def test_komentarz_do_konca_linii_za_ostatnia_flaga_x_nalezy_do_pierwszej_alternatywy():
+    pierwsza = "# k\nab"
+    assert mutanty_uzupelniajace._warianty_wzorca("(?x)(?i)" + pierwsza + "|cd") == _bez_alternatywy("(?x)(?i)", pierwsza)
+
+
+def test_bialy_znak_za_ostatnia_flaga_x_nalezy_do_pierwszej_alternatywy():
+    assert mutanty_uzupelniajace._warianty_wzorca("(?x)(?i) ab|cd") == _bez_alternatywy("(?x)(?i)", " ab")
+
+
+@pytest.mark.parametrize(
+    "wzorzec",
+    [
+        pytest.param("(?i) ab|cd", id="bialy_znak_bez_flagi_x_to_zwykly_znak"),
+        pytest.param("(?i)# k\nab|cd", id="hasz_bez_flagi_x_to_zwykly_znak"),
+    ],
+)
+def test_bialy_znak_i_hasz_bez_flagi_x_naleza_do_pierwszej_alternatywy(wzorzec):
+    pierwsza = wzorzec[len("(?i)") : wzorzec.index("|")]
+    assert mutanty_uzupelniajace._warianty_wzorca(wzorzec) == _bez_alternatywy("(?i)", pierwsza)
+
+
+@pytest.mark.parametrize("nazwa", ["T", "TEMPLATE"])
+def test_nazwa_flagi_template_jest_rozpoznawana_takze_gdy_re_jej_nie_ma_jak_w_pythonie_3_13(monkeypatch, nazwa):
+    # w Pythonie 3.13 `re.RegexFlag` nie ma T ani TEMPLATE; podmieniamy `re` w narzedziu na taka wersje
+    flagi_bez_template = {k: v for k, v in re.RegexFlag.__members__.items() if k not in ("T", "TEMPLATE")}
+    atrapa = type("AtrapaRegexFlag", (), {"__members__": flagi_bez_template})
+    atrapa_re = type("AtrapaRe", (), {n: getattr(re, n) for n in dir(re) if not n.startswith("__")})
+    atrapa_re.RegexFlag = atrapa
+    monkeypatch.setattr(mutanty_uzupelniajace, "re", atrapa_re)
+    wyrazenie = ast.parse(f"re.{nazwa}", mode="eval").body
+    assert mutanty_uzupelniajace._wartosc_flag(wyrazenie) == mutanty_uzupelniajace.FLAGA_TEMPLATE == 1
+
+
+def test_komentarz_grupy_konczy_sie_na_pierwszym_nawiasie_zamykajacym():
+    # `(?#a(?i)` zamyka sie na pierwszym `)`; `(?i)` w srodku komentarza nie jest flaga
+    assert mutanty_uzupelniajace._warianty_wzorca("(?#a(?i)b|c") == [
+        ("usunieto alternatywe '(?#a(?i)b' z grupy", "c"),
+        ("usunieto alternatywe 'c' z grupy", "(?#a(?i)b"),
+    ]
+
+
+def test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej():
+    koniec = mutanty_uzupelniajace._koniec_flag_globalnych
+    assert koniec("ab") == 0
+    assert koniec("(?#k)ab") == 0
+    assert koniec("(?i)(?#k)ab") == 4
+    assert koniec("(?#k)(?i)ab") == 9
+    assert koniec("(?x) (?i) ab") == 9
+
+
+# --- HAR-258: strazniki postepu w petlach rozbioru wzorca -------------------------------------------------------
+
+
+def _funkcja_bez_postepu(licznik: list[int], limit: int = 100):
+    """Zastepuje funkcje rozbioru taka, ktora zwraca swoj poczatek: mutant zerujacy postep, w skonczonym czasie."""
+
+    def funkcja(wzorzec, poczatek, *reszta):
+        licznik.append(poczatek)
+        assert len(licznik) < limit, "petla rozbioru wzorca nie konczy sie"
+        return poczatek
+
+    return funkcja
+
+
+POSTEP_BLAD = "rozbior wzorca nie posuwa sie naprzod (znak 1)"
+
+
+def _blad_rozbioru(wzorzec: str) -> str:
+    with pytest.raises(mutanty_uzupelniajace._NiepoprawnyWzorzec) as wyjatek:
+        mutanty_uzupelniajace._warianty_wzorca(wzorzec)
+    return str(wyjatek.value)
+
+
+def test_indeks_ktory_nie_idzie_do_przodu_to_blad_rozbioru_z_numerem_znaku():
+    mutanty_uzupelniajace._wymagaj_postepu(3, 4)
+    for przed, po in [(3, 3), (4, 3)]:
+        with pytest.raises(mutanty_uzupelniajace._NiepoprawnyWzorzec) as wyjatek:
+            mutanty_uzupelniajace._wymagaj_postepu(przed, po)
+        assert str(wyjatek.value) == "rozbior wzorca nie posuwa sie naprzod (znak 3)"
+
+
+def test_ucieczka_ktora_nie_posuwa_rozbioru_konczy_sie_bledem_a_nie_zawieszeniem(monkeypatch):
+    wywolania: list[int] = []
+    monkeypatch.setattr(mutanty_uzupelniajace, "_koniec_ucieczki", _funkcja_bez_postepu(wywolania))
+    assert _blad_rozbioru(r"a\d") == POSTEP_BLAD
+    assert wywolania == [1]
+
+
+def test_klasa_znakow_ktora_nie_posuwa_rozbioru_konczy_sie_bledem_a_nie_zawieszeniem(monkeypatch):
+    wywolania: list[int] = []
+    monkeypatch.setattr(mutanty_uzupelniajace, "_klasa_znakow", _funkcja_bez_postepu(wywolania))
+    assert _blad_rozbioru("a[b]") == POSTEP_BLAD
+    assert wywolania == [1]
+
+
+def test_element_klasy_znakow_ktory_nie_posuwa_rozbioru_konczy_sie_bledem_a_nie_zawieszeniem(monkeypatch):
+    wywolania: list[int] = []
+    monkeypatch.setattr(mutanty_uzupelniajace, "_koniec_elementu", _funkcja_bez_postepu(wywolania))
+    assert _blad_rozbioru("[ab]") == POSTEP_BLAD
+    assert wywolania == [1]
+
+
+@pytest.mark.parametrize(
+    "wzorzec",
+    [
+        pytest.param("(ab|cd)", id="grupa_z_alternatywa"),
+        pytest.param("^a$", id="kotwice_i_zwykle_znaki"),
+        pytest.param("(?#komentarz)(?i)a|b", id="komentarz_grupy_i_flaga"),
+        pytest.param("^a\\.b", id="ucieczka"),
+        pytest.param("a[bc]d", id="klasa_znakow"),
+        pytest.param("[\\0" + "7b]", id="ucieczka_osemkowa_w_klasie"),
+    ],
+)
+def test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru(wzorzec):
+    assert mutanty_uzupelniajace._warianty_wzorca(wzorzec)
+
+
+# --- HAR-258: elementy, ktore krytyk usuwal bez skutku ---------------------------------------------------------
+
+
+def test_nazwa_znaku_w_klasie_konczy_sie_na_swoim_nawiasie_a_nie_na_ostatnim_w_wzorcu():
+    nazwa = r"\N{LATIN SMALL LETTER A}"
+    assert mutanty_uzupelniajace._koniec_ucieczki(nazwa + "a{2}", 0) == len(nazwa)
+    assert mutanty_uzupelniajace._warianty_wzorca("[" + nazwa + "b]x{2}") == [
+        (f"usunieto element {nazwa!r} z klasy znakow", "[b]x{2}"),
+        ("usunieto element 'b' z klasy znakow", "[" + nazwa + "]x{2}"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "flaga",
+    ["a", "i", "m", "s", "u", "x", "-i", "-m", "-s", "-x", "u-i", "u-m", "u-s", "u-x"],
+)
+def test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane(flaga):
+    wzorzec = f"(?{flaga}:ab|cd)"
+    assert mutanty_uzupelniajace._warianty_wzorca(wzorzec) == [
+        (OPIS_ALT_AB, f"(?{flaga}:cd)"),
+        (OPIS_ALT_CD, f"(?{flaga}:ab)"),
+    ]
+
+
+def test_alternatywy_grupy_z_flaga_zakresowa_l_we_wzorcu_bajtowym_sa_mutowane():
+    assert mutanty_uzupelniajace._warianty_wzorca(b"(?L:ab|cd)") == [
+        (OPIS_ALT_AB, b"(?L:cd)"),
+        (OPIS_ALT_CD, b"(?L:ab)"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "wywolanie",
+    [
+        pytest.param('a.re.compile(r"^x$")', id="atrybut_atrybutu_modulu_re"),
+        pytest.param('fabryka().compile(r"^x$")', id="wywolanie_jako_odbiorca"),
+        pytest.param('moduly["re"].compile(r"^x$")', id="indeks_jako_odbiorca"),
+        pytest.param('x.compile(r"^x$")', id="nazwa_inna_niz_re_jako_odbiorca"),
+    ],
+)
+def test_compile_wolane_na_czyms_innym_niz_nazwa_re_nie_jest_re_compile_i_nie_rzuca_wyjatku(wywolanie):
+    zrodlo = f"import a\n\nX = {wywolanie}\n"
+    assert mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, {3}) == []
+    assert _miejsca_nieliteralne(zrodlo) == []
+
+
+# --- HAR-258: dokladny tekst komunikatow bledow narzedzia ---------------------------------------------------------
+
+
+def _komunikat_narzedzia(funkcja, *argumenty) -> str:
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia) as wyjatek:
+        funkcja(*argumenty)
+    return str(wyjatek.value)
+
+
+def test_raport_junit_bez_wykonanego_testu_ma_komunikat_z_lista_testow_i_brakiem_dowodu(tmp_path):
+    raport = _raport_junit(tmp_path, (2, 2))
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._wymagaj_wykonanych, raport, ["tests/a.py", "tests/b.py"])
+    assert komunikat == "tests/a.py, tests/b.py: zaden test sie nie wykonal wedlug raportu JUnit - brak dowodu"
+
+
+def test_brak_raportu_junit_ma_komunikat_ze_sciezka_raportu_i_przyczyna(tmp_path):
+    raport = tmp_path / "nie-ma.xml"
+    with pytest.raises(OSError) as przyczyna:
+        ET.parse(raport)
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._wymagaj_wykonanych, raport, ["tests/a.py", "tests/b.py"])
+    assert komunikat == f"tests/a.py, tests/b.py: brak raportu JUnit {raport}: brak dowodu ({przyczyna.value})"
+
+
+def test_raport_junit_bedacy_zepsutym_xml_ma_komunikat_z_przyczyna(tmp_path):
+    raport = tmp_path / "raport.xml"
+    raport.write_text("to nie jest xml", encoding="utf-8")
+    with pytest.raises(ET.ParseError) as przyczyna:
+        ET.parse(raport)
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._wymagaj_wykonanych, raport, ["tests/a.py"])
+    assert komunikat == f"tests/a.py: raport JUnit nie jest poprawnym XML: brak dowodu ({przyczyna.value})"
+
+
+def test_raport_junit_z_licznikiem_ktory_nie_jest_liczba_ma_komunikat_z_przyczyna(tmp_path):
+    raport = tmp_path / "raport.xml"
+    raport.write_text('<testsuites><testsuite tests="x" skipped="0"/></testsuites>', encoding="utf-8")
+    with pytest.raises(ValueError) as przyczyna:
+        int("x")
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._wymagaj_wykonanych, raport, ["tests/a.py"])
+    assert komunikat == f"tests/a.py: raport JUnit ma liczniki nie bedace liczbami: brak dowodu ({przyczyna.value})"
+
+
+def test_plik_zrodlowy_ktorego_skladnia_jest_zla_ma_komunikat_ze_sciezka_i_przyczyna():
+    with pytest.raises(SyntaxError) as przyczyna:
+        ast.parse("def (:\n", filename=SCIEZKA)
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._analiza, SCIEZKA, "def (:\n", {1})
+    assert komunikat == f"{SCIEZKA}: nie da sie sparsowac: {przyczyna.value!r}"
+
+
+def test_zapis_zrodla_do_nieistniejacego_katalogu_kopii_ma_komunikat_ze_sciezka_pliku(tmp_path):
+    with pytest.raises(OSError) as przyczyna:
+        (tmp_path / "brak" / SCIEZKA).write_text("X = 1\n", encoding="utf-8")
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._zapisz_w_kopii, tmp_path / "brak", SCIEZKA, "X = 1\n")
+    assert komunikat == f"{SCIEZKA}: nie da sie zapisac zrodla w kopii: {przyczyna.value}"
+
+
+def test_katalog_testow_ktorego_nie_da_sie_przejrzec_ma_komunikat_z_przyczyna():
+    komunikat = _komunikat_narzedzia(mutanty_uzupelniajace._blad_katalogu, OSError("brak praw"))
+    assert komunikat == "nie da sie przejrzec katalogu testow: brak praw"
+
+
+def test_kopia_repozytorium_bez_miejsca_na_katalog_tymczasowy_ma_komunikat_z_przyczyna(tmp_path, monkeypatch):
+    def brak_miejsca(**_):
+        raise OSError("brak miejsca")
+
+    monkeypatch.setattr(mutanty_uzupelniajace.tempfile, "mkdtemp", brak_miejsca)
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia) as wyjatek:
+        with mutanty_uzupelniajace._kopia_repo(tmp_path):
+            pass
+    assert str(wyjatek.value) == "nie da sie utworzyc katalogu tymczasowego: brak miejsca"
+
+
+def test_kopia_repozytorium_ktorej_nie_da_sie_usunac_ma_komunikat_ze_sciezka_kopii_i_przyczyna(tmp_path, monkeypatch):
+    kopia = tmp_path / "kopia"
+    kopia.mkdir()
+
+    def nie_usuwa(_):
+        raise OSError("zajety")
+
+    monkeypatch.setattr(mutanty_uzupelniajace.tempfile, "mkdtemp", lambda **_: str(kopia))
+    monkeypatch.setattr(mutanty_uzupelniajace.mutanty_reczne, "skopiuj_repo", lambda *a: None)
+    monkeypatch.setattr(mutanty_uzupelniajace.shutil, "rmtree", nie_usuwa)
+    with pytest.raises(mutanty_uzupelniajace.BladNarzedzia) as wyjatek:
+        with mutanty_uzupelniajace._kopia_repo(tmp_path):
+            pass
+    assert str(wyjatek.value) == f"nie da sie usunac katalogu tymczasowego {kopia}: zajety"
+
+
+# --- HAR-258 runda 3: naglowek flag jest pominiety w kazdym przejsciu rozbioru -------------------------------------
+
+
+@pytest.mark.parametrize(
+    "komentarz",
+    [
+        pytest.param("# a|b", id="kreska_w_komentarzu"),
+        pytest.param("# ^", id="kotwica_w_komentarzu"),
+        pytest.param("# $", id="dolar_w_komentarzu"),
+        pytest.param("# (", id="nawias_otwierajacy_w_komentarzu"),
+        pytest.param("# )", id="nawias_zamykajacy_w_komentarzu"),
+        pytest.param("# [", id="klasa_w_komentarzu"),
+        pytest.param("# \\N{", id="nazwa_znaku_w_komentarzu"),
+    ],
+)
+def test_komentarz_miedzy_flagami_po_fladze_x_nie_daje_mutantow_ani_bledu(komentarz):
+    naglowek = f"(?x){komentarz}\n(?i)"
+    assert mutanty_uzupelniajace._warianty_wzorca(naglowek + "ab|cd") == _bez_alternatywy(naglowek)
+
+
+def test_komentarz_z_kreska_miedzy_flagami_nie_daje_mutanta_laczacego_flage_z_alternatywa():
+    wzorzec = "(?x)# a|b\n(?i)cd|ef"
+    assert _wzorce_regex(wzorzec.replace("\n", "\\n"), "") == _oczekiwane_wzorce(
+        "(?x)# a|b\\n(?i)ef", "(?x)# a|b\\n(?i)cd", przedrostek=""
+    )
+
+
+def test_komentarz_z_kreska_miedzy_flagami_bez_alternatywy_po_fladze_nie_daje_mutantow():
+    assert mutanty_uzupelniajace._warianty_wzorca("(?x)# a|b\n(?i)cd") == []
+
+
+def test_komentarz_grupy_za_zamknieta_grupa_jest_pomijany_od_swojego_nawiasu():
+    assert mutanty_uzupelniajace._warianty_wzorca("(a|b)(?#k)c") == [
+        ("usunieto alternatywe 'a' z grupy", "(b)(?#k)c"),
+        ("usunieto alternatywe 'b' z grupy", "(a)(?#k)c"),
+    ]
+
+
+# --- HAR-258 runda 3: funkcje `re` poza `compile` ------------------------------------------------------------------
+
+POWOD_WARUNKOWA = "alternatywy w grupie nierozpoznanego rodzaju (znak 9)"
+RE_FUNKCJE = ["sub", "subn", "split", "match", "search", "fullmatch", "findall", "finditer"]
+# argumenty pozycyjne przed miejscem flag i te same z liczba w miejscu, ktore NIE jest miejscem flag
+PRZED_FLAGAMI = {
+    "sub": ('r"^a$", "", "a", 0', 'r"^a$", "", "a", 64'),
+    "subn": ('r"^a$", "", "a", 0', 'r"^a$", "", "a", 64'),
+    "split": ('r"^a$", "a", 0', 'r"^a$", "a", 64'),
+    "match": ('r"^a$", "a"', 'r"^a$", 64'),
+    "search": ('r"^a$", "a"', 'r"^a$", 64'),
+    "fullmatch": ('r"^a$", "a"', 'r"^a$", 64'),
+    "findall": ('r"^a$", "a"', 'r"^a$", 64'),
+    "finditer": ('r"^a$", "a"', 'r"^a$", 64'),
+}
+OPISY_KOTWIC = ["usunieto kotwice '^' z wzorca", "usunieto kotwice '$' z wzorca"]
+# argumenty nazwane, ktore dana funkcja przyjmuje (wszystkie naraz), i takie, ktorych nie przyjmuje
+NAZWANE = {
+    "sub": 'pattern=r"^a$", repl="", string="a", count=1, flags=0',
+    "subn": 'pattern=r"^a$", repl="", string="a", count=1, flags=0',
+    "split": 'pattern=r"^a$", string="a", maxsplit=1, flags=0',
+    "match": 'pattern=r"^a$", string="a", flags=0',
+    "search": 'pattern=r"^a$", string="a", flags=0',
+    "fullmatch": 'pattern=r"^a$", string="a", flags=0',
+    "findall": 'pattern=r"^a$", string="a", flags=0',
+    "finditer": 'pattern=r"^a$", string="a", flags=0',
+}
+OBCE_NAZWANE = {
+    "sub": "maxsplit=1",
+    "subn": "maxsplit=1",
+    "split": "count=1",
+    "match": "repl=''",
+    "search": "count=1",
+    "fullmatch": "maxsplit=1",
+    "findall": "repl=''",
+    "finditer": "count=1",
+}
+
+
+def _zrodlo_funkcji(nazwa: str, argumenty: str) -> str:
+    """`re.<nazwa>(...)` rozlozone na trzy linie: nawias w linii 3, argumenty w linii 4."""
+    return f"import re\n\nX = re.{nazwa}(\n    {argumenty}\n)\n"
+
+
+def _opisy_mutantow(zrodlo: str) -> list[str]:
+    mutanty = mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    assert {m.ksztalt for m in mutanty} <= {"regex"}
+    return [m.opis for m in mutanty]
+
+
+def test_pusta_nazwa_znaku_konczy_sie_na_nawiasie_klamrowym_tuz_za_otwierajacym():
+    # `\N{}` odrzuca `re.compile`, ale w komentarzu `(?x)` przechodzi: `}` stoi na `poczatek + 3`
+    assert mutanty_uzupelniajace._koniec_ucieczki(r"\N{}", 0) == 4
+
+
+def test_najkrotsza_nazwa_znaku_w_klasie_ma_dwa_znaki_i_klasa_ma_dwa_mutanty():
+    assert mutanty_uzupelniajace._warianty_wzorca(r"[\N{OX}b]") == [
+        ("usunieto element '\\\\N{OX}' z klasy znakow", "[b]"),
+        ("usunieto element 'b' z klasy znakow", "[\\N{OX}]"),
+    ]
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_wzorzec_literalny_w_re_funkcji_ma_te_same_mutanty_kotwic_co_w_re_compile(nazwa):
+    assert _opisy_mutantow(_zrodlo_funkcji(nazwa, PRZED_FLAGAMI[nazwa][0])) == OPISY_KOTWIC
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_re_funkcja_z_warunkowa_grupa_alternatyw_to_blad_narzedzia_z_linia_a_nie_zero_mutantow(nazwa):
+    zrodlo = f'import re\n\nX = re.{nazwa}(r"(a)(?(1)b|c)", "a")\n'
+    assert _blad_zrodla(zrodlo) == _komunikat_wzorca(POWOD_WARUNKOWA)
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile(nazwa):
+    zrodlo = _zrodlo_funkcji(nazwa, PRZED_FLAGAMI[nazwa][0] + ", re.X")
+    assert _blad_zrodla(zrodlo) == _komunikat_wzorca(POWOD_VERBOSE, linia=4)
+    zrodlo = _zrodlo_funkcji(nazwa, PRZED_FLAGAMI[nazwa][0] + ", flags=re.T")
+    assert _blad_zrodla(zrodlo) == _komunikat_wzorca(POWOD_TEMPLATE, linia=4)
+    zrodlo = _zrodlo_funkcji(nazwa, PRZED_FLAGAMI[nazwa][0] + ", FLAGI")
+    assert _blad_zrodla(zrodlo) == _komunikat_wzorca("nie umiem odczytac flag wywolania re: FLAGI", linia=4)
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga(nazwa):
+    zrodlo = _zrodlo_funkcji(nazwa, PRZED_FLAGAMI[nazwa][1])
+    assert _opisy_mutantow(zrodlo) == OPISY_KOTWIC
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_re_funkcja_z_dwiema_flagami_pozycyjna_i_nazwana_to_blad_narzedzia(nazwa):
+    zrodlo = _zrodlo_funkcji(nazwa, PRZED_FLAGAMI[nazwa][0] + ", re.I, flags=re.M")
+    powod = f"nie umiem odczytac argumentow re.{nazwa} (gwiazdka albo wiele flag)"
+    assert _blad_zrodla(zrodlo) == _komunikat_wzorca(powod, linia=4)
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_wzorzec_bajtowy_w_re_funkcji_ma_mutanty_kotwic_jako_bajty(nazwa):
+    argumenty = PRZED_FLAGAMI[nazwa][0].replace('r"^a$"', 'rb"^a$"').replace('"a"', 'b"a"').replace('""', 'b""')
+    zrodlo = _zrodlo_funkcji(nazwa, argumenty)
+    mutanty = mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, _wszystkie_linie(zrodlo))
+    oczekiwane = sorted(_drzewo(_zrodlo_funkcji(nazwa, argumenty.replace('rb"^a$"', w))) for w in ('b"a$"', 'b"^a"'))
+    assert sorted(_drzewo(m.zrodlo) for m in mutanty) == oczekiwane
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane(nazwa):
+    assert _opisy_mutantow(_zrodlo_funkcji(nazwa, NAZWANE[nazwa])) == OPISY_KOTWIC
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+def test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia(nazwa):
+    zrodlo = _zrodlo_funkcji(nazwa, f'r"^a$", "a", {OBCE_NAZWANE[nazwa]}')
+    powod = f"nie umiem odczytac argumentow re.{nazwa} (nieznany argument nazwany)"
+    assert _blad_zrodla(zrodlo) == _komunikat_wzorca(powod)
+
+
+@pytest.mark.parametrize(
+    ("argumenty", "powod"),
+    [
+        pytest.param("r\"^a$\", *ARGS", "gwiazdka w argumentach pozycyjnych", id="gwiazdka_po_literale"),
+        pytest.param("*ARGS", "gwiazdka w argumentach pozycyjnych", id="sama_gwiazdka"),
+        pytest.param("r\"^a$\", **KW", "nieznany argument nazwany", id="rozwiniecie_slownika"),
+        pytest.param("**KW", "nieznany argument nazwany", id="samo_rozwiniecie_slownika"),
+        pytest.param('pattern=r"^a$", pattern=r"b"', "powtorzony argument pattern=", id="powtorzony_pattern"),
+        pytest.param("pattern=p, pattern=q", "powtorzony argument pattern=", id="powtorzony_pattern_ze_zmiennymi"),
+        pytest.param('r"^a$", pattern=r"b"', "pattern= razem z argumentem pozycyjnym", id="pattern_i_pozycyjny"),
+        pytest.param("p, pattern=q", "pattern= razem z argumentem pozycyjnym", id="pattern_i_pozycyjny_zmienne"),
+    ],
+)
+def test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania(argumenty, powod):
+    oczekiwany = _komunikat_wzorca(f"nie umiem odczytac argumentow re.sub ({powod})")
+    assert _blad_zrodla(_zrodlo_funkcji("sub", argumenty)) == oczekiwany
+
+
+@pytest.mark.parametrize("nazwa", RE_FUNKCJE)
+@pytest.mark.parametrize(
+    "argumenty",
+    [
+        pytest.param("WZORZEC, 'a'", id="zmienna"),
+        pytest.param("pattern=WZORZEC, string='a'", id="zmienna_jako_pattern"),
+        pytest.param("f'{P}a', 'a'", id="f_string"),
+        pytest.param("zbuduj(), 'a'", id="wynik_wywolania"),
+        pytest.param("None, 'a'", id="stala_none"),
+        pytest.param("5, 'a'", id="stala_liczba"),
+    ],
+)
+def test_re_funkcja_ze_wzorcem_nieliteralnym_to_miejsce_do_recznego_sprawdzenia(nazwa, argumenty):
+    assert _miejsca_nieliteralne(_zrodlo_funkcji(nazwa, argumenty), {3}) == [3]
+
+
+@pytest.mark.parametrize(
+    "wywolanie",
+    [
+        pytest.param('x.sub(r"(a)(?(1)b|c)", "", "a")', id="inna_nazwa_niz_re"),
+        pytest.param('a.re.sub(r"(a)(?(1)b|c)", "", "a")', id="atrybut_atrybutu_modulu_re"),
+        pytest.param('fabryka().sub(r"(a)(?(1)b|c)", "", "a")', id="wywolanie_jako_odbiorca"),
+        pytest.param('re.escape(r"(a)(?(1)b|c)")', id="funkcja_re_bez_wzorca"),
+        pytest.param('re.nieznana(r"(a)(?(1)b|c)")', id="funkcja_spoza_listy"),
+        pytest.param("re.match()", id="re_funkcja_bez_argumentow"),
+    ],
+)
+def test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia(wywolanie):
+    zrodlo = f"import re\n\nX = {wywolanie}\n"
+    assert mutanty_uzupelniajace.generuj_mutanty(SCIEZKA, zrodlo, {3}) == []
+    assert _miejsca_nieliteralne(zrodlo, {3}) == []

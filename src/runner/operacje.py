@@ -242,9 +242,12 @@ def _listuj_pliki(sciezka: str, wzorzec: str) -> dict:
     }
 
 
-def _zapisz_plik(sciezka: str, dane: bytes) -> dict:
+def _zapisz_plik(sciezka: str, dane: bytes, utworz_katalogi: bool = False) -> dict:
     cel = _rozwiaz(Zakres.z_konfiguracji(), sciezka, do_zapisu=True)
     try:
+        if utworz_katalogi:
+            # dopiero po sprawdzeniu zakresu (HAR-181): odmowa nie zostawia po sobie katalogow
+            os.makedirs(cel.parent, exist_ok=True)
         try:
             istniejacy = os.stat(cel)
         except FileNotFoundError:
@@ -254,7 +257,6 @@ def _zapisz_plik(sciezka: str, dane: bytes) -> dict:
                 raise BladOperacji("to_katalog", "sciezka jest katalogiem")
             tryb = stat.S_IMODE(istniejacy.st_mode)
         fd, tymczasowy = tempfile.mkstemp(dir=cel.parent, prefix=f".{cel.name}.", suffix=".tmp")
-        zastapiony = False
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(dane)
@@ -262,14 +264,25 @@ def _zapisz_plik(sciezka: str, dane: bytes) -> dict:
                 os.fsync(f.fileno())
             os.chmod(tymczasowy, tryb)
             os.replace(tymczasowy, cel)
-            zastapiony = True
-        finally:
-            if not zastapiony:
-                with contextlib.suppress(OSError):
-                    os.unlink(tymczasowy)
+        except BaseException:   # tymczasowy po udanym replace juz nie istnieje, wiec tu nie wchodzimy
+            with contextlib.suppress(OSError):
+                os.unlink(tymczasowy)
+            raise
     except OSError as e:
         raise _blad_dysku(e, brak_to_katalog=True) from None
     return {"sciezka": str(cel), "rozmiar": len(dane)}
+
+
+def _usun_plik(sciezka: str) -> dict:
+    """Usuwa sam plik (HAR-181): zakres jak przy zapisie, katalog i dowiazanie to odmowa."""
+    cel = _rozwiaz(Zakres.z_konfiguracji(), sciezka, do_zapisu=True)
+    try:
+        if stat.S_ISDIR(os.stat(cel).st_mode):
+            raise BladOperacji("to_katalog", "sciezka jest katalogiem")
+        os.unlink(cel)
+    except OSError as e:
+        raise _blad_dysku(e) from None
+    return {"sciezka": str(cel)}
 
 
 def _nazwy_podkatalogow(katalog: Path) -> list[str]:
@@ -381,7 +394,8 @@ def _katalog_definicji() -> dict:
             raise BladOperacji(
                 "za_duzo", f"za duzo skilli i workflow w projektach (limit {LIMIT_DEFINICJI})")
         projekty.append({"projekt": str(projekt), "skille": skille, "workflow": workflow})
-    return {"projekty": projekty}
+    # `dom` (HAR-181): kokpit nie zna katalogu domowego uzytkownika, a walidator workflow go potrzebuje
+    return {"projekty": projekty, "dom": str(dom)}
 
 
 async def ping(dane: dict) -> dict:
@@ -405,10 +419,18 @@ async def write_file(dane: dict) -> dict:
     sciezka = _tekst(dane, "sciezka")
     tresc = _tekst(dane, "tresc")
     try:
-        surowe = tresc.encode("utf-8")
+        surowe = tresc.encode()
     except UnicodeEncodeError:
         raise BladOperacji("zle_dane", "tresc nie jest poprawnym tekstem UTF-8") from None
-    return await asyncio.to_thread(_zapisz_plik, sciezka, surowe)
+    utworz_katalogi = dane.get("utworz_katalogi", False)
+    if not isinstance(utworz_katalogi, bool):   # 1 i "tak" nie sa zgoda na tworzenie katalogow
+        raise BladOperacji("zle_dane", "pole utworz_katalogi musi byc wartoscia logiczna")
+    return await asyncio.to_thread(_zapisz_plik, sciezka, surowe, utworz_katalogi)
+
+
+async def delete_file(dane: dict) -> dict:
+    sciezka = _tekst(dane, "sciezka")
+    return await asyncio.to_thread(_usun_plik, sciezka)
 
 
 async def katalog_definicji(dane: dict) -> dict:
@@ -511,6 +533,7 @@ OPERACJE: dict[str, Callable[[dict], Awaitable[Any]]] = {
     "read_file": read_file,
     "list_files": list_files,
     "write_file": write_file,
+    "delete_file": delete_file,
     "katalog_definicji": katalog_definicji,
     "detect_stack": detect_stack,
     "collect": collect,

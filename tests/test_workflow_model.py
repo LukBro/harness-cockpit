@@ -4,6 +4,7 @@ Testy przed implementacją (HAR-7). Bez bazy danych, wszystko na tmp_path.
 Kody problemów porównujemy ze stałymi modułu, nie z treścią komunikatów.
 """
 
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -767,3 +768,391 @@ def test_blad_zagniezdzonego_pola_kroku_ma_sciezke_pola_rozdzielona_kropka(tmp_p
     assert workflow is not None
     assert [(p.krok, p.kod) for p in problemy] == [("b", BLAD_POLA)]
     assert problemy[0].komunikat.startswith("on_fail.max: ")
+
+
+# --- HAR-181: wariant tekstowy (kokpit czyta i zapisuje plik przez runnera, wiec nie ma sciezki) ---
+# `wczytaj_workflow_z_tekstu(tekst) -> (Workflow | None, list[Problem])` - ta sama konwencja
+# co `wczytaj_workflow`; plik bez pola `name` ma nazwe "" (a nie nazwe pliku);
+# `_tekst_po_zapisie(workflow)` to tresc, ktora `zapisz_workflow` zapisuje do pliku. Importy w testach: brak funkcji to czerwony test,
+# a nie blad zbierania calego pliku.
+
+PLIKI_DO_PARYTETU = {
+    "niekanoniczny": PLIK_NIEKANONICZNY,
+    "komentarze_i_cudzyslowy": PLIK_Z_KOMENTARZAMI_I_CUDZYSLOWAMI,
+    "kanoniczny": PLIK_KANONICZNY,
+    "pelny_przyklad": PELNY_PRZYKLAD,
+    "krok_niepoprawny": PLIK_Z_KROKIEM_NIEPOPRAWNYM,
+    "krok_systemowy": PLIK_Z_KROKIEM_SYSTEMOWYM,
+    "bez_name": "steps:\n  plan:\n    skill: planner\n",
+    "krok_bez_skilla": "name: w\nsteps:\n  bez-skilla:\n    fanout: 2\n  dobry:\n    skill: y\n",
+    "niepoprawny_yaml": "name: w\nsteps:\n  plan: [niezamkniete\n    skill: x\n",
+    "zduplikowany_krok": "name: w\nsteps:\n  plan:\n    skill: a\n  plan:\n    skill: b\n",
+    "brak_steps": "name: w\n",
+    "pusty_tekst": "",
+}
+
+
+def _opis_modelu(workflow, z_nazwa=True):
+    if workflow is None:
+        return None
+    return (workflow.nazwa if z_nazwa else None, [k.model_dump() for k in workflow.kroki],
+            list(workflow.niepoprawne))
+
+
+def _tekst_po_zapisie(workflow) -> str:
+    """Tekst, ktory `zapisz_workflow` zapisuje do pliku (kokpit zapisuje przez runnera, test przez dysk)."""
+    with tempfile.TemporaryDirectory() as katalog:
+        plik = Path(katalog) / "w.yaml"
+        zapisz_workflow(workflow, plik)
+        return plik.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("tresc", PLIKI_DO_PARYTETU.values(), ids=PLIKI_DO_PARYTETU.keys())
+def test_wczytanie_z_tekstu_daje_to_samo_co_wczytanie_z_pliku_o_tej_nazwie(tmp_path, tresc):
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    z_pliku, problemy_pliku = wczytaj_workflow(_zapisz(tmp_path, tresc, "plan-i-recenzja.yaml"))
+
+    z_tekstu, problemy_tekstu = wczytaj_workflow_z_tekstu(tresc)
+
+    assert problemy_tekstu == problemy_pliku
+    # nazwa z pliku bez pola `name` to nazwa pliku, z tekstu to ""
+    assert _opis_modelu(z_tekstu, "name:" in tresc) == _opis_modelu(z_pliku, "name:" in tresc)
+
+
+
+
+def test_nazwa_workflow_z_tekstu_pochodzi_z_pola_name():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(
+        "name: z-pliku\nsteps:\n  plan:\n    skill: planner\n")
+
+    assert workflow is not None
+    assert workflow.nazwa == "z-pliku"
+
+
+@pytest.mark.parametrize("tresc", [
+    PLIK_NIEKANONICZNY, PLIK_Z_KOMENTARZAMI_I_CUDZYSLOWAMI, PLIK_Z_KROKIEM_NIEPOPRAWNYM,
+    PLIK_Z_KROKIEM_SYSTEMOWYM,
+], ids=["niekanoniczny", "komentarze_i_cudzyslowy", "krok_niepoprawny", "krok_systemowy"])
+def test_tekst_workflow_bez_zmian_modelu_wraca_bajt_w_bajt(tresc):
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(tresc)
+    assert workflow is not None
+
+    assert _tekst_po_zapisie(workflow) == tresc
+
+
+def test_zmiana_pola_kroku_w_tekscie_zachowuje_komentarze_kolejnosc_kluczy_i_cudzyslowy():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(
+        PLIK_Z_KOMENTARZAMI_I_CUDZYSLOWAMI)
+    assert problemy == []
+    assert workflow is not None
+
+    _krok(workflow, "review").fanout = 5
+    tekst = _tekst_po_zapisie(workflow)
+
+    assert "# komentarz naglowkowy" in tekst
+    assert "# komentarz przy kroku review" in tekst
+    assert "name: 'plan-i-recenzja'" in tekst
+    assert 'skill: "planner"' in tekst
+    assert "fanout: 5" in tekst
+    assert "fanout: 3" not in tekst
+    review = tekst[tekst.index("  review:") : tekst.index("  implement:")]
+    assert review.index("skill:") < review.index("needs:") < review.index("fanout:") < review.index("consensus:")
+    ponownie, problemy2 = wczytaj_workflow_z_tekstu(tekst)
+    assert problemy2 == []
+    assert ponownie is not None
+    assert _krok(ponownie, "review").fanout == 5
+
+
+def test_tekst_po_zmianie_pola_rozni_sie_od_oryginalu_tylko_tym_polem():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(PLIK_KANONICZNY)
+    assert workflow is not None
+
+    _krok(workflow, "review").fanout = 4
+    nowe = _tekst_po_zapisie(workflow).splitlines()
+
+    stare = PLIK_KANONICZNY.splitlines()
+    assert len(nowe) == len(stare)
+    assert [(a, b) for a, b in zip(stare, nowe, strict=True) if a != b] == [
+        ("    fanout: 3", "    fanout: 4")]
+
+
+def test_odwrocenie_kolejnosci_krokow_w_tekscie_zachowuje_komentarze_przy_swoich_kluczach():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(
+        "# naglowek zostaje\nname: w\nsteps:\n"
+        "  pierwszy:  # k1\n    skill: a\n"
+        "  drugi:  # k2\n    skill: b\n"
+        "  trzeci:  # k3\n    skill: c\n")
+    assert problemy == []
+    assert workflow is not None
+
+    workflow.kroki = list(reversed(workflow.kroki))
+    tekst = _tekst_po_zapisie(workflow)
+
+    assert tekst.startswith("# naglowek zostaje\n")
+    assert _klucze_krokow(tekst) == ["  trzeci:  # k3", "  drugi:  # k2", "  pierwszy:  # k1"]
+
+
+
+
+def test_krok_niepoprawny_zostaje_w_tekscie_po_zmianie_innego_kroku():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(PLIK_Z_KROKIEM_NIEPOPRAWNYM)
+    assert workflow is not None
+
+    _krok(workflow, "pierwszy").fanout = 3
+    tekst = _tekst_po_zapisie(workflow)
+
+    assert "  zly:  # reczna poprawka uzytkownika\n    skill: z\n    fanout: 0  # do poprawy\n" in tekst
+    assert "    cos_nowego: [1, 2]\n" in tekst
+    assert "fanout: 3" in tekst
+
+
+# --- HAR-181: poprawka 1 - komunikaty, galezie bledow i stan po renderowaniu --------------------
+
+DWA_KROKI = "name: w\nsteps:\n  plan:\n    skill: a\n  review:\n    skill: b\n    fanout: 3\n"
+
+
+def test_niepoprawny_yaml_w_tekscie_ma_komunikat_z_numerem_linii():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(
+        "name: w\nsteps:\n  plan: [niezamkniete\n    skill: x\n")
+
+    assert workflow is None
+    assert problemy == [Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML (linia 4)")]
+
+
+def test_zduplikowany_klucz_w_tekscie_ma_komunikat_z_numerem_linii_drugiego_wystapienia():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(
+        "name: w\nsteps:\n  plan:\n    skill: a\n  plan:\n    skill: b\n")
+
+    assert workflow is None
+    assert problemy == [Problem(None, ZDUPLIKOWANY_KLUCZ, "zduplikowany klucz (linia 5)")]
+
+
+@pytest.mark.parametrize("wartosc", ["2024-02-30", "2024-13-01 10:00:00"],
+                         ids=["dzien_spoza_miesiaca", "miesiac_spoza_roku"])
+def test_wartosc_ktorej_nie_da_sie_skonstruowac_to_problem_yaml_z_opisem_a_nie_wyjatek(wartosc):
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(
+        f"name: w\nutworzono: {wartosc}\nsteps:\n  plan:\n    skill: a\n")
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+def test_wartosc_ktorej_nie_da_sie_skonstruowac_w_pliku_to_ten_sam_problem_co_w_tekscie(tmp_path):
+    plik = _zapisz(tmp_path, "name: w\nutworzono: 2024-02-30\nsteps:\n  plan:\n    skill: a\n")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+def test_liczba_calkowita_bez_cyfr_to_problem_yaml_z_opisem_a_nie_indexerror():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu("steps:\n  a: !!int 0b\n")
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+def test_liczba_calkowita_bez_cyfr_w_pliku_to_ten_sam_problem_co_w_tekscie(tmp_path):
+    plik = _zapisz(tmp_path, "steps:\n  a: !!int 0b\n")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+def test_data_spoza_kalendarza_to_problem_yaml_a_nie_wyjatek_value_error():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu("steps:\n  a: 2024-02-30\n")
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+TEKST_BEZ_NAME = "steps:\n  plan:\n    skill: a\n  review:\n    skill: b\n    fanout: 3\n"
+
+
+def test_workflow_z_tekstu_bez_pola_name_i_bez_podanej_nazwy_ma_pusta_nazwe():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(TEKST_BEZ_NAME)
+
+    assert problemy == []
+    assert workflow is not None
+    assert workflow.nazwa == ""
+
+
+
+
+def test_zmiana_pola_przy_pustej_nazwie_nie_dopisuje_pola_name_do_tekstu():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(TEKST_BEZ_NAME)
+    assert workflow is not None
+    _krok(workflow, "review").fanout = 5
+
+    tekst = _tekst_po_zapisie(workflow)
+
+    assert tekst == TEKST_BEZ_NAME.replace("fanout: 3", "fanout: 5")
+    assert "name" not in tekst
+
+
+ZLE_WARTOSCI_YAML = {
+    "klucz_slownika_tagu_bool": ("KeyError", "steps:\n  a: !!bool x\n"),
+    "tag_zbioru_z_napisem": ("AttributeError", "steps:\n  a: !!set x\n"),
+    "liczba_calkowita_bez_cyfr": ("IndexError", "steps:\n  a: !!int 0b\n"),
+    "data_spoza_kalendarza": ("ValueError", "steps:\n  a: 2024-02-30\n"),
+}
+
+
+@pytest.mark.parametrize(("rodzaj", "tresc"), ZLE_WARTOSCI_YAML.values(),
+                         ids=ZLE_WARTOSCI_YAML.keys())
+def test_wartosc_ze_zlym_tagiem_yaml_to_problem_yaml_a_nie_wyjatek_biblioteki(rodzaj, tresc):
+    from cockpit.services.workflow import _nowy_yaml, wczytaj_workflow_z_tekstu
+
+    # wejscie naprawde rzuca wskazanym wyjatkiem biblioteki, wiec kazdy element krotki `except` ma wlasny test
+    with pytest.raises(Exception) as surowy:
+        _nowy_yaml().load(tresc)
+    assert type(surowy.value).__name__ == rodzaj
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(tresc)
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+@pytest.mark.parametrize(("rodzaj", "tresc"), ZLE_WARTOSCI_YAML.values(),
+                         ids=ZLE_WARTOSCI_YAML.keys())
+def test_wartosc_ze_zlym_tagiem_yaml_w_pliku_to_ten_sam_problem_co_w_tekscie(tmp_path, rodzaj, tresc):
+    workflow, problemy = wczytaj_workflow(_zapisz(tmp_path, tresc))
+
+    assert workflow is None
+    assert problemy == [
+        Problem(None, NIEPOPRAWNY_YAML, "niepoprawny YAML: nieprawidlowa wartosc")]
+
+
+def test_zmiana_nazwy_przy_pustej_nazwie_dopisuje_pole_name_jako_pierwszy_klucz():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(TEKST_BEZ_NAME)
+    assert workflow is not None
+    workflow.nazwa = "nowa"
+
+    assert _tekst_po_zapisie(workflow).startswith("name: nowa\nsteps:")
+
+
+def test_zbyt_gleboko_zagniezdzony_yaml_ma_komunikat_o_zagniezdzeniu():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu(
+        "name: w\nsteps:\n  plan:\n    skill: a\n    x: " + "[" * 5000 + "]" * 5000 + "\n")
+
+    assert workflow is None
+    assert problemy == [Problem(
+        None, NIEPOPRAWNY_YAML, "niepoprawny YAML: zbyt gleboko zagniezdzona struktura")]
+
+
+def test_przekroczenie_glebokosci_rekurencji_przy_budowie_krokow_to_problem_yaml_z_tym_samym_komunikatem(
+    monkeypatch,
+):
+    from cockpit.services import workflow as modul
+
+    def za_gleboko(_kroki):
+        raise RecursionError
+
+    monkeypatch.setattr(modul, "_zbuduj_kroki", za_gleboko)
+
+    workflow, problemy = modul.wczytaj_workflow_z_tekstu(DWA_KROKI)
+
+    assert workflow is None
+    assert problemy == [Problem(
+        None, NIEPOPRAWNY_YAML, "niepoprawny YAML: zbyt gleboko zagniezdzona struktura")]
+
+
+def test_tekst_z_samotnym_surogatem_nie_jest_poprawnym_utf8_i_daje_jeden_problem_odczytu():
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, problemy = wczytaj_workflow_z_tekstu("name: w\n\ud800\nsteps:\n")
+
+    assert workflow is None
+    assert problemy == [Problem(None, BLAD_ODCZYTU, "tekst nie jest poprawnym UTF-8")]
+
+
+
+
+def test_drugi_zapis_niezmienionego_po_pierwszym_zapisie_workflow_oddaje_te_same_bajty(tmp_path):
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(PLIK_Z_KOMENTARZAMI_I_CUDZYSLOWAMI)
+    assert workflow is not None
+    _krok(workflow, "review").fanout = 5
+    pierwszy, drugi = tmp_path / "pierwszy.yaml", tmp_path / "drugi.yaml"
+
+    zapisz_workflow(workflow, pierwszy)
+    zapisz_workflow(workflow, drugi)
+
+    assert b"fanout: 5" in pierwszy.read_bytes()
+    assert drugi.read_bytes() == pierwszy.read_bytes()
+    assert not workflow._zmieniony()
+
+
+def test_plik_workflow_z_bajtami_niebedacymi_utf8_to_problem_odczytu_a_nie_wyjatek(tmp_path):
+    plik = tmp_path / "zly.yaml"
+    plik.write_bytes(b"\xff\xfe")
+
+    workflow, problemy = wczytaj_workflow(plik)
+
+    assert workflow is None
+    assert [(p.krok, p.kod) for p in problemy] == [(None, BLAD_ODCZYTU)]
+    assert problemy[0].komunikat.startswith("nie mozna odczytac pliku: ")
+
+
+def test_nieudany_zapis_zmienionego_workflow_zostawia_zmiane_niezapisana_a_ponowny_zapis_ja_zapisuje(
+    tmp_path,
+):
+    from cockpit.services.workflow import wczytaj_workflow_z_tekstu
+
+    workflow, _ = wczytaj_workflow_z_tekstu(PLIK_Z_KOMENTARZAMI_I_CUDZYSLOWAMI)
+    assert workflow is not None
+    _krok(workflow, "review").fanout = 5
+    katalog_zamiast_pliku = tmp_path / "cel.yaml"
+    katalog_zamiast_pliku.mkdir()
+
+    with pytest.raises(OSError):
+        zapisz_workflow(workflow, katalog_zamiast_pliku)
+
+    assert workflow._zmieniony()
+    poprawny = tmp_path / "poprawny.yaml"
+    zapisz_workflow(workflow, poprawny)
+    assert b"fanout: 5" in poprawny.read_bytes()
+    assert not workflow._zmieniony()
+
