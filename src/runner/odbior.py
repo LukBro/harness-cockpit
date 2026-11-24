@@ -36,7 +36,7 @@ _FORMAT_DIFFU = [
 _WYKLUCZ_RUN = ":(exclude).cockpit/_run"
 # WHY stala modulu: polskie nazwy plikow doslownie w naglowku diffu. W funkcji mutmut zmienia
 # literal na wielkie litery - mutant rownowazny (git czyta klucz i bool bez rozroznienia), ktory
-# oblewalby bramke; linie chroni reczny mutant w tests/mutanty_reczne/HAR-89.toml.
+# oblewalby bramke; linie chroni tests/test_collect.py::test_nowy_plik_z_polskimi_znakami_w_nazwie_jest_w_diffie_doslownie.
 _BEZ_CYTOWANIA_NAZW = "core.quotepath=false"
 # Komunikaty bledow sa stale: nie niosa stderr gita ani sciezek.
 _BLAD_DIFFU = "git nie zebral diffu runu"

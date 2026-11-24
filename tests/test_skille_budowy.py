@@ -23,7 +23,7 @@ IDENTYFIKATORY = ["tdd-task", "e2e-scenario", "smoke"]
 OCZEKIWANE = {
     "tdd-task": (Rola.author, ["plan.md"], ["tdd.md"], ["test_narrow"]),
     "e2e-scenario": (Rola.author, ["plan.md"], ["scenariusz-e2e.md"], ["test_e2e"]),
-    "smoke": (Rola.gatherer, [], ["smoke.md"], ["smoke"]),
+    "smoke": (Rola.gatherer, ["dowod-smoke.json"], ["smoke.md"], []),
 }
 
 
@@ -120,8 +120,14 @@ def test_e2e_scenario_wskazuje_playwrighta(rejestr):
     assert "Playwright" in rejestr.skille["e2e-scenario"].brief
 
 
-def test_smoke_kaze_uruchomic_capability_smoke(rejestr):
-    assert "capability `smoke`" in rejestr.skille["smoke"].brief
+def test_zbieracz_proby_dymnej_czyta_dowod_silnika_zamiast_uruchamiac_capability_smoke(rejestr):
+    skill = rejestr.skille["smoke"]
+    brief = " ".join(skill.brief.split())
+    assert profil_roli(skill.role).zapis is False
+    assert "Nie uruchamiasz komend" in brief
+    assert "Przeczytaj `dowod-smoke.json`" in brief
+    assert "Dowodem jest tylko plik z `source: engine`" in brief
+    assert "Uruchom raz capability" not in brief
 
 
 def test_smoke_nadal_wymaga_bazy_testowej_przez_zmienna_srodowiska(rejestr):

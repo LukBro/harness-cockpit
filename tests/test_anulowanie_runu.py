@@ -829,6 +829,11 @@ async def _swiat_pg(maker) -> SimpleNamespace:
         await s.flush()
         run = Run(tenant_id=tenant_id, runner_id=runner.id, status=RunStatus.running)
         s.add(run)
+        await s.flush()
+        # ukonczony krok bez zdarzenia: `run_finished` bez kroku nie dalby `to_accept` (HAR-207),
+        # a lista rodzajow zdarzen w asercjach zostaje taka, jak przed ta zmiana
+        s.add(StepRun(tenant_id=tenant_id, run_id=run.id, step_id="s0", agent_id="",
+                      attempt=1, status=StepStatus.finished))
         await s.commit()
         return SimpleNamespace(tenant_id=tenant_id, user_id=wlasciciel.id, run_id=run.id)
 

@@ -404,10 +404,10 @@ async def test_start_kroku_w_biegnacym_runie_nie_zmienia_jego_statusu(swiat):
     assert (await _status_i_powod(swiat.run_id))[0] == RunStatus.running
 
 
-async def test_koniec_runu_po_oczekiwaniu_na_decyzje_daje_run_do_odbioru(swiat):
+async def test_koniec_runu_czekajacego_na_decyzje_zostawia_run_oczekujacy_nie_do_odbioru(swiat):
     await _ok(swiat, "step_waiting")
     await _ok(swiat, "run_finished")
-    assert (await _status_i_powod(swiat.run_id))[0] == RunStatus.to_accept
+    assert await _status_i_powod(swiat.run_id) == (RunStatus.waiting, None)
 
 
 async def test_koniec_runu_nie_nadpisuje_runu_nieudanego(swiat):

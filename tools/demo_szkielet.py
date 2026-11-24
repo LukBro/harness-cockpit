@@ -16,7 +16,7 @@ if not URL:
              "z alembic, np. COCKPIT_DATABASE_URL="
              "postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test\n"
              "UWAGA: skrypt robi `alembic downgrade base` przed i po przelocie "
-             "i kasuje dane wskazanej bazy - uzyj bazy testowej.")
+             "i kasuje dane wskazanej bazy; nazwa bazy musi konczyc sie na _test.")
 os.environ["COCKPIT_DATABASE_URL"] = URL
 # Demo chodzi po http://127.0.0.1: ciasteczko z flaga Secure nie wrociloby do serwera.
 # Serwer dziala w tym samym procesie, wiec zmienna wystarczy ustawic przed importem cockpit.*
@@ -59,7 +59,22 @@ except ModuleNotFoundError as e:
     # to nazwa modulu, nie sekret
     zle_url(f"sterownik bazy '{e.name}' nie jest zainstalowany; "
             "uzyj postgresql+asyncpg://")
-from runner.client import Runner
+
+
+def wymagaj_bazy_testowej(url: str) -> None:
+    # skrypt kasuje dane (alembic downgrade base): odmawia przed jakimkolwiek polaczeniem.
+    # W komunikacie tylko nazwa bazy, nigdy caly URL (haslo).
+    nazwa = make_url(url).database
+    if not nazwa:
+        sys.exit("Adres w COCKPIT_DATABASE_URL nie zawiera nazwy bazy. Nazwa bazy "
+                 "musi konczyc sie na _test; skrypt kasuje dane.")
+    if not nazwa.endswith("_test"):
+        sys.exit(f"Odmowa: baza '{nazwa}' nie jest testowa. Nazwa bazy musi "
+                 "konczyc sie na _test; skrypt kasuje dane.")
+
+
+wymagaj_bazy_testowej(URL)
+from runner.client import Runner  # noqa: E402
 
 BASE = "http://127.0.0.1:8799"
 TOKEN = "demo-token"
