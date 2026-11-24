@@ -65,3 +65,13 @@ class WymagaPotwierdzenia(StanNiemozliwy):
 
 class NiespojneDane(BladDziedziny):
     """Dane wejsciowe wzajemnie sprzeczne, np. pelna dlugosc krotsza niz przyslany tekst (HAR-56)."""
+
+
+class BledyWalidacjiWorkflow(NiespojneDane):
+    """Workflow ma bledy walidacji, wiec run nie startuje (HAR-182). `problemy` to ta sama lista
+    `{poziom, krok, komunikat}` co w odpowiedzi walidacji, z ostrzezeniami."""
+
+    def __init__(self, problemy: list[dict]) -> None:
+        self.problemy = problemy
+        bledy = sum(1 for p in problemy if p["poziom"] == "blad")
+        super().__init__(f"workflow ma błędy walidacji ({bledy}), run nie wystartował")

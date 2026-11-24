@@ -32,7 +32,7 @@ from sse_starlette.sse import EventSourceResponse
 from cockpit.db import session as db_session
 from cockpit.db.session import get_session
 from cockpit.services import (
-    decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
+    artefakty, decyzje, dostep, katalog, kroki, odbior, odbior_dowody, pliki_runnera, projekty, sesje,
     skille_api, tickety, workflowy_api,
 )
 from cockpit.services import runs as uslugi
@@ -43,6 +43,7 @@ from cockpit.settings import settings
 from . import bus, konta
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
+    Artefakt,
     CapabilitiesProjektu,
     DecyzjaIn,
     DecyzjaOdbioru,
@@ -776,6 +777,34 @@ async def waliduj_workflow(
     dostep.wymagaj(k, Uprawnienie.podglad)
     return await workflowy_api.waliduj(
         s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj)
+
+
+@app.post("/api/workflows/{name}/run", response_model=RunUtworzony,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def uruchom_workflow(
+    name: str,
+    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.uruchamianie)   # przed zapytaniem: obserwator nie budzi runnera
+    run_id = await workflowy_api.uruchom_workflow(
+        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj,
+        bus.send_to_runner)
+    return RunUtworzony(run_id=run_id)
+
+
+@app.get("/api/runs/{run_id}/artifacts/{p:path}", response_model=Artefakt,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def artefakt_runu(
+    run_id: str,
+    p: Annotated[str, SciezkaUrl(max_length=4096)],
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await artefakty.artefakt_runu(
+        s, k.tenant_id, run_id, p, bus.connected_runner_ids(), bus.zapytaj)
 
 
 @app.get("/api/tickety", response_model=list[SkrotTicketu],

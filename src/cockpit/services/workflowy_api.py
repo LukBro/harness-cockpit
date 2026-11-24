@@ -7,6 +7,7 @@ nie zna dysku uzytkownika, wiec `Path.home()` serwera tu nie wchodzi.
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -14,14 +15,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cockpit.db.models import Definicja, Project
 
-from . import projekty, skille_api, zapytania_runnera
-from .errors import NiespojneDane, PlikPozaZakresem, StanNiemozliwy
+from . import projekty, runs, skille_api, zapytania_runnera
+from .errors import (
+    BledyWalidacjiWorkflow,
+    NiespojneDane,
+    PlikPozaZakresem,
+    RunnerOffline,
+    StanNiemozliwy,
+)
 from .invariants import Rola
 from .skills import NAZWA_PLIKU, Pominiety, Rejestr, Skill
 from .workflow import Poziom, Problem, Workflow, wczytaj_workflow_z_tekstu
 from .workflow_walidacja import waliduj_workflow
 from .zapytania_runnera import Wyslij
 
+WyslijPolecenie = Callable[[str, dict[str, Any]], Awaitable[None]]   # `bus.send_to_runner`
 KATALOG_WORKFLOW = ".cockpit/workflows"
 ROZSZERZENIE = ".yaml"
 RUN_STARTUJE_ZE = "HEAD"   # run startuje z HEAD, nie z kopii roboczej
@@ -162,6 +170,35 @@ async def waliduj(
     rejestr = _rejestr(await skille_api.wiersze_skilli(s, projekt), projekt, dom)
     _, problemy = _problemy_pliku(tekst, rejestr, dom)
     return _odpowiedz(problemy)
+
+
+async def uruchom_workflow(
+    s: AsyncSession, tenant_id: str, project_id: str, nazwa: str,
+    polaczone: frozenset[str], wyslij: Wyslij, wyslij_polecenie: WyslijPolecenie,
+) -> str:
+    """Start runu workflow projektu po walidacji (HAR-182); zwraca id runu.
+
+    Waliduje BIEZACY plik z kopii roboczej (ten sam kod co `waliduj`, wiec ta sama lista
+    problemow); jeden problem poziomu `blad` to BledyWalidacjiWorkflow z cala lista i run nie
+    powstaje. Same ostrzezenia nie blokuja. Runner projektu offline to RunnerOffline z podpowiedzia
+    startu runnera. Silnik startuje run z HEAD, wiec walidacja kopii roboczej nie dowodzi, ze
+    HEAD jest poprawny (`run_startuje_ze` w odpowiedzi walidacji mowi to samo)."""
+    _sprawdz_nazwe(nazwa)
+    projekt = await projekty.projekt_zespolu(s, tenant_id, project_id)
+    try:
+        tekst = await projekty.czytaj_plik_projektu(
+            s, tenant_id, projekt, _sciezka_workflow(nazwa), polaczone, wyslij)
+        dom, _ = await _katalog_runnera(s, tenant_id, projekt, polaczone, wyslij)
+    except RunnerOffline:
+        raise RunnerOffline(projekty.KOMUNIKAT_OFFLINE) from None
+    rejestr = _rejestr(await skille_api.wiersze_skilli(s, projekt), projekt, dom)
+    _, problemy = _problemy_pliku(tekst, rejestr, dom)
+    if _liczba_bledow(problemy) > 0:
+        raise BledyWalidacjiWorkflow(_odpowiedz(problemy)["problemy"])
+    run = await runs.utworz_run(s, tenant_id, nazwa, polaczone, project_id=project_id)
+    await wyslij_polecenie(run.runner_id, {
+        "type": "run_workflow", "run_id": run.id, "workflow": nazwa, "sciezka": projekt.path})
+    return run.id
 
 
 async def zapisz(

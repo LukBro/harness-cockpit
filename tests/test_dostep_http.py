@@ -599,6 +599,140 @@ async def test_zapis_i_usuniecie_definicji_ze_zlym_tokenem_csrf_dostaje_403_z_ko
     assert runner_nie_jest_pytany == []
 
 
+# --- HAR-182: start runu workflow z API i podglad artefaktu runu -----------------------------
+
+@pytest.fixture
+def polecenia_dla_runnera(monkeypatch):
+    """Nagrywa polecenia kokpitu dla runnera: odmowa dostepu nie moze nic wyslac."""
+    nagrane: list[tuple] = []
+
+    async def zapisz(runner_id, polecenie):
+        nagrane.append((runner_id, polecenie))
+
+    monkeypatch.setattr(bus, "send_to_runner", zapisz)
+    return nagrane
+
+
+async def _start_workflow(klient, projekt):
+    return await klient.post("/api/workflows/x/run", params={"project": projekt})
+
+
+async def test_obserwator_nie_uruchamia_workflow_projektu_swojego_zespolu_a_run_nie_powstaje(
+    swiat, runner_nie_jest_pytany, polecenia_dla_runnera,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+    przed = await _liczba_runow(swiat)
+
+    odp = await _start_workflow(klient, projekt)
+
+    # runner zespolu A jest online, wiec 403 to odmowa roli, nie brak runnera (409)
+    assert odp.status_code == 403
+    assert await _liczba_runow(swiat) == przed
+    assert runner_nie_jest_pytany == []
+    assert polecenia_dla_runnera == []
+
+
+async def test_czlonek_zespolu_nie_uruchamia_workflow_projektu_cudzego_zespolu(
+    swiat, runner_nie_jest_pytany, polecenia_dla_runnera,
+):
+    cudzy = await _projekt_zespolu(swiat, swiat.tenant_b, swiat.runner_b, "/repo/cudzy")
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    przed = await _liczba_runow(swiat)
+
+    odp = await _start_workflow(klient, cudzy)
+
+    assert odp.status_code == 404
+    assert odp.json() == {"detail": "projekt nieznany"}   # odmowa trasy, nie brak trasy
+    assert await _liczba_runow(swiat) == przed
+    assert runner_nie_jest_pytany == []
+    assert polecenia_dla_runnera == []
+
+
+async def test_bez_sesji_start_workflow_daje_401_takze_na_localhoscie_a_run_nie_powstaje(
+    swiat, runner_nie_jest_pytany, polecenia_dla_runnera,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = swiat.nowy_klient()
+    assert klient.base_url.host == "127.0.0.1"
+    przed = await _liczba_runow(swiat)
+
+    odp = await _start_workflow(klient, projekt)
+
+    assert odp.status_code == 401
+    assert await _liczba_runow(swiat) == przed
+    assert runner_nie_jest_pytany == []
+    assert polecenia_dla_runnera == []
+
+
+async def test_token_runnera_nie_zastepuje_sesji_przy_starcie_workflow(
+    swiat, runner_nie_jest_pytany, polecenia_dla_runnera,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    przed = await _liczba_runow(swiat)
+
+    odp = await swiat.nowy_klient().post(
+        "/api/workflows/x/run", params={"project": projekt},
+        headers={"Authorization": f"Bearer {TOKEN_A}"})
+
+    assert odp.status_code == 401
+    assert await _liczba_runow(swiat) == przed
+    assert polecenia_dla_runnera == []
+
+
+@pytest.mark.parametrize(("naglowek", "komunikat"), [
+    (None, "brak tokenu CSRF"), ("zly-token", "nieprawidłowy token CSRF")],
+    ids=["brak_tokenu", "zly_token"])
+async def test_start_workflow_bez_poprawnego_tokenu_csrf_dostaje_403_a_run_nie_powstaje(
+    swiat, runner_nie_jest_pytany, polecenia_dla_runnera, naglowek, komunikat,
+):
+    projekt = await _projekt_zespolu(swiat, swiat.tenant_a, swiat.runner_a)
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    if naglowek is None:
+        del klient.headers[NAGLOWEK_CSRF]
+    else:
+        klient.headers[NAGLOWEK_CSRF] = naglowek
+    przed = await _liczba_runow(swiat)
+
+    odp = await _start_workflow(klient, projekt)
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": komunikat}
+    assert await _liczba_runow(swiat) == przed
+    assert runner_nie_jest_pytany == []
+    assert polecenia_dla_runnera == []
+
+
+async def test_bez_sesji_podglad_artefaktu_daje_401_takze_na_localhoscie(swiat, runner_nie_jest_pytany):
+    klient = swiat.nowy_klient()
+    assert klient.base_url.host == "127.0.0.1"
+
+    odp = await klient.get(f"/api/runs/{swiat.run_a}/artifacts/plan.md")
+
+    # run istnieje, wiec 401 nie da sie pomylic z 404
+    assert odp.status_code == 401
+    assert runner_nie_jest_pytany == []
+
+
+async def test_token_runnera_nie_zastepuje_sesji_przy_podgladzie_artefaktu(swiat, runner_nie_jest_pytany):
+    odp = await swiat.nowy_klient().get(
+        f"/api/runs/{swiat.run_a}/artifacts/plan.md",
+        headers={"Authorization": f"Bearer {TOKEN_A}"})
+
+    assert odp.status_code == 401
+    assert runner_nie_jest_pytany == []
+
+
+async def test_czlonek_zespolu_nie_czyta_artefaktow_runu_cudzego_zespolu(swiat, runner_nie_jest_pytany):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+
+    odp = await klient.get(f"/api/runs/{swiat.run_b}/artifacts/plan.md")
+
+    assert odp.status_code == 404
+    assert odp.json() == {"detail": "run nieznany"}   # odmowa trasy, nie brak trasy
+    assert runner_nie_jest_pytany == []
+
+
 # --- trasy publiczne dzialaja bez sesji -------------------------------------------------------
 
 
@@ -747,6 +881,8 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("GET", "/api/workflows"): {"kontekst_sesji"},
         ("PUT", "/api/workflows/{name}"): {"kontekst_sesji"},
         ("GET", "/api/workflows/{name}/validate"): {"kontekst_sesji"},
+        ("POST", "/api/workflows/{name}/run"): {"kontekst_sesji"},   # HAR-182
+        ("GET", "/api/runs/{run_id}/artifacts/{p:path}"): {"kontekst_sesji"},   # HAR-182
         ("POST", "/api/konto/wyloguj"): {"kontekst_sesji"},
         ("POST", "/api/konto/wyloguj-wszedzie"): {"kontekst_sesji"},
         ("POST", "/api/konto/haslo"): {"kontekst_sesji"},
@@ -790,6 +926,8 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("GET", "/api/workflows"),
         ("PUT", "/api/workflows/{name}"),
         ("GET", "/api/workflows/{name}/validate"),
+        ("POST", "/api/workflows/{name}/run"),
+        ("GET", "/api/runs/{run_id}/artifacts/{p:path}"),
         ("GET", "/api/tickety"),
         ("GET", "/api/tickety/{id_ticketu:path}"),
         ("POST", "/api/konto/rejestracja"),

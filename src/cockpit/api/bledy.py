@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from cockpit.services.errors import (
     BladDziedziny,
+    BledyWalidacjiWorkflow,
     BlednyPlikLekcji,
     BlednySkill,
     BrakDostepu,
@@ -48,6 +49,7 @@ KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     BlednyProjekt: 422,
     BlednyPlikLekcji: 422,
     NiespojneDane: 422,
+    BledyWalidacjiWorkflow: 422,
     NieprawidloweObecneHaslo: 422,
     ZbytWieleProb: 429,
     PlikPozaZakresem: 403,
@@ -66,10 +68,13 @@ async def _obsluz_blad_dziedziny(_: Request, exc: BladDziedziny) -> JSONResponse
     kod = next((KODY_BLEDOW[k] for k in type(exc).__mro__ if k in KODY_BLEDOW), None)
     if kod is None:
         return _blad_wewnetrzny(exc)  # blad bez wpisu: nigdy str(exc), nigdy 400
-    tresc = {"detail": str(exc)}
+    tresc: dict[str, object] = {"detail": str(exc)}
     aktywny_run_id = getattr(exc, "aktywny_run_id", None)
     if aktywny_run_id is not None:
         tresc["aktywny_run_id"] = aktywny_run_id  # HAR-58: front pokazuje, ktory run trwa
+    problemy = getattr(exc, "problemy", None)
+    if problemy is not None:
+        tresc["problemy"] = problemy  # HAR-182: start runu z bledami walidacji workflow
     return JSONResponse(status_code=kod, content=tresc)
 
 

@@ -314,6 +314,13 @@ class OdpowiedzWalidacji(BaseModel):
     stan: Literal["kopia robocza"]        # ...a walidowany jest plik z kopii roboczej
 
 
+class Artefakt(BaseModel):
+    path: str          # ścieżka względem katalogu runu, tak jak ją podano
+    text: str
+    truncated: bool
+    full_len: int      # rozmiar całego pliku w bajtach, także bez obcięcia
+
+
 class DiffRunu(BaseModel):
     diff: str
 
@@ -401,6 +408,7 @@ class Blad(BaseModel):
 
     detail: str | list[dict[str, Any]]
     aktywny_run_id: str | None = None   # tylko 409 przy równoległym runie na tym samym tickecie
+    problemy: None | list[ProblemKroku] = None   # tylko 422 ze startu runu z błędami workflow (HAR-182)
 
 
 _OPISY_BLEDOW: dict[int, str] = {

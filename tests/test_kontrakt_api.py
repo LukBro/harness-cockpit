@@ -182,6 +182,8 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("PUT", "/api/skills/{skill_id}"), ("POST", "/api/skills"),
         ("GET", "/api/workflows"), ("PUT", "/api/workflows/{name}"),
         ("GET", "/api/workflows/{name}/validate"),
+        ("POST", "/api/workflows/{name}/run"),                  # HAR-182
+        ("GET", "/api/runs/{run_id}/artifacts/{p:path}"),       # HAR-182
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
         ("POST", "/api/runs/{run_id}/cancel"),
@@ -261,6 +263,8 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("GET", "/api/workflows"): ("WorkflowNaLiscie", True),
         ("PUT", "/api/workflows/{name}"): ("OdpowiedzWalidacji", False),
         ("GET", "/api/workflows/{name}/validate"): ("OdpowiedzWalidacji", False),
+        ("POST", "/api/workflows/{name}/run"): ("RunUtworzony", False),
+        ("GET", "/api/runs/{run_id}/artifacts/{p:path}"): ("Artefakt", False),
         ("POST", "/api/konto/rejestracja"): ("TokenCsrf", False),
         ("POST", "/api/konto/logowanie"): ("TokenCsrf", False),
         ("GET", "/api/konto/ja"): ("Profil", False),
@@ -330,6 +334,8 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("GET", "/api/workflows"), {"401", "403", "404", "409", "422", "500"}),
     (("PUT", "/api/workflows/{name}"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/workflows/{name}/validate"), {"401", "403", "404", "409", "422", "500"}),
+    (("POST", "/api/workflows/{name}/run"), {"401", "403", "404", "409", "422", "500"}),
+    (("GET", "/api/runs/{run_id}/artifacts/{p:path}"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/runs"), {"401", "422", "500"}),
     (("GET", "/api/runs/{run_id}"), {"401", "404", "500"}),
     (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
@@ -374,10 +380,37 @@ def test_lista_runow_opisuje_blad_walidacji_422_wlasnym_opisem_i_modelem_blad(sc
 # 3. Model Blad
 # =================================================================================================
 
-def test_blad_wymaga_pola_detail_a_aktywny_run_id_jest_opcjonalny(schemat):
+def test_blad_wymaga_pola_detail_a_aktywny_run_id_i_problemy_sa_opcjonalne(schemat):
+    # HAR-182: start runu z bledami walidacji (422) niesie liste problemow obok `detail`
     blad = schemat["components"]["schemas"]["Blad"]
     assert set(blad["required"]) == {"detail"}
-    assert set(blad["properties"]) == {"detail", "aktywny_run_id"}
+    assert set(blad["properties"]) == {"detail", "aktywny_run_id", "problemy"}
+
+
+def test_problemy_bledu_to_lista_problemow_kroku_albo_brak(schemat):
+    pole = schemat["components"]["schemas"]["Blad"]["properties"]["problemy"]
+    assert _typy(schemat, pole) == {"array", N}
+    lista = next(w for w in pole["anyOf"] if w.get("type") == "array")
+    element = _rozwin(schemat, lista["items"])
+    assert set(element["properties"]) == {"poziom", "krok", "komunikat"}
+    assert set(element["required"]) == {"poziom", "krok", "komunikat"}
+
+
+def test_start_runu_workflow_i_podglad_artefaktu_odpowiadaja_kodem_200():
+    assert (TRASY[("POST", "/api/workflows/{name}/run")].status_code or 200) == 200
+    assert (TRASY[("GET", "/api/runs/{run_id}/artifacts/{p:path}")].status_code or 200) == 200
+
+
+def test_sciezka_artefaktu_w_schemacie_to_parametr_p_bez_konwertera_a_projekt_startu_jest_w_zapytaniu(
+    schemat,
+):
+    sciezki = schemat["paths"]
+    artefakt = sciezki["/api/runs/{run_id}/artifacts/{p}"]["get"]
+    start = sciezki["/api/workflows/{name}/run"]["post"]
+    assert {(p["name"], p["in"]) for p in artefakt["parameters"]} == {
+        ("run_id", "path"), ("p", "path")}
+    assert {(p["name"], p["in"]) for p in start["parameters"]} == {
+        ("name", "path"), ("project", "query")}
 
 
 def test_detail_bledu_dopuszcza_napis_i_liste_bledow_walidacji(schemat):
@@ -464,6 +497,8 @@ POLA_MODELI = {
     "DowodyRunu": {"run_id": {S}, "twierdzenia": {"array"}, "dowody": {"array"},
                    "werdykty": {"array"}, "braki": {"array"}, "ryzyka": {"object"},
                    "pomiary": {"array"}, "decyzja": {"object", N}},
+    # HAR-182: podglad artefaktu; full_len to rozmiar calego pliku, wymagany takze bez obciecia
+    "Artefakt": {"path": {S}, "text": {S}, "truncated": {B}, "full_len": {INT}},
 }
 
 
