@@ -19,6 +19,8 @@ steps:
   tdd-task: {skill: tdd-task, needs: [plan], approval: true}
   e2e-scenario: {skill: e2e-scenario, needs: [tdd-task]}
   diff: {system: diff, needs: [e2e-scenario]}
+  # Mutanty zmienionych linii (HAR-168): brak capability `mutate_diff` w projekcie pomija krok z `brak_capability`, więc krok jest efektywnie opcjonalny bez `optional: true`.
+  mutate-diff: {system: check, capability: mutate_diff, needs: [diff, tdd-task]}
   typecheck: {system: check, capability: typecheck, needs: [diff]}
   contract: {system: check, capability: contract, needs: [diff]}
   contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}

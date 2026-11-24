@@ -10,3 +10,4 @@ capabilities:
   typecheck: npm --prefix web run build
   contract: python tools/eksport_openapi.py --sprawdz
   smoke: python tools/demo_szkielet.py
+  mutate_diff: python tools/raport_mutantow.py

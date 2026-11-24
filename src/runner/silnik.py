@@ -48,7 +48,12 @@ from pathlib import Path
 from typing import Any
 
 from cockpit.services.errors import BladDziedziny
-from cockpit.services.kroki_systemowe import PLIK_LINII, SYSTEM_CHECK, opis_kroku
+from cockpit.services.kroki_systemowe import (
+    CAPABILITY_MUTATE_DIFF,
+    PLIK_LINII,
+    SYSTEM_CHECK,
+    opis_kroku,
+)
 from cockpit.services.projekt import Projekt, wczytaj_projekt
 from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Krok, Problem, Workflow, ma_bledy, wczytaj_workflow
@@ -68,7 +73,7 @@ from runner.checkpoint import (
     wczytaj_checkpoint,
     zapisz_checkpoint,
 )
-from runner.dowody import wykonaj_check
+from runner.dowody import wykonaj_check, wykonaj_mutate_diff
 from runner.graf import StanKroku, kroki_do_powtorzenia, nastepne
 from runner.kotwice import PLIK_NOTATKI
 from runner.krok import (
@@ -152,6 +157,15 @@ async def _wykonaj_check(krok: Krok, p: Przygotowany) -> WynikKroku:
     if capability is None or capability not in p.projekt.capabilities:
         raise PorazkaKroku(f"brak capability {capability}")
     komenda = p.projekt.capabilities[capability]
+    if capability == CAPABILITY_MUTATE_DIFF:
+        # zmienione linie z kroku `diff` (walidator wymaga go wsrod przodkow przez `consumes`)
+        producent = _krok_producenta(p, krok.id, PLIK_LINII)
+        if producent is None:
+            raise PorazkaKroku(f"brak kroku diff dla capability {capability}")
+        return await wykonaj_mutate_diff(
+            p.worktree.sciezka, komenda, p.worktree.katalog_runu / krok.id,
+            p.worktree.katalog_runu / producent / PLIK_LINII,
+            fail_on_survivors=krok.fail_on_survivors)
     return await wykonaj_check(
         p.worktree.sciezka, capability, komenda, p.worktree.katalog_runu / krok.id)
 
