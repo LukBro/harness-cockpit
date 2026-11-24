@@ -15,7 +15,50 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-_runner_queues: dict[str, asyncio.Queue[dict[str, Any]]] = {}
+class StrumienRunnera:
+    """Jedno otwarte polaczenie SSE runnera (HAR-200).
+
+    `zamkniety` to token generacji: nowszy strumien tego runnera ustawia go starszym,
+    a stary generator konczy sie nawet wtedy, gdy wisi na oczekiwaniu na polecenie.
+    `liczy` mowi, czy strumien jest jeszcze w ewidencji `_polaczone`.
+    """
+
+    def __init__(self, runner_id: str) -> None:
+        self.runner_id = runner_id
+        self.zamkniety = asyncio.Event()
+        self.liczy = True
+        self.oczekuje: asyncio.Future[dict[str, Any]] | None = None   # biezace `get` z kolejki
+
+
+class KolejkaPolecen(asyncio.Queue[dict[str, Any]]):
+    """Kolejka polecen runnera: jak `asyncio.Queue`, plus zwrot polecenia na poczatek.
+
+    Strumienie runnera trzymamy na kolejce, a nie w osobnym slowniku modulu: kolejka jest
+    juz sprzatana tam, gdzie sprzata sie stan szyny, wiec nie przybywa nowy stan globalny.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.strumienie: list[StrumienRunnera] = []
+        self._na_poczatek = False
+
+    def _put(self, item: dict[str, Any]) -> None:
+        # hak `_put` jest przeznaczony do podklas (LifoQueue, PriorityQueue); kolejka bez limitu,
+        # a bez `await` miedzy ustawieniem flagi i jej zdjeciem nikt jej nie zobaczy
+        if self._na_poczatek:
+            self._queue.appendleft(item)
+        else:
+            self._queue.append(item)
+
+    def zwroc_na_poczatek(self, polecenie: dict[str, Any]) -> None:
+        self._na_poczatek = True
+        try:
+            self.put_nowait(polecenie)
+        finally:
+            self._na_poczatek = False
+
+
+_runner_queues: dict[str, KolejkaPolecen] = {}
 _run_subscribers: dict[str, list[asyncio.Queue[dict[str, Any]]]] = defaultdict(list)
 # Ewidencja aktywnych strumieni runnera (HAR-2). Licznik, bo runner moze miec dwa.
 _polaczone: dict[str, int] = {}
@@ -44,8 +87,80 @@ def disconnected_runners() -> dict[str, datetime]:
     return dict(_rozlaczone)
 
 
-def runner_queue(runner_id: str) -> asyncio.Queue[dict[str, Any]]:
-    return _runner_queues.setdefault(runner_id, asyncio.Queue())
+def runner_queue(runner_id: str) -> KolejkaPolecen:
+    q = _runner_queues.get(runner_id)
+    if q is None:
+        q = _runner_queues[runner_id] = KolejkaPolecen()
+    return q
+
+
+def otworz_strumien_runnera(runner_id: str) -> StrumienRunnera:
+    """Rejestruje nowy strumien runnera i zamyka poprzednie strumienie tego runnera.
+
+    Stare strumienie wypadaja z ewidencji od razu (bez wpisu o rozlaczeniu - runner jest
+    polaczony nowym), a ich pozniejsze `zamknij_strumien` niczego juz nie zdejmuje.
+    """
+    q = runner_queue(runner_id)
+    nowy = StrumienRunnera(runner_id)
+    mark_runner_connected(runner_id)     # najpierw nowy: licznik nie schodzi do zera
+    for stary in q.strumienie:
+        stary.zamkniety.set()
+        # Synchronicznie: getter starego strumienia znika z kolejki, zanim ktokolwiek
+        # zdazy wyslac polecenie, wiec nie przechwyci go przed nowym (kolejnosc zostaje).
+        if stary.oczekuje is not None:
+            stary.oczekuje.cancel()
+        _wyrejestruj(stary)
+    q.strumienie[:] = [nowy]
+    return nowy
+
+
+def _wyrejestruj(strumien: StrumienRunnera) -> None:
+    if strumien.liczy:
+        strumien.liczy = False
+        mark_runner_disconnected(strumien.runner_id)
+
+
+def zamknij_strumien(strumien: StrumienRunnera) -> None:
+    """Zdejmuje strumien; zamkniecie starego strumienia nie rusza nowszego ani runnera."""
+    _wyrejestruj(strumien)
+
+
+def zwroc_polecenie(runner_id: str, polecenie: dict[str, Any]) -> None:
+    """Polecenie pobrane, ale niewyslane, wraca na POCZATEK kolejki."""
+    runner_queue(runner_id).zwroc_na_poczatek(polecenie)
+
+
+def _odebrane(zadanie: asyncio.Future[dict[str, Any]]) -> dict[str, Any] | None:
+    # `get` nie rzuca; anulowane bywa przez `otworz_strumien_runnera` albo nasz finally
+    if zadanie.done() and not zadanie.cancelled():
+        return zadanie.result()
+    return None
+
+
+async def nastepne_polecenie(strumien: StrumienRunnera) -> dict[str, Any] | None:
+    """Czeka na polecenie dla strumienia albo na jego zamkniecie; `None` = strumien zamkniety.
+
+    `Queue.get` blokuje, wiec scigamy je z sygnalem zamkniecia. Polecenie pobrane w chwili
+    zamkniecia (albo anulowania) wraca na poczatek kolejki, a nie ginie.
+    """
+    q = runner_queue(strumien.runner_id)
+    pobierz = asyncio.ensure_future(q.get())
+    zamkniecie = asyncio.ensure_future(strumien.zamkniety.wait())
+    strumien.oczekuje = pobierz
+    zakonczone = False
+    try:
+        await asyncio.wait({pobierz, zamkniecie}, return_when=asyncio.FIRST_COMPLETED)
+        zakonczone = True
+    finally:
+        # Bez `await` w finally: anulowanie z zakresu anyio (rozlaczenie klienta SSE) ponawia
+        # sie przy kazdym await i zwrot polecenia nigdy by sie nie wykonal.
+        odebrane = _odebrane(pobierz)
+        zamkniecie.cancel()
+        pobierz.cancel()
+        if odebrane is not None and (not zakonczone or strumien.zamkniety.is_set()):
+            q.zwroc_na_poczatek(odebrane)
+            odebrane = None
+    return odebrane
 
 
 async def send_to_runner(runner_id: str, command: dict[str, Any]) -> None:
