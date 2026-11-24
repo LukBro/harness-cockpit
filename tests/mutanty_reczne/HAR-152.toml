@@ -1,0 +1,339 @@
+# Tabela recznych mutantow HAR-152: tools/mutanty_zmian.py jest poza source_paths mutmuta,
+# wiec kazdy zmieniony element (filtr nazw i dekoratorow w _mutowana, filtry w
+# wzorce_dla_pliku, _reguly_mutmuta, _linie_pragmy i warunek zgloszenia w linie_bez_mutantow)
+# ma wiersz z testem, ktory oblewa po mutacji.
+# Zasieg pragmy i zbior nazw niemutowanych funkcji czyta skrypt wprost z zainstalowanego
+# mutmuta (PragmaVisitor, NEVER_MUTATE_FUNCTION_NAMES), wiec nie ma wlasnej kopii regul.
+#
+# Bez wiersza (mutanty rownowazne - zadne wejscie nie odroznia wersji):
+# - zamiana kolejnosci w `_mutowana`: sprawdzenie nazwy przed dekoratorem albo po nim. Wynik
+#   to koniunkcja obu warunkow (kazdy z nich osobno zwraca False), a funkcja nie ma efektow
+#   ubocznych, wiec kolejnosc nie zmienia wartosci dla zadnego wejscia.
+# - zamiana kolejnosci operandow `and` w warunku zgloszenia w `linie_bez_mutantow`
+#   (`w_mutowanej`, `numer not in bez_pragmy`, `not w_nie_mutowanej`): koniunkcja trzech
+#   wyrazen bez efektow ubocznych, wiec kolejnosc nie zmienia wyniku dla zadnego wejscia.
+# - `nie_mutowane` dla funkcji najwyzszego poziomu i metod klas: ich zakres i tak nie nalezy do
+#   `mutowane` (`_mutowana` jest False), wiec `w_mutowanej` jest False i linia jest zgloszona
+#   niezaleznie od `nie_mutowane`; zbior ma znaczenie tylko dla def zagniezdzonych w mutowanej
+#   funkcji i te pokrywaja wiersze o glebokosci powyzej najwyzszego poziomu.
+
+# --- _mutowana: nazwy z NEVER_MUTATE_FUNCTION_NAMES mutmuta ----------------------------
+
+# Odwrocony warunek nazwy: funkcja `__new__` bylaby mutowana, wiec jej linie zniknelyby z listy.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if wezel.name in _reguly_mutmuta()[0]:"
+zamien = "if wezel.name not in _reguly_mutmuta()[0]:"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_funkcja_modulu_o_nazwie_pomijanej_przez_mutmuta_jest_zgloszona[__new__]"
+
+# Funkcja o nazwie z listy mutmuta uznana za mutowana: jej zmieniona linia nie bylaby zgloszona.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''if wezel.name in _reguly_mutmuta()[0]:
+        return False'''
+zamien = '''if wezel.name in _reguly_mutmuta()[0]:
+        return True'''
+test = "tests/test_mutanty_zmian.py::test_zmieniona_funkcja_modulu_o_nazwie_pomijanej_przez_mutmuta_jest_zgloszona[__new__]"
+
+# Zbior nazw ma pochodzic z mutmuta (element 0 krotki), nie z innego elementu krotki.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if wezel.name in _reguly_mutmuta()[0]:"
+zamien = "if wezel.name in _reguly_mutmuta()[1]:"
+test = "tests/test_mutanty_zmian.py::test_nazwy_niemutowanych_funkcji_pochodza_z_zainstalowanego_mutmuta"
+
+# --- wzorce_dla_pliku: oba filtry _mutowana ---------------------------------------------
+
+# Filtr funkcji modulu: funkcja o pomijanej nazwie nie moze dostac wzorca (martwy wzorzec).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if _mutowana(wezel) and dotkniete(wezel):"
+zamien = "if dotkniete(wezel):"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_funkcja_modulu_pomijana_przez_mutmuta_nie_daje_wzorca[__new__]"
+
+# Filtr metod klasy: metoda o pomijanej nazwie nie moze dostac wzorca.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if isinstance(metoda, funkcje) and _mutowana(metoda) and dotkniete(metoda):"
+zamien = "if isinstance(metoda, funkcje) and dotkniete(metoda):"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_metoda_pomijana_przez_mutmuta_nie_daje_wzorca[__new__]"
+
+# --- _reguly_mutmuta: brak mutmuta to blad narzedzia, nie wyjatek importu ---------------
+
+# Zly typ w except: ImportError (ModuleNotFoundError) uciekalby z funkcji zamiast bledu narzedzia.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = """import PragmaParseError, PragmaVisitor
+    except ImportError as blad:"""
+zamien = """import PragmaParseError, PragmaVisitor
+    except KeyError as blad:"""
+test = "tests/test_mutanty_zmian.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_z_podpowiedzia_o_interpreterze[mutmut.mutation.file_mutation]"
+
+# Komunikat bez przyczyny importu: uzytkownik nie zobaczy, ktorego modulu brakuje.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "({blad}): uruchom interpreterem z mutmut"
+zamien = "(): uruchom interpreterem z mutmut"
+test = "tests/test_mutanty_zmian.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_z_podpowiedzia_o_interpreterze[mutmut.mutation.pragma_handling]"
+
+# Komunikat o innym powodzie: brak podpowiedzi o interpreterze.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'f"brak mutmuta w interpreterze'
+zamien = 'f"brak narzedzia w interpreterze'
+test = "tests/test_mutanty_zmian.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_z_podpowiedzia_o_interpreterze[mutmut.mutation.file_mutation]"
+
+# Zgubiona przyczyna wyjatku (`from None`): nie wiadomo, co faktycznie poszlo nie tak.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = ''') from blad
+    return NEVER_MUTATE_FUNCTION_NAMES'''
+zamien = ''') from None
+    return NEVER_MUTATE_FUNCTION_NAMES'''
+test = "tests/test_mutanty_zmian.py::test_brak_mutmuta_w_interpreterze_to_blad_narzedzia_z_podpowiedzia_o_interpreterze[mutmut.mutation.file_mutation]"
+
+# Zwracana krotka: kolejnosc elementow zamieniona, zbior nazw zastapiony klasa wizytatora.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return NEVER_MUTATE_FUNCTION_NAMES, PragmaVisitor, PragmaParseError"
+zamien = "return PragmaVisitor, NEVER_MUTATE_FUNCTION_NAMES, PragmaParseError"
+test = "tests/test_mutanty_zmian.py::test_nazwy_niemutowanych_funkcji_pochodza_z_zainstalowanego_mutmuta"
+
+# Zwracana krotka: wyjatek pragm zastapiony innym typem, wiec PragmaParseError ucieka z funkcji.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return NEVER_MUTATE_FUNCTION_NAMES, PragmaVisitor, PragmaParseError"
+zamien = "return NEVER_MUTATE_FUNCTION_NAMES, PragmaVisitor, ValueError"
+test = "tests/test_mutanty_zmian.py::test_bledna_para_pragm_start_end_to_blad_narzedzia_z_polozeniem_w_zrodle[start_bez_end]"
+
+# --- _linie_pragmy: suma zbiorow PragmaVisitor ------------------------------------------
+
+# Tylko no_mutate_lines: `block` na naglowku (jego cialo lezy w ignore_node_lines) nic by nie dalo.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return odwiedzajacy.no_mutate_lines | odwiedzajacy.ignore_node_lines"
+zamien = "return odwiedzajacy.no_mutate_lines"
+test = "tests/test_mutanty_zmian.py::test_pragma_block_na_naglowku_if_zglasza_caly_if_a_nie_linie_po_nim"
+
+# Tylko ignore_node_lines: pragma na koncu linii (no_mutate_lines) nic by nie dala.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return odwiedzajacy.no_mutate_lines | odwiedzajacy.ignore_node_lines"
+zamien = "return odwiedzajacy.ignore_node_lines"
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Przeciecie zamiast sumy: zadna linia nie nalezy do obu zbiorow naraz.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "return odwiedzajacy.no_mutate_lines | odwiedzajacy.ignore_node_lines"
+zamien = "return odwiedzajacy.no_mutate_lines & odwiedzajacy.ignore_node_lines"
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Wizytator uruchomiony na innej instancji: zbiory zostaja puste, pragma nic nie zglasza.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = ".visit(odwiedzajacy)"
+zamien = ".visit(odwiedzajacy_klasa('<inny>'))"
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Nazwa pliku wizytatora trafia do komunikatu bledu pragmy (polozenie `<zrodlo>:linia`).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'odwiedzajacy_klasa("<zrodlo>")'
+zamien = 'odwiedzajacy_klasa("")'
+test = "tests/test_mutanty_zmian.py::test_bledna_para_pragm_start_end_to_blad_narzedzia_z_polozeniem_w_zrodle[start_bez_end]"
+
+# --- _linie_pragmy: oba except -------------------------------------------------------------
+
+# Zly typ w pierwszym except: ParserSyntaxError libcst uciekalby z funkcji.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "except libcst.ParserSyntaxError as blad:"
+zamien = "except KeyError as blad:"
+test = "tests/test_mutanty_zmian.py::test_zrodlo_odrzucone_przez_parser_libcst_to_blad_narzedzia[blad_skladni]"
+
+# Komunikat bledu skladni libcst zmieniony na inny.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''raise BladNarzedzia(f"nie da sie sparsowac: {blad}") from blad
+    except blad_pragmy as blad:'''
+zamien = '''raise BladNarzedzia(f"nie da sie przeczytac: {blad}") from blad
+    except blad_pragmy as blad:'''
+test = "tests/test_mutanty_zmian.py::test_zrodlo_odrzucone_przez_parser_libcst_to_blad_narzedzia[znak_sterujacy]"
+
+# Zgubiona przyczyna bledu skladni libcst (`from None`).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''from blad
+    except blad_pragmy as blad:'''
+zamien = '''from None
+    except blad_pragmy as blad:'''
+test = "tests/test_mutanty_zmian.py::test_zrodlo_odrzucone_przez_parser_libcst_to_blad_narzedzia[blad_skladni]"
+
+# Zly typ w drugim except: PragmaParseError mutmuta uciekalby z funkcji.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "except blad_pragmy as blad:"
+zamien = "except KeyError as blad:"
+test = "tests/test_mutanty_zmian.py::test_bledna_para_pragm_start_end_to_blad_narzedzia_z_polozeniem_w_zrodle[end_bez_start]"
+
+# Komunikat bledu pragmy bez tekstu mutmuta (polozenie w zrodle znika).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'f"bledna pragma no mutate: {blad}"'
+zamien = 'f"bledna pragma no mutate"'
+test = "tests/test_mutanty_zmian.py::test_bledna_para_pragm_start_end_to_blad_narzedzia_z_polozeniem_w_zrodle[drugi_end_po_zamknietym_zakresie]"
+
+# Zgubiona przyczyna bledu pragmy (`from None`).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''from blad
+    return odwiedzajacy.no_mutate_lines'''
+zamien = '''from None
+    return odwiedzajacy.no_mutate_lines'''
+test = "tests/test_mutanty_zmian.py::test_bledna_para_pragm_start_end_to_blad_narzedzia_z_polozeniem_w_zrodle[start_bez_end]"
+
+# --- linie_bez_mutantow: niemutowane def na kazdej glebokosci -------------------------------
+
+# Odwrocone wykrywanie: zagniezdzona `__new__` trafia do mutowanych, zwykla do niemutowanych.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if isinstance(wezel, funkcje) and not _mutowana(wezel):"
+zamien = "if isinstance(wezel, funkcje) and _mutowana(wezel):"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_zwykla_funkcja_ma_mutanty_wiec_nie_jest_zgloszona"
+
+# Tylko najwyzszy poziom: niemutowane def zagniezdzone w mutowanej funkcji nie sa zbierane.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if isinstance(wezel, funkcje) and not _mutowana(wezel):"
+zamien = "if isinstance(wezel, funkcje) and wezel in drzewo.body and not _mutowana(wezel):"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_metoda_pomijana_przez_mutmuta_jest_zgloszona_a_kod_obok_nie[__new__]"
+
+# Tylko najwyzszy poziom: zagniezdzona funkcja z dekoratorem tez nie jest zbierana.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if isinstance(wezel, funkcje) and not _mutowana(wezel):"
+zamien = "if isinstance(wezel, funkcje) and wezel in drzewo.body and not _mutowana(wezel):"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_funkcja_z_dekoratorem_jest_zgloszona_a_kod_obok_nie"
+
+# Element krotki typow: zagniezdzona funkcja async nie jest zbierana.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if isinstance(wezel, funkcje) and not _mutowana(wezel):"
+zamien = "if isinstance(wezel, ast.FunctionDef) and not _mutowana(wezel):"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_funkcja_async_z_dekoratorem_jest_zgloszona_a_kod_obok_nie"
+
+# Zakres niemutowanej def trafia do listy mutowanych: jej linie znikaja z wyniku.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "nie_mutowane.append(_zakres(wezel))"
+zamien = "mutowane.append(_zakres(wezel))"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_metoda_pomijana_przez_mutmuta_jest_zgloszona_a_kod_obok_nie[__new__]"
+
+# Granica poczatku zakresu niemutowanej def: linia `def` zagniezdzonej metody nie bylaby zgloszona.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w_nie_mutowanej = any(start <= numer <= koniec for start, koniec in nie_mutowane)"
+zamien = "w_nie_mutowanej = any(start < numer <= koniec for start, koniec in nie_mutowane)"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_metoda_pomijana_przez_mutmuta_jest_zgloszona_a_kod_obok_nie[__new__]"
+
+# Granica konca zakresu niemutowanej def: ostatnia linia jej ciala nie bylaby zgloszona.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w_nie_mutowanej = any(start <= numer <= koniec for start, koniec in nie_mutowane)"
+zamien = "w_nie_mutowanej = any(start <= numer < koniec for start, koniec in nie_mutowane)"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_metoda_pomijana_przez_mutmuta_jest_zgloszona_a_kod_obok_nie[__new__]"
+
+# --- linie_bez_mutantow: zakres mutowanych funkcji i warunek pragmy -------------------------
+
+# Funkcja modulu wraca do `pominiete`: pragma wewnatrz mutowanej funkcji przestaje byc zglaszana.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''mutowane.append(_zakres(wezel))
+            elif isinstance(wezel, ast.ClassDef):'''
+zamien = '''pominiete.append(_zakres(wezel))
+            elif isinstance(wezel, ast.ClassDef):'''
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Metody klasy wracaja do `pominiete`: pragma `block` w metodzie przestaje byc zglaszana.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "mutowane.extend("
+zamien = "pominiete.extend("
+test = "tests/test_mutanty_zmian.py::test_pragma_block_na_linii_def_zglasza_cala_funkcje_bez_docstringu_i_nie_sasiednia"
+
+# Brak linii pragmy: nic nie jest zgloszone wewnatrz mutowanej funkcji.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "bez_pragmy = _linie_pragmy(zrodlo)"
+zamien = "bez_pragmy = set()"
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Bez operandu `w_mutowanej`: stala modulu (poza funkcjami) przestaje byc zglaszana.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if w_mutowanej and numer not in bez_pragmy and not w_nie_mutowanej:"
+zamien = "if numer not in bez_pragmy and not w_nie_mutowanej:"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_stala_modulu_jest_zgloszona_jako_kod_bez_mutantow"
+
+# Odwrocony operand pragmy: linia z pragma pominieta, a zwykla zgloszona.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if w_mutowanej and numer not in bez_pragmy and not w_nie_mutowanej:"
+zamien = "if w_mutowanej and numer in bez_pragmy and not w_nie_mutowanej:"
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Bez operandu pragmy: linia z pragma w mutowanej funkcji pominieta.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if w_mutowanej and numer not in bez_pragmy and not w_nie_mutowanej:"
+zamien = "if w_mutowanej and not w_nie_mutowanej:"
+test = "tests/test_mutanty_zmian.py::test_pragma_na_koncu_linii_zglasza_te_linie_a_inne_linie_funkcji_nie"
+
+# Bez operandu niemutowanej def: zagniezdzona `__new__` pominieta jako rzekomo mutowana.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "if w_mutowanej and numer not in bez_pragmy and not w_nie_mutowanej:"
+zamien = "if w_mutowanej and numer not in bez_pragmy:"
+test = "tests/test_mutanty_zmian.py::test_zmieniona_zagniezdzona_metoda_pomijana_przez_mutmuta_jest_zgloszona_a_kod_obok_nie[__new__]"
+
+# Granica poczatku zakresu mutowanej funkcji: linia `def` mutowanej funkcji trafilaby na liste.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w_mutowanej = any(start <= numer <= koniec for start, koniec in mutowane)"
+zamien = "w_mutowanej = any(start < numer <= koniec for start, koniec in mutowane)"
+test = "tests/test_mutanty_zmian.py::test_linia_w_funkcji_lub_metodzie_z_source_paths_ma_mutanty_wiec_nie_jest_zgloszona[naglowek_funkcji]"
+
+# Granica konca zakresu mutowanej funkcji: jej ostatnia linia trafilaby na liste.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = "w_mutowanej = any(start <= numer <= koniec for start, koniec in mutowane)"
+zamien = "w_mutowanej = any(start <= numer < koniec for start, koniec in mutowane)"
+test = "tests/test_mutanty_zmian.py::test_linia_w_funkcji_lub_metodzie_z_source_paths_ma_mutanty_wiec_nie_jest_zgloszona[cialo_funkcji]"
+
+# Runda 5: osobna linia pragmy (komentarz) w zbiorze pomijanych mutmuta trafia na liste.
+# Bez warunku `numer not in bez_pragmy` kazdy komentarz bylby pomijany jak wczesniej.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if tekst.startswith("#") and numer not in bez_pragmy:'
+zamien = 'if tekst.startswith("#"):'
+test = "tests/test_mutanty_zmian.py::test_zmieniona_osobna_linia_pragmy_bez_zmiany_kodu_jest_zgloszona_do_sprawdzenia"
+
+# Bez `tekst.startswith("#")` pomijana bylaby kazda linia spoza pomijanych mutmuta, takze
+# linia kodu bez mutantow (funkcja poza source_paths), ktora musi trafic na liste.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if tekst.startswith("#") and numer not in bez_pragmy:'
+zamien = 'if numer not in bez_pragmy:'
+test = "tests/test_mutanty_zmian.py::test_linia_w_funkcji_poza_source_paths_jest_zgloszona_bo_mutmut_jej_nie_mutuje[cialo_funkcji]"
+
+# Brak libcst tlumaczony na blad narzedzia (kod 2), nie wyjatek importu (kod 1).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = """    try:
+        import libcst
+    except ImportError as blad:"""
+zamien = """    try:
+        import libcst
+    except ArithmeticError as blad:"""
+test = "tests/test_mutanty_zmian.py::test_brak_libcst_przy_zmianie_pliku_bez_funkcji_daje_kod_2_nie_1"

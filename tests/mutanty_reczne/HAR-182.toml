@@ -1,0 +1,443 @@
+# HAR-182: start runu workflow z API (POST /api/workflows/{name}/run) i podglad artefaktu runu
+# (GET /api/runs/{run_id}/artifacts/{p:path}). Wiersze dla zmian, ktorych mutmut nie widzi:
+# dekoratory tras, limity pol, klasy, stale i web/openapi.json.
+
+# --- src/cockpit/api/app.py: start runu ---------------------------------------------------------
+
+# Sciezka trasy startu: inny adres to brak trasy, a start nie dochodzi do runnera.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''@app.post("/api/workflows/{name}/run", response_model=RunUtworzony,'''
+zamien = '''@app.post("/api/workflows/{name}/start", response_model=RunUtworzony,'''
+test = "tests/test_start_workflow.py::test_start_poprawnego_workflow_tworzy_run_projektu_z_nazwa_workflow_i_zwraca_jego_id"
+
+# Model odpowiedzi startu: bez RunUtworzony schemat przestaje opisywac odpowiedz trasy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''@app.post("/api/workflows/{name}/run", response_model=RunUtworzony,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''@app.post("/api/workflows/{name}/run", response_model=RunUtworzony,
+          responses=odpowiedzi_bledow(401, 403, 404, 422))'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Limit 36 znakow parametru `project` odpowiada kolumnie String(36).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''async def uruchom_workflow(
+    name: str,
+    project: str = Query(max_length=36),'''
+zamien = '''async def uruchom_workflow(
+    name: str,
+    project: str = Query(max_length=37),'''
+test = "tests/test_start_workflow.py::test_parametr_projektu_startu_jest_wymagany_i_ma_limit_36_znakow"
+
+# Sesja zalogowanego (kontekst zespolu) jest wymagana takze przy starcie: bez niej brak 401.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    project: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.uruchamianie)'''
+zamien = '''    project: str = Query(max_length=36),
+    k: Kontekst = Depends(get_session),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.uruchamianie)'''
+test = "tests/test_dostep_http.py::test_bez_sesji_start_workflow_daje_401_takze_na_localhoscie_a_run_nie_powstaje"
+
+# Sesja bazy startu pochodzi z zaleznosci get_session, nie z kontekstu zespolu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.uruchamianie)'''
+zamien = '''    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(kontekst_sesji),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.uruchamianie)'''
+test = "tests/test_start_workflow.py::test_start_poprawnego_workflow_tworzy_run_projektu_z_nazwa_workflow_i_zwraca_jego_id"
+
+# Kolejnosc argumentow: projekt przed nazwa workflow (zamiana daje 404 projektu).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    run_id = await workflowy_api.uruchom_workflow(
+        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj,'''
+zamien = '''    run_id = await workflowy_api.uruchom_workflow(
+        s, k.tenant_id, name, project, bus.connected_runner_ids(), bus.zapytaj,'''
+test = "tests/test_start_workflow.py::test_start_poprawnego_workflow_tworzy_run_projektu_z_nazwa_workflow_i_zwraca_jego_id"
+
+# Obserwator nie uruchamia workflow: wymog uprawnienia `uruchamianie`, nie `podglad`.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    dostep.wymagaj(k, Uprawnienie.uruchamianie)   # przed zapytaniem: obserwator nie budzi runnera'''
+zamien = '''    dostep.wymagaj(k, Uprawnienie.podglad)   # przed zapytaniem: obserwator nie budzi runnera'''
+test = "tests/test_dostep_http.py::test_obserwator_nie_uruchamia_workflow_projektu_swojego_zespolu_a_run_nie_powstaje"
+
+# Polecenie dla runnera idzie kanalem `send_to_runner`, nie zapytaniem `zapytaj`.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj,
+        bus.send_to_runner)
+    return RunUtworzony(run_id=run_id)'''
+zamien = '''        s, k.tenant_id, project, name, bus.connected_runner_ids(), bus.zapytaj,
+        bus.zapytaj)
+    return RunUtworzony(run_id=run_id)'''
+test = "tests/test_start_workflow.py::test_start_wysyla_runnerowi_jedno_polecenie_run_workflow_z_id_runu_nazwa_i_sciezka_projektu"
+
+# Odpowiedz niesie id utworzonego runu, nie id projektu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''        bus.send_to_runner)
+    return RunUtworzony(run_id=run_id)'''
+zamien = '''        bus.send_to_runner)
+    return RunUtworzony(run_id=project)'''
+test = "tests/test_start_workflow.py::test_start_poprawnego_workflow_tworzy_run_projektu_z_nazwa_workflow_i_zwraca_jego_id"
+
+# --- src/cockpit/api/app.py: podglad artefaktu --------------------------------------------------
+
+# Sciezka trasy podgladu artefaktu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''@app.get("/api/runs/{run_id}/artifacts/{p:path}", response_model=Artefakt,'''
+zamien = '''@app.get("/api/runs/{run_id}/artifact/{p:path}", response_model=Artefakt,'''
+test = "tests/test_artefakty_api.py::test_artefakt_runu_zespolu_wraca_z_trescia_obcieciem_i_pelna_dlugoscia"
+
+# Model odpowiedzi i opisane bledy podgladu artefaktu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''@app.get("/api/runs/{run_id}/artifacts/{p:path}", response_model=Artefakt,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''@app.get("/api/runs/{run_id}/artifacts/{p:path}", response_model=Artefakt,
+         responses=odpowiedzi_bledow(401, 403, 404, 409))'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Identyfikator runu w adresie jest napisem (runy maja identyfikatory tekstowe, nie liczbowe).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''async def artefakt_runu(
+    run_id: str,'''
+zamien = '''async def artefakt_runu(
+    run_id: int,'''
+test = "tests/test_artefakty_api.py::test_artefakt_runu_zespolu_wraca_z_trescia_obcieciem_i_pelna_dlugoscia"
+
+# Limit dlugosci sciezki artefaktu (4096) trafia do schematu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    p: Annotated[str, SciezkaUrl(max_length=4096)],
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await artefakty.artefakt_runu('''
+zamien = '''    p: Annotated[str, SciezkaUrl(max_length=4097)],
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await artefakty.artefakt_runu('''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Runner pytany o artefakt to runner polaczony: pusta lista polaczonych to 409 runner offline.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''        s, k.tenant_id, run_id, p, bus.connected_runner_ids(), bus.zapytaj)'''
+zamien = '''        s, k.tenant_id, run_id, p, frozenset(), bus.zapytaj)'''
+test = "tests/test_artefakty_api.py::test_artefakt_runu_zespolu_wraca_z_trescia_obcieciem_i_pelna_dlugoscia"
+
+# --- src/cockpit/api/bledy.py -------------------------------------------------------------------
+
+# Blad walidacji workflow ma wlasny kod 422 (nie 409 ze stanu).
+[[mutant]]
+plik = "src/cockpit/api/bledy.py"
+szukaj = '''    BledyWalidacjiWorkflow: 422,'''
+zamien = '''    BledyWalidacjiWorkflow: 409,'''
+test = "tests/test_start_workflow.py::test_workflow_z_bledami_walidacji_daje_422_z_lista_problemow_a_run_nie_powstaje"
+
+# Lista problemow trafia do tresci odpowiedzi.
+[[mutant]]
+plik = "src/cockpit/api/bledy.py"
+szukaj = '''        tresc["problemy"] = problemy  # HAR-182: start runu z bledami walidacji workflow'''
+zamien = '''        tresc["problemy"] = []  # HAR-182: start runu z bledami walidacji workflow'''
+test = "tests/test_start_workflow.py::test_workflow_z_bledami_walidacji_daje_422_z_lista_problemow_a_run_nie_powstaje"
+
+# --- src/cockpit/api/schematy.py ----------------------------------------------------------------
+
+# Pole `full_len` modelu Artefakt jest liczba calkowita (rozmiar w bajtach).
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    full_len: int      # rozmiar całego pliku w bajtach, także bez obcięcia'''
+zamien = '''    full_len: float      # rozmiar całego pliku w bajtach, także bez obcięcia'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Pole `truncated` jest wartoscia logiczna.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    truncated: bool
+    full_len: int'''
+zamien = '''    truncated: int
+    full_len: int'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Pole `text` modelu Artefakt jest napisem.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    text: str
+    truncated: bool'''
+zamien = '''    text: bytes
+    truncated: bool'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Pole `path` modelu Artefakt jest napisem (sciezka tak, jak ja podano).
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class Artefakt(BaseModel):
+    path: str '''
+zamien = '''class Artefakt(BaseModel):
+    path: int '''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Pole `problemy` bledu jest opcjonalne i domyslnie puste (None), nie lista.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    problemy: None | list[ProblemKroku] = None   # tylko 422 ze startu runu z błędami workflow (HAR-182)'''
+zamien = '''    problemy: None | list[ProblemKroku] = []   # tylko 422 ze startu runu z błędami workflow (HAR-182)'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# --- src/cockpit/services/errors.py -------------------------------------------------------------
+
+# Blad walidacji workflow dziedziczy po NiespojneDane (sprzeczne dane wejsciowe).
+[[mutant]]
+plik = "src/cockpit/services/errors.py"
+szukaj = '''class BledyWalidacjiWorkflow(NiespojneDane):'''
+zamien = '''class BledyWalidacjiWorkflow(BladDziedziny):'''
+test = "tests/test_start_workflow.py::test_blad_walidacji_workflow_jest_szczegolnym_przypadkiem_niespojnych_danych_wejsciowych"
+
+# --- src/runner/operacje.py ---------------------------------------------------------------------
+
+# Limit podgladu artefaktu: 512 KB (JSON x3 miesci sie w limicie odpowiedzi kokpitu).
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '''LIMIT_ARTEFAKTU_B = 512 * 1024'''
+zamien = '''LIMIT_ARTEFAKTU_B = 513 * 1024'''
+test = "tests/test_operacje_artefakt.py::test_podglad_artefaktu_obcina_plik_dopiero_powyzej_512_kb_bez_zmiany_limitu"
+
+# Linia dekodera ma `# pragma: no mutate` (mutant "UTF-8" jest rownowazny), wiec mutmut nie mutuje
+# argumentu `final=`; trzy warianty sprawdzamy recznie. Bez `final=True` urwany znak na koncu
+# nieobcietego pliku jest po cichu odrzucany zamiast dac `binarny`.
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '''.decode(surowe, final=not obciety)'''
+zamien = '''.decode(surowe, final=None)'''
+test = "tests/test_operacje_artefakt.py::test_artefakt_mniejszy_niz_limit_z_urwanym_znakiem_na_koncu_jest_binarny_a_nie_przyciety"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '''.decode(surowe, final=not obciety)'''
+zamien = '''.decode(surowe, )'''
+test = "tests/test_operacje_artefakt.py::test_artefakt_dokladnie_o_dlugosci_limitu_z_urwanym_znakiem_na_koncu_jest_binarny"
+
+# Odwrocone `final`: przy obcieciu w srodku znaku wielobajtowego urwany znak dalby blad zamiast odpasc.
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '''.decode(surowe, final=not obciety)'''
+zamien = '''.decode(surowe, final=obciety)'''
+test = "tests/test_operacje_artefakt.py::test_obciecie_w_srodku_znaku_wielobajtowego_daje_tekst_bez_urwanego_znaku_a_nie_binarny"
+
+# Operacja `read_artifact` jest zarejestrowana pod ta nazwa.
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '''    "read_artifact": read_artifact,'''
+zamien = '''    "read_artefakt": read_artifact,'''
+test = "tests/test_operacje_artefakt.py::test_runner_zna_operacje_podgladu_artefaktu_obok_odczytu_plikow"
+
+# --- src/cockpit/services/artefakty.py ----------------------------------------------------------
+
+# Nazwa operacji runnera, o ktora pyta kokpit: inna nazwa to nieznana operacja u runnera.
+[[mutant]]
+plik = "src/cockpit/services/artefakty.py"
+szukaj = '''OPERACJA = "read_artifact"'''
+zamien = '''OPERACJA = "read_artefakt"'''
+test = "tests/test_artefakty_api.py::test_artefakt_runu_pyta_runnera_runu_operacja_read_artifact_z_identyfikatorem_i_sciezka"
+
+# --- web/openapi.json ---------------------------------------------------------------------------
+
+# Model Artefakt: pole `full_len` to liczba calkowita.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''          "full_len": {
+            "title": "Full Len",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",'''
+zamien = '''          "full_len": {
+            "title": "Full Len",
+            "type": "number"
+          },
+          "path": {
+            "title": "Path",'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Model Artefakt: `full_len` jest wymagane takze bez obciecia.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''          "truncated",
+          "full_len"
+        ],
+        "title": "Artefakt",'''
+zamien = '''          "truncated"
+        ],
+        "title": "Artefakt",'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Model Blad: pole `problemy` jest lista problemow kroku albo brakiem.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''          "problemy": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProblemKroku"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problemy"
+          }'''
+zamien = '''          "problemy": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProblemKroku"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Problemy"
+          }'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Trasa startu runu workflow: adres w schemacie.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''    "/api/workflows/{name}/run": {'''
+zamien = '''    "/api/workflows/{name}/start": {'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Trasa startu: parametr `project` jest w zapytaniu z limitem 36 znakow.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''        "operationId": "uruchom_workflow_api_workflows__name__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "maxLength": 36,'''
+zamien = '''        "operationId": "uruchom_workflow_api_workflows__name__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "maxLength": 37,'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Trasa startu: opis trasy w schemacie.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''        "summary": "Uruchom Workflow"'''
+zamien = '''        "summary": "Uruchom Workflow Inaczej"'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Trasa podgladu artefaktu: adres w schemacie (parametr `p` bez konwertera).
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''    "/api/runs/{run_id}/artifacts/{p}": {'''
+zamien = '''    "/api/runs/{run_id}/artifacts/{p:path}": {'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Trasa podgladu artefaktu: limit dlugosci parametru `p` (4096).
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''        "operationId": "artefakt_runu_api_runs__run_id__artifacts__p__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "p",
+            "required": true,
+            "schema": {
+              "maxLength": 4096,'''
+zamien = '''        "operationId": "artefakt_runu_api_runs__run_id__artifacts__p__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "p",
+            "required": true,
+            "schema": {
+              "maxLength": 4097,'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# Trasa podgladu artefaktu: odpowiedz 200 to model Artefakt.
+[[mutant]]
+plik = "web/openapi.json"
+szukaj = '''                  "$ref": "#/components/schemas/Artefakt"
+'''
+zamien = '''                  "$ref": "#/components/schemas/Blad"
+'''
+test = "tests/test_kontrakt_api.py::test_plik_schematu_w_repozytorium_jest_zgodny_z_aplikacja"
+
+# --- rownowazne ---------------------------------------------------------------------------------
+
+[[rownowazny]]
+plik = "src/cockpit/services/workflowy_api.py"
+linia_tekst = "WyslijPolecenie = Callable[[str, dict[str, Any]], Awaitable[None]]   # `bus.send_to_runner`"
+uzasadnienie = "Alias typu jest uzywany wylacznie w adnotacji parametru `wyslij_polecenie`; Python nie sprawdza adnotacji w czasie dzialania, a alias nigdzie nie jest czytany jako wartosc, wiec zadne wejscie nie odroznia innej tresci aliasu."
+
+[[rownowazny]]
+plik = "src/cockpit/api/app.py"
+linia_tekst = ") -> Any:"
+uzasadnienie = "Adnotacja zwracanego typu trasy jest tylko podpowiedzia dla czlowieka i mypy: obie nowe trasy maja jawny `response_model`, a FastAPI przy jawnym `response_model` nie czyta adnotacji zwrotu, wiec zadne wejscie nie odroznia innej adnotacji (tresc odpowiedzi ma wiersze [[mutant]])."

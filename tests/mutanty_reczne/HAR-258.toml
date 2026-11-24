@@ -1,0 +1,1629 @@
+# Tabela recznych mutantow HAR-258: tools/mutanty_uzupelniajace.py i tools/mutanty_zmian.py (miejsce, ktorego
+# mutmut nie mutuje: tools/). Wiersz: element | mutacja | test, ktory po mutacji oblewa.
+#
+# Wiersze pokrywaja: numeracje linii jak w AST w `mutanty_zmian.py` (`linie_zrodla`, `_nowe_pliki`), flage
+# TEMPLATE (`re.T`) w `re.compile`, flagi globalne wzorca rozdzielone komentarzem `(?#...)` i bialym znakiem,
+# strazniki postepu w petlach rozbioru wzorca, funkcje `re` poza `compile` (`re.sub`, `re.match`...), samotny `\r`
+# w `zrodlo_z_dysku`, mutanty z sond krytyka (`find("}")`, `A-Z` w `PREFIKS_GRUPY`,
+# `isinstance(funkcja.value, ast.Name)`) i dokladny tekst komunikatow bledow narzedzia.
+#
+# Rownowazne (zadne wejscie nie odroznia wersji; rownowaznosc uzasadnia wejscie, ktorego nie ma):
+# - `_wymagaj_postepu(...)` w `_koniec_ucieczki` (petla osemkowa) i w `_koniec_flag_globalnych`: usuniecie samego
+#   wywolania nie ma wiersza, bo zabija je tylko mutant zerujacy postep tej samej petli (wiersze `koniec += 0`
+#   i `pozycja = pozycja`), a w poprawnym kodzie indeks tych petli zawsze idzie do przodu.
+# - `if flagi & FLAGA_TEMPLATE:` -> `if flagi & FLAGA_TEMPLATE and not flagi & re.VERBOSE:`: sprawdzenie VERBOSE
+#   stoi wyzej i rzuca, wiec do tego `if` nie dociera zaden zestaw flag z bitem VERBOSE.
+# - `[ \t\n\r\v\f]` -> `\s` w `POMIJANE_MIEDZY_FLAGAMI`: znak, ktory `\s` pomija, a SRE nie (np. NBSP,
+#   `\x1c`, `\x85`), przed flaga globalna rozbija wzorzec w `re.compile` ("global flags not at the start"), a
+#   za ostatnia flaga nie przesuwa konca naglowka; wzorzec z takim znakiem miedzy flagami nie dociera do rozbioru.
+# - `POMIJANE_MIEDZY_FLAGAMI` z `)*` zamienionym na `)?`: petla w `_koniec_flag_globalnych` powtarza dopasowanie,
+#   wiec jedno pomijane wyrazenie na obrot daje ten sam koniec naglowka (dwa komentarze pod rzad: dwa obroty).
+# - `find("}", poczatek)` -> `find("}", poczatek + k)` dla k od 1 do 3: na `poczatek` stoi `\`, na `poczatek + 1`
+#   `N`, na `poczatek + 2` `{` (warunek `_koniec_ucieczki`), wiec `}` stoi najwczesniej na `poczatek + 3` (`\N{}`,
+#   ktore przechodzi tylko w komentarzu `(?x)`). Dla k = 4, 5, 6 sa wiersze `[[mutant]]` (testy
+#   `\N{}` i `\N{OX}`); mutant k = 4 i k = 5 psuje `\N{}` w komentarzu, k = 6 psuje `\N{OX}`.
+# - `if zamkniecie < 0:` -> `<= 0`: zamkniecie 0 wymagaloby `}` na indeksie 0, a tam stoi `\`, od ktorego
+#   zaczyna sie ucieczka (szukanie startuje od `poczatek`).
+# - `A-Z` w `[a-zA-Z]` po `-` (drugi i trzeci wariant `PREFIKS_GRUPY`) oraz zakresy liter, ktore nie sa flagami
+#   (`a-z` -> `a-y`, `A-Z` -> `A-K`...): flagi po `-` to male litery `i`, `m`, `s`, `x` (`(?-L:`, `(?-a:`,
+#   `(?-u:` odrzuca `re.compile`), a litera spoza flag wzorzec odrzuca juz kompilacja oryginalu.
+#
+
+
+# --- tools/mutanty_zmian.py: numeracja linii jak w AST (k5) ---
+
+# `linie_zrodla` to nie `splitlines()` (to dzieli tez na form feed).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'return re.split(r"\r\n|\n|\r", zrodlo)'
+zamien = 'return zrodlo.splitlines()'
+test = 'tests/test_mutanty_zmian.py::test_linie_zrodla_nie_dziela_na_znakach_ktore_python_uznaje_za_zwykle[\x0c]'
+
+# Samotny `\r` konczy linie.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'r"\r\n|\n|\r"'
+zamien = 'r"\r\n|\n"'
+test = 'tests/test_mutanty_zmian.py::test_linie_zrodla_dziela_tylko_na_lf_crlf_i_samotny_cr'
+
+# Samotny `\n` konczy linie.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'r"\r\n|\n|\r"'
+zamien = 'r"\r\n|\r"'
+test = 'tests/test_mutanty_zmian.py::test_linie_zrodla_dziela_tylko_na_lf_crlf_i_samotny_cr'
+
+# `\r\n` to jeden koniec linii (alternatywa `\r\n` przed `\r`).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'r"\r\n|\n|\r"'
+zamien = 'r"\r|\n|\r\n"'
+test = 'tests/test_mutanty_zmian.py::test_linie_zrodla_dziela_tylko_na_lf_crlf_i_samotny_cr'
+
+# `\r\n` jest alternatywa (bez niej powstaje pusta linia).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'r"\r\n|\n|\r"'
+zamien = 'r"\n|\r"'
+test = 'tests/test_mutanty_zmian.py::test_linie_zrodla_dziela_tylko_na_lf_crlf_i_samotny_cr'
+
+# Odcisk funkcji (`wzorce_z_odciskami_dla_pliku`) liczy linie jak AST.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    wynik: dict[str, str] = {}
+    fizyczne = linie_zrodla(zrodlo)'''
+zamien = '''    wynik: dict[str, str] = {}
+    fizyczne = zrodlo.splitlines()'''
+test = 'tests/test_mutanty_zmian.py::test_odcisk_funkcji_po_linii_z_form_feed_to_hash_jej_wlasnego_tekstu[\x0c]'
+
+# `linie_bez_mutantow` liczy linie jak AST.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''    bez_pragmy = _linie_pragmy(zrodlo)
+
+    fizyczne = linie_zrodla(zrodlo)'''
+zamien = '''    bez_pragmy = _linie_pragmy(zrodlo)
+
+    fizyczne = zrodlo.splitlines()'''
+test = 'tests/test_mutanty_zmian.py::test_zmieniona_stala_po_linii_z_form_feed_jest_zgloszona_pod_wlasnym_numerem[\x0c]'
+
+# `_nowe_pliki` liczy linie jak AST.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'linie = linie_zrodla(tresc)'
+zamien = 'linie = tresc.splitlines()'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_z_form_feed_ma_zmienione_tyle_linii_ile_ma_naprawde[\x0c]'
+
+# Pusty ostatni element po koncu linii nie jest linia.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ile = len(linie) - 1 if linie[-1] == "" else len(linie)'
+zamien = 'ile = len(linie) - 0 if linie[-1] == "" else len(linie)'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[pusta_linia_na_koncu]'
+
+# Odejmujemy dokladnie jeden pusty element.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ile = len(linie) - 1 if linie[-1] == "" else len(linie)'
+zamien = 'ile = len(linie) - 2 if linie[-1] == "" else len(linie)'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[pusta_linia_na_koncu]'
+
+# Warunek: ostatni element jest pusty.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ile = len(linie) - 1 if linie[-1] == "" else len(linie)'
+zamien = 'ile = len(linie) - 1 if linie[-1] != "" else len(linie)'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[bez_konca_linii]'
+
+# Warunek dotyczy ostatniego elementu, nie pierwszego.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ile = len(linie) - 1 if linie[-1] == "" else len(linie)'
+zamien = 'ile = len(linie) - 1 if linie[0] == "" else len(linie)'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[pusta_linia_na_koncu]'
+
+# Plik bez konca linii zachowuje ostatnia linie.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'ile = len(linie) - 1 if linie[-1] == "" else len(linie)'
+zamien = 'ile = len(linie) - 1 if linie[-1] == "" else len(linie) - 1'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[bez_konca_linii]'
+
+# Numeracja linii zaczyna sie od 1.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'zmiany[sciezka] = set(range(1, ile + 1))'
+zamien = 'zmiany[sciezka] = set(range(0, ile + 1))'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[bez_konca_linii]'
+
+# Ostatnia linia pliku jest zmieniona.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'zmiany[sciezka] = set(range(1, ile + 1))'
+zamien = 'zmiany[sciezka] = set(range(1, ile))'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_ma_zmienione_linie_od_pierwszej_do_ostatniej[bez_konca_linii]'
+
+
+# --- tools/mutanty_uzupelniajace.py: flaga TEMPLATE jak VERBOSE (k1) ---
+
+# Skrot `re.T` jest rozpoznawany.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'NAZWY_FLAGI_TEMPLATE = ("T", "TEMPLATE")'
+zamien = 'NAZWY_FLAGI_TEMPLATE = ("TEMPLATE",)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_flagi_template_jest_rozpoznawana_takze_gdy_re_jej_nie_ma_jak_w_pythonie_3_13[T]'
+
+# Pelna nazwa `re.TEMPLATE` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'NAZWY_FLAGI_TEMPLATE = ("T", "TEMPLATE")'
+zamien = 'NAZWY_FLAGI_TEMPLATE = ("T",)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_flagi_template_jest_rozpoznawana_takze_gdy_re_jej_nie_ma_jak_w_pythonie_3_13[TEMPLATE]'
+
+# Wartosc flagi TEMPLATE to 1.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'FLAGA_TEMPLATE = 1  #'
+zamien = 'FLAGA_TEMPLATE = 0  #'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow[skrot_template]'
+
+# Wartosc flagi TEMPLATE to 1, nie 2 (re.I).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'FLAGA_TEMPLATE = 1  #'
+zamien = 'FLAGA_TEMPLATE = 2  #'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow[template_jako_liczba]'
+
+# TEMPLATE w sumie z inna flaga to tez blad (bit, nie rownosc).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if flagi & FLAGA_TEMPLATE:'
+zamien = 'if flagi == FLAGA_TEMPLATE:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow[template_w_sumie_z_inna_flaga_po_prawej]'
+
+# TEMPLATE w flagach to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if flagi & FLAGA_TEMPLATE:'
+zamien = 'if False:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow[skrot_template]'
+
+# Komunikat TEMPLATE.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"flaga re.TEMPLATE zmienia dopasowanie wzorca, narzedzie jej nie obsluguje"'
+zamien = '"flaga re.TEMPLATE zmienia dopasowanie wzorca"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow[skrot_template]'
+
+# Nazwa flagi z `re` musi byc z zamknietej listy `T`/`TEMPLATE`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if _nazwa_z_modulu_re(wyrazenie) in NAZWY_FLAGI_TEMPLATE:'
+zamien = 'if (_nazwa_z_modulu_re(wyrazenie) or "").startswith("T"):'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_flagi_podobna_do_template_ale_nie_z_modulu_re_to_flaga_nieodczytywalna[nazwa_podobna_do_template_ale_nie_ta]'
+
+# `x.T` nie jest flaga `re.T`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '    if isinstance(wezel, ast.Attribute) and isinstance(wezel.value, ast.Name) and wezel.value.id == "re":'
+zamien = '    if isinstance(wezel, ast.Attribute) and isinstance(wezel.value, ast.Name):'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_flagi_podobna_do_template_ale_nie_z_modulu_re_to_flaga_nieodczytywalna[skrot_template_nie_z_modulu_re]'
+
+# `a.re.TEMPLATE` (odbiorca nie jest nazwa) nie rzuca `AttributeError`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '    if isinstance(wezel, ast.Attribute) and isinstance(wezel.value, ast.Name) and wezel.value.id == "re":'
+zamien = '    if isinstance(wezel, ast.Attribute) and wezel.value.id == "re":'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_flagi_podobna_do_template_ale_nie_z_modulu_re_to_flaga_nieodczytywalna[template_z_atrybutu_atrybutu_modulu_re]'
+
+# Wyrazenie, ktore nie jest atrybutem (zmienna `FLAGI`), nie ma nazwy z `re` i nie rzuca `AttributeError`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '    if isinstance(wezel, ast.Attribute) and isinstance(wezel.value, ast.Name) and wezel.value.id == "re":'
+zamien = '    if isinstance(wezel.value, ast.Name) and wezel.value.id == "re":'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_nieodczytywalne_z_kodu_to_blad_narzedzia_z_wyrazeniem_a_nie_zero_mutantow[zmienna]'
+
+# Nazwa z `re.NAZWA` to atrybut (`re.I` nie jest TEMPLATE).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        return wezel.attr
+'''
+zamien = '''        return "T"
+'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_odczytywalne_z_wywolania_nie_blokuja_mutantow_kotwic[nazwa_flagi_jako_drugi_argument]'
+
+# Nazwa `re.T` daje wartosc TEMPLATE.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'return FLAGA_TEMPLATE'
+zamien = 'return 0'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_template_w_wywolaniu_to_blad_narzedzia_z_linia_a_nie_zero_mutantow[skrot_template]'
+
+
+# --- tools/mutanty_uzupelniajace.py: flagi globalne po komentarzu i bialym znaku (k2) ---
+
+# Po fladze `x` pomijany jest bialy znak: spacja.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[ \t\n\r\v\f]'
+zamien = '[\t\n\r\v\f]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa[spacja]'
+
+# Po fladze `x` pomijany jest bialy znak: tabulator.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[ \t\n\r\v\f]'
+zamien = '[ \n\r\v\f]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa[tabulator]'
+
+# Po fladze `x` pomijany jest bialy znak: nowa linia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[ \t\n\r\v\f]'
+zamien = '[ \t\r\v\f]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa[nowa_linia]'
+
+# Po fladze `x` pomijany jest bialy znak: powrot karetki.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[ \t\n\r\v\f]'
+zamien = '[ \t\n\v\f]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa[powrot_karetki]'
+
+# Po fladze `x` pomijany jest bialy znak: tabulator pionowy.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[ \t\n\r\v\f]'
+zamien = '[ \t\n\r\f]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa[tabulator_pionowy]'
+
+# Po fladze `x` pomijany jest bialy znak: wysuw strony.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[ \t\n\r\v\f]'
+zamien = '[ \t\n\r\v]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flaga_globalna_po_bialym_znaku_za_flaga_x_zostaje_poza_pierwsza_alternatywa[wysuw_strony]'
+
+# Po fladze `x` pomijany jest tez komentarz grupy.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:[ \t\n\r\v\f]|#[^\n]*)*")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_fladze_x_rozdzielone_komentarzem_albo_bialym_znakiem_zostaja_poza_alternatywa[komentarz_grupy_i_bialy_znak]'
+
+# Po fladze `x` pomijany jest komentarz `#...`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f])*")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_fladze_x_rozdzielone_komentarzem_albo_bialym_znakiem_zostaja_poza_alternatywa[komentarz_do_konca_linii_miedzy_flagami]'
+
+# Komentarz `#...` siega do konca linii, nie jednego znaku.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n])*")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_fladze_x_rozdzielone_komentarzem_albo_bialym_znakiem_zostaja_poza_alternatywa[komentarz_do_konca_linii_miedzy_flagami]'
+
+# Pomijanych elementow moze nie byc (brak daje `None`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+# Pomijanych elementow moze nie byc (`+` daje `None`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)+")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+# Koniec naglowka to koniec ostatniej flagi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'pozycja = koniec = flagi.end()'
+zamien = 'pozycja = flagi.end()'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_komentarzu_grupy_zostaja_poza_pierwsza_alternatywa[komentarz_miedzy_flagami]'
+
+# Po fladze szukamy dalej od jej konca.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'pozycja = koniec = flagi.end()'
+zamien = 'koniec = flagi.end()'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_komentarzu_grupy_zostaja_poza_pierwsza_alternatywa[komentarz_miedzy_flagami]'
+
+# Pusty zbior flag nie przesuwa naglowka.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if flagi.end() > pozycja:'
+zamien = 'if flagi.end() >= pozycja:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+# Zwracamy koniec ostatniej flagi, nie to, co za nia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if pomijane.end() == pozycja:
+            return koniec'''
+zamien = '''        if pomijane.end() == pozycja:
+            return pozycja'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+# Bez flag naglowek ma dlugosc 0.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''    pozycja = 0
+    koniec = 0
+'''
+zamien = '''    pozycja = 0
+    koniec = 1
+'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+
+# --- tools/mutanty_uzupelniajace.py: mutanty zerujace postep konczy straznik, nie zawieszenie (k4) ---
+
+# Indeks, ktory stoi w miejscu, to blad.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if po <= przed:'
+zamien = 'if po < przed:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_indeks_ktory_nie_idzie_do_przodu_to_blad_rozbioru_z_numerem_znaku'
+
+# Indeks o jeden dalej to postep.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if po <= przed:'
+zamien = 'if po <= przed + 1:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_indeks_ktory_nie_idzie_do_przodu_to_blad_rozbioru_z_numerem_znaku'
+
+# Komunikat wskazuje biezacy indeks.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"rozbior wzorca nie posuwa sie naprzod (znak {po})"'
+zamien = 'f"rozbior wzorca nie posuwa sie naprzod (znak {przed})"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_indeks_ktory_nie_idzie_do_przodu_to_blad_rozbioru_z_numerem_znaku'
+
+# Komunikat ma numer znaku.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"rozbior wzorca nie posuwa sie naprzod (znak {po})"'
+zamien = '"rozbior wzorca nie posuwa sie naprzod"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_indeks_ktory_nie_idzie_do_przodu_to_blad_rozbioru_z_numerem_znaku'
+
+# Cyfra osemkowa posuwa rozbior o jeden znak (zero konczy sie straznikiem, nie zawieszeniem).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''            koniec += 1
+            _wymagaj_postepu(przed, koniec)'''
+zamien = '''            koniec += 0
+            _wymagaj_postepu(przed, koniec)'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_ucieczka_osemkowa_przyjmuje_kazda_cyfre_od_0_do_7_na_drugiej_pozycji[0]'
+
+# Usuniete przesuniecie indeksu w petli osemkowej konczy sie straznikiem, nie zawieszeniem.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''            koniec += 1
+            _wymagaj_postepu(przed, koniec)'''
+zamien = '            _wymagaj_postepu(przed, koniec)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_ucieczka_osemkowa_przyjmuje_kazda_cyfre_od_0_do_7_na_drugiej_pozycji[0]'
+
+# Straznik porownuje indeks z poczatku obrotu z indeksem po przesunieciu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''            przed = koniec
+            koniec += 1'''
+zamien = '''            przed = koniec + 1
+            koniec += 1'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_ucieczka_osemkowa_przyjmuje_kazda_cyfre_od_0_do_7_na_drugiej_pozycji[0]'
+
+# Zwykly element klasy zajmuje jeden znak.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        return _koniec_ucieczki(wzorzec, poczatek)
+    return poczatek + 1'''
+zamien = '''        return _koniec_ucieczki(wzorzec, poczatek)
+    return poczatek'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[klasa_znakow]'
+
+# Petla klasy znakow idzie do przodu o element.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        i = _koniec_elementu(wzorzec, i)
+        _wymagaj_postepu(start, i)'''
+zamien = '''        i = start
+        _wymagaj_postepu(start, i)'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[klasa_znakow]'
+
+# Nawias otwierajacy posuwa rozbior.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''            stos.append([dopasowanie.end() if dopasowanie else None, []])
+            i += 1'''
+zamien = '''            stos.append([dopasowanie.end() if dopasowanie else None, []])
+            i += 0'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[grupa_z_alternatywa]'
+
+# Nawias zamykajacy posuwa rozbior.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''                _dopisz_alternatywy(alternatywy, poczatek, kreski, i)
+            i += 1'''
+zamien = '''                _dopisz_alternatywy(alternatywy, poczatek, kreski, i)
+            i += 0'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[grupa_z_alternatywa]'
+
+# Kreska alternatywy posuwa rozbior.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''            stos[-1][1].append(i)
+            i += 1'''
+zamien = '''            stos[-1][1].append(i)
+            i += 0'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[grupa_z_alternatywa]'
+
+# Zwykly znak posuwa rozbior.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''                kotwice.append(i)
+            i += 1'''
+zamien = '''                kotwice.append(i)
+            i += 0'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[kotwice_i_zwykle_znaki]'
+
+# Ucieczka posuwa rozbior.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'i = _koniec_ucieczki(wzorzec, i)'
+zamien = 'i = i'
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[ucieczka]'
+
+# Klasa znakow posuwa rozbior.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'i = _klasa_znakow(wzorzec, i, elementy)'
+zamien = 'i = i'
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[klasa_znakow]'
+
+# Komentarz posuwa rozbior flag globalnych.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'pozycja = pomijane.end()'
+zamien = 'pozycja = pozycja'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_komentarzu_grupy_zostaja_poza_pierwsza_alternatywa[komentarz_przed_pierwsza_flaga]'
+
+# Brak komentarza konczy rozbior flag globalnych.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '        if pomijane.end() == pozycja:'
+zamien = '        if False:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+# Pierwszy znak wzorca nie jest bez postepu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''    poprzedni = i - 1
+'''
+zamien = '''    poprzedni = i
+'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_poprawny_wzorzec_przechodzi_straznik_postepu_w_kazdej_galezi_petli_rozbioru[kotwice_i_zwykle_znaki]'
+
+# Straznik postepu w petli klasy znakow (bez niego stojacy element klasy wiesza narzedzie).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        _wymagaj_postepu(start, i)
+'''
+zamien = ''
+test = 'tests/test_mutanty_uzupelniajace.py::test_element_klasy_znakow_ktory_nie_posuwa_rozbioru_konczy_sie_bledem_a_nie_zawieszeniem'
+
+# Straznik postepu w glownej petli rozbioru.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        _wymagaj_postepu(poprzedni, i)
+'''
+zamien = ''
+test = 'tests/test_mutanty_uzupelniajace.py::test_ucieczka_ktora_nie_posuwa_rozbioru_konczy_sie_bledem_a_nie_zawieszeniem'
+
+# Glowna petla zaczyna za naglowkiem flag globalnych (komentarz w naglowku nie jest rozbierany).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''    i = _koniec_flag_globalnych(wzorzec)
+'''
+zamien = '''    i = 0
+'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_komentarz_miedzy_flagami_po_fladze_x_nie_daje_mutantow_ani_bledu[kotwica_w_komentarzu]'
+
+# Komentarz grupy konczy sie na pierwszym `)` za swoim poczatkiem.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find(")", i)'
+zamien = 'wzorzec.find(")")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_komentarz_grupy_za_zamknieta_grupa_jest_pomijany_od_swojego_nawiasu'
+
+# `\N{` bez `}` to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if zamkniecie < 0:
+            raise _NiepoprawnyWzorzec("brak }'''
+zamien = '''        if False:
+            raise _NiepoprawnyWzorzec("brak }'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_ktorego_narzedzie_nie_umie_rozebrac_to_blad_narzedzia_z_linia_a_nie_zero_mutantow_regex[nazwa_znaku_bez_zamkniecia]'
+
+# Niezamkniety komentarz `(?#` to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''                if zamkniecie < 0:
+                    raise _NiepoprawnyWzorzec("niezamkniety'''
+zamien = '''                if False:
+                    raise _NiepoprawnyWzorzec("niezamkniety'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_ktorego_narzedzie_nie_umie_rozebrac_to_blad_narzedzia_z_linia_a_nie_zero_mutantow_regex[niezamkniety_komentarz_grupy]'
+
+# Straznik porownuje z poprzednim indeksem petli (bez tego zatrzymanie za pierwszym znakiem nie jest wykryte).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        poprzedni = i
+'''
+zamien = '''        poprzedni = 0
+'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_ucieczka_ktora_nie_posuwa_rozbioru_konczy_sie_bledem_a_nie_zawieszeniem'
+
+
+# --- tools/mutanty_uzupelniajace.py: mutanty z sond krytyka (k3) ---
+
+# `\N{nazwa}` konczy sie na pierwszym `}` za ucieczka.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.rfind("}")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_znaku_w_klasie_konczy_sie_na_swoim_nawiasie_a_nie_na_ostatnim_w_wzorcu'
+
+# Pierwszy, nie ostatni `}` za ucieczka.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.rfind("}", poczatek)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_znaku_w_klasie_konczy_sie_na_swoim_nawiasie_a_nie_na_ostatnim_w_wzorcu'
+
+# Szukamy `}`, nie `{`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.find("{", poczatek)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_nazwa_znaku_w_klasie_konczy_sie_na_swoim_nawiasie_a_nie_na_ostatnim_w_wzorcu'
+
+# `}` za `\N{` moze stac tuz za `{` (poczatek + 3).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.find("}", poczatek + 4)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_pusta_nazwa_znaku_konczy_sie_na_nawiasie_klamrowym_tuz_za_otwierajacym'
+
+# `}` za `\N{` moze stac tuz za `{` (poczatek + 3).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.find("}", poczatek + 5)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_pusta_nazwa_znaku_konczy_sie_na_nawiasie_klamrowym_tuz_za_otwierajacym'
+
+# Najkrotsza nazwa `\N{OX}` ma `}` na poczatek + 5.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec.find("}", poczatek)'
+zamien = 'wzorzec.find("}", poczatek + 6)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_najkrotsza_nazwa_znaku_w_klasie_ma_dwa_znaki_i_klasa_ma_dwa_mutanty'
+
+# Flaga grupy `a` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[a-zA-Z]+(?:-[a-zA-Z]+)?:'
+zamien = '[b-zA-Z]+(?:-[a-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[a]'
+
+# Flaga grupy `i` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[a-zA-Z]+(?:-[a-zA-Z]+)?:'
+zamien = '[a-hj-zA-Z]+(?:-[a-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[i]'
+
+# Flaga grupy `m` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[a-zA-Z]+(?:-[a-zA-Z]+)?:'
+zamien = '[a-ln-zA-Z]+(?:-[a-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[m]'
+
+# Flaga grupy `s` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[a-zA-Z]+(?:-[a-zA-Z]+)?:'
+zamien = '[a-rt-zA-Z]+(?:-[a-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[s]'
+
+# Flaga grupy `u` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[a-zA-Z]+(?:-[a-zA-Z]+)?:'
+zamien = '[a-tv-zA-Z]+(?:-[a-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[u]'
+
+# Flaga grupy `x` jest rozpoznawana.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '[a-zA-Z]+(?:-[a-zA-Z]+)?:'
+zamien = '[a-wyzA-Z]+(?:-[a-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[x]'
+
+# Flaga `i` po `-` w grupie `(?u-i:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '(?:-[a-zA-Z]+)?:'
+zamien = '(?:-[a-hj-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[u-i]'
+
+# Flaga `m` po `-` w grupie `(?u-m:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '(?:-[a-zA-Z]+)?:'
+zamien = '(?:-[a-ln-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[u-m]'
+
+# Flaga `s` po `-` w grupie `(?u-s:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '(?:-[a-zA-Z]+)?:'
+zamien = '(?:-[a-rt-zA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[u-s]'
+
+# Flaga `x` po `-` w grupie `(?u-x:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '(?:-[a-zA-Z]+)?:'
+zamien = '(?:-[a-wyzA-Z]+)?:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[u-x]'
+
+# Flaga `i` po `-` w grupie `(?-i:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '|-[a-zA-Z]+:)'
+zamien = '|-[a-hj-zA-Z]+:)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[-i]'
+
+# Flaga `m` po `-` w grupie `(?-m:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '|-[a-zA-Z]+:)'
+zamien = '|-[a-ln-zA-Z]+:)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[-m]'
+
+# Flaga `s` po `-` w grupie `(?-s:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '|-[a-zA-Z]+:)'
+zamien = '|-[a-rt-zA-Z]+:)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[-s]'
+
+# Flaga `x` po `-` w grupie `(?-x:`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '|-[a-zA-Z]+:)'
+zamien = '|-[a-wyzA-Z]+:)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_alternatywy_grupy_z_kazda_dozwolona_flaga_zakresowa_sa_mutowane[-x]'
+
+# Odbiorca `compile` musi byc nazwa (`fabryka().compile` nie jest `re.compile`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'isinstance(funkcja.value, ast.Name)'
+zamien = 'isinstance(funkcja.value, ast.AST)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_compile_wolane_na_czyms_innym_niz_nazwa_re_nie_jest_re_compile_i_nie_rzuca_wyjatku[wywolanie_jako_odbiorca]'
+
+# Odbiorca musi sie nazywac `re`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'and funkcja.value.id == "re"'
+zamien = 'and funkcja.value.id != "re"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_compile_wolane_na_czyms_innym_niz_nazwa_re_nie_jest_re_compile_i_nie_rzuca_wyjatku[nazwa_inna_niz_re_jako_odbiorca]'
+
+
+# --- komunikaty bledow narzedzia ---
+
+# Komunikat: zaden test sie nie wykonal.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{nazwa}: zaden test sie nie wykonal wedlug raportu JUnit - brak dowodu"'
+zamien = 'f"{nazwa}: zaden test sie nie wykonal - brak dowodu"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_raport_junit_bez_wykonanego_testu_ma_komunikat_z_lista_testow_i_brakiem_dowodu'
+
+# Komunikat konczy sie brakiem dowodu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{nazwa}: zaden test sie nie wykonal wedlug raportu JUnit - brak dowodu"'
+zamien = 'f"{nazwa}: zaden test sie nie wykonal wedlug raportu JUnit"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_raport_junit_bez_wykonanego_testu_ma_komunikat_z_lista_testow_i_brakiem_dowodu'
+
+# Komunikat: przyczyna w nawiasie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{nazwa}: brak raportu JUnit {raport}: brak dowodu ({blad})"'
+zamien = 'f"{nazwa}: brak raportu JUnit {raport}: brak dowodu"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_brak_raportu_junit_ma_komunikat_ze_sciezka_raportu_i_przyczyna'
+
+# Komunikat: sciezka raportu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{nazwa}: brak raportu JUnit {raport}: brak dowodu ({blad})"'
+zamien = 'f"{nazwa}: brak raportu JUnit: brak dowodu ({blad})"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_brak_raportu_junit_ma_komunikat_ze_sciezka_raportu_i_przyczyna'
+
+# Komunikat: brak dowodu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{nazwa}: raport JUnit nie jest poprawnym XML: brak dowodu ({blad})"'
+zamien = 'f"{nazwa}: raport JUnit nie jest poprawnym XML ({blad})"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_raport_junit_bedacy_zepsutym_xml_ma_komunikat_z_przyczyna'
+
+# Komunikat: brak dowodu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{nazwa}: raport JUnit ma liczniki nie bedace liczbami: brak dowodu ({blad})"'
+zamien = 'f"{nazwa}: raport JUnit ma liczniki nie bedace liczbami ({blad})"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_raport_junit_z_licznikiem_ktory_nie_jest_liczba_ma_komunikat_z_przyczyna'
+
+# Komunikat: dwukropek po `sparsowac`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{sciezka}: nie da sie sparsowac: {blad!r}"'
+zamien = 'f"{sciezka}: nie da sie sparsowac {blad!r}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_plik_zrodlowy_ktorego_skladnia_jest_zla_ma_komunikat_ze_sciezka_i_przyczyna'
+
+# Komunikat: dwukropek po `kopii`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"{plik}: nie da sie zapisac zrodla w kopii: {blad}"'
+zamien = 'f"{plik}: nie da sie zapisac zrodla w kopii {blad}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_zapis_zrodla_do_nieistniejacego_katalogu_kopii_ma_komunikat_ze_sciezka_pliku'
+
+# Komunikat: katalog testow.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"nie da sie przejrzec katalogu testow: {blad}"'
+zamien = 'f"nie da sie przejrzec katalogu: {blad}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_katalog_testow_ktorego_nie_da_sie_przejrzec_ma_komunikat_z_przyczyna'
+
+# Komunikat: dwukropek.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"nie da sie utworzyc katalogu tymczasowego: {blad}"'
+zamien = 'f"nie da sie utworzyc katalogu tymczasowego {blad}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_kopia_repozytorium_bez_miejsca_na_katalog_tymczasowy_ma_komunikat_z_przyczyna'
+
+# Komunikat: sciezka kopii.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'f"nie da sie usunac katalogu tymczasowego {kopia}: {blad}"'
+zamien = 'f"nie da sie usunac katalogu tymczasowego: {blad}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_kopia_repozytorium_ktorej_nie_da_sie_usunac_ma_komunikat_ze_sciezka_kopii_i_przyczyna'
+
+# Komentarz grupy ma dowolna dlugosc.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_komentarzu_grupy_zostaja_poza_pierwsza_alternatywa[komentarz_przed_pierwsza_flaga]'
+
+# Komentarz grupy konczy sie nawiasem `)`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*|[ \t\n\r\v\f]|#[^\n]*)*")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_globalne_po_komentarzu_grupy_zostaja_poza_pierwsza_alternatywa[komentarz_miedzy_flagami]'
+
+# Komentarz grupy zaczyna sie od `(?#`: kazdy inny nawias `(?...)` konczy naglowek.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?#[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+zamien = 'POMIJANE_MIEDZY_FLAGAMI = re.compile(r"(?:\(\?[^)]*\)|[ \t\n\r\v\f]|#[^\n]*)*")'
+test = 'tests/test_mutanty_uzupelniajace.py::test_koniec_flag_globalnych_to_indeks_za_ostatnia_flaga_a_nie_za_tym_co_po_niej'
+
+
+# --- tools/mutanty_uzupelniajace.py: `re.sub`, `re.match` i reszta jak `re.compile` (k1) ---
+
+# Flagi `re.sub` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (3, ("pattern", "repl", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[sub]'
+
+# Flagi `re.sub` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (5, ("pattern", "repl", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[sub]'
+
+# `re.sub` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (4, ("pattern", "repl", "string", "count")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[sub]'
+
+# `re.sub` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (4, ("pattern", "repl", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[sub]'
+
+# `re.sub` nie przyjmuje `maxsplit=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (4, ("pattern", "repl", "string", "count", "flags", "maxsplit")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[sub]'
+
+# Flagi `re.subn` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (3, ("pattern", "repl", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[subn]'
+
+# Flagi `re.subn` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (5, ("pattern", "repl", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[subn]'
+
+# `re.subn` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (4, ("pattern", "repl", "string", "count")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[subn]'
+
+# `re.subn` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (4, ("pattern", "repl", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[subn]'
+
+# `re.subn` nie przyjmuje `maxsplit=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (4, ("pattern", "repl", "string", "count", "flags", "maxsplit")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[subn]'
+
+# Flagi `re.split` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (2, ("pattern", "string", "maxsplit", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[split]'
+
+# Flagi `re.split` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (4, ("pattern", "string", "maxsplit", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[split]'
+
+# `re.split` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (3, ("pattern", "string", "maxsplit")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[split]'
+
+# `re.split` przyjmuje argument `maxsplit=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (3, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[split]'
+
+# `re.split` nie przyjmuje `count=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (3, ("pattern", "string", "maxsplit", "flags", "count")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[split]'
+
+# Flagi `re.match` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"match": (2, ("pattern", "string", "flags")),'
+zamien = '"match": (1, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[match]'
+
+# Flagi `re.match` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"match": (2, ("pattern", "string", "flags")),'
+zamien = '"match": (3, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[match]'
+
+# `re.match` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"match": (2, ("pattern", "string", "flags")),'
+zamien = '"match": (2, ("pattern", "string")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[match]'
+
+# `re.match` nie przyjmuje `repl=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"match": (2, ("pattern", "string", "flags")),'
+zamien = '"match": (2, ("pattern", "string", "flags", "repl")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[match]'
+
+# Flagi `re.search` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"search": (2, ("pattern", "string", "flags")),'
+zamien = '"search": (1, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[search]'
+
+# Flagi `re.search` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"search": (2, ("pattern", "string", "flags")),'
+zamien = '"search": (3, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[search]'
+
+# `re.search` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"search": (2, ("pattern", "string", "flags")),'
+zamien = '"search": (2, ("pattern", "string")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[search]'
+
+# `re.search` nie przyjmuje `count=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"search": (2, ("pattern", "string", "flags")),'
+zamien = '"search": (2, ("pattern", "string", "flags", "count")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[search]'
+
+# Flagi `re.fullmatch` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"fullmatch": (2, ("pattern", "string", "flags")),'
+zamien = '"fullmatch": (1, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[fullmatch]'
+
+# Flagi `re.fullmatch` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"fullmatch": (2, ("pattern", "string", "flags")),'
+zamien = '"fullmatch": (3, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[fullmatch]'
+
+# `re.fullmatch` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"fullmatch": (2, ("pattern", "string", "flags")),'
+zamien = '"fullmatch": (2, ("pattern", "string")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[fullmatch]'
+
+# `re.fullmatch` nie przyjmuje `maxsplit=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"fullmatch": (2, ("pattern", "string", "flags")),'
+zamien = '"fullmatch": (2, ("pattern", "string", "flags", "maxsplit")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[fullmatch]'
+
+# Flagi `re.findall` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"findall": (2, ("pattern", "string", "flags")),'
+zamien = '"findall": (1, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[findall]'
+
+# Flagi `re.findall` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"findall": (2, ("pattern", "string", "flags")),'
+zamien = '"findall": (3, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[findall]'
+
+# `re.findall` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"findall": (2, ("pattern", "string", "flags")),'
+zamien = '"findall": (2, ("pattern", "string")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[findall]'
+
+# `re.findall` nie przyjmuje `repl=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"findall": (2, ("pattern", "string", "flags")),'
+zamien = '"findall": (2, ("pattern", "string", "flags", "repl")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[findall]'
+
+# Flagi `re.finditer` stoja wyzej niz argument przed nimi.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"finditer": (2, ("pattern", "string", "flags")),'
+zamien = '"finditer": (1, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_argument_pozycyjny_przed_miejscem_flag_nie_jest_flaga[finditer]'
+
+# Flagi `re.finditer` stoja nizej niz kolejny argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"finditer": (2, ("pattern", "string", "flags")),'
+zamien = '"finditer": (3, ("pattern", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[finditer]'
+
+# `re.finditer` przyjmuje `flags=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"finditer": (2, ("pattern", "string", "flags")),'
+zamien = '"finditer": (2, ("pattern", "string")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[finditer]'
+
+# `re.finditer` nie przyjmuje `count=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"finditer": (2, ("pattern", "string", "flags")),'
+zamien = '"finditer": (2, ("pattern", "string", "flags", "count")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_cudzym_argumentem_nazwanym_to_blad_narzedzia[finditer]'
+
+# Tylko funkcje z listy maja wzorzec jako pierwszy argument.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        and odbiorca.attr in RE_FUNKCJE_Z_WZORCEM
+'''
+zamien = ''
+test = 'tests/test_mutanty_uzupelniajace.py::test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia[funkcja_re_bez_wzorca]'
+
+# Odbiorca musi byc nazwa (`a.re.sub` nie jest `re.sub`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        and isinstance(odbiorca.value, ast.Name)
+        and odbiorca.value.id == "re"'''
+zamien = '        and odbiorca.value.id == "re"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia[atrybut_atrybutu_modulu_re]'
+
+# Odbiorca musi sie nazywac `re`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '        and odbiorca.value.id == "re"'
+zamien = '        and odbiorca.value.id != "re"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia[inna_nazwa_niz_re]'
+
+# Odbiorca musi byc nazwa (`fabryka().sub` nie jest `re.sub`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '        and isinstance(odbiorca.value, ast.Name)'
+zamien = '        and isinstance(odbiorca.value, ast.AST)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia[wywolanie_jako_odbiorca]'
+
+# Wezel, ktory nie jest wywolaniem, nie ma wzorca (bez tego `AttributeError` na `Constant`).
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''    if not isinstance(wywolanie, ast.Call):
+        return None
+    odbiorca = wywolanie.func'''
+zamien = '''    if False:
+        return None
+    odbiorca = wywolanie.func'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_literalny_w_re_funkcji_ma_te_same_mutanty_kotwic_co_w_re_compile[sub]'
+
+# Gwiazdka w argumentach pozycyjnych to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if any(isinstance(arg, ast.Starred) for arg in wywolanie.args):
+            raise _NiepoprawnyWzorzec(f"nie'''
+zamien = '''        if False:
+            raise _NiepoprawnyWzorzec(f"nie'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[gwiazdka_po_literale]'
+
+# Komunikat gwiazdki w argumentach `re.<funkcja>`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 're.{nazwa} (gwiazdka w argumentach pozycyjnych)"'
+zamien = 're.{nazwa}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[sama_gwiazdka]'
+
+# `**kw` i cudzy argument nazwany to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '        if any(slowo.arg not in dozwolone for slowo in wywolanie.keywords):'
+zamien = '        if False:'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[rozwiniecie_slownika]'
+
+# Komunikat nieznanego argumentu nazwanego.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 're.{nazwa} (nieznany argument nazwany)"'
+zamien = 're.{nazwa}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[samo_rozwiniecie_slownika]'
+
+# Powtorzony `pattern=` to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if len(jawne) > 1:
+            raise _NiepoprawnyWzorzec(f"nie'''
+zamien = '''        if False:
+            raise _NiepoprawnyWzorzec(f"nie'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[powtorzony_pattern]'
+
+# Pojedynczy `pattern=` nie jest bledem.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if len(jawne) > 1:
+            raise _NiepoprawnyWzorzec(f"nie'''
+zamien = '''        if len(jawne) > 0:
+            raise _NiepoprawnyWzorzec(f"nie'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[sub]'
+
+# Komunikat powtorzonego `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 're.{nazwa} (powtorzony argument pattern=)"'
+zamien = 're.{nazwa}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[powtorzony_pattern_ze_zmiennymi]'
+
+# `pattern=` razem z argumentem pozycyjnym to blad narzedzia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if jawne and wywolanie.args:
+            raise _NiepoprawnyWzorzec(f"nie'''
+zamien = '''        if False:
+            raise _NiepoprawnyWzorzec(f"nie'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[pattern_i_pozycyjny]'
+
+# Sam argument pozycyjny nie jest bledem.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''        if jawne and wywolanie.args:
+            raise _NiepoprawnyWzorzec(f"nie'''
+zamien = '''        if jawne or wywolanie.args:
+            raise _NiepoprawnyWzorzec(f"nie'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_literalny_w_re_funkcji_ma_te_same_mutanty_kotwic_co_w_re_compile[sub]'
+
+# Komunikat `pattern=` razem z argumentem pozycyjnym.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 're.{nazwa} (pattern= razem z argumentem pozycyjnym)"'
+zamien = 're.{nazwa}"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_z_argumentami_ktorych_narzedzie_nie_umie_odczytac_to_blad_z_linia_wywolania[pattern_i_pozycyjny_zmienne]'
+
+# Wzorzec podany jako `pattern=` jest czytany.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzor = jawne[0].value if jawne else (wywolanie.args[0] if wywolanie.args else None)'
+zamien = 'wzor = None if jawne else (wywolanie.args[0] if wywolanie.args else None)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_ze_wzorcem_nieliteralnym_to_miejsce_do_recznego_sprawdzenia[zmienna_jako_pattern-sub]'
+
+# Wywolanie bez wzorca nie ma pierwszego argumentu.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzor = jawne[0].value if jawne else (wywolanie.args[0] if wywolanie.args else None)'
+zamien = 'wzor = jawne[0].value if jawne else wywolanie.args[0]'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia[re_funkcja_bez_argumentow]'
+
+# Blad flag wskazuje linie literalu wzorca, nie wywolania.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''            miejsce = wzor.lineno
+            flagi = ['''
+zamien = '            flagi = ['
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[sub]'
+
+# Flagi podane jako `flags=` sa czytane.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''                *(slowo.value for slowo in wywolanie.keywords if slowo.arg == "flags"),
+'''
+zamien = ''
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[sub]'
+
+# Flagi sa przekazywane do `_flagi_wywolania`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'zastepcze = ast.Call(func=odbiorca, args=[wzor, *flagi], keywords=[])'
+zamien = 'zastepcze = ast.Call(func=odbiorca, args=[wzor], keywords=[])'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[sub]'
+
+# Flagi wywolania wchodza do mutacji wzorca.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'return wzor, _flagi_wywolania(zastepcze)'
+zamien = 'return wzor, 0'
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[sub]'
+
+# Blad z `re.<funkcja>` niesie linie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''return wzor, _flagi_wywolania(zastepcze)
+    except _NiepoprawnyWzorzec as przyczyna:
+        przyczyna.linia = miejsce
+'''
+zamien = '''return wzor, _flagi_wywolania(zastepcze)
+    except _NiepoprawnyWzorzec as przyczyna:
+'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_flagi_re_funkcji_sa_czytane_z_jej_miejsca_a_nie_z_miejsca_flag_re_compile[sub]'
+
+# Wywolanie bez wzorca nie jest miejscem do sprawdzenia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''return wzor, _flagi_wywolania(zastepcze)
+    except _NiepoprawnyWzorzec as przyczyna:
+        przyczyna.linia = miejsce
+        raise
+    return wywolanie if wzor is not None else None'''
+zamien = '''return wzor, _flagi_wywolania(zastepcze)
+    except _NiepoprawnyWzorzec as przyczyna:
+        przyczyna.linia = miejsce
+        raise
+    return wywolanie'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_wywolanie_ktore_nie_jest_re_funkcja_z_wzorcem_nie_daje_bledu_ani_miejsca_do_sprawdzenia[re_funkcja_bez_argumentow]'
+
+# Funkcje `re` sa rozbierane.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'wzorzec_funkcji = _wzorzec_re_funkcji(wezel)'
+zamien = 'wzorzec_funkcji = None'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_literalny_w_re_funkcji_ma_te_same_mutanty_kotwic_co_w_re_compile[sub]'
+
+# Nieliteralny wzorzec w `re.<funkcja>` to miejsce do sprawdzenia.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nieliteralne.append(wzorzec_funkcji.lineno)'
+zamien = 'pass'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_ze_wzorcem_nieliteralnym_to_miejsce_do_recznego_sprawdzenia[zmienna-sub]'
+
+# Literal w `re.<funkcja>` ma mutanty.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'zamiary += _zamiary_regex(*wzorzec_funkcji)'
+zamien = 'pass'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_literalny_w_re_funkcji_ma_te_same_mutanty_kotwic_co_w_re_compile[sub]'
+
+
+# --- komunikaty bledow narzedzia: przyczyna w tekscie ---
+
+# Przyczyna braku raportu w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '''brak dowodu ({blad})") from blad
+    except ET.ParseError'''
+zamien = '''brak dowodu ()") from blad
+    except ET.ParseError'''
+test = 'tests/test_mutanty_uzupelniajace.py::test_brak_raportu_junit_ma_komunikat_ze_sciezka_raportu_i_przyczyna'
+
+# Przyczyna zepsutego XML w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nie jest poprawnym XML: brak dowodu ({blad})"'
+zamien = 'nie jest poprawnym XML: brak dowodu ()"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_raport_junit_bedacy_zepsutym_xml_ma_komunikat_z_przyczyna'
+
+# Przyczyna zlego licznika w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nie bedace liczbami: brak dowodu ({blad})"'
+zamien = 'nie bedace liczbami: brak dowodu ()"'
+test = 'tests/test_mutanty_uzupelniajace.py::test_raport_junit_z_licznikiem_ktory_nie_jest_liczba_ma_komunikat_z_przyczyna'
+
+# Przyczyna bledu skladni w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nie da sie sparsowac: {blad!r}"'
+zamien = 'nie da sie sparsowac: "'
+test = 'tests/test_mutanty_uzupelniajace.py::test_plik_zrodlowy_ktorego_skladnia_jest_zla_ma_komunikat_ze_sciezka_i_przyczyna'
+
+# Przyczyna bledu zapisu w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nie da sie zapisac zrodla w kopii: {blad}"'
+zamien = 'nie da sie zapisac zrodla w kopii: "'
+test = 'tests/test_mutanty_uzupelniajace.py::test_zapis_zrodla_do_nieistniejacego_katalogu_kopii_ma_komunikat_ze_sciezka_pliku'
+
+# Przyczyna awarii `ast.unparse` zrodla bazowego w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nie da sie odtworzyc zrodla (ast.unparse): {blad!r}"'
+zamien = 'nie da sie odtworzyc zrodla (ast.unparse): "'
+test = 'tests/test_mutanty_uzupelniajace.py::test_awaria_unparse_przy_opisie_i_przy_odtwarzaniu_mutanta_to_blad_narzedzia_z_wlasnym_komunikatem[zrodlo_bazowe-RecursionError]'
+
+# Etap awarii `ast.unparse` w komunikacie.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'nie da sie odtworzyc zrodla (ast.unparse)'
+zamien = 'nie da sie odtworzyc (ast.unparse)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_awaria_unparse_przy_opisie_i_przy_odtwarzaniu_mutanta_to_blad_narzedzia_z_wlasnym_komunikatem[zrodlo_bazowe-MemoryError]'
+
+
+# --- tools/mutanty_zmian.py: samotny `\r` jako koniec linii to blad narzedzia (k5) ---
+
+# Zrodlo czytane bez tlumaczenia koncow linii (inaczej samotny `\r` znika).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'open(encoding="utf-8", newline="")'
+zamien = 'open(encoding="utf-8", newline=None)'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Samotny `\r` to blad.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'if znaleziony is not None:'
+zamien = 'if znaleziony is None:'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Numer linii liczy sie do poczatku znaku, nie za nim.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'zrodlo[: znaleziony.start()]'
+zamien = 'zrodlo[: znaleziony.end()]'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Numer linii samotnego `\r` to numer AST.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))'
+zamien = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()])) + 1'
+test = 'tests/test_mutanty_zmian.py::test_samotny_cr_w_dalszej_linii_jest_zgloszony_pod_numerem_ast'
+
+# Numer linii samotnego `\r` to numer AST (bez odejmowania).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))'
+zamien = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()])) - 1'
+test = 'tests/test_mutanty_zmian.py::test_samotny_cr_w_dalszej_linii_jest_zgloszony_pod_numerem_ast'
+
+# `\r\n` nie jest samotnym `\r`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'SAMOTNY_CR = re.compile(r"\r(?!\n)")'
+zamien = 'SAMOTNY_CR = re.compile(r"\r")'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_koncami_linii_crlf_ma_te_same_numery_linii_co_git'
+
+# Szukamy `\r`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'SAMOTNY_CR = re.compile(r"\r(?!\n)")'
+zamien = 'SAMOTNY_CR = re.compile(r"\n")'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Komunikat zaczyna sie od sciezki i numeru linii.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'f"{sciezka}:{numer}: samotny \\r jako koniec linii'
+zamien = 'f"{numer}: samotny \\r jako koniec linii'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# `wzorce_z_odciskami` czyta zrodlo bez tlumaczenia koncow linii.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''        if not sciezka.endswith(".py") or not _w_zrodlach(sciezka, source_paths):
+            continue
+        try:
+            zrodlo = zrodlo_z_dysku(korzen, sciezka)'''
+zamien = '''        if not sciezka.endswith(".py") or not _w_zrodlach(sciezka, source_paths):
+            continue
+        try:
+            zrodlo = (korzen / sciezka).read_text(encoding="utf-8")'''
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# `bez_mutantow` czyta zrodlo bez tlumaczenia koncow linii.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '''        if not sciezka.endswith(".py") or not sciezka.startswith("src/"):
+            continue
+        try:
+            zrodlo = zrodlo_z_dysku(korzen, sciezka)'''
+zamien = '''        if not sciezka.endswith(".py") or not sciezka.startswith("src/"):
+            continue
+        try:
+            zrodlo = (korzen / sciezka).read_text(encoding="utf-8")'''
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_nie_daje_zielonego_wyniku_w_zgloszeniu_linii_bez_mutantow'
+
+# `_nowe_pliki` czyta zrodlo bez tlumaczenia koncow linii.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'tresc = zrodlo_z_dysku(korzen, sciezka)'
+zamien = 'tresc = (korzen / sciezka).read_text(encoding="utf-8")'
+test = 'tests/test_mutanty_zmian.py::test_nowy_plik_z_samotnym_cr_to_blad_narzedzia'
+
+# Numer linii liczy `linie_zrodla`, nie `splitlines()`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))'
+zamien = 'numer = len(zrodlo[: znaleziony.start()].splitlines())'
+test = 'tests/test_mutanty_zmian.py::test_numer_linii_w_bledzie_samotnego_cr_liczy_konce_linii_jak_ast[form_feed_nie_jest_koncem_linii]'
+
+# Numer linii liczy sie do poczatku samotnego `\r`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))'
+zamien = 'numer = len(linie_zrodla(zrodlo[: znaleziony.end()]))'
+test = 'tests/test_mutanty_zmian.py::test_numer_linii_w_bledzie_samotnego_cr_liczy_konce_linii_jak_ast[po_lf_samotny_cr_liczony_jako_koniec_linii]'
+
+# Numer linii to liczba linii prefiksu (bez odejmowania).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))'
+zamien = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()])) - 1'
+test = 'tests/test_mutanty_zmian.py::test_numer_linii_w_bledzie_samotnego_cr_liczy_konce_linii_jak_ast[po_lf_samotny_cr_liczony_jako_koniec_linii]'
+
+# Numer linii to liczba linii prefiksu (bez dodawania).
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()]))'
+zamien = 'numer = len(linie_zrodla(zrodlo[: znaleziony.start()])) + 1'
+test = 'tests/test_mutanty_zmian.py::test_numer_linii_w_bledzie_samotnego_cr_liczy_konce_linii_jak_ast[po_lf_samotny_cr_liczony_jako_koniec_linii]'
+
+# Komunikat samotnego `\r`: powod z numerami linii z `git diff`.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = 'samotny \\r jako koniec linii - numery linii z git diff '
+zamien = 'samotny \\r jako koniec linii - '
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Komunikat samotnego `\r`: rozjazd z AST.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '"nie zgadzaja sie z AST; zamien go na \\n"'
+zamien = '"zamien go na \\n"'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Komunikat samotnego `\r`: wskazowka, czym zastapic.
+[[mutant]]
+plik = "tools/mutanty_zmian.py"
+szukaj = '"nie zgadzaja sie z AST; zamien go na \\n"'
+zamien = '"nie zgadzaja sie z AST"'
+test = 'tests/test_mutanty_zmian.py::test_plik_z_samotnym_cr_to_blad_narzedzia_z_numerem_linii_zamiast_cichego_pominiecia_funkcji'
+
+# Wzorzec bajtowy w `re.<funkcja>` jest rozbierany.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'isinstance(wzor.value, (str, bytes))'
+zamien = 'isinstance(wzor.value, str)'
+test = 'tests/test_mutanty_uzupelniajace.py::test_wzorzec_bajtowy_w_re_funkcji_ma_mutanty_kotwic_jako_bajty[sub]'
+
+# Stala nietekstowa jako wzorzec `re.<funkcja>` (`re.match(None, 'a')`) to miejsce do sprawdzenia recznie, nie TypeError.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if isinstance(wzor, ast.Constant) and isinstance(wzor.value, (str, bytes)):'
+zamien = 'if isinstance(wzor, ast.Constant):'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_ze_wzorcem_nieliteralnym_to_miejsce_do_recznego_sprawdzenia[stala_none-match]'
+
+# Stala nietekstowa jako wzorzec `re.compile` (`re.compile(None)`) to miejsce do sprawdzenia recznie, nie TypeError.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = 'if isinstance(pierwszy, ast.Constant) and isinstance(pierwszy.value, (str, bytes)):'
+zamien = 'if isinstance(pierwszy, ast.Constant):'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_compile_ze_wzorcem_nieliteralnym_w_dotknietym_zakresie_to_miejsce_do_recznego_sprawdzenia[stala_none]'
+
+# `re.sub` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (4, ("repl", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[sub]'
+
+# `re.sub` przyjmuje argument `repl=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (4, ("pattern", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[sub]'
+
+# `re.sub` przyjmuje argument `count=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"sub": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"sub": (4, ("pattern", "repl", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[sub]'
+
+# `re.subn` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (4, ("repl", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[subn]'
+
+# `re.subn` przyjmuje argument `repl=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (4, ("pattern", "string", "count", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[subn]'
+
+# `re.subn` przyjmuje argument `count=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"subn": (4, ("pattern", "repl", "string", "count", "flags")),'
+zamien = '"subn": (4, ("pattern", "repl", "string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[subn]'
+
+# `re.split` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (3, ("string", "maxsplit", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[split]'
+
+# `re.split` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"split": (3, ("pattern", "string", "maxsplit", "flags")),'
+zamien = '"split": (3, ("pattern", "maxsplit", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[split]'
+
+# `re.match` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"match": (2, ("pattern", "string", "flags")),'
+zamien = '"match": (2, ("string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[match]'
+
+# `re.match` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"match": (2, ("pattern", "string", "flags")),'
+zamien = '"match": (2, ("pattern", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[match]'
+
+# `re.search` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"search": (2, ("pattern", "string", "flags")),'
+zamien = '"search": (2, ("string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[search]'
+
+# `re.search` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"search": (2, ("pattern", "string", "flags")),'
+zamien = '"search": (2, ("pattern", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[search]'
+
+# `re.fullmatch` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"fullmatch": (2, ("pattern", "string", "flags")),'
+zamien = '"fullmatch": (2, ("string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[fullmatch]'
+
+# `re.fullmatch` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"fullmatch": (2, ("pattern", "string", "flags")),'
+zamien = '"fullmatch": (2, ("pattern", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[fullmatch]'
+
+# `re.findall` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"findall": (2, ("pattern", "string", "flags")),'
+zamien = '"findall": (2, ("string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[findall]'
+
+# `re.findall` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"findall": (2, ("pattern", "string", "flags")),'
+zamien = '"findall": (2, ("pattern", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[findall]'
+
+# `re.finditer` przyjmuje argument `pattern=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"finditer": (2, ("pattern", "string", "flags")),'
+zamien = '"finditer": (2, ("string", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[finditer]'
+
+# `re.finditer` przyjmuje argument `string=`.
+[[mutant]]
+plik = "tools/mutanty_uzupelniajace.py"
+szukaj = '"finditer": (2, ("pattern", "string", "flags")),'
+zamien = '"finditer": (2, ("pattern", "flags")),'
+test = 'tests/test_mutanty_uzupelniajace.py::test_re_funkcja_przyjmuje_wszystkie_swoje_argumenty_nazwane[finditer]'

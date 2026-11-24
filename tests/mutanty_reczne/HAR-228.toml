@@ -1,0 +1,1709 @@
+# Tabela recznych mutantow HAR-228: tryb `--pokrycie-kod3` i wpisy `[[rownowazny]]` w
+# tools/mutanty_reczne.py oraz krok `pokrycie linii bez mutantów` w .github/workflows/mutation.yml
+# (miejsca, ktorych mutmut nie mutuje: tools/ i .github/). Wiersz: element | mutacja | test, ktory
+# po mutacji oblewa.
+#
+# Mutacje rownowazne (zadne wejscie nie odroznia wersji), bez wiersza:
+# - `poczatek = tresc.index(szukaj)` -> `tresc.rindex(szukaj)` w `_zakres_linii_szukaj`: funkcja
+#   dostaje `szukaj` wylacznie po `_wymagaj_dokladnie_raz`, ktore rzuca `BladNarzedzia` dla liczby
+#   wystapien != 1, a przy jednym wystapieniu `index` i `rindex` zwracaja to samo przesuniecie.
+# - `if not isinstance(wpis, dict)` w `_wpis_na_mutanta` oraz wszystko, czego HAR-228 nie zmienil
+#   (wiersze `[[mutant]]`, `_zabity`, kopiowanie repo): ich wiersze leza w tabelach HAR-150/HAR-225.
+
+# --- stale i typ wpisu [[rownowazny]] ---------------------------------------------------
+
+# Pole `uzasadnienie` jest znanym polem wpisu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'POLA_ROWNOWAZNEGO = ("plik", "linia_tekst", "uzasadnienie")'
+zamien = 'POLA_ROWNOWAZNEGO = ("plik", "linia_tekst")'
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Pole `linia_tekst` jest znanym polem wpisu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'POLA_ROWNOWAZNEGO = ("plik", "linia_tekst", "uzasadnienie")'
+zamien = 'POLA_ROWNOWAZNEGO = ("plik", "uzasadnienie")'
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Pole `plik` jest znanym polem wpisu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'POLA_ROWNOWAZNEGO = ("plik", "linia_tekst", "uzasadnienie")'
+zamien = 'POLA_ROWNOWAZNEGO = ("linia_tekst", "uzasadnienie")'
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Naglowek listy kodu 3: dokladnie ta tresc, co w mutanty_zmian.py (litera w gore).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'NAGLOWEK_BEZ_MUTANTOW = "bez mutantów — sprawdź ręcznie"'
+zamien = 'NAGLOWEK_BEZ_MUTANTOW = "bez mutantów — sprawdź automatycznie"'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Naglowek listy kodu 3: myslnik to pauza `—`, nie dywiz.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'NAGLOWEK_BEZ_MUTANTOW = "bez mutantów — sprawdź ręcznie"'
+zamien = 'NAGLOWEK_BEZ_MUTANTOW = "bez mutantów - sprawdź ręcznie"'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Wpis `[[rownowazny]]` jest niezmienny po wczytaniu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''@dataclass(frozen=True)
+class Rownowazny:'''
+zamien = '''@dataclass
+class Rownowazny:'''
+test = "tests/test_mutanty_reczne.py::test_wpis_rownowazny_jest_niezmienny_po_wczytaniu"
+
+# Kolejnosc pol wpisu: plik, linia_tekst, uzasadnienie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''class Rownowazny:
+    plik: str
+    linia_tekst: str
+    uzasadnienie: str'''
+zamien = '''class Rownowazny:
+    plik: str
+    uzasadnienie: str
+    linia_tekst: str'''
+test = "tests/test_mutanty_reczne.py::test_wpis_rownowazny_ma_pola_w_kolejnosci_plik_linia_tekst_uzasadnienie"
+
+# --- wspolna regula sciezki wzglednej ----------------------------------------------------
+
+# Sciezka bezwzgledna jest odrzucana (zostaje tylko `..`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if sciezka.is_absolute() or ".." in sciezka.parts:'
+zamien = 'if ".." in sciezka.parts:'
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Segment `..` jest odrzucany (zostaje tylko sciezka bezwzgledna).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if sciezka.is_absolute() or ".." in sciezka.parts:'
+zamien = "if sciezka.is_absolute():"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat sciezki wiersza/wpisu na pelna tresc.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "musi byc sciezka wzgledna w repozytorium"
+zamien = "musi byc sciezka bezwzgledna w repozytorium"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Wiersz `[[mutant]]` dalej sprawdza sciezke przez wspolna funkcje.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    _wymagaj_sciezki_wzglednej(wpis["plik"])
+    if wpis["szukaj"] == wpis["zamien"]:'''
+zamien = '''    pass
+    if wpis["szukaj"] == wpis["zamien"]:'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawna_tabela_konczy_sie_bledem_narzedzia"
+
+# Wpis `[[rownowazny]]` sprawdza sciezke.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    _wymagaj_sciezki_wzglednej(wpis["plik"])
+    return Rownowazny('''
+zamien = '''    pass
+    return Rownowazny('''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# --- walidacja wpisu [[rownowazny]] --------------------------------------------------------
+
+# Wpis, ktory nie jest tabela TOML, jest bledem dziedziny (nie wyjatkiem `set(5)`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not isinstance(wpis, dict):
+        raise BladNarzedzia("wpis rownowazny nie jest tabela")'''
+zamien = '''if False:
+        raise BladNarzedzia("wpis rownowazny nie jest tabela")'''
+test = "tests/test_mutanty_reczne.py::test_rownowazny_bedacy_lista_liczb_a_nie_tabel_to_blad_narzedzia_o_wpisie"
+
+# Komunikat wpisu bez tabeli.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wpis rownowazny nie jest tabela"
+zamien = "wpis rownowazny nie jest slownikiem"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_bedacy_lista_liczb_a_nie_tabel_to_blad_narzedzia_o_wpisie"
+
+# Nieznane pole wpisu nie jest ignorowane.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nieznane = sorted(set(wpis) - set(POLA_ROWNOWAZNEGO))"
+zamien = "nieznane = []"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat o nieznanym polu wskazuje pierwsze alfabetycznie (sortowanie rosnace).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nieznane = sorted(set(wpis) - set(POLA_ROWNOWAZNEGO))"
+zamien = "nieznane = sorted(set(wpis) - set(POLA_ROWNOWAZNEGO), reverse=True)"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Gałąź nieznanego pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if nieznane:
+        raise BladNarzedzia(f"wpis rownowazny: nieznany klucz {nieznane[0]!r}")'''
+zamien = '''if False:
+        raise BladNarzedzia(f"wpis rownowazny: nieznany klucz {nieznane[0]!r}")'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat wskazuje pierwsze nieznane pole, nie ostatnie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wpis rownowazny: nieznany klucz {nieznane[0]!r}"
+zamien = "wpis rownowazny: nieznany klucz {nieznane[-1]!r}"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Tresc komunikatu o nieznanym polu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wpis rownowazny: nieznany klucz"
+zamien = "wpis rownowazny: zly klucz"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Sprawdzane sa wszystkie trzy pola, w tym ostatnie (`uzasadnienie`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "for pole in POLA_ROWNOWAZNEGO:"
+zamien = "for pole in POLA_ROWNOWAZNEGO[:2]:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Brak pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''for pole in POLA_ROWNOWAZNEGO:
+        if pole not in wpis:'''
+zamien = '''for pole in POLA_ROWNOWAZNEGO:
+        if False:'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat braku pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wpis rownowazny: brak pola"
+zamien = "wpis rownowazny: nie ma pola"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Typ pola: wartosc niebedaca napisem jest odrzucana (inaczej `.strip()` rzuca AttributeError).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not isinstance(wartosc, str):"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat zlego typu pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nie jest tekstem"
+zamien = "nie jest napisem"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Pole z samych bialych znakow jest puste (bez `strip()` przechodzi).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not wartosc.strip():"
+zamien = "if not wartosc:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Puste pole jest odrzucane.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not wartosc.strip():"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat pustego pola.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "{pole!r} jest pusty"
+zamien = "{pole!r} jest pusta"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Wartosc `plik` nie zamienia sie miejscami z `linia_tekst` w wpisie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'return Rownowazny(wpis["plik"], wpis["linia_tekst"], wpis["uzasadnienie"])'
+zamien = 'return Rownowazny(wpis["linia_tekst"], wpis["plik"], wpis["uzasadnienie"])'
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# `linia_tekst` nie zamienia sie miejscami z `uzasadnienie`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'return Rownowazny(wpis["plik"], wpis["linia_tekst"], wpis["uzasadnienie"])'
+zamien = 'return Rownowazny(wpis["plik"], wpis["uzasadnienie"], wpis["linia_tekst"])'
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# --- odczyt tabeli z wpisami [[rownowazny]] ------------------------------------------------
+
+# Klucz najwyzszego poziomu `rownowazny` jest dozwolony.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''nieznane = sorted(set(dane) - {"mutant", "rownowazny"})'''
+zamien = '''nieznane = sorted(set(dane) - {"mutant"})'''
+test = "tests/test_mutanty_reczne.py::test_pokrycie_z_dwoch_tabel_sumuje_sie_wiersz_mutant_z_jednej_i_rownowazny_z_drugiej"
+
+# Inne klucze najwyzszego poziomu nadal sa bledem (zbior dozwolonych nie rosnie).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''nieznane = sorted(set(dane) - {"mutant", "rownowazny"})'''
+zamien = '''nieznane = sorted(set(dane) - {"mutant", "rownowazny", "inny"})'''
+test = "tests/test_mutanty_reczne.py::test_nieznany_klucz_najwyzszego_poziomu_tabeli_to_blad_narzedzia_takze_obok_rownowazny"
+
+# Tabela bez wpisow `[[rownowazny]]` ma pusta liste, nie slownik.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'rownowazne = dane.get("rownowazny", [])'
+zamien = 'rownowazne = dane.get("rownowazny", {})'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# `rownowazny` niebedacy lista (liczba, napis, tabela) jest bledem tabeli.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not isinstance(rownowazne, list):
+        raise BladNarzedzia("rownowazny musi byc lista [[rownowazny]]")'''
+zamien = '''if False:
+        raise BladNarzedzia("rownowazny musi byc lista [[rownowazny]]")'''
+test = "tests/test_mutanty_reczne.py::test_rownowazny_ktory_nie_jest_lista_tabel_to_blad_narzedzia_w_trybie_pokrycia"
+
+# Komunikat `rownowazny` niebedacego lista.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "rownowazny musi byc lista [[rownowazny]]"
+zamien = "rownowazny musi byc lista"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_ktory_nie_jest_lista_tabel_to_blad_narzedzia_w_trybie_pokrycia"
+
+# Wpisy `[[rownowazny]]` wracaja z `_surowe_wpisy`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return wpisy, rownowazne"
+zamien = "return wpisy, []"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Blad tabeli niesie sciezke i zachowuje przyczyne (lancuch `from blad`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'raise BladNarzedzia(f"{sciezka}: {blad}") from blad'
+zamien = 'raise BladNarzedzia(f"{sciezka}: {blad}")'
+test = "tests/test_mutanty_reczne.py::test_blad_tabeli_z_rownowaznymi_zachowuje_przyczyne_bez_nazwy_tabeli_i_numeru_wpisu"
+
+# Blad wpisu `[[rownowazny]]` niesie sciezke, numer wpisu i przyczyne.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'raise BladNarzedzia(f"{sciezka}: rownowazny {numer}: {blad}") from blad'
+zamien = 'raise BladNarzedzia(f"{sciezka}: rownowazny {numer}: {blad}")'
+test = "tests/test_mutanty_reczne.py::test_blad_tabeli_z_rownowaznymi_zachowuje_przyczyne_bez_nazwy_tabeli_i_numeru_wpisu"
+
+# Numeracja wpisow `[[rownowazny]]` od 1 (odczyt tabeli).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''for numer, wpis in enumerate(rownowazne, start=1):
+        try:
+            wpisane.append(_wpis_na_rownowaznego(wpis))'''
+zamien = '''for numer, wpis in enumerate(rownowazne, start=0):
+        try:
+            wpisane.append(_wpis_na_rownowaznego(wpis))'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Numer w komunikacie to numer wpisu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'f"{sciezka}: rownowazny {numer}: {blad}"'
+zamien = 'f"{sciezka}: rownowazny {numer + 1}: {blad}"'
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Komunikat bledu wpisu zawiera slowo `rownowazny` i dwukropek (nie tylko przyczyne).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'f"{sciezka}: rownowazny {numer}: {blad}"'
+zamien = 'f"{sciezka}: {blad}"'
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Poprawny wpis trafia na liste zwracana z odczytu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wpisane.append(_wpis_na_rownowaznego(wpis))"
+zamien = "_wpis_na_rownowaznego(wpis)"
+test = "tests/test_mutanty_reczne.py::test_wpis_rownowazny_jest_niezmienny_po_wczytaniu"
+
+# Odczyt zwraca wpisy `[[rownowazny]]` (nie pusta liste).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return mutanty, wpisane"
+zamien = "return mutanty, []"
+test = "tests/test_mutanty_reczne.py::test_wpis_rownowazny_jest_niezmienny_po_wczytaniu"
+
+# `wczytaj_tabele` zwraca wiersze `[[mutant]]`, nie wpisy `[[rownowazny]]`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return wczytaj_tabele_z_rownowaznymi(sciezka)[0]"
+zamien = "return wczytaj_tabele_z_rownowaznymi(sciezka)[1]"
+test = "tests/test_mutanty_reczne.py::test_tryb_wykonywania_nie_wykonuje_wpisow_rownowazny_i_zwraca_wynik_samych_mutantow"
+
+# --- `--sprawdz-wszystkie` i wpisy [[rownowazny]] -------------------------------------------
+
+# Numeracja bledow wpisow `[[rownowazny]]` od 1.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''for numer, wpis in enumerate(rownowazne, start=1):
+        try:
+            _wpis_na_rownowaznego(wpis)'''
+zamien = '''for numer, wpis in enumerate(rownowazne, start=0):
+        try:
+            _wpis_na_rownowaznego(wpis)'''
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_podaje_pelna_linie_wadliwego_rownowazny_z_numerem_wpisu_rownowazny"
+
+# Wpisy `[[rownowazny]]` sa sprawdzane takze przy zbieraniu bledow tabeli.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''            _wpis_na_rownowaznego(wpis)
+        except BladNarzedzia as blad:'''
+zamien = '''            pass
+        except BladNarzedzia as blad:'''
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_podaje_pelna_linie_wadliwego_rownowazny_z_numerem_wpisu_rownowazny"
+
+# Adres bledu wpisu `[[rownowazny]]` ma slowo `rownowazny` i numer.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'bledy.append(f"{nazwa} rownowazny #{numer}: {blad}")'
+zamien = 'bledy.append(f"{nazwa} #{numer}: {blad}")'
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_podaje_pelna_linie_wadliwego_rownowazny_z_numerem_wpisu_rownowazny"
+
+# Pierwszy blad wpisu `[[rownowazny]]` nie przerywa zbierania nastepnych.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'bledy.append(f"{nazwa} rownowazny #{numer}: {blad}")'
+zamien = '''bledy.append(f"{nazwa} rownowazny #{numer}: {blad}")
+            break'''
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_podaje_kazdy_wadliwy_rownowazny_osobna_linia_w_kolejnosci_wpisow"
+
+# --- format listy kodu 3 (wejscie) ----------------------------------------------------------
+
+# Lista nieczytelna jako UTF-8 / nieistniejaca: blad z nazwa pliku listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'f"lista kodu 3 {sciezka}"'
+zamien = "str(sciezka)"
+test = "tests/test_mutanty_reczne.py::test_brak_pliku_listy_to_blad_narzedzia_z_nazwa_pliku"
+
+# Lista jest dzielona na linie `splitlines()` (bez pustego elementu po koncowym enterze).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '.decode("utf-8").splitlines()'
+zamien = '.decode("utf-8").split("\n")'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Pusty plik listy to blad o braku naglowka (nie IndexError przy `linie[0]`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if linie[:1] != [NAGLOWEK_BEZ_MUTANTOW]:"
+zamien = "if linie[0] != NAGLOWEK_BEZ_MUTANTOW:"
+test = "tests/test_mutanty_reczne.py::test_pusty_plik_listy_to_blad_narzedzia_o_braku_naglowka_a_nie_zero_linii_do_pokrycia"
+
+# Brak naglowka jest bledem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if linie[:1] != [NAGLOWEK_BEZ_MUTANTOW]:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_zly_naglowek_listy_to_blad_narzedzia_mimo_pokrytych_wpisow"
+
+# Naglowek jest porownywany dokladnie, a nie jako przedrostek/wystapienie.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if linie[:1] != [NAGLOWEK_BEZ_MUTANTOW]:"
+zamien = "if NAGLOWEK_BEZ_MUTANTOW not in linie[:1] and not linie[:1][0].startswith(NAGLOWEK_BEZ_MUTANTOW):"
+test = "tests/test_mutanty_reczne.py::test_zly_naglowek_listy_to_blad_narzedzia_mimo_pokrytych_wpisow"
+
+# Komunikat zlego naglowka.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "pierwsza linia musi byc dokladnie"
+zamien = "pierwsza linia musi zawierac"
+test = "tests/test_mutanty_reczne.py::test_lista_bez_naglowka_to_blad_narzedzia_mimo_pokrytych_wpisow"
+
+# Naglowek nie jest wpisem listy (wpisy zaczynaja sie od drugiej linii).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "enumerate(linie[1:], start=2)"
+zamien = "enumerate(linie, start=2)"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Numer linii listy w bledzie: naglowek to linia 1, pierwszy wpis linia 2 (nie 1).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "enumerate(linie[1:], start=2)"
+zamien = "enumerate(linie[1:], start=1)"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Numer linii listy w bledzie: nie 3 dla pierwszego wpisu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "enumerate(linie[1:], start=2)"
+zamien = "enumerate(linie[1:], start=3)"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Lista bez wpisow to brak dowodu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not wpisy:
+        raise BladNarzedzia("brak dowodu: lista kodu 3 bez wpisów")'''
+zamien = '''if False:
+        raise BladNarzedzia("brak dowodu: lista kodu 3 bez wpisów")'''
+test = "tests/test_mutanty_reczne.py::test_lista_z_samym_naglowkiem_to_blad_narzedzia_brak_dowodu"
+
+# Komunikat braku wpisow.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "brak dowodu: lista kodu 3 bez wpisów"
+zamien = "brak dowodu: lista kodu 3 jest pusta"
+test = "tests/test_mutanty_reczne.py::test_lista_z_samym_naglowkiem_to_blad_narzedzia_brak_dowodu"
+
+# Nazwa pliku to wszystko przed OSTATNIM dwukropkiem (plik z dwukropkiem w nazwie).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'plik, dwukropek, cyfry = linia.rpartition(":")'
+zamien = 'plik, dwukropek, cyfry = linia.partition(":")'
+test = "tests/test_mutanty_reczne.py::test_plik_z_dwukropkiem_w_nazwie_jest_rozpoznany_po_ostatnim_dwukropku_listy"
+
+# Wpis bez dwukropka jest bledem postaci (nie bledem pustej sciezki).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not dwukropek:
+        raise BladNarzedzia('''
+zamien = '''if False:
+        raise BladNarzedzia('''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Komunikat zlej postaci wpisu: numer linii listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "lista kodu 3, linia {numer}: wpis"
+zamien = "lista kodu 3, linia {numer + 1}: wpis"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Komunikat zlej postaci wpisu: tresc.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "nie ma postaci plik:linia"
+zamien = "nie ma formy plik:linia"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Pusta nazwa pliku w wpisie jest bledem (tylko ten czlon odrzuca `:3`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not plik or sciezka.is_absolute() or ".." in sciezka.parts:'''
+zamien = '''if sciezka.is_absolute() or ".." in sciezka.parts:'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Sciezka bezwzgledna w wpisie jest bledem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not plik or sciezka.is_absolute() or ".." in sciezka.parts:'''
+zamien = '''if not plik or ".." in sciezka.parts:'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Segment `..` w wpisie jest bledem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''if not plik or sciezka.is_absolute() or ".." in sciezka.parts:'''
+zamien = '''if not plik or sciezka.is_absolute():'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Komunikat zlej sciezki w wpisie: numer linii listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "lista kodu 3, linia {numer}: plik"
+zamien = "lista kodu 3, linia {numer + 1}: plik"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Komunikat zlej sciezki w wpisie: tresc.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "musi byc niepusta sciezka wzgledna bez segmentu"
+zamien = "musi byc sciezka wzgledna bez segmentu"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Numer linii: cyfry ASCII (cyfry arabsko-indyjskie sa `isdigit`, ale nie ASCII).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:"
+zamien = "if not cyfry.isdigit() or int(cyfry) < 1:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Numer linii: same cyfry (napis `abc` jest ASCII, ale nie jest liczba).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:"
+zamien = "if not cyfry.isascii() or int(cyfry) < 1:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Numer linii: oba warunki naraz (`and`, nie `or`): `+3` jest ASCII, a `٣` jest cyfra.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:"
+zamien = "if not (cyfry.isascii() or cyfry.isdigit()) or int(cyfry) < 1:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Numer linii >= 1: zero jest bledem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:"
+zamien = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 0:"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Numer linii >= 1: jedynka jest poprawna.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:"
+zamien = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) <= 1:"
+test = "tests/test_mutanty_reczne.py::test_linia_ze_znakami_spoza_ascii_przed_szukaj_nie_przesuwa_numerow_linii"
+
+# Numer linii: zakres `< 1` jest osobnym warunkiem obok sprawdzenia cyfr.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (cyfry.isascii() and cyfry.isdigit()) or int(cyfry) < 1:"
+zamien = "if not (cyfry.isascii() and cyfry.isdigit()):"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Komunikat zlego numeru: numer linii listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "lista kodu 3, linia {numer}: numer linii"
+zamien = "lista kodu 3, linia {numer + 1}: numer linii"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Komunikat zlego numeru: tresc.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "musi byc liczba calkowita >= 1 (same cyfry ASCII)"
+zamien = "musi byc liczba calkowita >= 0 (same cyfry ASCII)"
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_wpis_listy_kodu_3_to_blad_narzedzia_z_numerem_linii_listy_i_powodem"
+
+# Wpis daje numer linii jako liczbe (nie napis i nie +1).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return plik, int(cyfry)"
+zamien = "return plik, int(cyfry) + 1"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# --- zakres linii obejmowany przez `szukaj` -----------------------------------------------------
+
+# Strażnik "szukaj dokladnie raz" w zakresie linii: bez niego wielokrotne wystapienie daje pierwsze.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''    szukaj = _wymagaj_dokladnie_raz(tresc, mutant)
+    poczatek = tresc.index(szukaj)'''
+zamien = '''    szukaj = mutant.szukaj.encode("utf-8")
+    poczatek = tresc.index(szukaj)'''
+test = "tests/test_mutanty_reczne.py::test_szukaj_wystepujacy_w_pliku_z_listy_inaczej_niz_raz_to_blad_narzedzia[kilka_wystapien]"
+
+# Pierwsza linia zakresu liczona od 1 (nie od 0).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pierwsza = tresc[:poczatek].count(b"\n") + 1'
+zamien = 'pierwsza = tresc[:poczatek].count(b"\n") + 0'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Pierwsza linia zakresu nie jest przesunieta o dwa.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pierwsza = tresc[:poczatek].count(b"\n") + 1'
+zamien = 'pierwsza = tresc[:poczatek].count(b"\n") + 2'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Znaki nowej linii przed `szukaj` zliczane do jego pierwszego znaku, nie wlacznie z nim.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pierwsza = tresc[:poczatek].count(b"\n") + 1'
+zamien = 'pierwsza = tresc[: poczatek + 1].count(b"\n") + 1'
+test = "tests/test_mutanty_reczne.py::test_szukaj_zaczynajacy_sie_znakiem_nowej_linii_obejmuje_linie_ktora_ten_znak_konczy"
+
+# Liczone sa znaki nowej linii `\n`, nie `\r`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'pierwsza = tresc[:poczatek].count(b"\n") + 1'
+zamien = 'pierwsza = tresc[:poczatek].count(b"\r") + 1'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Koniec zakresu: `szukaj` konczacy sie znakiem nowej linii nie obejmuje nastepnej linii (`- 1`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\n")'
+zamien = 'tresc[poczatek : poczatek + len(szukaj) - 0].count(b"\n")'
+test = "tests/test_mutanty_reczne.py::test_szukaj_konczacy_sie_znakiem_nowej_linii_nie_obejmuje_nastepnej_linii"
+
+# Koniec zakresu: ostatni znak `szukaj` nalezy do zakresu (`- 1`, nie `- 2`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\n")'
+zamien = 'tresc[poczatek : poczatek + len(szukaj) - 2].count(b"\n")'
+test = "tests/test_mutanty_reczne.py::test_kazda_linia_wieloliniowego_szukaj_od_pierwszej_do_ostatniej_jest_pokryta"
+
+# Koniec zakresu: dlugosc `szukaj` w bajtach, nie w znakach (polskie litery).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\n")'
+zamien = 'tresc[poczatek : poczatek + len(mutant.szukaj) - 1].count(b"\n")'
+test = "tests/test_mutanty_reczne.py::test_szukaj_z_polskimi_znakami_w_pierwszej_linii_obejmuje_nastepna_linie_ale_nie_kolejna"
+
+# Koniec zakresu: liczony od pierwszego znaku `szukaj`, wlacznie z nim.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\n")'
+zamien = 'tresc[poczatek + 1 : poczatek + len(szukaj) - 1].count(b"\n")'
+test = "tests/test_mutanty_reczne.py::test_szukaj_zaczynajacy_sie_znakiem_nowej_linii_obejmuje_linie_ktora_ten_znak_konczy"
+
+# Koniec zakresu: zliczane `\n`, nie `\r`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\n")'
+zamien = 'tresc[poczatek : poczatek + len(szukaj) - 1].count(b"\r")'
+test = "tests/test_mutanty_reczne.py::test_wszystkie_linie_zakresu_wieloliniowego_szukaj_liczone_sa_do_podsumowania"
+
+# Koniec zakresu doliczany do poczatku (`+`, nie `-`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "ostatnia = pierwsza + tresc["
+zamien = "ostatnia = pierwsza - tresc["
+test = "tests/test_mutanty_reczne.py::test_wszystkie_linie_zakresu_wieloliniowego_szukaj_liczone_sa_do_podsumowania"
+
+# Zakres obejmuje ostatnia linie (`ostatnia + 1`, nie `ostatnia`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return range(pierwsza, ostatnia + 1)"
+zamien = "return range(pierwsza, ostatnia)"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Zakres nie obejmuje linii za ostatnia (`ostatnia + 1`, nie `+ 2`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return range(pierwsza, ostatnia + 1)"
+zamien = "return range(pierwsza, ostatnia + 2)"
+test = "tests/test_mutanty_reczne.py::test_linia_tuz_za_koncem_zakresu_szukaj_nie_jest_pokryta"
+
+# --- pokrycie linii: pliki z listy, wiersze, wpisy [[rownowazny]] ------------------------------
+
+# Plik z listy jest czytany z dysku tylko raz, choc lista ma kilka jego linii.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if plik not in tresci:"
+zamien = "if True:"
+test = "tests/test_mutanty_reczne.py::test_plik_wymieniony_na_liscie_kilka_razy_jest_czytany_z_dysku_raz"
+
+# Plik z listy jest czytany (nie pominiety).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if plik not in tresci:"
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Plik z listy jest czytany wzgledem korzenia, nie biezacego katalogu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tresci[plik] = _odczytaj_utf8(korzen / plik, plik)"
+zamien = "tresci[plik] = _odczytaj_utf8(Path(plik), plik)"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Blad odczytu pliku z listy niesie jego nazwe z listy (nie sciezke bezwzgledna).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tresci[plik] = _odczytaj_utf8(korzen / plik, plik)"
+zamien = "tresci[plik] = _odczytaj_utf8(korzen / plik, str(korzen / plik))"
+test = "tests/test_mutanty_reczne.py::test_plik_z_listy_ktorego_nie_ma_na_dysku_to_blad_narzedzia_z_nazwa_pliku"
+
+# Linie pliku dzielone po `\n` (nie `splitlines()`, ktore tnie takze po \x0c).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'linie_plikow[plik] = tresci[plik].decode("utf-8").split("\n")'
+zamien = 'linie_plikow[plik] = tresci[plik].decode("utf-8").splitlines()'
+test = "tests/test_mutanty_reczne.py::test_znak_podzialu_strony_w_pliku_nie_przesuwa_numerow_linii_ani_ich_liczby"
+
+# Pusty element po koncowym enterze jest odrzucany.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if linie_plikow[plik][-1] == "":'
+zamien = "if False:"
+test = "tests/test_mutanty_reczne.py::test_numer_linii_wiekszy_niz_liczba_linii_pliku_to_blad_narzedzia_a_nie_niepokryta_linia"
+
+# Ostatnia linia bez koncowego entera nie jest odrzucana.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if linie_plikow[plik][-1] == "":'
+zamien = "if True:"
+test = "tests/test_mutanty_reczne.py::test_ostatnia_linia_pliku_jest_dopuszczalna_niezaleznie_od_koncowego_znaku_nowej_linii"
+
+# Odrzucany jest ostatni element, nie pierwszy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "linie_plikow[plik].pop()"
+zamien = "linie_plikow[plik].pop(0)"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Ostatni element sprawdzany jest ostatnim indeksem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'if linie_plikow[plik][-1] == "":'
+zamien = 'if linie_plikow[plik][0] == "":'
+test = "tests/test_mutanty_reczne.py::test_numer_linii_wiekszy_niz_liczba_linii_pliku_to_blad_narzedzia_a_nie_niepokryta_linia"
+
+# Numer rowny liczbie linii jest dopuszczalny (`>`, nie `>=`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if numer > len(linie_plikow[plik]):"
+zamien = "if numer >= len(linie_plikow[plik]):"
+test = "tests/test_mutanty_reczne.py::test_ostatnia_linia_pliku_jest_dopuszczalna_niezaleznie_od_koncowego_znaku_nowej_linii"
+
+# Numer o jeden za duzy to blad.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if numer > len(linie_plikow[plik]):"
+zamien = "if numer > len(linie_plikow[plik]) + 1:"
+test = "tests/test_mutanty_reczne.py::test_numer_linii_wiekszy_niz_liczba_linii_pliku_to_blad_narzedzia_a_nie_niepokryta_linia"
+
+# Komunikat zbyt duzego numeru: nazwa pliku i numer.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'f"{plik}:{numer}: plik ma tylko'
+zamien = 'f"{plik}: plik ma tylko'
+test = "tests/test_mutanty_reczne.py::test_numer_linii_wiekszy_niz_liczba_linii_pliku_to_blad_narzedzia_a_nie_niepokryta_linia"
+
+# Komunikat zbyt duzego numeru: liczba linii pliku.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "plik ma tylko {len(linie_plikow[plik])} linii"
+zamien = "plik ma tylko {len(linie_plikow[plik]) + 1} linii"
+test = "tests/test_mutanty_reczne.py::test_numer_linii_wiekszy_niz_liczba_linii_pliku_to_blad_narzedzia_a_nie_niepokryta_linia"
+
+# Zakresy liczone tylko dla wierszy plikow z listy (inaczej KeyError dla pliku spoza listy).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "for m in mutanty if m.plik in tresci"
+zamien = "for m in mutanty if True"
+test = "tests/test_mutanty_reczne.py::test_wiersz_dla_pliku_spoza_listy_nie_jest_sprawdzany_nawet_gdy_jego_szukaj_wystepuje_dwa_razy"
+
+# Wiersz pokrywa linie tylko we wlasnym pliku (`p == plik`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(p == plik and numer in zakres for p, zakres in zakresy)"
+zamien = "any(numer in zakres for p, zakres in zakresy)"
+test = "tests/test_mutanty_reczne.py::test_wiersz_jednego_pliku_z_listy_nie_pokrywa_tej_samej_linii_drugiego_pliku_z_listy"
+
+# Wiersz pokrywa tylko linie ze swojego zakresu.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(p == plik and numer in zakres for p, zakres in zakresy)"
+zamien = "any(p == plik and True for p, zakres in zakresy)"
+test = "tests/test_mutanty_reczne.py::test_linia_tuz_przed_poczatkiem_zakresu_szukaj_nie_jest_pokryta"
+
+# Plik i zakres lacznie (`and`, nie `or`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(p == plik and numer in zakres for p, zakres in zakresy)"
+zamien = "any(p == plik or numer in zakres for p, zakres in zakresy)"
+test = "tests/test_mutanty_reczne.py::test_linia_tuz_przed_poczatkiem_zakresu_szukaj_nie_jest_pokryta"
+
+# Tekst linii dla `[[rownowazny]]` pochodzi z linii o numerze N (indeks N-1).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tekst = linie_plikow[plik][numer - 1].strip()"
+zamien = "tekst = linie_plikow[plik][numer].strip()"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_nie_pokrywa_innej_linii_o_innym_tekscie_w_tym_samym_pliku"
+
+# Tekst linii pliku jest przycinany z obu stron (nie tylko z lewej).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tekst = linie_plikow[plik][numer - 1].strip()"
+zamien = "tekst = linie_plikow[plik][numer - 1].lstrip()"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Tekst linii pliku jest przycinany z obu stron (nie tylko z prawej).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tekst = linie_plikow[plik][numer - 1].strip()"
+zamien = "tekst = linie_plikow[plik][numer - 1].rstrip()"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Tekst linii pliku jest przycinany.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "tekst = linie_plikow[plik][numer - 1].strip()"
+zamien = "tekst = linie_plikow[plik][numer - 1]"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Wpis `[[rownowazny]]` pokrywa linie tylko we wlasnym pliku.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.linia_tekst.strip() == tekst for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_dla_innego_pliku_z_tym_samym_tekstem_nie_pokrywa_linii"
+
+# Plik i tekst lacznie (`and`, nie `or`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.plik == plik or r.linia_tekst.strip() == tekst for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_z_innym_tekstem_linii_nie_pokrywa_linii"
+
+# Tekst wpisu jest przycinany (bialy znak we wpisie nie odrzuca zgodnosci).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.plik == plik and r.linia_tekst == tekst for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_we_wpisie_ma_biale_znaki_a_linia_pliku_ich_nie_ma"
+
+# Tekst wpisu jest przycinany z obu stron (nie tylko z lewej).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.plik == plik and r.linia_tekst.lstrip() == tekst for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_we_wpisie_ma_biale_znaki_a_linia_pliku_ich_nie_ma"
+
+# Tekst wpisu jest przycinany z obu stron (nie tylko z prawej).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.plik == plik and r.linia_tekst.rstrip() == tekst for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_we_wpisie_ma_biale_znaki_a_linia_pliku_ich_nie_ma"
+
+# Tekst wpisu musi byc rowny tekstowi linii, a nie jego fragmentem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.plik == plik and r.linia_tekst.strip() in tekst for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_pokrywa_linie_tylko_gdy_tekst_jest_identyczny_a_nie_gdy_jest_jej_fragmentem"
+
+# Tekst wpisu musi byc rowny tekstowi linii, a nie jej nadzbiorem.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "any(r.plik == plik and r.linia_tekst.strip() == tekst for r in rownowazne)"
+zamien = "any(r.plik == plik and tekst in r.linia_tekst.strip() for r in rownowazne)"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_pokrywa_linie_tylko_gdy_tekst_jest_identyczny_a_nie_gdy_jest_jej_fragmentem"
+
+# Linia jest pokryta, gdy pokrywa ja wiersz LUB wpis (`or`, nie `and`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (przez_mutant or przez_rownowazny):"
+zamien = "if not (przez_mutant and przez_rownowazny):"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Sam wiersz `[[mutant]]` wystarcza do pokrycia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (przez_mutant or przez_rownowazny):"
+zamien = "if not przez_rownowazny:"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Sam wpis `[[rownowazny]]` wystarcza do pokrycia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if not (przez_mutant or przez_rownowazny):"
+zamien = "if not przez_mutant:"
+test = "tests/test_mutanty_reczne.py::test_linia_rownowazna_jest_pokryta_gdy_tekst_linii_pliku_ma_wciecie_a_wpis_go_nie_ma"
+
+# Wpis niepokrytej linii to (plik, numer) w kolejnosci listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "niepokryte.append((plik, numer))"
+zamien = "niepokryte.append((plik, numer + 1))"
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# --- tryb `--pokrycie-kod3`: wynik i kody -----------------------------------------------------------
+
+# Lista jest czytana wzgledem korzenia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wpisy = wczytaj_liste_kodu_3(korzen / lista)"
+zamien = "wpisy = wczytaj_liste_kodu_3(lista)"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Tabele sa czytane wzgledem korzenia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "wczytaj_tabele_z_rownowaznymi(korzen / tabela)"
+zamien = "wczytaj_tabele_z_rownowaznymi(tabela)"
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Wiersze `[[mutant]]` z kilku tabel sa sumowane.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "mutanty.extend(z_tabeli)"
+zamien = "mutanty = list(z_tabeli)"
+test = "tests/test_mutanty_reczne.py::test_pokrycie_z_dwoch_tabel_sumuje_sie_wiersz_mutant_z_jednej_i_rownowazny_z_drugiej"
+
+# Wpisy `[[rownowazny]]` z kilku tabel sa sumowane.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "rownowazne.extend(rownowazne_z_tabeli)"
+zamien = "rownowazne = list(rownowazne_z_tabeli)"
+test = "tests/test_mutanty_reczne.py::test_rownowazny_z_pierwszej_tabeli_nie_ginie_gdy_druga_tabela_ma_tylko_wiersz_mutant"
+
+# Niepokryta linia idzie na stdout jako `plik:linia`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''print(f"{plik}:{numer}")'''
+zamien = '''print(f"{plik} {numer}")'''
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Niepokryta linia nie idzie na stderr.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''print(f"{plik}:{numer}")'''
+zamien = '''print(f"{plik}:{numer}", file=sys.stderr)'''
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Niepokryte linie daja kod 1 i komunikat (gałąź `if niepokryte`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "    if niepokryte:"
+zamien = "    if False:"
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Komunikat liczy niepokryte linie, nie wszystkie linie listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "brak dowodu: {len(niepokryte)} linii"
+zamien = "brak dowodu: {len(wpisy)} linii"
+test = "tests/test_mutanty_reczne.py::test_na_wyjsciu_sa_tylko_niepokryte_linie_a_komunikat_liczy_tylko_je"
+
+# Komunikat wskazuje regule w .claude/rules.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '" - .claude/rules/test-odroznia-regule.md"'
+zamien = '" - .claude/rules/inna-regula.md"'
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Komunikat idzie na stderr.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''            file=sys.stderr,
+        )
+        return 1'''
+zamien = '''        )
+        return 1'''
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Brak dowodu to kod 1, nie 2.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        return 1
+    print(f"pokryto'''
+zamien = '''        return 2
+    print(f"pokryto'''
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Podsumowanie pokrycia liczy wszystkie linie listy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'print(f"pokryto {len(wpisy)} linii bez mutantów")'
+zamien = 'print(f"pokryto {len(niepokryte)} linii bez mutantów")'
+test = "tests/test_mutanty_reczne.py::test_wszystkie_linie_zakresu_wieloliniowego_szukaj_liczone_sa_do_podsumowania"
+
+# Tresc podsumowania pokrycia.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '{len(wpisy)} linii bez mutantów")'
+zamien = '{len(wpisy)} linii z mutantami")'
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Pokrycie wszystkich linii to kod 0.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''linii bez mutantów")
+    return 0'''
+zamien = '''linii bez mutantów")
+    return 1'''
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# --- wiersz polecen --------------------------------------------------------------------------------
+
+# Opcja `--pokrycie-kod3` ma te nazwe.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        "--pokrycie-kod3",
+        type=Path,'''
+zamien = '''        "--pokrycie-kod-3",
+        type=Path,'''
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Lista dochodzi do trybu pokrycia jako `Path` (bez `type=Path` byloby napisem).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        "--pokrycie-kod3",
+        type=Path,'''
+zamien = '''        "--pokrycie-kod3",'''
+test = "tests/test_mutanty_reczne.py::test_wiersz_polecen_przekazuje_trybowi_pokrycia_korzen_liste_i_tabele_jako_sciezki"
+
+# Brak opcji to `None` (tryb pokrycia wylaczony).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        default=None,
+        metavar="LISTA",'''
+zamien = '''        default="",
+        metavar="LISTA",'''
+test = "tests/test_mutanty_reczne.py::test_wywolanie_bez_tabeli_i_bez_opcji_pokrycia_to_blad_wiersza_polecen_o_braku_tabeli"
+
+# Nazwa argumentu w pomocy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'metavar="LISTA",'
+zamien = 'metavar="PLIK",'
+test = "tests/test_mutanty_reczne.py::test_pomoc_opisuje_opcje_pokrycia_kodu_3_z_nazwa_argumentu_lista"
+
+# Opis w pomocy.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'help="HAR-228: sprawdz, ze kazda linia z wyjscia kodu 3 mutanty_zmian.py ma wiersz [[mutant]] albo [[rownowazny]]",'
+zamien = 'help="HAR-228: sprawdz pokrycie",'
+test = "tests/test_mutanty_reczne.py::test_pomoc_opisuje_opcje_pokrycia_kodu_3_z_nazwa_argumentu_lista"
+
+# Kolizja trybow: warunek dotyczy opcji pokrycia (`is not None`, nie `is None`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.pokrycie_kod3 is not None and (args.sprawdz_wszystkie or args.czy_front):"
+zamien = "if args.pokrycie_kod3 is None and (args.sprawdz_wszystkie or args.czy_front):"
+test = "tests/test_mutanty_reczne.py::test_pokrycie_kod3_razem_z_sprawdz_wszystkie_to_blad_wiersza_polecen"
+
+# Kolizja trybow tylko przy innym trybie (`and`, nie `or`).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.pokrycie_kod3 is not None and (args.sprawdz_wszystkie or args.czy_front):"
+zamien = "if args.pokrycie_kod3 is not None or (args.sprawdz_wszystkie or args.czy_front):"
+test = "tests/test_mutanty_reczne.py::test_pokrycie_kod3_bez_czy_front_i_bez_sprawdz_wszystkie_dziala_z_tabela_pozycyjna"
+
+# Kolizja z `--sprawdz-wszystkie`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.pokrycie_kod3 is not None and (args.sprawdz_wszystkie or args.czy_front):"
+zamien = "if args.pokrycie_kod3 is not None and (args.czy_front):"
+test = "tests/test_mutanty_reczne.py::test_pokrycie_kod3_razem_z_sprawdz_wszystkie_to_blad_wiersza_polecen"
+
+# Kolizja z `--czy-front`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "if args.pokrycie_kod3 is not None and (args.sprawdz_wszystkie or args.czy_front):"
+zamien = "if args.pokrycie_kod3 is not None and (args.sprawdz_wszystkie):"
+test = "tests/test_mutanty_reczne.py::test_pokrycie_kod3_razem_z_czy_front_to_blad_wiersza_polecen"
+
+# Komunikat kolizji trybow na pelna tresc.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = 'parser.error("--pokrycie-kod3 nie laczy sie z --sprawdz-wszystkie ani z --czy-front")'
+zamien = 'parser.error("--pokrycie-kod3 nie laczy sie z --sprawdz-wszystkie")'
+test = "tests/test_mutanty_reczne.py::test_pokrycie_kod3_razem_z_czy_front_to_blad_wiersza_polecen"
+
+# Pokrycie bez tabel pozycyjnych jest dozwolone (`pokrycie_kod3 is None` blokuje tylko brak obu).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        if args.pokrycie_kod3 is None:"
+zamien = "        if True:"
+test = "tests/test_mutanty_reczne.py::test_bez_zadnej_tabeli_kazda_linia_z_listy_jest_niepokryta_w_kolejnosci_listy"
+
+# Bez pokrycia i bez tabel nadal jest blad wiersza polecen.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "        if args.pokrycie_kod3 is None:"
+zamien = "        if False:"
+test = "tests/test_mutanty_reczne.py::test_wywolanie_bez_tabeli_i_bez_opcji_pokrycia_to_blad_wiersza_polecen_o_braku_tabeli"
+
+# Tryb pokrycia jest wybierany po opcji.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''        if args.pokrycie_kod3 is not None:
+            return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)'''
+zamien = '''        if False:
+            return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)'''
+test = "tests/test_mutanty_reczne.py::test_linia_w_jednoliniowym_szukaj_wiersza_jest_pokryta_i_narzedzie_podaje_liczbe_linii"
+
+# Tryb pokrycia dostaje tabele z wiersza polecen.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)"
+zamien = "return pokrycie_kod3(korzen, args.pokrycie_kod3, [])"
+test = "tests/test_mutanty_reczne.py::test_wiersz_polecen_przekazuje_trybowi_pokrycia_korzen_liste_i_tabele_jako_sciezki"
+
+# Tryb pokrycia dostaje korzen z opcji `--korzen`.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)"
+zamien = "return pokrycie_kod3(Path.cwd(), args.pokrycie_kod3, args.tabele)"
+test = "tests/test_mutanty_reczne.py::test_wiersz_polecen_przekazuje_trybowi_pokrycia_korzen_liste_i_tabele_jako_sciezki"
+
+# Tryb pokrycia dostaje liste z opcji.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)"
+zamien = 'return pokrycie_kod3(korzen, Path("lista.txt"), args.tabele)'
+test = "tests/test_mutanty_reczne.py::test_wiersz_polecen_przekazuje_trybowi_pokrycia_korzen_liste_i_tabele_jako_sciezki"
+
+# Kod trybu pokrycia dociera do procesu (skrypt jako program).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = "return pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)"
+zamien = "pokrycie_kod3(korzen, args.pokrycie_kod3, args.tabele)\n            return 0"
+test = "tests/test_mutanty_reczne.py::test_skrypt_uruchomiony_jako_program_z_pokrycie_kod3_konczy_sie_kodem_1_i_wypisuje_niepokryta_linie"
+
+# --- krok CI `pokrycie linii bez mutantów` ---------------------------------------------------------
+
+# Nazwa kroku: wyszukiwanie po nazwie (kolejnosc, srodowisko, artefakt) przestaje go znajdowac.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: pokrycie linii bez mutantów"
+zamien = "- name: pokrycie linii bez mutantow"
+test = "tests/test_workflow_mutacje.py::test_krok_pokrycia_linii_stoi_w_zadaniu_pull_requestu_zaraz_po_kroku_recznych_mutantow"
+
+# Krok nie ma warunku `if` (bez zmienionej tabeli tez ma sie wykonac).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: pokrycie linii bez mutantów"
+zamien = "- name: pokrycie linii bez mutantów\n        if: steps.front.outputs.tabele == '1'"
+test = "tests/test_workflow_mutacje.py::test_krok_pokrycia_linii_nie_ma_warunku_if_wiec_wykonuje_sie_na_kazdym_pr_takze_bez_zmienionej_tabeli"
+
+# Krok nie jest dozwolony do porazki.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "- name: pokrycie linii bez mutantów"
+zamien = '''- name: pokrycie linii bez mutantów
+        continue-on-error: true'''
+test = "tests/test_workflow_mutacje.py::test_krok_pokrycia_linii_nie_ukrywa_bledu_komendy_ani_bledu_kroku"
+
+# Galaz docelowa PR pochodzi z `github.base_ref`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            {'''
+zamien = '''          BASE_REF: ${{ github.head_ref }}
+        run: |
+          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            {'''
+test = "tests/test_workflow_mutacje.py::test_krok_pokrycia_linii_dostaje_galaz_docelowa_ze_zmiennej_srodowiska"
+
+# Krok dostaje `BASE_REF` w `env`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            {'''
+zamien = '''        run: |
+          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            {'''
+test = "tests/test_workflow_mutacje.py::test_krok_pokrycia_linii_dostaje_galaz_docelowa_ze_zmiennej_srodowiska"
+
+# Brak pliku z kodem: warunek `! -f` (plik istnieje => idziemy dalej).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''          if [ ! -f mutants/mutanty-zmian.kod ]; then
+            {'''
+zamien = '''          if [ -f mutants/mutanty-zmian.kod ]; then
+            {'''
+test = "tests/test_workflow_mutacje.py::test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia"
+
+# Brak pliku z kodem: naglowek podsumowania.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "## Pokrycie linii bez mutantów"
+              echo
+              echo "brak dowodu: nie ma'''
+zamien = '''echo "## Inne"
+              echo
+              echo "brak dowodu: nie ma'''
+test = "tests/test_workflow_mutacje.py::test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia"
+
+# Brak pliku z kodem: tresc podsumowania.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "brak dowodu: nie ma mutants/mutanty-zmian.kod"'
+zamien = 'echo "brak dowodu"'
+test = "tests/test_workflow_mutacje.py::test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia"
+
+# Brak pliku z kodem: linia `::error::` (adnotacja CI).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"'''
+zamien = '''            } >> "$GITHUB_STEP_SUMMARY"
+            echo "brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"'''
+test = "tests/test_workflow_mutacje.py::test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia"
+
+# Brak pliku z kodem: tresc linii `::error::` (pelna tresc).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"'''
+zamien = '''            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany XX"'''
+test = "tests/test_workflow_mutacje.py::test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia"
+
+# Brak pliku z kodem oblewa krok (`exit 1`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
+            exit 1'''
+zamien = '''            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
+            exit 0'''
+test = "tests/test_workflow_mutacje.py::test_brak_pliku_z_kodem_mutantow_zmian_oblewa_krok_pokrycia_z_brakiem_dowodu_i_nie_wola_narzedzia"
+
+# Kod zmian jest czytany z pliku `mutanty-zmian.kod`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''kod_zmian="$(cat mutants/mutanty-zmian.kod)"
+          if [ "$kod_zmian" != "3" ]; then
+            {'''
+zamien = '''kod_zmian="$(cat mutants/mutanty-zmian.txt)"
+          if [ "$kod_zmian" != "3" ]; then
+            {'''
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Krok dotyczy tylko kodu 3 (`!=`, nie `=`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'if [ "$kod_zmian" != "3" ]; then'
+zamien = 'if [ "$kod_zmian" = "3" ]; then'
+test = "tests/test_workflow_mutacje.py::test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami"
+
+# Krok dotyczy kodu 3, nie innego (kod 4 nie jest kodem 3).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'if [ "$kod_zmian" != "3" ]; then'
+zamien = 'if [ "$kod_zmian" != "4" ]; then'
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Kod 3 nie jest pomijany (sprawdzenie kodu jest tu jedynym warunkiem pominiecia).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'if [ "$kod_zmian" != "3" ]; then'
+zamien = 'if true; then'
+test = "tests/test_workflow_mutacje.py::test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami"
+
+# Nie dotyczy: naglowek podsumowania.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "## Pokrycie linii bez mutantów"
+              echo
+              echo "nie dotyczy'''
+zamien = '''echo "## Inne"
+              echo
+              echo "nie dotyczy'''
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Nie dotyczy: tresc podsumowania niesie kod zmian.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "nie dotyczy - mutanty_zmian.py zakończył się kodem $kod_zmian"'
+zamien = 'echo "nie dotyczy - mutanty_zmian.py zakończył się kodem"'
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Nie dotyczy: tresc podsumowania na pelna tresc.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "nie dotyczy - mutanty_zmian.py zakończył się kodem $kod_zmian"'
+zamien = 'echo "nie dotyczy - mutanty_zmian.py zakończył sie kodem $kod_zmian"'
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Nie dotyczy: krok konczy sie zielono (`exit 0`, nie `exit 1`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''exit 0
+          fi
+          # Pomijamy tabele'''
+zamien = '''exit 1
+          fi
+          # Pomijamy tabele'''
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Nie dotyczy: krok konczy sie tu, bez wolania narzedzia (`exit 0` jest potrzebne).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''exit 0
+          fi
+          # Pomijamy tabele'''
+zamien = '''true
+          fi
+          # Pomijamy tabele'''
+test = "tests/test_workflow_mutacje.py::test_kod_zmian_inny_niz_3_daje_zielony_krok_pokrycia_nie_dotyczy_bez_wolania_narzedzia"
+
+# Tabele zmienione w PR: filtr `--diff-filter=d` (usuniete tabele nie sa dowodem).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+zamien = '''tabele="$(git diff --name-only --no-renames "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+test = "tests/test_workflow_mutacje.py::test_tabela_usunieta_w_pr_nie_trafia_do_argumentow_trybu_pokrycia"
+
+# Tabele zmienione w PR: tylko nazwy plikow.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+zamien = '''tabele="$(git diff --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+test = "tests/test_workflow_mutacje.py::test_tabele_dla_pokrycia_pochodza_z_roznicy_wzgledem_galezi_docelowej_bez_przemianowan"
+
+# Tabele zmienione w PR: bez wykrywania przemianowan.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+zamien = '''tabele="$(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+test = "tests/test_workflow_mutacje.py::test_tabele_dla_pokrycia_pochodza_z_roznicy_wzgledem_galezi_docelowej_bez_przemianowan"
+
+# Tabele zmienione w PR: roznica wzgledem galezi docelowej PR (`...`, nie `..`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+zamien = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF..HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+test = "tests/test_workflow_mutacje.py::test_tabele_dla_pokrycia_pochodza_z_roznicy_wzgledem_galezi_docelowej_bez_przemianowan"
+
+# Tabele zmienione w PR: galaz docelowa ze zmiennej `BASE_REF`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+zamien = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/main...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+test = "tests/test_workflow_mutacje.py::test_tabele_dla_pokrycia_pochodza_z_roznicy_wzgledem_galezi_docelowej_bez_przemianowan"
+
+# Tabele zmienione w PR: tylko tabele `tests/mutanty_reczne/*.toml`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
+          # Sciezki tabel'''
+zamien = '''tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/*.toml')"
+          # Sciezki tabel'''
+test = "tests/test_workflow_mutacje.py::test_tabele_dla_pokrycia_pochodza_z_roznicy_wzgledem_galezi_docelowej_bez_przemianowan"
+
+# Wynik narzedzia startuje od kodu 0 (`kod=0`), a `|| kod=$?` zapisuje kod bledu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''kod=0
+          python3 tools/mutanty_reczne.py --pokrycie-kod3'''
+zamien = '''kod=1
+          python3 tools/mutanty_reczne.py --pokrycie-kod3'''
+test = "tests/test_workflow_mutacje.py::test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu"
+
+# Narzedzie dostaje tryb `--pokrycie-kod3`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--pokrycie-kod3 mutants/mutanty-zmian.txt $tabele"
+zamien = "mutants/mutanty-zmian.txt $tabele"
+test = "tests/test_workflow_mutacje.py::test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami"
+
+# Narzedzie dostaje liste kodu 3 (`mutanty-zmian.txt`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "--pokrycie-kod3 mutants/mutanty-zmian.txt"
+zamien = "--pokrycie-kod3 mutants/mutanty-zmian.err"
+test = "tests/test_workflow_mutacje.py::test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami"
+
+# Tabele przekazane jako osobne argumenty (bez cudzyslowu).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutants/mutanty-zmian.txt $tabele >"
+zamien = 'mutants/mutanty-zmian.txt "$tabele" >'
+test = "tests/test_workflow_mutacje.py::test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami"
+
+# Tabele przekazane do narzedzia (zero tabel tez daje wywolanie z sama lista).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutants/mutanty-zmian.txt $tabele >"
+zamien = "mutants/mutanty-zmian.txt >"
+test = "tests/test_workflow_mutacje.py::test_kod_3_wola_narzedzie_w_trybie_pokrycia_z_lista_i_zmienionymi_tabelami"
+
+# Stdout narzedzia trafia do pliku, z ktorego czyta podsumowanie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "$tabele > mutants/pokrycie-kod3.txt"
+zamien = "$tabele > /dev/null"
+test = "tests/test_workflow_mutacje.py::test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu"
+
+# Stderr narzedzia trafia do pliku, z ktorego czyta podsumowanie.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "2> mutants/pokrycie-kod3.err"
+zamien = "2> /dev/null"
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Blad narzedzia nie jest ukryty kodem 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutants/pokrycie-kod3.err || kod=$?"
+zamien = "mutants/pokrycie-kod3.err || kod=0"
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Blad narzedzia nie jest ukryty przez `|| true`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "mutants/pokrycie-kod3.err || kod=$?"
+zamien = "mutants/pokrycie-kod3.err || true"
+test = "tests/test_workflow_mutacje.py::test_krok_pokrycia_linii_nie_ukrywa_bledu_komendy_ani_bledu_kroku"
+
+# Podsumowanie pod wlasnym naglowkiem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "## Pokrycie linii bez mutantów"
+            echo
+            case "$kod" in'''
+zamien = '''echo "## Inne"
+            echo
+            case "$kod" in'''
+test = "tests/test_workflow_mutacje.py::test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu"
+
+# Podsumowanie: etykieta kodu 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''0)
+                echo "wszystkie linie bez mutantów mają wiersz albo uzasadnienie"'''
+zamien = '''9)
+                echo "wszystkie linie bez mutantów mają wiersz albo uzasadnienie"'''
+test = "tests/test_workflow_mutacje.py::test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu"
+
+# Podsumowanie: tresc dla kodu 0.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "wszystkie linie bez mutantów mają wiersz albo uzasadnienie"'
+zamien = 'echo "ok"'
+test = "tests/test_workflow_mutacje.py::test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu"
+
+# Podsumowanie: etykieta kodu 1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''1)
+                echo "brak dowodu — linie bez wiersza'''
+zamien = '''9)
+                echo "brak dowodu — linie bez wiersza'''
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Podsumowanie: tresc dla kodu 1.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "brak dowodu — linie bez wiersza [[mutant]] i bez [[rownowazny]]:"'
+zamien = 'echo "brak dowodu"'
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Podsumowanie: lista niepokrytych linii z pliku stdout narzedzia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cat mutants/pokrycie-kod3.txt"
+zamien = "echo ukryte"
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Podsumowanie dla kodu 1: blok kodu otwarty ogrodzeniem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''                echo '```'
+                cat mutants/pokrycie-kod3.txt'''
+zamien = '''                cat mutants/pokrycie-kod3.txt'''
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Podsumowanie dla kodu 1: blok kodu zamkniety ogrodzeniem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cat mutants/pokrycie-kod3.txt\n                echo '```'"
+zamien = '''cat mutants/pokrycie-kod3.txt'''
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Podsumowanie: etykieta bledu narzedzia to `*)` (kazdy inny kod).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''*)
+                echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/pokrycie-kod3.err'''
+zamien = '''2)
+                echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/pokrycie-kod3.err'''
+test = "tests/test_workflow_mutacje.py::test_nieznany_kod_narzedzia_pokrycia_oblewa_krok_jak_blad_narzedzia"
+
+# Podsumowanie: tresc dla bledu narzedzia niesie kod.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "błąd narzędzia (kod $kod):"
+                echo
+                echo '```'
+                cat mutants/pokrycie-kod3.err'''
+zamien = '''echo "błąd narzędzia:"
+                echo
+                echo '```'
+                cat mutants/pokrycie-kod3.err'''
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Podsumowanie: stderr narzedzia dla bledu.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cat mutants/pokrycie-kod3.err"
+zamien = "echo ukryte"
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Podsumowanie dla bledu: blok kodu otwarty ogrodzeniem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''                echo '```'
+                cat mutants/pokrycie-kod3.err'''
+zamien = '''                cat mutants/pokrycie-kod3.err'''
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Podsumowanie dla bledu: blok kodu zamkniety ogrodzeniem.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "cat mutants/pokrycie-kod3.err\n                echo '```'"
+zamien = '''cat mutants/pokrycie-kod3.err'''
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Kod 0 nie oblewa kroku (pusta galaz `0)` drugiego `case`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''0)
+              ;;
+            1)
+              echo "::error::brak dowodu: linie bez wiersza'''
+zamien = '''0)
+              exit 1
+              ;;
+            1)
+              echo "::error::brak dowodu: linie bez wiersza'''
+test = "tests/test_workflow_mutacje.py::test_wszystkie_linie_kodu_3_z_wierszem_daja_zielony_krok_pokrycia_z_potwierdzeniem_w_podsumowaniu"
+
+# Kod 1: etykieta galezi oblewajacej krok.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''1)
+              echo "::error::brak dowodu: linie bez wiersza'''
+zamien = '''9)
+              echo "::error::brak dowodu: linie bez wiersza'''
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Kod 1: linia `::error::` (adnotacja CI) z lista w jednej linii.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''echo "::error::brak dowodu: linie bez wiersza tabeli ręcznych mutantów: $(paste -sd' ' mutants/pokrycie-kod3.txt)"'''
+zamien = '''echo "brak dowodu: linie bez wiersza tabeli ręcznych mutantów: $(paste -sd' ' mutants/pokrycie-kod3.txt)"'''
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Kod 1: tresc linii `::error::`.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "brak dowodu: linie bez wiersza tabeli ręcznych mutantów:"
+zamien = "brak dowodu: linie bez wiersza tabeli mutantow:"
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Kod 1: lista w jednej linii rozdzielona spacjami.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "$(paste -sd' ' mutants/pokrycie-kod3.txt)"
+zamien = "$(paste -sd',' mutants/pokrycie-kod3.txt)"
+test = "tests/test_workflow_mutacje.py::test_kilka_linii_bez_wiersza_trafia_do_jednej_linii_bledu_ci_i_do_podsumowania"
+
+# Kod 1: lista scalona w jedna linie (bez `paste` kazda linia to osobny wiersz).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "$(paste -sd' ' mutants/pokrycie-kod3.txt)"
+zamien = "$(cat mutants/pokrycie-kod3.txt)"
+test = "tests/test_workflow_mutacje.py::test_kilka_linii_bez_wiersza_trafia_do_jednej_linii_bledu_ci_i_do_podsumowania"
+
+# Kod 1 oblewa krok (`exit 1`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mutants/pokrycie-kod3.txt)"
+              exit 1'''
+zamien = '''mutants/pokrycie-kod3.txt)"
+              exit 0'''
+test = "tests/test_workflow_mutacje.py::test_linia_kodu_3_bez_wiersza_i_uzasadnienia_oblewa_krok_i_jest_wypisana_jako_plik_i_linia"
+
+# Blad narzedzia: etykieta `*)` galezi oblewajacej krok (kazdy inny kod).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''*)
+              echo "::error::błąd narzędzia'''
+zamien = '''2)
+              echo "::error::błąd narzędzia'''
+test = "tests/test_workflow_mutacje.py::test_nieznany_kod_narzedzia_pokrycia_oblewa_krok_jak_blad_narzedzia"
+
+# Blad narzedzia: linia `::error::` (adnotacja CI).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = 'echo "::error::błąd narzędzia: mutanty_reczne.py --pokrycie-kod3'
+zamien = 'echo "błąd narzędzia: mutanty_reczne.py --pokrycie-kod3'
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Blad narzedzia: linia `::error::` niesie kod narzedzia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "zakończył się kodem $kod: $(paste"
+zamien = "zakończył się kodem: $(paste"
+test = "tests/test_workflow_mutacje.py::test_nieznany_kod_narzedzia_pokrycia_oblewa_krok_jak_blad_narzedzia"
+
+# Blad narzedzia: linia `::error::` niesie stderr w jednej linii.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "$(paste -sd' ' mutants/pokrycie-kod3.err)"
+zamien = "$(cat mutants/pokrycie-kod3.err)"
+test = "tests/test_workflow_mutacje.py::test_stderr_narzedzia_pokrycia_z_kilku_linii_trafia_do_bledu_ci_w_jednej_linii"
+
+# Blad narzedzia: stderr rozdzielony spacjami.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = "$(paste -sd' ' mutants/pokrycie-kod3.err)"
+zamien = "$(paste -sd',' mutants/pokrycie-kod3.err)"
+test = "tests/test_workflow_mutacje.py::test_stderr_narzedzia_pokrycia_z_kilku_linii_trafia_do_bledu_ci_w_jednej_linii"
+
+# Blad narzedzia oblewa krok (`exit 1`).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mutants/pokrycie-kod3.err)"
+              exit 1'''
+zamien = '''mutants/pokrycie-kod3.err)"
+              exit 0'''
+test = "tests/test_workflow_mutacje.py::test_blad_narzedzia_pokrycia_oblewa_krok_i_stderr_trafia_do_podsumowania_i_bledu_ci"
+
+# Artefakt zadania PR: stdout pokrycia (nawet po czerwonym kroku).
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mutants/tabele-reczne.err
+            mutants/pokrycie-kod3.txt'''
+zamien = "mutants/tabele-reczne.err"
+test = "tests/test_workflow_mutacje.py::test_zadanie_pull_requestu_publikuje_wynik_pokrycia_linii_nawet_po_czerwonym_kroku"
+
+# Artefakt zadania PR: stderr pokrycia.
+[[mutant]]
+plik = ".github/workflows/mutation.yml"
+szukaj = '''mutants/pokrycie-kod3.txt
+            mutants/pokrycie-kod3.err'''
+zamien = "mutants/pokrycie-kod3.txt"
+test = "tests/test_workflow_mutacje.py::test_zadanie_pull_requestu_publikuje_wynik_pokrycia_linii_nawet_po_czerwonym_kroku"
+
+# Wpisy `[[rownowazny]]` sa walidowane przy odczycie tabeli (nie pomijane).
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''wpisy, rownowazne = _surowe_wpisy(sciezka)
+    except BladNarzedzia as blad:
+        raise'''
+zamien = '''wpisy, rownowazne = _surowe_wpisy(sciezka)[0], []
+    except BladNarzedzia as blad:
+        raise'''
+test = "tests/test_mutanty_reczne.py::test_niepoprawny_rownowazny_to_blad_narzedzia_z_numerem_wpisu_i_pelnym_powodem"
+
+# Wpisy `[[rownowazny]]` sa sprawdzane takze przy zbieraniu bledow wszystkich tabel.
+[[mutant]]
+plik = "tools/mutanty_reczne.py"
+szukaj = '''wpisy, rownowazne = _surowe_wpisy(sciezka)
+    except BladNarzedzia as blad:
+        return [], ['''
+zamien = '''wpisy, rownowazne = _surowe_wpisy(sciezka)[0], []
+    except BladNarzedzia as blad:
+        return [], ['''
+test = "tests/test_mutanty_reczne.py::test_sprawdz_wszystkie_podaje_pelna_linie_wadliwego_rownowazny_z_numerem_wpisu_rownowazny"

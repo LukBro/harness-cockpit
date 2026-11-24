@@ -1,0 +1,923 @@
+# Tabela recznych mutantow HAR-104: tickety przez runnera (miejsca, ktorych mutmut nie mutuje:
+# argumenty i dekoratory tras w api/app.py, pola modeli w api/schematy.py, stale modulow,
+# wpisy tablicy OPERACJE). Wiersz: element | mutacja | test, ktory po mutacji oblewa.
+# Kazda linia z listy kodu 3 (tools/mutanty_zmian.py) ma wiersz; mutacje, ktore zmieniaja tylko
+# schemat OpenAPI, zabija test schematu z tests/test_tickety_przez_runnera.py (sekcja 10).
+
+# --- src/cockpit/api/app.py: GET /api/tickety ----------------------------------------------
+
+# Sciezka trasy listy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/tickety", response_model=list[SkrotTicketu],'
+zamien = '@app.get("/api/tickety2", response_model=list[SkrotTicketu],'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Model odpowiedzi trasy listy (schemat: tablica SkrotTicketu).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/tickety", response_model=list[SkrotTicketu],'
+zamien = '@app.get("/api/tickety", response_model=list[dict],'
+test = "tests/test_tickety_przez_runnera.py::test_lista_ticketow_w_schemacie_to_tablica_skrotow_z_identyfikatorem_operacji"
+
+# Opisane kody bledow trasy listy: brak 403.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''response_model=list[SkrotTicketu],
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''response_model=list[SkrotTicketu],
+         responses=odpowiedzi_bledow(401, 404, 409, 422))'''
+test = "tests/test_tickety_przez_runnera.py::test_trasa_ticketowa_opisuje_dokladnie_kody_sukcesu_i_bledow_z_modelem_blad"
+
+# Opisane kody bledow trasy listy: brak 422 (FastAPI dolozylby domyslny HTTPValidationError).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''response_model=list[SkrotTicketu],
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''response_model=list[SkrotTicketu],
+         responses=odpowiedzi_bledow(401, 403, 404, 409))'''
+test = "tests/test_tickety_przez_runnera.py::test_trasa_ticketowa_opisuje_dokladnie_kody_sukcesu_i_bledow_z_modelem_blad"
+
+# Nazwa funkcji trasy trafia do operationId w schemacie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def lista_ticketow("
+zamien = "async def lista_ticketow_inna("
+test = "tests/test_tickety_przez_runnera.py::test_lista_ticketow_w_schemacie_to_tablica_skrotow_z_identyfikatorem_operacji"
+
+# Limit dlugosci numeru projektu (liste): 35 odrzuca graniczne 36 znakow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''projekt: str = Query(max_length=36),
+    filtr: str | None'''
+zamien = '''projekt: str = Query(max_length=35),
+    filtr: str | None'''
+test = "tests/test_tickety_przez_runnera.py::test_numer_projektu_dluzszy_niz_36_znakow_daje_422_a_36_znakow_przechodzi_walidacje"
+
+# Limit dlugosci numeru projektu (liste): 37 przepuszcza 37 znakow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''projekt: str = Query(max_length=36),
+    filtr: str | None'''
+zamien = '''projekt: str = Query(max_length=37),
+    filtr: str | None'''
+test = "tests/test_tickety_przez_runnera.py::test_numer_projektu_dluzszy_niz_36_znakow_daje_422_a_36_znakow_przechodzi_walidacje"
+
+# Limit filtra: 499 odrzuca graniczne 500 znakow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "filtr: str | None = Query(default=None, max_length=500),"
+zamien = "filtr: str | None = Query(default=None, max_length=499),"
+test = "tests/test_tickety_przez_runnera.py::test_filtr_dluzszy_niz_500_znakow_daje_422_a_500_znakow_przechodzi_do_runnera"
+
+# Limit filtra: 501 przepuszcza 501 znakow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "filtr: str | None = Query(default=None, max_length=500),"
+zamien = "filtr: str | None = Query(default=None, max_length=501),"
+test = "tests/test_tickety_przez_runnera.py::test_filtr_dluzszy_niz_500_znakow_daje_422_a_500_znakow_przechodzi_do_runnera"
+
+# Filtr bez wartosci domyslnej staje sie wymagany.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "filtr: str | None = Query(default=None, max_length=500),"
+zamien = "filtr: str | None = Query(max_length=500),"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Sesja listy: zaleznosc uwierzytelnienia zastapiona inna.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''max_length=500),
+    k: Kontekst = Depends(kontekst_sesji),'''
+zamien = '''max_length=500),
+    k: Kontekst = Depends(get_session),'''
+test = "tests/test_tickety_przez_runnera.py::test_odczyt_ticketow_bez_sesji_daje_401"
+
+# Sesja bazy listy: zaleznosc podmieniona na kontekst.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.lista('''
+zamien = '''s: AsyncSession = Depends(kontekst_sesji),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.lista('''
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Adnotacja zwrotna listy: trasa uznana za strumien SSE.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = ''') -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.lista('''
+zamien = ''') -> EventSourceResponse:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.lista('''
+test = "tests/test_kontrakt_api.py::test_lista_wylaczen_strumieni_sse_zgadza_sie_z_rzeczywistoscia"
+
+# Uprawnienie listy: mocniejsze niz podglad odcina czlonka z rola odczytu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.lista('''
+zamien = '''dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)
+    return await tickety.lista('''
+test = "tests/test_tickety_przez_runnera.py::test_czlonek_z_rola_odczytu_moze_listowac_tickety"
+
+# Wywolanie serwisu listy: wywolany serwis pobrania.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return await tickety.lista("
+zamien = "return await tickety.pobierz("
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Argument tenant_id listy: pusty zamiast k.tenant_id.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, filtr, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = 's, "", projekt, filtr, bus.connected_runner_ids(), bus.zapytaj)'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Argumenty projekt i filtr listy zamienione miejscami.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, filtr, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, filtr, projekt, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Polaczone runnery listy: pusty zbior (runner wygladalby na offline).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, filtr, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, projekt, filtr, frozenset(), bus.zapytaj)"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Funkcja wysylki listy: brak.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, filtr, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, projekt, filtr, bus.connected_runner_ids(), None)"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# --- src/cockpit/api/app.py: GET /api/tickety/{id_ticketu:path} -----------------------------
+
+# Konwerter :path: bez niego identyfikator GitHub z ukosnikiem nie trafia w trase.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/tickety/{id_ticketu:path}", response_model=TicketPobrany,'
+zamien = '@app.get("/api/tickety/{id_ticketu}", response_model=TicketPobrany,'
+test = "tests/test_tickety_przez_runnera.py::test_identyfikator_githuba_z_krzyzykiem_przechodzi_przez_trase_jako_procent_23"
+
+# Model odpowiedzi trasy pobrania (schemat: TicketPobrany).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '@app.get("/api/tickety/{id_ticketu:path}", response_model=TicketPobrany,'
+zamien = '@app.get("/api/tickety/{id_ticketu:path}", response_model=dict,'
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_w_schemacie_to_model_ticket_pobrany_z_identyfikatorem_operacji"
+
+# Opisane kody bledow trasy pobrania: brak 403.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''response_model=TicketPobrany,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''response_model=TicketPobrany,
+         responses=odpowiedzi_bledow(401, 404, 409, 422))'''
+test = "tests/test_tickety_przez_runnera.py::test_trasa_ticketowa_opisuje_dokladnie_kody_sukcesu_i_bledow_z_modelem_blad"
+
+# Opisane kody bledow trasy pobrania: brak 422.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''response_model=TicketPobrany,
+         responses=odpowiedzi_bledow(401, 403, 404, 409, 422))'''
+zamien = '''response_model=TicketPobrany,
+         responses=odpowiedzi_bledow(401, 403, 404, 409))'''
+test = "tests/test_tickety_przez_runnera.py::test_trasa_ticketowa_opisuje_dokladnie_kody_sukcesu_i_bledow_z_modelem_blad"
+
+# Nazwa funkcji trasy pobrania trafia do operationId w schemacie.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "async def pobierz_ticket("
+zamien = "async def pobierz_ticket_inny("
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_w_schemacie_to_model_ticket_pobrany_z_identyfikatorem_operacji"
+
+# Typ parametru sciezki id_ticketu: liczba zamiast napisu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''async def pobierz_ticket(
+    id_ticketu: str,'''
+zamien = '''async def pobierz_ticket(
+    id_ticketu: int,'''
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_ma_identyfikator_w_sciezce_i_wymagany_projekt_do_36_znakow"
+
+# Limit dlugosci numeru projektu (pobranie): 35 odrzuca graniczne 36 znakow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''projekt: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),'''
+zamien = '''projekt: str = Query(max_length=35),
+    k: Kontekst = Depends(kontekst_sesji),'''
+test = "tests/test_tickety_przez_runnera.py::test_numer_projektu_dluzszy_niz_36_znakow_daje_422_a_36_znakow_przechodzi_walidacje"
+
+# Limit dlugosci numeru projektu (pobranie): 37 przepuszcza 37 znakow.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''projekt: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),'''
+zamien = '''projekt: str = Query(max_length=37),
+    k: Kontekst = Depends(kontekst_sesji),'''
+test = "tests/test_tickety_przez_runnera.py::test_numer_projektu_dluzszy_niz_36_znakow_daje_422_a_36_znakow_przechodzi_walidacje"
+
+# Sesja pobrania: zaleznosc uwierzytelnienia zastapiona inna.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''projekt: str = Query(max_length=36),
+    k: Kontekst = Depends(kontekst_sesji),'''
+zamien = '''projekt: str = Query(max_length=36),
+    k: Kontekst = Depends(get_session),'''
+test = "tests/test_tickety_przez_runnera.py::test_odczyt_ticketow_bez_sesji_daje_401"
+
+# Sesja bazy pobrania: zaleznosc podmieniona na kontekst.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''s: AsyncSession = Depends(get_session),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.pobierz('''
+zamien = '''s: AsyncSession = Depends(kontekst_sesji),
+) -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.pobierz('''
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+# Adnotacja zwrotna pobrania: trasa uznana za strumien SSE.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = ''') -> Any:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.pobierz('''
+zamien = ''') -> EventSourceResponse:
+    dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.pobierz('''
+test = "tests/test_kontrakt_api.py::test_lista_wylaczen_strumieni_sse_zgadza_sie_z_rzeczywistoscia"
+
+# Uprawnienie pobrania: mocniejsze niz podglad odcina czlonka z rola odczytu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''dostep.wymagaj(k, Uprawnienie.podglad)
+    return await tickety.pobierz('''
+zamien = '''dostep.wymagaj(k, Uprawnienie.podlaczanie_projektow)
+    return await tickety.pobierz('''
+test = "tests/test_tickety_przez_runnera.py::test_czlonek_z_rola_odczytu_moze_pobrac_ticket"
+
+# Wywolanie serwisu pobrania: wywolany serwis listy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "return await tickety.pobierz("
+zamien = "return await tickety.lista("
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+# Argument tenant_id pobrania: pusty zamiast k.tenant_id.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, id_ticketu, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = 's, "", projekt, id_ticketu, bus.connected_runner_ids(), bus.zapytaj)'
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+# Argumenty projekt i id_ticketu pobrania zamienione miejscami.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, id_ticketu, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, id_ticketu, projekt, bus.connected_runner_ids(), bus.zapytaj)"
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+# Polaczone runnery pobrania: pusty zbior (runner wygladalby na offline).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, id_ticketu, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, projekt, id_ticketu, frozenset(), bus.zapytaj)"
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+# Funkcja wysylki pobrania: brak.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = "s, k.tenant_id, projekt, id_ticketu, bus.connected_runner_ids(), bus.zapytaj)"
+zamien = "s, k.tenant_id, projekt, id_ticketu, bus.connected_runner_ids(), None)"
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+# --- src/cockpit/api/schematy.py: modele odpowiedzi ----------------------------------------
+# Kazda mutacja zmienia zbior pol, wymagalnosc albo typ modelu; zabija ja test schematu.
+
+# SkrotTicketu: naglowek klasy dziedziczy po Blad (dodatkowe wymagane pole detail).
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class SkrotTicketu(BaseModel):"
+zamien = "class SkrotTicketu(Blad):"
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class SkrotTicketu(BaseModel):
+    id: str'''
+zamien = '''class SkrotTicketu(BaseModel):
+    id_: str'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    tytul: str
+'''
+zamien = '''
+    tytul_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    stan: str
+'''
+zamien = '''
+    stan_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# KomentarzTicketu.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class KomentarzTicketu(BaseModel):"
+zamien = "class KomentarzTicketu(Blad):"
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    author: str
+'''
+zamien = '''
+    author_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    body: str
+'''
+zamien = '''
+    body_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Pole `at` przestaje dopuszczac null (brak daty komentarza to null, nie blad).
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    at: datetime | None
+'''
+zamien = '''
+    at: datetime
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# TicketJsonOdp.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class TicketJsonOdp(BaseModel):"
+zamien = "class TicketJsonOdp(Blad):"
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    source: str
+'''
+zamien = '''
+    source_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    source: str
+    id: str
+'''
+zamien = '''
+    source: str
+    id_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Pole `url` przestaje dopuszczac null (ticket bez adresu).
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    url: str | None
+'''
+zamien = '''
+    url: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    title: str
+'''
+zamien = '''
+    title_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    description: str
+'''
+zamien = '''
+    description_: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Kryteria akceptacji: lista napisow zamieniona na napis.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    acceptance_criteria: list[str]
+'''
+zamien = '''
+    acceptance_criteria: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Kryteria akceptacji: elementy listy to liczby.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    acceptance_criteria: list[str]
+'''
+zamien = '''
+    acceptance_criteria: list[int]
+'''
+test = "tests/test_tickety_przez_runnera.py::test_komentarze_i_kryteria_w_modelu_ticketu_to_listy_wlasciwych_elementow"
+
+# Pole `status` przestaje dopuszczac null.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    status: str | None
+'''
+zamien = '''
+    status: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Pole `priority` przestaje dopuszczac null.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    priority: str | None
+'''
+zamien = '''
+    priority: str
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Etykiety: elementy listy to liczby.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    labels: list[str]
+'''
+zamien = '''
+    labels: list[int]
+'''
+test = "tests/test_tickety_przez_runnera.py::test_komentarze_i_kryteria_w_modelu_ticketu_to_listy_wlasciwych_elementow"
+
+# Komentarze: element listy to nie model komentarza.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    comments: list[KomentarzTicketu]
+'''
+zamien = '''
+    comments: list[dict]
+'''
+test = "tests/test_tickety_przez_runnera.py::test_komentarze_i_kryteria_w_modelu_ticketu_to_listy_wlasciwych_elementow"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    fetched_at: datetime
+'''
+zamien = '''
+    fetched_at_: datetime
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    raw: dict[str, Any]
+'''
+zamien = '''
+    raw_: dict[str, Any]
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# TicketPobrany.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = "class TicketPobrany(BaseModel):"
+zamien = "class TicketPobrany(Blad):"
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    ticket: TicketJsonOdp
+'''
+zamien = '''
+    ticket: dict
+'''
+test = "tests/test_tickety_przez_runnera.py::test_model_odpowiedzi_ticketow_ma_dokladnie_pola_z_kontraktu_i_wszystkie_sa_wymagane"
+
+# Ostrzezenia: elementy listy to liczby.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''
+    ostrzezenia: list[str]
+'''
+zamien = '''
+    ostrzezenia: list[int]
+'''
+test = "tests/test_tickety_przez_runnera.py::test_komentarze_i_kryteria_w_modelu_ticketu_to_listy_wlasciwych_elementow"
+
+# --- src/cockpit/services/tickety.py -------------------------------------------------------
+
+# Komunikat odsylajacy do wklejenia recznego.
+[[mutant]]
+plik = "src/cockpit/services/tickety.py"
+szukaj = 'użyj wklejenia ręcznego"'
+zamien = 'użyj wklejenia recznego"'
+test = "tests/test_tickety_przez_runnera.py::test_gdy_runner_projektu_jest_offline_odczyt_ticketow_daje_409_z_odsylaczem_do_wklejenia"
+
+# Pole `id` skrotu przestaje byc sprawdzane.
+[[mutant]]
+plik = "src/cockpit/services/tickety.py"
+szukaj = '_POLA_SKROTU = ("id", "tytul", "stan")'
+zamien = '_POLA_SKROTU = ("tytul", "stan")'
+test = "tests/test_tickety_przez_runnera.py::test_nieczytelna_lista_od_runnera_to_409_z_komunikatem_a_nie_wyjatek_biblioteki"
+
+# Pole `tytul` skrotu przestaje byc sprawdzane.
+[[mutant]]
+plik = "src/cockpit/services/tickety.py"
+szukaj = '_POLA_SKROTU = ("id", "tytul", "stan")'
+zamien = '_POLA_SKROTU = ("id", "stan")'
+test = "tests/test_tickety_przez_runnera.py::test_nieczytelna_lista_od_runnera_to_409_z_komunikatem_a_nie_wyjatek_biblioteki"
+
+# Pole `stan` skrotu przestaje byc sprawdzane.
+[[mutant]]
+plik = "src/cockpit/services/tickety.py"
+szukaj = '_POLA_SKROTU = ("id", "tytul", "stan")'
+zamien = '_POLA_SKROTU = ("id", "tytul")'
+test = "tests/test_tickety_przez_runnera.py::test_nieczytelna_lista_od_runnera_to_409_z_komunikatem_a_nie_wyjatek_biblioteki"
+
+# --- src/runner/operacje.py: wpisy OPERACJE ------------------------------------------------
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '"ticket_lista": ticket_lista,'
+zamien = '"ticket_lista": ticket_pobierz,'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '"ticket_pobierz": ticket_pobierz,'
+zamien = '"ticket_pobierz": ticket_lista,'
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_lineara_oddaje_ticket_i_pusta_liste_ostrzezen"
+
+[[mutant]]
+plik = "src/runner/operacje.py"
+szukaj = '"ticket_zapisz_wynik": ticket_zapisz_wynik,'
+zamien = '"ticket_zapisz_wynik": ticket_pobierz,'
+test = "tests/test_tickety_przez_runnera.py::test_zapis_wyniku_bez_flagi_post_result_jest_wylaczony_i_nie_wola_dostawcy"
+
+# --- src/runner/tickety/operacje.py: stale modulu ------------------------------------------
+
+# Zmienna TRANSPORT: testy podmieniaja ja przez monkeypatch (brak zmiennej = blad).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "TRANSPORT: httpx.AsyncBaseTransport | None = None"
+zamien = "TRANSPORT_INNY: httpx.AsyncBaseTransport | None = None"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# ZRODLA: kazdy dostawca ma wlasny wiersz.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZRODLA = ("linear", "jira", "github")'
+zamien = 'ZRODLA = ("jira", "github")'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZRODLA = ("linear", "jira", "github")'
+zamien = 'ZRODLA = ("linear", "github")'
+test = "tests/test_tickety_przez_runnera.py::test_pobranie_ticketu_z_jiry_z_polem_kryteriow_nie_ma_ostrzezen_i_ma_kryteria"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZRODLA = ("linear", "jira", "github")'
+zamien = 'ZRODLA = ("linear", "jira")'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_githuba_oddaje_skroty_z_identyfikatorem_repo_i_numeru"
+
+# Domyslne typy stanu Lineara: kazdy element osobno.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'TYPY_STANU_DOMYSLNE = ["unstarted", "started"]'
+zamien = 'TYPY_STANU_DOMYSLNE = ["started"]'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_bez_filtra_i_konfiguracji_pyta_o_stany_unstarted_i_started"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'TYPY_STANU_DOMYSLNE = ["unstarted", "started"]'
+zamien = 'TYPY_STANU_DOMYSLNE = ["unstarted"]'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_bez_filtra_i_konfiguracji_pyta_o_stany_unstarted_i_started"
+
+# Komunikaty bledow konfiguracji: pelna tresc.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'BRAK_SEKCJI = "brak sekcji tickets'
+zamien = 'BRAK_SEKCJI = "brak sekcji ticketow'
+test = "tests/test_tickety_przez_runnera.py::test_projekt_z_konfiguracja_bez_sekcji_tickets_daje_409_z_komunikatem_o_braku_sekcji"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZLE_ZRODLO = "tickets.source musi być jednym z: linear, jira, github"'
+zamien = 'ZLE_ZRODLO = "tickets.source musi być jednym z: linear, jira"'
+test = "tests/test_tickety_przez_runnera.py::test_nieznane_zrodlo_ticketow_w_konfiguracji_daje_409_z_lista_dozwolonych"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'BRAK_REPO = "tickets.repo jest wymagane dla dostawcy github"'
+zamien = 'BRAK_REPO = "tickets.repo jest wymagane dla dostawcy gitlab"'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_githuba_bez_repo_zglasza_zla_konfiguracje"
+
+# STANY_GITHUB: kazdy element osobno (stan z konfiguracji trafia do zadania).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'STANY_GITHUB = ("open", "closed", "all")'
+zamien = 'STANY_GITHUB = ("closed", "all")'
+test = "tests/test_tickety_przez_runnera.py::test_kazdy_dozwolony_stan_githuba_z_konfiguracji_trafia_do_zadania"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'STANY_GITHUB = ("open", "closed", "all")'
+zamien = 'STANY_GITHUB = ("open", "all")'
+test = "tests/test_tickety_przez_runnera.py::test_kazdy_dozwolony_stan_githuba_z_konfiguracji_trafia_do_zadania"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'STANY_GITHUB = ("open", "closed", "all")'
+zamien = 'STANY_GITHUB = ("open", "closed")'
+test = "tests/test_tickety_przez_runnera.py::test_kazdy_dozwolony_stan_githuba_z_konfiguracji_trafia_do_zadania"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZLE_TYPY_STANU = "tickets.typy_stanu musi być listą napisów"'
+zamien = 'ZLE_TYPY_STANU = "tickets.typy_stanu musi być listą napisow"'
+test = "tests/test_tickety_przez_runnera.py::test_typy_stanu_lineara_niebedace_lista_napisow_to_zla_konfiguracja_bez_zadania"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZLE_ETYKIETY = "tickets.etykiety musi być listą napisów"'
+zamien = 'ZLE_ETYKIETY = "tickets.etykiety musi być listą napisow"'
+test = "tests/test_tickety_przez_runnera.py::test_etykiety_githuba_niebedace_lista_napisow_to_zla_konfiguracja_bez_zadania"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZLY_STAN = "tickets.stan musi być jednym z: open, closed, all"'
+zamien = 'ZLY_STAN = "tickets.stan musi być jednym z: open, closed"'
+test = "tests/test_tickety_przez_runnera.py::test_stan_githuba_spoza_open_closed_all_to_zla_konfiguracja_bez_zadania"
+
+# ZAPIS_WYLACZONY: poczatek stalej, pierwszy i drugi fragment tekstu.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "ZAPIS_WYLACZONY = ("
+zamien = 'ZAPIS_WYLACZONY = ("UWAGA: " '
+test = "tests/test_tickety_przez_runnera.py::test_zapis_wyniku_bez_flagi_post_result_jest_wylaczony_i_nie_wola_dostawcy"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = '"zapis wyniku do systemu ticketów wyłączony — włącz'
+zamien = '"zapis wyniku do systemu ticketów wyłączony — wlacz'
+test = "tests/test_tickety_przez_runnera.py::test_zapis_wyniku_bez_flagi_post_result_jest_wylaczony_i_nie_wola_dostawcy"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = '''"w .cockpit/project.yaml"
+)'''
+zamien = '''"w project.yaml"
+)'''
+test = "tests/test_tickety_przez_runnera.py::test_zapis_wyniku_bez_flagi_post_result_jest_wylaczony_i_nie_wola_dostawcy"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'ZAPIS_NIEDOSTEPNY = "zapis wyniku do systemu ticketów nie jest jeszcze dostępny"'
+zamien = 'ZAPIS_NIEDOSTEPNY = "zapis wyniku do systemu ticketów nie jest dostępny"'
+test = "tests/test_tickety_przez_runnera.py::test_zapis_wyniku_z_wlaczona_flaga_jest_jeszcze_niedostepny_i_nie_wola_dostawcy"
+
+# --- src/runner/tickety/operacje.py: _sekcja_tickets ---------------------------------------
+
+# Katalog projektu rozwiazywany dla innej sciezki niz zadana (poza zakresem runnera).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "katalog = _rozwiaz(Zakres.z_konfiguracji(), projekt)"
+zamien = 'katalog = _rozwiaz(Zakres.z_konfiguracji(), "/")'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Katalog projektu czytany z innego miejsca niz zadany.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "wczytany, problemy = wczytaj_projekt(katalog)"
+zamien = 'wczytany, problemy = wczytaj_projekt(katalog / "nieistniejacy")'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Poziom problemu: bledem staje sie wszystko poza bledem (YAML nieczytelny przechodzi dalej).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "bledy = [p for p in problemy if p.poziom == Poziom.blad]"
+zamien = "bledy = [p for p in problemy if p.poziom != Poziom.blad]"
+test = "tests/test_tickety_przez_runnera.py::test_nieczytelny_plik_konfiguracji_zglasza_zla_konfiguracje_z_prefiksem_pliku"
+
+# Brak pliku (samo ostrzezenie) nie jest bledem konfiguracji, tylko brakiem sekcji.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "bledy = [p for p in problemy if p.poziom == Poziom.blad]"
+zamien = "bledy = list(problemy)"
+test = "tests/test_tickety_przez_runnera.py::test_operacje_ticketowe_bez_pliku_projektu_zglaszaja_brak_konfiguracji"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "    if bledy:"
+zamien = "    if not bledy:"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Prefiks pliku w komunikacie bledu konfiguracji.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'f"{PLIK_PROJEKTU.as_posix()}: {bledy[0].komunikat}"'
+zamien = 'f"{PLIK_PROJEKTU.as_posix()} {bledy[0].komunikat}"'
+test = "tests/test_tickety_przez_runnera.py::test_nieczytelny_plik_konfiguracji_zglasza_zla_konfiguracje_z_prefiksem_pliku"
+
+# Komunikat niesie ostatni, nie pierwszy problem.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "bledy[0].komunikat"
+zamien = "bledy[-1].komunikat"
+test = "tests/test_tickety_przez_runnera.py::test_przy_kilku_bledach_konfiguracji_komunikat_niesie_pierwszy_z_nich"
+
+# Kod bledu konfiguracji.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'raise BladOperacji("zla_konfiguracja", f"{PLIK_PROJEKTU'
+zamien = 'raise BladOperacji("brak_konfiguracji", f"{PLIK_PROJEKTU'
+test = "tests/test_tickety_przez_runnera.py::test_przy_kilku_bledach_konfiguracji_komunikat_niesie_pierwszy_z_nich"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "tickets = wczytany.tickets"
+zamien = "tickets = None"
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "if tickets is None:"
+zamien = "if tickets is not None:"
+test = "tests/test_tickety_przez_runnera.py::test_projekt_z_konfiguracja_bez_sekcji_tickets_daje_409_z_komunikatem_o_braku_sekcji"
+
+# Kod i komunikat braku sekcji.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'raise BladOperacji("brak_konfiguracji", BRAK_SEKCJI)'
+zamien = 'raise BladOperacji("zla_konfiguracja", BRAK_SEKCJI)'
+test = "tests/test_tickety_przez_runnera.py::test_operacje_ticketowe_bez_pliku_projektu_zglaszaja_brak_konfiguracji"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'raise BladOperacji("brak_konfiguracji", BRAK_SEKCJI)'
+zamien = 'raise BladOperacji("brak_konfiguracji", ZLE_ZRODLO)'
+test = "tests/test_tickety_przez_runnera.py::test_operacje_ticketowe_bez_pliku_projektu_zglaszaja_brak_konfiguracji"
+
+# Zrodlo spoza listy.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'if tickets.get("source") not in ZRODLA:'
+zamien = 'if tickets.get("source") in ZRODLA:'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_oddaje_skroty_id_tytul_stan"
+
+# Brak klucza source: wyjatek KeyError zamiast bledu konfiguracji.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'if tickets.get("source") not in ZRODLA:'
+zamien = 'if tickets["source"] not in ZRODLA:'
+test = "tests/test_tickety_przez_runnera.py::test_zle_albo_brakujace_source_zglaszaja_zla_konfiguracje"
+
+# Kod i komunikat zlego zrodla.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'raise BladOperacji("zla_konfiguracja", ZLE_ZRODLO)'
+zamien = 'raise BladOperacji("brak_konfiguracji", ZLE_ZRODLO)'
+test = "tests/test_tickety_przez_runnera.py::test_zle_albo_brakujace_source_zglaszaja_zla_konfiguracje"
+
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'raise BladOperacji("zla_konfiguracja", ZLE_ZRODLO)'
+zamien = 'raise BladOperacji("zla_konfiguracja", BRAK_SEKCJI)'
+test = "tests/test_tickety_przez_runnera.py::test_zle_albo_brakujace_source_zglaszaja_zla_konfiguracje"
+
+# --- src/cockpit/services/zapytania_runnera.py: kod nie_znaleziono bez komunikatu ----------
+
+# Komunikat zastepczy dla kodu nie_znaleziono bez pola blad.
+[[mutant]]
+plik = "src/cockpit/services/zapytania_runnera.py"
+szukaj = 'raise NieZnaleziono(cialo.get("blad") or "runner zglosil blad")'
+zamien = 'raise NieZnaleziono(cialo.get("blad") or "XXrunner zglosil bladXX")'
+test = "tests/test_tickety_przez_runnera.py::test_serwis_kod_nie_znaleziono_bez_komunikatu_to_nie_znaleziono_z_komunikatem_zastepczym"
+
+# --- src/runner/tickety/operacje.py: _bledy_dostawcy (dekorator @contextmanager, poza mutmutem) ---
+
+# Bez dekoratora `with _bledy_dostawcy()` pada na generatorze: przelot ticketu przestaje dzialac.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "@contextmanager\ndef _bledy_dostawcy() -> Iterator[None]:\n    try:\n        yield"
+zamien = "def _bledy_dostawcy() -> Iterator[None]:\n    try:\n        yield"
+test = "tests/test_tickety_przez_runnera.py::test_ticket_nieznany_dostawcy_daje_404_z_komunikatem_adaptera"
+
+# Kod bledu dostawcy przechodzi dalej: nie_znaleziono musi zostac 404, nie 409.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "    except BladIntegracji as e:\n        raise BladOperacji(e.kod, e.komunikat) from None"
+zamien = "    except BladIntegracji as e:\n        raise BladOperacji(\"blad_dostawcy\", e.komunikat) from None"
+test = "tests/test_tickety_przez_runnera.py::test_ticket_nieznany_dostawcy_daje_404_z_komunikatem_adaptera"
+
+# Komunikat dostawcy (nazwa i miejsce poprawki) przechodzi dalej dosłownie.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "raise BladOperacji(e.kod, e.komunikat) from None"
+zamien = "raise BladOperacji(e.kod, e.kod) from None"
+test = "tests/test_tickety_przez_runnera.py::test_ticket_nieznany_dostawcy_daje_404_z_komunikatem_adaptera"
+
+# Blad konfiguracji Jiry niesie komunikat walidacji z nazwami pol.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = "    except jira.BlednaKonfiguracja as e:\n        raise BladOperacji(\"zla_konfiguracja\", str(e)) from None"
+zamien = "    except jira.BlednaKonfiguracja as e:\n        raise BladOperacji(\"zla_konfiguracja\", \"zla konfiguracja\") from None"
+test = "tests/test_tickety_przez_runnera.py::test_jira_z_bledna_konfiguracja_daje_409_z_komunikatem_adaptera"
+
+# --- src/runner/tickety/operacje.py: przekształcenia filtra (HAR-104, poprawka 2) ----------
+
+# Filtr Jiry jest przycinany: bez strip jql niesie spacje z brzegów.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'jql = (filtr or "").strip()'
+zamien = 'jql = filtr or ""'
+test = "tests/test_tickety_przez_runnera.py::test_filtr_listy_z_jiry_jest_przycinany_ale_nie_dzielony_po_przecinku"
+
+# Filtr Jiry z samych spacji to brak filtra: bez strip nadpisuje jql z konfiguracji spacjami (409).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'jql = (filtr or "").strip()'
+zamien = 'jql = filtr or ""'
+test = "tests/test_tickety_przez_runnera.py::test_filtr_listy_z_jiry_z_samych_spacji_oznacza_brak_filtra_i_uzywa_jql_z_konfiguracji"
+
+# Element filtra Linear/GitHub jest przycinany w wartosci.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'return [e.strip() for e in (filtr or "").split(",") if e.strip()]'
+zamien = 'return [e for e in (filtr or "").split(",") if e.strip()]'
+test = "tests/test_tickety_przez_runnera.py::test_filtr_listy_z_lineara_zastepuje_typy_stanu_z_konfiguracji_i_jest_przycinany"
+
+# Element z samych spacji odpada w warunku (bez strip w warunku zostaje pusty napis).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'return [e.strip() for e in (filtr or "").split(",") if e.strip()]'
+zamien = 'return [e.strip() for e in (filtr or "").split(",") if e]'
+test = "tests/test_tickety_przez_runnera.py::test_filtr_listy_z_lineara_zastepuje_typy_stanu_z_konfiguracji_i_jest_przycinany"
+
+# Filtr dzielony po przecinku (zamiast po srednikach).
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'return [e.strip() for e in (filtr or "").split(",") if e.strip()]'
+zamien = 'return [e.strip() for e in (filtr or "").split(";") if e.strip()]'
+test = "tests/test_tickety_przez_runnera.py::test_filtr_listy_z_githuba_zastepuje_etykiety_z_konfiguracji_i_jest_przycinany"
+
+# Brak filtra (None) to pusta lista elementow, nie wyjatek.
+[[mutant]]
+plik = "src/runner/tickety/operacje.py"
+szukaj = 'return [e.strip() for e in (filtr or "").split(",") if e.strip()]'
+zamien = 'return [e.strip() for e in filtr.split(",") if e.strip()]'
+test = "tests/test_tickety_przez_runnera.py::test_lista_z_lineara_bez_filtra_i_konfiguracji_pyta_o_stany_unstarted_i_started"

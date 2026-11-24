@@ -1,0 +1,306 @@
+# Tabela recznych mutantow HAR-175: stale i zbiory poza funkcjami w src/runner/straz_roli.py,
+# src/runner/hooks.py i src/cockpit/services/walidacja.py - mutmut ich nie mutuje.
+# Kazdy wiersz usuwa albo zmienia jeden element; wskazany test (caly, ze wszystkimi
+# parametrami) musi na nim oblac.
+
+# Biala lista odczytu: polecenie ls znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "ls",'
+zamien = '    "ls_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie cat znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "cat",'
+zamien = '    "cat_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie head znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "head",'
+zamien = '    "head_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie tail znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "tail",'
+zamien = '    "tail_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie grep znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "grep",'
+zamien = '    "grep_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie rg znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "rg",'
+zamien = '    "rg_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie wc znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "wc",'
+zamien = '    "wc_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista odczytu: polecenie pwd znika z listy, rola bez zapisu go nie uruchomi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "pwd",'
+zamien = '    "pwd_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista gita: git status znika z listy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "status",'
+zamien = '    "status_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista gita: git diff znika z listy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "diff",'
+zamien = '    "diff_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista gita: git log znika z listy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "log",'
+zamien = '    "log_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Biala lista gita: git show znika z listy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "show",'
+zamien = '    "show_",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_moze_uruchomic_polecenie_do_odczytu_z_bialej_listy"
+
+# Metaznak (przekierowanie): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    ">",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (here-doc): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "<",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (rura): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "|",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (srednik): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    ";",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (tlo): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "&",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (odwrotny apostrof): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "`",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (podstawienie polecenia): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "$(",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Metaznak (nowa linia): bez niego polecenie z bialej listy z tym znakiem w argumencie przechodzi.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "\n",'
+zamien = '    "@@",'
+test = "tests/test_straz_roli.py::test_rola_bez_zapisu_nie_przepuszcza_polecenia_z_bialej_listy_z_metaznakiem_zapisu"
+
+# Narzedzie zapisu Write poza tabela: zapis poza worktree nie jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "Write": "file_path",'
+zamien = '    "Writex": "file_path",'
+test = "tests/test_straz_roli.py::test_zapis_pod_obca_sciezka_bezwzgledna_jest_odmowiony_z_powodem_poza_worktree"
+
+# Klucz sciezki narzedzia Write zly: zapis w worktree traci sciezke i jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "Write": "file_path",'
+zamien = '    "Write": "file_pathx",'
+test = "tests/test_straz_roli.py::test_rola_z_prawem_zapisu_zapisuje_w_swoim_worktree"
+
+# Narzedzie zapisu Edit poza tabela: zapis poza worktree nie jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "Edit": "file_path",'
+zamien = '    "Editx": "file_path",'
+test = "tests/test_straz_roli.py::test_zapis_pod_obca_sciezka_bezwzgledna_jest_odmowiony_z_powodem_poza_worktree"
+
+# Klucz sciezki narzedzia Edit zly: zapis w worktree traci sciezke i jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "Edit": "file_path",'
+zamien = '    "Edit": "file_pathx",'
+test = "tests/test_straz_roli.py::test_rola_z_prawem_zapisu_zapisuje_w_swoim_worktree"
+
+# Narzedzie zapisu MultiEdit poza tabela: zapis poza worktree nie jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "MultiEdit": "file_path",'
+zamien = '    "MultiEditx": "file_path",'
+test = "tests/test_straz_roli.py::test_zapis_pod_obca_sciezka_bezwzgledna_jest_odmowiony_z_powodem_poza_worktree"
+
+# Klucz sciezki narzedzia MultiEdit zly: zapis w worktree traci sciezke i jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "MultiEdit": "file_path",'
+zamien = '    "MultiEdit": "file_pathx",'
+test = "tests/test_straz_roli.py::test_rola_z_prawem_zapisu_zapisuje_w_swoim_worktree"
+
+# Narzedzie zapisu NotebookEdit poza tabela: zapis poza worktree nie jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "NotebookEdit": "notebook_path",'
+zamien = '    "NotebookEditx": "notebook_path",'
+test = "tests/test_straz_roli.py::test_zapis_pod_obca_sciezka_bezwzgledna_jest_odmowiony_z_powodem_poza_worktree"
+
+# Klucz sciezki narzedzia NotebookEdit zly: zapis w worktree traci sciezke i jest odmowiony.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '    "NotebookEdit": "notebook_path",'
+zamien = '    "NotebookEdit": "notebook_pathx",'
+test = "tests/test_straz_roli.py::test_rola_z_prawem_zapisu_zapisuje_w_swoim_worktree"
+
+# Limit komendy w zdarzeniu odmowy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '_MAKS_OPISU = 200'
+zamien = '_MAKS_OPISU = 201'
+test = "tests/test_straz_roli.py::test_komenda_w_zdarzeniu_odmowy_jest_ucieta_do_dwustu_znakow"
+
+# Prefiks powodu odmowy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = '_PREFIKS = "straż roli: "'
+zamien = '_PREFIKS = "straz roli: "'
+test = "tests/test_straz_roli.py::test_nieczytelne_wejscie_hooka_daje_odmowe_z_powodem_straz_roli_a_nie_wyjatek"
+
+# Nazwa zmiennej z plikiem hookow.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'ZMIENNA_PLIKU = "COCKPIT_HOOK_FILE"'
+zamien = 'ZMIENNA_PLIKU = "COCKPIT_HOOK_FILE_X"'
+test = "tests/test_straz_roli.py::test_odmowa_dopisuje_do_pliku_hookow_jedna_linie_tool_denied_z_narzedziem_komenda_i_rola"
+
+# Matcher strazy obejmuje NotebookEdit.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = '_MATCHER_STRAZY = "Bash|Write|Edit|MultiEdit|NotebookEdit"'
+zamien = '_MATCHER_STRAZY = "Bash|Write|Edit|MultiEdit"'
+test = "tests/test_hooki_kroku.py::test_ustawienia_z_rola_maja_w_pretooluse_dwie_grupy_obserwacje_i_straz"
+
+# Tekst ostrzezenia o powtorzonej odmowie.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = '_PREFIKS_POWTORZENIA = "agent powtarza zablokowaną komendę: "'
+zamien = '_PREFIKS_POWTORZENIA = "agent powtarza komende: "'
+test = "tests/test_straz_roli.py::test_druga_identyczna_odmowa_w_kroku_daje_dodatkowe_ostrzezenie_o_powtorzeniu"
+
+# Sciezka skryptu strazy w poleceniu hooka.
+[[mutant]]
+plik = "src/runner/hooks.py"
+szukaj = '_STRAZ_ROLI = Path(__file__).resolve().parent / "straz_roli.py"'
+zamien = '_STRAZ_ROLI = Path(__file__).resolve().parent / "straz_roli2.py"'
+test = "tests/test_hooki_kroku.py::test_polecenie_strazy_to_interpreter_runnera_w_trybie_izolowanym_skrypt_rola_i_worktree"
+
+# Punkt egzekucji no_git_write.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = 'Niezmiennik.no_git_write: ("runner.straz_roli:decyzja",),'
+zamien = 'Niezmiennik.no_git_write: ("runner.straz_roli:decyzja_x",),'
+test = "tests/test_warstwy.py::test_zakaz_zapisu_w_gicie_jest_egzekwowany_przez_straz_roli"
+
+# Punkt egzekucji reviewer_readonly.
+[[mutant]]
+plik = "src/cockpit/services/walidacja.py"
+szukaj = 'Niezmiennik.reviewer_readonly: ("runner.krok:wykonaj_krok",),'
+zamien = 'Niezmiennik.reviewer_readonly: ("runner.krok:wykonaj_krok_x",),'
+test = "tests/test_warstwy.py::test_tylko_odczyt_recenzenta_jest_egzekwowany_przez_wykonanie_kroku"
+
+# Uruchomienie jako skrypt (src/runner/straz_roli.py:28): warunek odwrocony, katalog src/ nie trafia na sys.path.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'if __package__ in (None, ""):'
+zamien = 'if __package__ not in (None, ""):'
+test = "tests/test_straz_roli.py::test_straz_uruchomiona_jako_skrypt_dodaje_katalog_src_na_poczatek_sciezek_importu"
+
+# Zaladowanie jako modul pakietu (src/runner/straz_roli.py:28): warunek zawsze prawdziwy zmienia sys.path pakietu.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'if __package__ in (None, ""):'
+zamien = 'if True:'
+test = "tests/test_straz_roli.py::test_straz_zaladowana_jako_modul_pakietu_nie_zmienia_sciezek_importu"
+
+# Dodany katalog (src/runner/straz_roli.py:30): jeden poziom za nisko, to katalog pakietu runner, nie src.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'sys.path.insert(0, str(Path(__file__).resolve().parent.parent))'
+zamien = 'sys.path.insert(0, str(Path(__file__).resolve().parent))'
+test = "tests/test_straz_roli.py::test_straz_uruchomiona_jako_skrypt_dodaje_katalog_src_na_poczatek_sciezek_importu"
+
+# Dodany katalog (src/runner/straz_roli.py:30): dopisany na koniec zamiast na poczatek sys.path.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'sys.path.insert(0, str(Path(__file__).resolve().parent.parent))'
+zamien = 'sys.path.append(str(Path(__file__).resolve().parent.parent))'
+test = "tests/test_straz_roli.py::test_straz_uruchomiona_jako_skrypt_dodaje_katalog_src_na_poczatek_sciezek_importu"
+
+# Klasa bledu wejscia (src/runner/straz_roli.py:83): KeyError opakowuje komunikat w apostrofy.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'class _BladStrazy(Exception):'
+zamien = 'class _BladStrazy(KeyError):'
+test = "tests/test_straz_roli.py::test_stdin_z_json_niebedacym_obiektem_daje_dokladny_komunikat"
+
+# Punkt wejscia (src/runner/straz_roli.py:247): warunek nigdy nie zachodzi, wiec hook uruchomiony
+# jako skrypt nic nie robi (import modulu w testach sie nie zmienia).
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'if __name__ == "__main__":'
+zamien = 'if __name__ == "__xmain__":'
+test = "tests/test_straz_roli.py::test_hook_uruchomiony_jako_proces_odmawia_commita_wykonawcy_jsonem_deny_i_kodem_zero"
+
+# Punkt wejscia (src/runner/straz_roli.py:248): kod wyjscia hooka inny niz zero.
+[[mutant]]
+plik = "src/runner/straz_roli.py"
+szukaj = 'sys.exit(main())'
+zamien = 'sys.exit(1)'
+test = "tests/test_straz_roli.py::test_hook_uruchomiony_jako_proces_przepuszcza_dozwolone_polecenie_pustym_wyjsciem"
