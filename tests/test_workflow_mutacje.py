@@ -980,27 +980,12 @@ def test_zadanie_po_scaleniu_nigdzie_nie_ukrywa_bledu_komendy_takze_w_zapadce():
         assert not UKRYCIE_BLEDU.search(linia), linia
 
 
-# =============================================================================
-# HAR-150: kod mutantow zmian trafia do pliku, krok `mutanty ręczne` wymaga tabeli
-# =============================================================================
-
-# Atrapa git: zapisuje argumenty; `diff` z `--diff-filter=d` zwraca tylko tabele, drugi `diff`
-# wszystkie zmienione pliki (tabele tez). Reszta polecen (np. fetch) konczy sie sukcesem.
-# Atrapa tools/mutanty_reczne.py: dopisuje argv wywolania do pliku, wypisuje i konczy sie zadanym kodem.
-
-
 # --- struktura kroku ----------------------------------------------------------
 
 
 def test_zaden_krok_run_zadania_pull_requestu_nie_uzywa_wyrazen_github_actions_w_skrypcie():
     for skrypt in _skrypty(ZADANIE_PR):
         assert "${{" not in skrypt
-
-
-# --- zapis kodu narzedzia mutantow zmian ---------------------------------------
-
-
-# --- krok `mutanty ręczne`: wymaga tabeli poza zasiegiem mutmuta ---------------
 
 
 # =============================================================================

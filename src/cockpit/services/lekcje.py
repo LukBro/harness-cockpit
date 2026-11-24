@@ -121,7 +121,9 @@ def wpisy_lekcji(tekst: str) -> list[WpisLekcji]:
     for linia in tekst.splitlines(keepends=True):
         # pragma obejmuje tylko mutant `lstrip` (rownowazny: zostawia koncowy terminator w `gola`, ale kazdy odbiorca
         # go pomija: `rstrip()` w `_zamyka_blok`, `\b` w `_NAGLOWEK`, `startswith`, `strip()` w `_pola`);
-        # `rstrip()` i `rstrip("XX\r\nXX")` maja wiersze [[mutant]] w tests/mutanty_reczne/HAR-169.toml
+        # `rstrip()` i `rstrip("XX\r\nXX")` chronia testy: tests/test_wpisy_lekcji.py::test_naglowek_sekcji_z_samym_odstepem_po_hashach_konczy_tekst_poprzedniej_lekcji
+        # (`rstrip()`) i tests/test_manifest_kontekstu_brzegi.py::test_zakres_konczacy_sie_litera_x_zachowuje_ja_w_sciezce_lekcji_przy_obu_koncach_linii
+        # (`rstrip("XX\r\nXX")`)
         gola = linia.rstrip("\r\n")  # pragma: no mutate
         if otwarcie is not None:
             if _zamyka_blok(gola, otwarcie):

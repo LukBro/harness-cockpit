@@ -18,12 +18,12 @@ Skrypt daje jeden werdykt (kod wyjścia) i krótkie wyjście, które wklejasz do
 | Testy w trakcie pracy (wąskie i pełne) | `python tools/testy.py <argumenty pytesta>` | kod pytesta; **2** = zawieszenie (po 20 min bez postępu, zmiana: `--bez-postepu SEKUNDY`), stdout: `zawieszenie: <node id>` |
 | Przed review (pełne testy) | `bash tools/testy_pelne.sh` | 0 zielono, inny kod czerwono |
 | Po `git merge origin/main` | `bash tools/po_merge_main.sh` | ostatnia linia `PO-MERGE: ok` albo `PO-MERGE: blad <etap>` (`konflikt`, `alembic`, `testy`); kod 0 / 1 / 2 |
-| Raport z liczbami | `python tools/liczby_raportu.py --pliki "<lista z sekcji Pliki dotykane>"` | markdown do wklejenia: wiersze `[[mutant]]` i `[[rownowazny]]`, nowe i usunięte testy, cudze tabele i pliki spoza listy z dopiskiem `wymaga STOP:` |
+| Raport z liczbami | `python tools/liczby_raportu.py --pliki "<lista z sekcji Pliki dotykane>"` | markdown do wklejenia: nowe i usunięte testy oraz pliki spoza listy z dopiskiem `wymaga STOP:` |
 | Oddanie PR | `bash tools/oddaj_pr.sh --tytul "<tytuł>" --tresc <plik z opisem PR>` | ostatnia linia `ODDAJ-PR: ok <url>` albo `ODDAJ-PR: odmowa <powód>`; ścieżka wrażliwa w diffie: PR powstaje, skrypt pisze `merge reczny` |
 
 Zasady, które egzekwują skrypty (zamiast pamięci agenta):
 
-- `raport-zgodny-z-diffem`: liczby w raporcie pochodzą z wyjścia `liczby_raportu.py`; zmiana cudzej tabeli albo pliku
+- `raport-zgodny-z-diffem`: liczby w raporcie pochodzą z wyjścia `liczby_raportu.py`; zmiana pliku
   spoza przydziału ma w raporcie linię `STOP:` z powodem.
 - `merge-rownoleglych-ticketow`: po merge `main` idzie cały `po_merge_main.sh`, nie testy plików z konfliktem.
 - CLAUDE.md „Commity”: `oddaj_pr.sh` odmawia przy innym `user.email`/`user.name` niż `lukaszbrowar@gmail.com` / `LukBro`,

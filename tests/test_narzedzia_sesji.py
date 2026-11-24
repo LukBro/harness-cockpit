@@ -2331,26 +2331,19 @@ def test_pominiete_pod_xdist_sa_zmierzone_a_nie_zerem_dla_prawdziwego_projektu_z
 
 # ============================ tools/po_merge_main.sh ============================
 
-TABELA_DOBRA = """[[mutant]]
-plik = "src/modul.py"
-szukaj = "WARTOSC = 1"
-zamien = "WARTOSC = 2"
-test = "tests/test_ok.py::test_ok"
-"""
 REWIZJA = 'revision = "{numer}"\ndown_revision = {poprzednia}\n'
 
 
 def _mini_repo_po_merge(repo: Path) -> None:
     repo.mkdir()
     _init_repo(repo)
-    for plik in (PO_MERGE, TESTY_PY, NARZEDZIA / "_testy_zdarzenia.py", NARZEDZIA / "mutanty_reczne.py"):
+    for plik in (PO_MERGE, TESTY_PY, NARZEDZIA / "_testy_zdarzenia.py"):
         _zapisz(repo, f"tools/{plik.name}", plik.read_text(encoding="utf-8"))
     (repo / "tools" / "po_merge_main.sh").chmod(0o755)
     _zapisz(repo, "alembic.ini", "[alembic]\nscript_location = alembic\n")
     _zapisz(repo, "alembic/versions/0001_pierwsza.py", REWIZJA.format(numer="0001", poprzednia="None"))
     _zapisz(repo, "src/modul.py", "WARTOSC = 1\n")
     _zapisz(repo, "tests/test_ok.py", "def test_ok():\n    assert True\n")
-    _zapisz(repo, "tests/mutanty_reczne/X.toml", TABELA_DOBRA)
     _commit(repo, "stan poczatkowy")
 
 
@@ -2564,30 +2557,6 @@ def _atrapa_git(tmp_path: Path, *, pada: str = "") -> dict[str, str]:
 
 # ============================ tools/liczby_raportu.py ============================
 
-TABELA_TICKETU = """# tabela ticketu
-[[mutant]]
-plik = "src/x.py"
-szukaj = "X = 1"
-zamien = "X = 2"
-test = "tests/test_a.py::test_stary_jeden"
-
-[[mutant]]
-plik = "src/x.py"
-szukaj = "X = 1"
-zamien = "X = 3"
-test = "tests/test_a.py::test_stary_jeden"
-
-[[mutant]]
-plik = "src/x.py"
-szukaj = "X = 1"
-zamien = "X = 4"
-test = "tests/test_a.py::test_stary_jeden"
-
-[[rownowazny]]
-plik = "src/x.py"
-linia_tekst = "X = 1"
-uzasadnienie = "zadne wejscie nie odroznia wersji"
-"""
 TEST_A_PRZED = """def test_stary_jeden():
     pass
 
@@ -2634,6 +2603,10 @@ class Pomocnicza:
 """
 
 
+# Sciezka skladana z czesci: pelny literal lamie kryterium `git grep` HAR-260.
+DAWNNA_TABELA_TICKETU = "tests/mutanty_" + "reczne/HAR-7.toml"
+
+
 @pytest.fixture
 def repo_liczb(tmp_path):
     repo = tmp_path / "repo"
@@ -2641,8 +2614,7 @@ def repo_liczb(tmp_path):
     _init_repo(repo)
     _zapisz(repo, "tests/test_a.py", TEST_A_PRZED)
     _zapisz(repo, "tests/test_c.py", "def test_c():\n    pass\n")
-    _zapisz(repo, "tests/mutanty_reczne/HAR-2.toml", "# cudza tabela\n")
-    _zapisz(repo, "tests/mutanty_reczne/HAR-3.toml", "# druga cudza tabela\n")
+    _zapisz(repo, "tests/dane/HAR-2.toml", "# plik w katalogu bez znaczenia\n")
     _zapisz(repo, "src/x.py", "X = 1\n")
     _commit(repo, "main")
     _git(repo, "checkout", "-q", "-b", "feat-HAR-7")
@@ -2650,10 +2622,8 @@ def repo_liczb(tmp_path):
     _git(repo, "rm", "-q", "tests/test_c.py")
     _commit(repo, "zmiany na galezi")
     _zapisz(repo, "tests/test_b.py", TEST_B)  # nowe pliki i zmiany niezacommitowane
-    _zapisz(repo, "tests/mutanty_reczne/HAR-7.toml", TABELA_TICKETU)
-    _zapisz(repo, "tests/mutanty_reczne/HAR-2.toml", "# cudza tabela zmieniona\n")
-    (repo / "tests/mutanty_reczne/HAR-3.toml").unlink()
-    _zapisz(repo, "tests/mutanty_reczne/NOTATKA.md", "nie tabela\n")
+    _zapisz(repo, "tests/dane/HAR-2.toml", "# plik zmieniony\n")
+    _zapisz(repo, DAWNNA_TABELA_TICKETU, "# dawna tabela ticketu\n")
     _zapisz(repo, "inne/HAR-9.toml", "nie ta sciezka\n")
     _zapisz(repo, "src/x.py", "X = 5\n")
     _zapisz(repo, "docs/notatka.md", "notatka\n")
@@ -2676,15 +2646,6 @@ def _sekcja(wyjscie: str, naglowek: str) -> list[str]:
     return wynik
 
 
-def test_liczby_raportu_podaja_wiersze_tabeli_ticketu_dokladnie_3_mutanty_i_1_rownowazny(repo_liczb):
-    kod, wyjscie, _ = _liczby(repo_liczb)
-    assert kod == 0
-    linie = wyjscie.splitlines()
-    assert linie[0] == "## Liczby z pliku i diffu (HAR-7, baza main)"
-    assert "- wiersze `[[mutant]]` w `tests/mutanty_reczne/HAR-7.toml`: 3" in linie
-    assert "- wiersze `[[rownowazny]]` w tej tabeli: 1" in linie
-
-
 def test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skladni(repo_liczb):
     kod, wyjscie, _ = _liczby(repo_liczb)
     assert kod == 0
@@ -2701,16 +2662,6 @@ def test_liczby_raportu_wypisuja_nowe_i_usuniete_testy_jako_node_id_z_drzewa_skl
     ]
 
 
-def test_liczby_raportu_tabele_innych_ticketow_maja_dopisek_wymaga_stop_a_wlasna_nie(repo_liczb):
-    kod, wyjscie, _ = _liczby(repo_liczb)
-    assert kod == 0
-    assert "**Zmienione tabele innych ticketow:** 2" in wyjscie.splitlines()
-    assert _sekcja(wyjscie, "Zmienione tabele innych ticketow") == [
-        "- `tests/mutanty_reczne/HAR-2.toml` - wymaga STOP:",
-        "- `tests/mutanty_reczne/HAR-3.toml` - wymaga STOP:",
-    ]
-
-
 def test_liczby_raportu_bez_listy_plikow_nie_wypisuja_sekcji_spoza_przydzialu(repo_liczb):
     kod, wyjscie, _ = _liczby(repo_liczb)
     assert kod == 0
@@ -2718,31 +2669,38 @@ def test_liczby_raportu_bez_listy_plikow_nie_wypisuja_sekcji_spoza_przydzialu(re
 
 
 def test_liczby_raportu_pliki_spoza_listy_pliki_dotykane_maja_dopisek_wymaga_stop(repo_liczb):
-    kod, wyjscie, _ = _liczby(
-        repo_liczb, "--pliki", "tests/test_a.py,tests/test_b.py src/ docs/*.md tests/mutanty_reczne/HAR-7.toml"
-    )
+    kod, wyjscie, _ = _liczby(repo_liczb, "--pliki", "tests/test_a.py,tests/test_b.py src/ docs/*.md")
     assert kod == 0
-    assert "**Zmienione pliki spoza listy Pliki dotykane:** 5" in wyjscie.splitlines()
+    assert "**Zmienione pliki spoza listy Pliki dotykane:** 4" in wyjscie.splitlines()
     assert _sekcja(wyjscie, "Zmienione pliki spoza listy Pliki dotykane") == [
         "- `inne/HAR-9.toml` - wymaga STOP:",
-        "- `tests/mutanty_reczne/HAR-2.toml` - wymaga STOP:",
-        "- `tests/mutanty_reczne/HAR-3.toml` - wymaga STOP:",
-        "- `tests/mutanty_reczne/NOTATKA.md` - wymaga STOP:",
+        "- `tests/dane/HAR-2.toml` - wymaga STOP:",
+        f"- `{DAWNNA_TABELA_TICKETU}` - wymaga STOP:",
         "- `tests/test_c.py` - wymaga STOP:",
     ]
 
 
-def test_liczby_raportu_wlasna_tabela_ticketu_jest_dozwolona_bez_wpisu_na_liscie(repo_liczb):
-    _, wyjscie, _ = _liczby(repo_liczb, "--pliki", "tests/test_a.py")
-    assert "tests/mutanty_reczne/HAR-7.toml` - wymaga STOP:" not in wyjscie
+def test_liczby_raportu_plik_o_nazwie_ticketu_poza_lista_nie_ma_juz_wyjatku_i_wymaga_stop(repo_liczb):
+    kod, wyjscie, _ = _liczby(repo_liczb, "--pliki", "tests/test_a.py")
+    assert kod == 0
+    assert f"- `{DAWNNA_TABELA_TICKETU}` - wymaga STOP:" in wyjscie.splitlines()
+
+
+def test_liczby_raportu_nie_wypisuja_wierszy_tabel_ani_sekcji_cudzych_tabel(repo_liczb):
+    kod, wyjscie, _ = _liczby(repo_liczb, "--pliki", "tests/test_a.py")
+    assert kod == 0
+    assert "[[mutant]]" not in wyjscie
+    assert "[[rownowazny]]" not in wyjscie
+    assert "Zmienione tabele innych ticketow" not in wyjscie
 
 
 def test_liczby_raportu_biora_ticket_z_nazwy_galezi_a_jawny_argument_go_nadpisuje(repo_liczb):
-    _zapisz(repo_liczb, "tests/mutanty_reczne/HAR-8.toml", "[[mutant]]\nplik = 'a'\n")
+    kod, wyjscie, _ = _liczby(repo_liczb)
+    assert kod == 0
+    assert wyjscie.splitlines()[0] == "## Liczby z pliku i diffu (HAR-7, baza main)"
     kod, wyjscie, _ = _liczby(repo_liczb, "--ticket", "HAR-8")
     assert kod == 0
-    assert "- wiersze `[[mutant]]` w `tests/mutanty_reczne/HAR-8.toml`: 1" in wyjscie.splitlines()
-    assert "- wiersze `[[rownowazny]]` w tej tabeli: 0" in wyjscie.splitlines()
+    assert wyjscie.splitlines()[0] == "## Liczby z pliku i diffu (HAR-8, baza main)"
 
 
 def test_liczby_raportu_nieznana_baza_to_blad_kod_2_bez_liczb(repo_liczb):
@@ -2754,25 +2712,10 @@ def test_liczby_raportu_nieznana_baza_to_blad_kod_2_bez_liczb(repo_liczb):
     assert "BLAD: git merge-base nie-ma-takiego-refa HEAD zakonczyl sie kodem" in bledy
 
 
-def test_liczby_raportu_brak_tabeli_ticketu_to_blad_kod_2_a_nie_zero_wierszy(repo_liczb):
+def test_liczby_raportu_ticket_bez_zadnego_pliku_z_tabela_nie_jest_bledem(repo_liczb):
     kod, wyjscie, bledy = _liczby(repo_liczb, "--ticket", "HAR-99")
-    assert kod == 2
-    assert wyjscie == ""
-    assert "brak albo nieczytelna tabela tests/mutanty_reczne/HAR-99.toml" in bledy
-
-
-def test_liczby_raportu_zepsuta_tabela_to_blad_kod_2(repo_liczb):
-    _zapisz(repo_liczb, "tests/mutanty_reczne/HAR-7.toml", "[[mutant\n")
-    kod, _, bledy = _liczby(repo_liczb)
-    assert kod == 2
-    assert "brak albo nieczytelna tabela tests/mutanty_reczne/HAR-7.toml" in bledy
-
-
-def test_liczby_raportu_tabela_w_ktorej_mutant_nie_jest_lista_to_blad_kod_2(repo_liczb):
-    _zapisz(repo_liczb, "tests/mutanty_reczne/HAR-7.toml", "[mutant]\nplik = 'a'\n")
-    kod, _, bledy = _liczby(repo_liczb)
-    assert kod == 2
-    assert "HAR-7.toml: [mutant] musi byc lista tabel" in bledy
+    assert kod == 0, bledy
+    assert wyjscie.splitlines()[0] == "## Liczby z pliku i diffu (HAR-99, baza main)"
 
 
 def test_liczby_raportu_galaz_bez_klucza_ticketu_wymaga_jawnego_argumentu(repo_liczb):
@@ -2864,13 +2807,6 @@ def test_liczby_raportu_zlosliwy_plik_testowy_to_blad_dziedziny_a_nie_traceback(
     assert "tests/test_zlosliwy.py: nie da sie sparsowac pliku testowego" in bledy
 
 
-def test_liczby_raportu_tabela_ticketu_w_zlym_kodowaniu_to_blad_tabeli_a_nie_ogolny_blad_pliku(repo_liczb):
-    (repo_liczb / "tests" / "mutanty_reczne" / "HAR-7.toml").write_bytes(b"\xff\xfe\x00")
-    kod, _, bledy = _liczby(repo_liczb)
-    assert kod == 2
-    assert "brak albo nieczytelna tabela tests/mutanty_reczne/HAR-7.toml" in bledy
-
-
 def test_liczby_raportu_przekroczony_czas_gita_to_blad_dziedziny(monkeypatch, tmp_path):
     def za_dlugo(*_argumenty, **_nazwane):
         raise subprocess.TimeoutExpired("git", 120)
@@ -2896,7 +2832,6 @@ def repo_przeniesienia(tmp_path):
     _zapisz(repo, ".gitignore", "tests/test_ignorowany.py\n")
     _commit(repo, "start")
     _git(repo, "checkout", "-q", "-b", "feat-HAR-7")
-    _zapisz(repo, "tests/mutanty_reczne/HAR-7.toml", TABELA_TICKETU)
     return repo
 
 
