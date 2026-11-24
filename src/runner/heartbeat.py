@@ -41,11 +41,13 @@ class Heartbeat:
         while True:
             await asyncio.sleep(self.co_s)
             try:
-                # wait_for: limit dziala tez wtedy, gdy transport ignoruje timeout httpx
-                r = await asyncio.wait_for(
-                    self._client.post(self._url, headers=self._naglowki, timeout=self.timeout_s),
-                    self.timeout_s,
-                )
+                # asyncio.timeout: limit dziala tez wtedy, gdy transport ignoruje timeout httpx.
+                # Nie wait_for: na Pythonie 3.11 polyka on CancelledError, gdy zadanie HTTP
+                # konczy sie rownoczesnie z anulowaniem, i petla nigdy by sie nie skonczyla (HAR-224)
+                async with asyncio.timeout(self.timeout_s):
+                    r = await self._client.post(
+                        self._url, headers=self._naglowki, timeout=self.timeout_s,
+                    )
             except Exception as e:
                 # tylko nazwa klasy: tresc wyjatku moze niesc adres albo naglowki
                 print(f"heartbeat nieudany: {type(e).__name__}", file=sys.stderr)
