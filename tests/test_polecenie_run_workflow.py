@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from types import SimpleNamespace
 
@@ -175,7 +176,7 @@ async def test_trwajacy_run_nie_blokuje_odpowiedzi_na_kolejne_zapytanie_kokpitu(
     async with zadanie_tla(runner.listen(), "nasluch runnera"):
         kokpit.wyslij(POLECENIE)
         await asyncio.wait_for(silnik.wystartowal.wait(), LIMIT_S)
-        kokpit.wyslij({"type": "ping", "req_id": "zapytanie-1"})
+        kokpit.wyslij({"type": "ping", "req_id": "zapytanie-1", "nadano_o": time.time(), "wazne_s": 15.0})
 
         await _poczekaj(lambda: kokpit.odpowiedzi, "odpowiedz na zapytanie w trakcie runu")
 
