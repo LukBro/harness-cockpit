@@ -15,10 +15,12 @@ Lista `poza_zasiegiem` jest wyliczana przy kazdym kodzie przez `lista_poza_zasie
 (trzeci szew, podmieniany w `uruchom_nakladke` przez `FalszywyMutmut(poza=...)`); kod 3 porownuje ja
 ze stdout narzedzia, kod 0 z niepusta lista to kod 2 nakladki.
 
-Testy nie uruchamiaja ani gita, ani mutmuta: podmieniane sa dwa szwy modulu
+Testy nie uruchamiaja ani gita, ani mutmuta: podmieniane sa trzy szwy modulu
 - `raport_mutantow.uruchom(argv) -> subprocess.CompletedProcess[str]` (jedyne miejsce procesow),
 - `raport_mutantow.wzorce_zmian(baza: str, korzen: Path) -> list[str]` (wzorce mutantow zmienionych
   funkcji, jak `mutanty_zmian.wzorce`),
+- `raport_mutantow.lista_poza_zasiegiem(baza: str, korzen: Path) -> list[dict]` (wpisy
+  `{plik, linia}` zmian poza zasiegiem mutmuta),
 a wejscie to `raport_mutantow.main(argv: list[str] | None = None) -> int`. Sama `wzorce_zmian` ma
 osobne testy z podmieniona `mutanty_zmian.uruchom` (bez gita).
 
@@ -37,6 +39,8 @@ from difflib import unified_diff
 from pathlib import Path
 
 import pytest
+
+LIMIT_TESTU_S = 60.0
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
@@ -1479,13 +1483,22 @@ def test_uruchom_nieistniejacy_program_to_blad_narzedzia_z_nazwa_programu():
     assert str(wyjatek.value).startswith(f"nie da sie uruchomic {program}: ")
 
 
-def test_uruchom_zwraca_kod_i_wyjscie_a_bajty_spoza_utf8_zamienia_na_znak_zastepczy():
+def test_uruchom_zwraca_kod_i_wyjscie_a_bajty_spoza_utf8_zamienia_na_znak_zastepczy(monkeypatch):
     import raport_mutantow
 
     kod = (
         "import sys; sys.stdout.buffer.write(b'ok\\xff'); sys.stdout.flush(); "
         "sys.stderr.buffer.write(b'e\\xfe'); sys.exit(3)")
+    prawdziwe_run = subprocess.run
 
+    def run_z_limitem(argv, **opcje):
+        # produkcyjne `uruchom` nie ma `timeout`; limit doklejamy tu, a `subprocess.run` po
+        # `TimeoutExpired` zabija potomka i na niego czeka (test nie zawiesza sie na procesie)
+        return prawdziwe_run(argv, timeout=LIMIT_TESTU_S, **opcje)
+
+    monkeypatch.setattr(raport_mutantow.subprocess, "run", run_z_limitem)
+
+    # `-c` nie importuje kodu projektu, wiec `cwd` nie ma znaczenia
     wynik = raport_mutantow.uruchom([sys.executable, "-c", kod])
 
     assert (wynik.returncode, wynik.stdout, wynik.stderr) == (3, "ok\ufffd", "e\ufffd")
