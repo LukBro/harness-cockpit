@@ -495,6 +495,47 @@ async def test_zatrzymanie_heartbeatu_dwa_razy_i_bez_uruchomienia_nie_rzuca():
         await asyncio.wait_for(hb.stop(), 5)
 
 
+async def test_zatrzymanie_heartbeatu_konczy_petle_takze_gdy_biblioteka_polyka_anulowanie_zadania_http(
+    monkeypatch,
+):
+    """HAR-224: `asyncio.wait_for` z Pythona 3.11 w wyscigu polyka `CancelledError`, gdy
+    zadanie HTTP konczy sie w chwili anulowania (naprawione w 3.12). Petla heartbeatu
+    ruszalaby wtedy dalej, a `stop()` czekaloby na nia bez konca. Lokalnie jest nowszy
+    Python, wiec to zachowanie symulujemy; w tescie nie ma wlasnego anulowania petli."""
+    prawdziwy = asyncio.wait_for
+
+    async def wait_for_polykajacy(aw, timeout):
+        try:
+            return await prawdziwy(aw, timeout)
+        except asyncio.CancelledError:
+            return httpx.Response(200)
+
+    atrapa = _AtrapaSieci(zawies=True)
+    async with httpx.AsyncClient(transport=atrapa, timeout=None) as klient:
+        from runner.heartbeat import Heartbeat
+        hb = Heartbeat(klient, URL_HEARTBEATU, _naglowek(TOKEN_RUNNERA), 0.05)
+        petla = None
+        try:
+            # podmiana obowiazuje od PIERWSZEGO wywolania `wait_for` w petli (przed start());
+            # wlasne czekania testu ida przez `asyncio.wait` albo zapamietany `prawdziwy`
+            with monkeypatch.context() as m:
+                m.setattr(asyncio, "wait_for", wait_for_polykajacy)
+                hb.start()
+                petla = hb._zadanie
+                async with asyncio.timeout(3):
+                    await atrapa.odebrane.wait()                    # zadanie HTTP wisi
+                zatrzymanie = asyncio.ensure_future(hb.stop())
+                zakonczone, _ = await asyncio.wait({zatrzymanie}, timeout=2)
+                przezyla = zatrzymanie not in zakonczone
+            assert not przezyla, "stop() heartbeatu wisi: petla przezyla anulowanie"
+            assert petla.cancelled()
+        finally:
+            # sprzatanie juz bez podmiany: prawdziwe anulowanie konczy petle
+            if petla is not None:
+                petla.cancel()
+                await asyncio.wait({petla}, timeout=2)
+
+
 async def test_zawieszone_zadanie_heartbeatu_nie_blokuje_zatrzymania_dluzej_niz_timeout():
     atrapa = _AtrapaSieci(zawies=True)
     async with _heartbeat(atrapa, 0.6) as hb:

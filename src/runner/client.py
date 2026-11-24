@@ -216,7 +216,11 @@ class Runner:
     async def _czekaj(self, sekundy: float) -> None:
         """Domyslne odczekanie: przerywane przez `stop()`."""
         try:
-            await asyncio.wait_for(self._zatrzymany.wait(), sekundy)
+            # asyncio.timeout zamiast wait_for: na Pythonie 3.11 wait_for polyka
+            # CancelledError, gdy wewnetrzne czekanie konczy sie rownoczesnie z anulowaniem
+            # (naprawione w 3.12) - wolajacy nie dowiedzialby sie o anulowaniu (HAR-224)
+            async with asyncio.timeout(sekundy):
+                await self._zatrzymany.wait()
         except TimeoutError:
             pass                            # uplynal czas - o to chodzilo
 
