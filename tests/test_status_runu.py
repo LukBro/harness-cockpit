@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
-from cockpit.db.models import Base, Event, Run, Runner, RunStatus
+from cockpit.db.models import Base, Event, Run, Runner, RunStatus, StepRun, StepStatus
 
 from sesja_testowa import zaloguj_klienta, zaloz_wlasciciela
 
@@ -68,6 +68,11 @@ async def _zdarzenie(klient, run_id: str, kind: str, **reszta):
 async def _status_w_bazie(run_id: str) -> RunStatus:
     async with db_session.SessionLocal() as s:
         return (await s.execute(select(Run.status).where(Run.id == run_id))).scalar_one()
+
+
+async def _powod_w_bazie(run_id: str) -> str | None:
+    async with db_session.SessionLocal() as s:
+        return (await s.execute(select(Run.reason).where(Run.id == run_id))).scalar_one()
 
 
 async def _liczba_zdarzen_w_bazie(run_id: str) -> int:
@@ -242,9 +247,157 @@ async def test_zakonczenie_runu_nie_rusza_runu_oczekujacego_pominietego_ani_prze
     assert await _liczba_zdarzen_w_bazie(run_id) == 1
 
 
-async def test_zakonczenie_runu_czekajacego_na_decyzje_daje_run_do_odbioru(klient):
+async def test_zakonczenie_runu_czekajacego_na_decyzje_nie_daje_runu_do_odbioru(klient):
     run_id = await _nowy_run(klient)
     await _ustaw_status_w_bazie(run_id, RunStatus.waiting)
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.waiting
+
+
+async def test_zakonczenie_runu_czekajacego_na_decyzje_z_nieudanym_krokiem_daje_run_nieudany(
+    klient,
+):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_failed")
+    await _ustaw_status_w_bazie(run_id, RunStatus.waiting)
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == "nieudane kroki: s0"
+
+
+# --- dowod ukonczenia krokow przy run_finished ---
+
+BRAK_DOWODU = "brak dowodu ukończenia kroków"
+
+
+async def test_zakonczenie_runu_bez_zadnego_kroku_daje_run_nieudany_z_powodem_braku_dowodu(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_zakonczenie_runu_z_krokiem_w_toku_daje_run_nieudany_z_powodem_braku_dowodu(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_started")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_zakonczenie_runu_z_krokiem_czekajacym_na_decyzje_daje_run_nieudany(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_waiting", step_id="s0")   # run -> waiting
+    await _zdarzenie(klient, run_id, "step_started", step_id="s1")   # run -> running
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s1")
+    assert await _status_w_bazie(run_id) == RunStatus.running
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_zakonczenie_runu_gdy_kroki_ukonczone_lub_pominiete_daje_run_do_odbioru(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s0")
+    await _zdarzenie(klient, run_id, "step_skipped", step_id="s1")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+    assert await _powod_w_bazie(run_id) is None
+
+
+async def test_zakonczenie_runu_gdy_wszystkie_kroki_pominiete_daje_run_do_odbioru(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_skipped", step_id="s0")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+
+
+async def test_ponowiona_proba_kroku_po_porazce_zastepuje_ja_i_daje_run_do_odbioru(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_failed", attempt=1)
+    await _zdarzenie(klient, run_id, "step_finished", attempt=2)
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+    assert await _powod_w_bazie(run_id) is None
+
+
+async def test_ponowiona_proba_kroku_w_toku_po_sukcesie_zastepuje_go_i_daje_run_nieudany(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished", attempt=1)
+    await _zdarzenie(klient, run_id, "step_started", attempt=2)
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_krok_z_dwoma_agentami_gdzie_jeden_nie_ukonczyl_daje_run_nieudany(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_started", agent_id="a1")
+    await _zdarzenie(klient, run_id, "step_finished", agent_id="a2")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_run_do_odbioru_z_krokiem_w_toku_dodanym_po_odbiorze_daje_run_nieudany(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s0")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+    await _zdarzenie(klient, run_id, "step_started", step_id="s1")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_run_do_odbioru_z_krokiem_czekajacym_dodanym_po_odbiorze_daje_run_nieudany(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s0")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+    await _zdarzenie(klient, run_id, "step_waiting", step_id="s1")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == BRAK_DOWODU
+
+
+async def test_ponowne_zakonczenie_runu_do_odbioru_z_ukonczonymi_krokami_zostawia_run_do_odbioru(
+    klient,
+):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished", step_id="s0")
+    await _zdarzenie(klient, run_id, "run_finished")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+    assert await _powod_w_bazie(run_id) is None
+
+
+async def test_krok_z_dwoma_agentami_ukonczonymi_daje_run_do_odbioru(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished", agent_id="a1")
+    await _zdarzenie(klient, run_id, "step_finished", agent_id="a2")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.to_accept
+
+
+async def test_nieudany_krok_ma_pierwszenstwo_przed_brakiem_dowodu_innego_kroku(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_failed", step_id="s0")
+    await _zdarzenie(klient, run_id, "step_started", step_id="s1")
+    await _zdarzenie(klient, run_id, "run_finished")
+    assert await _status_w_bazie(run_id) == RunStatus.failed
+    assert await _powod_w_bazie(run_id) == "nieudane kroki: s0"
+
+
+async def test_krok_w_toku_w_innym_zespole_nie_blokuje_odbioru_runu(klient):
+    run_id = await _nowy_run(klient)
+    await _zdarzenie(klient, run_id, "step_finished")
+    _, inny_tenant = await zaloz_wlasciciela(
+        db_session.SessionLocal, email="inny@example.com", nazwa_zespolu="Inny")
+    async with db_session.SessionLocal() as s:
+        s.add(StepRun(tenant_id=inny_tenant, run_id=run_id, step_id="obcy",
+                      agent_id="", attempt=1, status=StepStatus.running))
+        await s.commit()
     await _zdarzenie(klient, run_id, "run_finished")
     assert await _status_w_bazie(run_id) == RunStatus.to_accept
 
@@ -261,7 +414,6 @@ _ZMIANY = {
     (RunStatus.running, "step_aborted"): RunStatus.aborted,
     (RunStatus.to_accept, "step_aborted"): RunStatus.aborted,
     (RunStatus.running, "run_finished"): RunStatus.to_accept,
-    (RunStatus.waiting, "run_finished"): RunStatus.to_accept,
 }
 
 _PRZEJSCIA = [(st, k, _ZMIANY.get((st, k), st)) for st in RunStatus for k in _KINDY]

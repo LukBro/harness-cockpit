@@ -21,6 +21,7 @@ from cockpit.services.workflow import (
 )
 from cockpit.services.workflow_walidacja import (
     BRAK_ARTEFAKTU,
+    CAPABILITY_BEZ_UPRAWNIEN_ROLI,
     CONSENSUS_PONAD_FANOUT,
     CYKL,
     FOREACH_BEZ_PRODUCENTA,
@@ -1892,3 +1893,97 @@ def test_krok_bez_skilla_i_bez_system_z_budzetem_nie_jest_krokiem_systemowym():
     krok = Krok(id="k", budget_usd=1, max_turns=3)
 
     assert _problemy_limitow_kroku_systemowego(krok) == []
+
+
+# --- capabilities skilla a prawo zapisu roli (HAR-220) ---------------------------------------
+
+
+def test_recenzent_z_capabilities_skilla_ma_problem_z_rola_i_lista_capabilities(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "recenzent", role="reviewer", needs=["test_narrow", "typecheck"])
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  review: {skill: recenzent}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert CAPABILITY_BEZ_UPRAWNIEN_ROLI == "capability_bez_uprawnien_roli"
+    assert problemy == [Problem(
+        "review", "capability_bez_uprawnien_roli",
+        "skill recenzent wymaga capabilities test_narrow, typecheck, a rola reviewer nie ma "
+        "prawa zapisu: rola bez zapisu nie ma Basha (FLAGI_BEZ_ZAPISU wylacza go)",
+        Poziom.blad)]
+    assert ma_bledy(problemy)
+
+
+def test_ten_sam_skill_z_capabilities_ma_problem_u_recenzenta_a_nie_u_wykonawcy(
+    tmp_path, repo, dom, skille_repo
+):
+    # skille roznia sie tylko rola: o problemie decyduje brak prawa zapisu roli
+    napisz_skill(skille_repo, "jako_recenzent", role="reviewer", needs=["test_narrow"])
+    napisz_skill(skille_repo, "jako_wykonawca", role="executor", needs=["test_narrow"])
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n"
+        "  rec: {skill: jako_recenzent}\n"
+        "  wyk: {skill: jako_wykonawca}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert kody(problemy, "rec") == [CAPABILITY_BEZ_UPRAWNIEN_ROLI]
+    assert kody(problemy, "wyk") == []
+
+
+def test_zbieracz_z_capabilities_skilla_ma_problem_z_rola_gatherer(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "zbieracz", role="gatherer", needs=["test_narrow"])
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  zbierz: {skill: zbieracz}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert CAPABILITY_BEZ_UPRAWNIEN_ROLI == "capability_bez_uprawnien_roli"
+    assert problemy == [Problem(
+        "zbierz", "capability_bez_uprawnien_roli",
+        "skill zbieracz wymaga capabilities test_narrow, a rola gatherer nie ma "
+        "prawa zapisu: rola bez zapisu nie ma Basha (FLAGI_BEZ_ZAPISU wylacza go)",
+        Poziom.blad)]
+    assert ma_bledy(problemy)
+
+
+def test_autor_z_capabilities_skilla_nie_ma_problemu_bo_ma_prawo_zapisu(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor_z_testem", role="author", needs=["test_narrow"])
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  pisz: {skill: autor_z_testem}\n")
+
+    assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+def test_recenzent_bez_capabilities_skilla_nie_ma_problemu(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "recenzent", role="reviewer")
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  review: {skill: recenzent}\n")
+
+    assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+def test_krok_z_nieznanym_skillem_nie_dostaje_problemu_capabilities_roli(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "recenzent", role="reviewer", needs=["test_narrow"])
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  a: {skill: widmo}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert kody(problemy, "a") == [NIEZNANY_SKILL]
+
+
+def test_krok_systemowy_check_nie_dostaje_problemu_capabilities_roli(
+    tmp_path, repo, dom, skille_check
+):
+    wf = workflow_check(tmp_path, "{system: check, capability: typecheck, needs: [autor]}")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert CAPABILITY_BEZ_UPRAWNIEN_ROLI not in kody(problemy)
+    assert problemy == []

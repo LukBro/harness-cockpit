@@ -6,8 +6,7 @@ liczony od pliku testu, z limitem czasu. Repozytorium, na którym działa skrypt
 `GIT_DIR` i `GIT_WORK_TREE`; konfiguracja gita użytkownika jest odcięta (`GIT_CONFIG_GLOBAL`,
 `GIT_CONFIG_NOSYSTEM`, własny `HOME`), a tożsamość autora ustawia test w konfiguracji lokalnej.
 
-Skrypty są poza `source_paths` mutmuta - gałęzie kodów wyjścia chroni tabela
-`tests/mutanty_reczne/praca-ticketu.toml`.
+Skrypty są poza `source_paths` mutmuta - gałęzie kodów wyjścia chronią testy w tym pliku.
 """
 from __future__ import annotations
 

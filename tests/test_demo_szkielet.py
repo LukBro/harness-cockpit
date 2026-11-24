@@ -75,6 +75,11 @@ def test_przelot_z_adresem_bazy_z_samych_spacji_traktuje_go_jak_brak_zmiennej(tm
     # same spacje to brak adresu, nie adres do sparsowania
     assert "Brak COCKPIT_DATABASE_URL" in wynik.stderr
     assert "nie da sie go sparsowac" not in wynik.stderr
+    # pelne zdanie ostrzezenia (wiersz stderr), razem z wymogiem nazwy bazy
+    assert (
+        "UWAGA: skrypt robi `alembic downgrade base` przed i po przelocie "
+        "i kasuje dane wskazanej bazy; nazwa bazy musi konczyc sie na _test."
+    ) in wynik.stderr.splitlines()
 
 
 def test_plik_env_nie_zastepuje_zmiennej_srodowiskowej_adresu_bazy(tmp_path):
@@ -338,6 +343,69 @@ def test_przelot_z_nieosiagalna_baza_konczy_sie_bledem_bez_wycieku_hasla(tmp_pat
         **{ZMIENNA: "postgresql+asyncpg://cockpit:tajnehaslo@127.0.0.1:1/cockpit_test"},
     )
     _sprawdz_czytelny_blad_adresu_bazy(wynik, sekret="tajnehaslo")
+
+
+def _sprawdz_odmowe_dla_bazy_nietestowej(wynik, nazwa_bazy: str | None = None):
+    """Odmowa PRZED dotknieciem bazy: port 1 jest nieosiagalny, wiec gdyby skrypt
+    probowal sie polaczyc, dostalibysmy `Blad polaczenia z baza`, nie odmowe."""
+    assert wynik.returncode != 0
+    assert "Blad polaczenia z baza" not in wynik.stderr
+    assert "tajnehaslo" not in wynik.stderr
+    assert "tajnehaslo" not in wynik.stdout
+    assert "Traceback" not in wynik.stderr
+    assert "szkielet dziala na wylot" not in wynik.stdout
+    if nazwa_bazy:
+        # cala linia stderr, z nazwa bazy w cudzyslowach: sam fragment 'test' by nie wystarczyl
+        assert _komunikat_odmowy_bazy_nietestowej(nazwa_bazy) in wynik.stderr.splitlines()
+
+
+def _komunikat_odmowy_bazy_nietestowej(nazwa_bazy: str) -> str:
+    return (
+        f"Odmowa: baza '{nazwa_bazy}' nie jest testowa. Nazwa bazy musi "
+        "konczyc sie na _test; skrypt kasuje dane."
+    )
+
+
+def test_przelot_na_bazie_nietestowej_odmawia_z_nazwa_bazy_i_bez_proby_polaczenia(tmp_path):
+    wynik = _uruchom(
+        tmp_path,
+        **{ZMIENNA: "postgresql+asyncpg://cockpit:tajnehaslo@127.0.0.1:1/zywa_baza_zespolu"},
+    )
+
+    _sprawdz_odmowe_dla_bazy_nietestowej(wynik, "zywa_baza_zespolu")
+
+
+@pytest.mark.parametrize(
+    "nazwa_bazy",
+    ["cockpit", "cockpit_testowa", "cockpit_test_prod", "test", "zywa_baza_zespolu"],
+)
+def test_przelot_odmawia_gdy_nazwa_bazy_nie_konczy_sie_na_test(tmp_path, nazwa_bazy):
+    # `_test` w srodku nazwy albo bez podkreslenia to nie baza testowa
+    wynik = _uruchom(
+        tmp_path,
+        **{ZMIENNA: f"postgresql+asyncpg://cockpit:tajnehaslo@127.0.0.1:1/{nazwa_bazy}"},
+    )
+
+    _sprawdz_odmowe_dla_bazy_nietestowej(wynik, nazwa_bazy)
+
+
+@pytest.mark.parametrize(
+    "adres",
+    [
+        "postgresql+asyncpg://cockpit:tajnehaslo@127.0.0.1:1",
+        "postgresql+asyncpg://cockpit:tajnehaslo@127.0.0.1:1/",
+    ],
+)
+def test_przelot_odmawia_gdy_adres_bazy_nie_ma_nazwy_bazy(tmp_path, adres):
+    wynik = _uruchom(tmp_path, **{ZMIENNA: adres})
+
+    _sprawdz_odmowe_dla_bazy_nietestowej(wynik)
+    # cala linia strazznika pustej nazwy; nie jest to komunikat o bazie nietestowej
+    assert (
+        "Adres w COCKPIT_DATABASE_URL nie zawiera nazwy bazy. Nazwa bazy "
+        "musi konczyc sie na _test; skrypt kasuje dane."
+    ) in wynik.stderr.splitlines()
+    assert "nie jest testowa" not in wynik.stderr
 
 
 def test_przelot_z_haslem_zakodowanym_procentowo_dochodzi_do_proby_polaczenia(tmp_path):

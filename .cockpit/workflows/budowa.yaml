@@ -11,16 +11,21 @@
 # (`source: engine`, kod wyjścia, ogon i skrót wyjścia). `contract-check` czeka na oba i czyta
 # ich dowody przez `consumes`; czerwony check pomija go jako `zaleznosc_nieudana`, brak
 # capability w projekcie jako `brak_wejscia`.
+# Krok `smoke-check` (HAR-220) tak samo uruchamia capability `smoke`; skill `smoke` jest
+# zbieraczem bez Basha i czyta `dowod-smoke.json` przez `consumes`.
 name: budowa
 steps:
   plan: {skill: plan}
   tdd-task: {skill: tdd-task, needs: [plan], approval: true}
   e2e-scenario: {skill: e2e-scenario, needs: [tdd-task]}
   diff: {system: diff, needs: [e2e-scenario]}
+  # Mutanty zmienionych linii (HAR-168): brak capability `mutate_diff` w projekcie pomija krok z `brak_capability`, więc krok jest efektywnie opcjonalny bez `optional: true`.
+  mutate-diff: {system: check, capability: mutate_diff, needs: [diff, tdd-task]}
   typecheck: {system: check, capability: typecheck, needs: [diff]}
   contract: {system: check, capability: contract, needs: [diff]}
   contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}
   review-unknown: {skill: review-unknown, needs: [diff]}
   explain-change: {skill: explain-change, needs: [diff]}
-  smoke: {skill: smoke, needs: [contract-check, review-unknown, explain-change]}
+  smoke-check: {system: check, capability: smoke, needs: [contract-check, review-unknown, explain-change]}
+  smoke: {skill: smoke, needs: [smoke-check]}
   capture-lesson: {skill: capture-lesson, needs: [smoke], optional: true}

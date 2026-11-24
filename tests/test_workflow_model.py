@@ -537,6 +537,9 @@ def test_przestawienie_krokow_poprawnych_zostawia_krok_niepoprawny_na_srodku_pli
         "on_fail: {retry: plan, max: 0}",
         "fanout: true",
         "approval: 1",
+        "fail_on_survivors: yes",
+        "fail_on_survivors: 1",
+        "fail_on_survivors: 'true'",
     ],
 )
 def test_wartosc_pola_w_zlym_typie_albo_ponizej_minimum_robi_krok_niepoprawnym(tmp_path, pole_i_wartosc):

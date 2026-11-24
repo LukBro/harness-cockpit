@@ -45,8 +45,8 @@ def cfg():
     c = Config(str(KORZEN / "alembic.ini"))
     c.set_main_option("script_location", str(KORZEN / "alembic"))
     c.set_main_option("sqlalchemy.url", URL.replace("%", "%%"))
-    # Czysty start przez reset schematu, nie przez downgrade: reczne mutanty migracji
-    # (tests/mutanty_reczne) zostawiaja stan, ktorego niezmutowany downgrade nie cofnie
+    # Czysty start przez reset schematu, nie przez downgrade: przerwany albo zmutowany test migracji
+    # zostawia stan, ktorego downgrade nie cofnie
     # (DROP INDEX nieistniejacego indeksu, DROP TABLE blokowany przez FK pozostalej tabeli).
     # Baza z COCKPIT_TEST_DATABASE_URL jest wylacznie testowa (lokalnie tools/testy_pelne.sh,
     # w CI kontener postgres-mutanty / job e2e), wiec reset schematu public jest bezpieczny.

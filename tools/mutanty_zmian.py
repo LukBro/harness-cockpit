@@ -551,21 +551,15 @@ def _ostrzez_o_zmianach_bez_tabeli(sha: str) -> None:
     if nazwy.returncode != 0:
         print(f"OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: {nazwy.stderr.strip()}", file=sys.stderr)
         return
-    # nowe, jeszcze niezacommitowane pliki (sesja puszcza bramki przed commitem): tabela i zmiany w tools/ itd.
-    nowe = uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", *PREFIKSY_POZA_ZASIEGIEM,
-                    "tests/mutanty_reczne/"])
+    # nowe, jeszcze niezacommitowane pliki (sesja puszcza bramki przed commitem): nowe pliki w tools/, cicd/, web/ itd.
+    nowe = uruchom(["git", "ls-files", "--others", "--exclude-standard", "--", *PREFIKSY_POZA_ZASIEGIEM])
     if nowe.returncode != 0:
         print(f"OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: {nowe.stderr.strip()}", file=sys.stderr)
         return
     pliki = nazwy.stdout.splitlines() + nowe.stdout.splitlines()
-    if any(fnmatch.fnmatchcase(p, "tests/mutanty_reczne/*.toml") for p in pliki):
-        return
     for plik in pliki:
         if plik.startswith(PREFIKSY_POZA_ZASIEGIEM):
-            print(
-                f"OSTRZEZENIE: zmiana poza zasiegiem mutmuta bez tabeli recznych mutantow: {plik}",
-                file=sys.stderr,
-            )
+            print(f"OSTRZEZENIE: zmiana poza zasiegiem mutmuta: {plik}", file=sys.stderr)
 
 
 NIESPRAWDZONY = "not checked"
