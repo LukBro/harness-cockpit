@@ -145,12 +145,12 @@ def test_workflow_budowy_ma_krok_diff_systemowy_bez_skilla_zaraz_po_scenariuszu_
     assert diff.optional is False
 
 
-def test_krokami_systemowymi_budowy_sa_diff_i_trzy_kroki_check(tmp_path):
+def test_krokami_systemowymi_budowy_sa_diff_i_cztery_kroki_check(tmp_path):
     workflow, _, _ = wczytaj(tmp_path)
     systemowe = [k for k in workflow.kroki if k.system is not None]
     assert sorted(k.id for k in systemowe) == [
-        "contract", "diff", "mutate-diff", "typecheck"]
-    assert [k.skill for k in systemowe] == [None, None, None, None]
+        "contract", "diff", "mutate-diff", "smoke-check", "typecheck"]
+    assert [k.skill for k in systemowe] == [None] * 5
 
 
 @pytest.mark.parametrize(
@@ -179,7 +179,7 @@ def test_kazdy_krok_check_budowy_ma_komende_capability_w_project_yaml_repozytori
     projekt, problemy = wczytaj_projekt(KORZEN_REPO)
     assert projekt is not None, problemy
     capability_krokow = {k.capability for k in workflow.kroki if k.system == "check"}
-    assert capability_krokow == {"typecheck", "contract", "mutate_diff"}
+    assert capability_krokow == {"typecheck", "contract", "mutate_diff", "smoke"}
     assert capability_krokow <= set(projekt.capabilities)
 
 
@@ -213,9 +213,13 @@ def test_krok_diff_stoi_w_workflow_po_scenariuszu_e2e_i_przed_recenzentami(tmp_p
     assert all(kolejnosc.index("diff") < kolejnosc.index(r) for r in RECENZENCI)
 
 
-def test_proba_dymna_nadal_czeka_na_trzech_recenzentow(tmp_path):
+def test_krok_smoke_check_czeka_na_trzech_recenzentow_a_skill_smoke_na_dowod_silnika(tmp_path):
     workflow, _, _ = wczytaj(tmp_path)
-    assert krok_po_id(workflow, "smoke").needs == RECENZENCI
+    sprawdzenie = krok_po_id(workflow, "smoke-check")
+    assert (sprawdzenie.system, sprawdzenie.capability, sprawdzenie.skill) == (
+        "check", "smoke", None)
+    assert sprawdzenie.needs == RECENZENCI
+    assert krok_po_id(workflow, "smoke").needs == ["smoke-check"]
 
 
 PO_PRACY_AUTORA = ("plan", "tdd-task", "e2e-scenario")

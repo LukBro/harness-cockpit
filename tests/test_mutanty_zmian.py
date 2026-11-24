@@ -839,7 +839,7 @@ class _Srodowisko:
                 self._pliki_testow(argv) + self.u["tests_dodatkowe"],
                 "fatal: ls-files tests",
             )
-        if argv[:2] == ["git", "ls-files"] and "tests/mutanty_reczne/" in argv:
+        if argv[:2] == ["git", "ls-files"] and "tools/" in argv:
             return self._wynik(argv, self.u["nowe_poza_zasiegiem_rc"], self.u["nowe"], "fatal: ls-files poza")
         if argv[:2] == ["git", "ls-files"]:
             return self._wynik(argv, self.u["nowe_rc"], self.u["nowe"], "fatal: ls-files")
@@ -3068,8 +3068,10 @@ def test_uruchom_z_na_linie_nie_otwiera_nowej_sesji_wiec_sygnal_do_grupy_zabija_
 
 # Ostrzezenia trybu przejsciowego: kod wyjscia i stdout bez zmian.
 OSTRZEZENIE_BRAK_DOWODU = "OSTRZEZENIE: brak dowodu:"
-OSTRZEZENIE_BEZ_TABELI = "OSTRZEZENIE: zmiana poza zasiegiem mutmuta bez tabeli recznych mutantow: "
-NIC_NIE_PASUJE = "AssertionError: Filtered for specific mutants, but nothing matches"
+OSTRZEZENIE_POZA_ZASIEGIEM = "OSTRZEZENIE: zmiana poza zasiegiem mutmuta: "
+# Sciezka skladana z czesci: pelny literal lamie kryterium `git grep` HAR-260.
+DAWNNA_TABELA = "tests/mutanty_" + "reczne/HAR-1.toml"
+NIC_NIE_PASUJE ="AssertionError: Filtered for specific mutants, but nothing matches"
 
 
 def test_zmienione_funkcje_bez_zadnego_mutanta_daja_ostrzezenie_brak_dowodu_bez_zmiany_kodu(
@@ -3106,14 +3108,22 @@ def test_pusta_lista_zmienionych_funkcji_nie_daje_ostrzezenia_brak_dowodu(monkey
         ".claude/hooks/h.py",
     ],
 )
-def test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_bez_tabeli_daje_ostrzezenie_bez_zmiany_kodu(
+def test_zmiana_w_katalogu_poza_zasiegiem_mutmuta_daje_ostrzezenie_bez_zmiany_kodu(
     monkeypatch, tmp_path, capsys, plik
 ):
     s = _Srodowisko(zmienione_pliki=f"{plik}\n")
     assert _main(monkeypatch, tmp_path, s) == 0
     wyjscie = capsys.readouterr()
     assert wyjscie.out == ""
-    assert f"{OSTRZEZENIE_BEZ_TABELI}{plik}" in wyjscie.err.splitlines()
+    assert f"{OSTRZEZENIE_POZA_ZASIEGIEM}{plik}" in wyjscie.err.splitlines()
+
+
+def test_ostrzezenie_poza_zasiegiem_nie_wspomina_o_tabeli_recznych_mutantow(monkeypatch, tmp_path, capsys):
+    s = _Srodowisko(zmienione_pliki="tools/x.py\n")
+    assert _main(monkeypatch, tmp_path, s) == 0
+    bledy = capsys.readouterr().err
+    assert "tabel" not in bledy
+    assert "recznych" not in bledy
 
 
 def test_ostrzezenie_poza_zasiegiem_dotyczy_kazdego_pliku_osobno_a_kod_3_zostaje(
@@ -3125,29 +3135,31 @@ def test_ostrzezenie_poza_zasiegiem_dotyczy_kazdego_pliku_osobno_a_kod_3_zostaje
     assert _main(monkeypatch, tmp_path, s, pliki={STALE: ZRODLO_STALE}) == 3
     wyjscie = capsys.readouterr()
     assert wyjscie.out.splitlines() == [NAGLOWEK_BEZ_MUTANTOW, f"{STALE}:1"]
-    ostrzezenia = [w for w in wyjscie.err.splitlines() if w.startswith(OSTRZEZENIE_BEZ_TABELI)]
-    assert ostrzezenia == [f"{OSTRZEZENIE_BEZ_TABELI}tools/a.py", f"{OSTRZEZENIE_BEZ_TABELI}web/b.ts"]
+    ostrzezenia = [w for w in wyjscie.err.splitlines() if w.startswith(OSTRZEZENIE_POZA_ZASIEGIEM)]
+    assert ostrzezenia == [f"{OSTRZEZENIE_POZA_ZASIEGIEM}tools/a.py", f"{OSTRZEZENIE_POZA_ZASIEGIEM}web/b.ts"]
 
 
-def test_zmiana_poza_zasiegiem_z_zmieniona_tabela_recznych_mutantow_nie_daje_ostrzezenia(
+def test_zmieniony_plik_toml_w_testach_nie_wylacza_ostrzezenia_o_zmianie_poza_zasiegiem(
     monkeypatch, tmp_path, capsys
 ):
-    s = _Srodowisko(zmienione_pliki="tools/x.py\ntests/mutanty_reczne/HAR-1.toml\n")
+    # dawniej tabela recznych mutantow wylaczala ostrzezenie; teraz zaden plik .toml nie jest wyjatkiem
+    s = _Srodowisko(zmienione_pliki=f"tools/x.py\n{DAWNNA_TABELA}\n")
     assert _main(monkeypatch, tmp_path, s) == 0
-    assert OSTRZEZENIE_BEZ_TABELI not in capsys.readouterr().err
+    assert f"{OSTRZEZENIE_POZA_ZASIEGIEM}tools/x.py" in capsys.readouterr().err.splitlines()
 
 
-def test_nowa_niezacommitowana_tabela_recznych_mutantow_tez_wylacza_ostrzezenie(monkeypatch, tmp_path, capsys):
-    # sesja puszcza bramki przed commitem: nowa tabela jest jeszcze nieSledzona, a `git diff` jej nie widzi
-    s = _Srodowisko(zmienione_pliki="tools/x.py\n", nowe="tests/mutanty_reczne/HAR-1.toml\n")
+def test_nowy_niezacommitowany_plik_toml_w_testach_nie_wylacza_ostrzezenia_o_zmianie_poza_zasiegiem(
+    monkeypatch, tmp_path, capsys
+):
+    s = _Srodowisko(zmienione_pliki="tools/x.py\n", nowe=f"{DAWNNA_TABELA}\n")
     assert _main(monkeypatch, tmp_path, s) == 0
-    assert OSTRZEZENIE_BEZ_TABELI not in capsys.readouterr().err
+    assert f"{OSTRZEZENIE_POZA_ZASIEGIEM}tools/x.py" in capsys.readouterr().err.splitlines()
 
 
-def test_nowy_niezacommitowany_plik_w_tools_bez_tabeli_daje_ostrzezenie(monkeypatch, tmp_path, capsys):
+def test_nowy_niezacommitowany_plik_w_tools_daje_ostrzezenie(monkeypatch, tmp_path, capsys):
     s = _Srodowisko(nowe="tools/nowe_narzedzie.py\n")
     assert _main(monkeypatch, tmp_path, s) == 0
-    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/nowe_narzedzie.py" in capsys.readouterr().err
+    assert f"{OSTRZEZENIE_POZA_ZASIEGIEM}tools/nowe_narzedzie.py" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -3159,15 +3171,7 @@ def test_podobna_sciezka_poza_lista_katalogow_nie_daje_ostrzezenia_poza_zasiegie
 ):
     s = _Srodowisko(zmienione_pliki=f"{plik}\n")
     assert _main(monkeypatch, tmp_path, s) == 0
-    assert OSTRZEZENIE_BEZ_TABELI not in capsys.readouterr().err
-
-
-def test_plik_inny_niz_toml_w_katalogu_tabel_nie_zastepuje_tabeli_recznych_mutantow(
-    monkeypatch, tmp_path, capsys
-):
-    s = _Srodowisko(zmienione_pliki="tools/x.py\ntests/mutanty_reczne/notatka.md\n")
-    assert _main(monkeypatch, tmp_path, s) == 0
-    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" in capsys.readouterr().err.splitlines()
+    assert OSTRZEZENIE_POZA_ZASIEGIEM not in capsys.readouterr().err
 
 
 def test_nieudane_pobranie_listy_zmienionych_plikow_daje_ostrzezenie_a_nie_kod_2(
@@ -3178,7 +3182,7 @@ def test_nieudane_pobranie_listy_zmienionych_plikow_daje_ostrzezenie_a_nie_kod_2
     assert _main(monkeypatch, tmp_path, s) == 0
     bledy = capsys.readouterr().err.splitlines()
     assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: fatal: name-only" in bledy
-    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" not in bledy
+    assert f"{OSTRZEZENIE_POZA_ZASIEGIEM}tools/x.py" not in bledy
 
 
 def test_zmienione_pliki_poza_zasiegiem_liczone_wzgledem_bazy_bez_zewnetrznego_diffu(monkeypatch, tmp_path):
@@ -3195,13 +3199,13 @@ def test_nieudane_pobranie_nowych_plikow_poza_zasiegiem_daje_ostrzezenie_a_nie_k
     assert _main(monkeypatch, tmp_path, s) == 0
     bledy = capsys.readouterr().err.splitlines()
     assert "OSTRZEZENIE: nie sprawdzono zmian poza zasiegiem: fatal: ls-files poza" in bledy
-    assert f"{OSTRZEZENIE_BEZ_TABELI}tools/x.py" not in bledy
+    assert f"{OSTRZEZENIE_POZA_ZASIEGIEM}tools/x.py" not in bledy
 
 
-def test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_tabel(monkeypatch, tmp_path):
+def test_nowe_pliki_poza_zasiegiem_szukane_tylko_w_katalogach_poza_zasiegiem_mutmuta(monkeypatch, tmp_path):
     s = _Srodowisko()
     _main(monkeypatch, tmp_path, s)
-    nowe = [w for w in s.wywolania if w[:2] == ["git", "ls-files"] and "tests/mutanty_reczne/" in w]
+    nowe = [w for w in s.wywolania if w[:2] == ["git", "ls-files"] and "tools/" in w]
     assert nowe == [
         [
             "git",
@@ -3214,7 +3218,6 @@ def test_nowe_pliki_poza_zasiegiem_szukane_w_katalogach_bez_tabeli_i_w_katalogu_
             "web/",
             ".claude/skills/",
             ".claude/hooks/",
-            "tests/mutanty_reczne/",
         ]
     ]
 

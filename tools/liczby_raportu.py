@@ -4,16 +4,14 @@
 
 Dla biezacego drzewa roboczego (zmiany commitowane, niecommitowane i nowe pliki) wzgledem
 `--baza` wypisuje markdown do wklejenia w raport:
-- liczbe wierszy `[[mutant]]` i `[[rownowazny]]` w `tests/mutanty_reczne/<ticket>.toml`,
 - nowe i usuniete testy (node id liczone z drzewa skladni plikow `tests/**/test_*.py`),
-- zmienione tabele INNYCH ticketow, kazda z dopiskiem `wymaga STOP:`,
 - gdy podano `--pliki`: zmienione pliki spoza listy (sekcja ticketu "Pliki dotykane"), tez `wymaga STOP:`.
 `--pliki` to lista sciezek lub wzorcow (fnmatch) rozdzielona przecinkami albo spacjami; wpis konczacy
-sie `/` obejmuje caly katalog; tabela biezacego ticketu jest zawsze dozwolona.
+sie `/` obejmuje caly katalog.
 `--ticket` domyslnie wynika z nazwy galezi (pierwszy klucz `HAR-<liczba>`).
 
-Kody wyjscia: 0 wypisano liczby, 2 blad (brak dowodu): nieznana baza, git z bledem, brak albo zla
-tabela ticketu, nieczytelny plik testowy, nieznany klucz ticketu. Nigdy 1.
+Kody wyjscia: 0 wypisano liczby, 2 blad (brak dowodu): nieznana baza, git z bledem, zly
+klucz ticketu, nieczytelny plik testowy, nieznany klucz ticketu. Nigdy 1.
 """
 from __future__ import annotations
 
@@ -23,11 +21,9 @@ import fnmatch
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 KORZEN = Path(__file__).resolve().parents[1]
-KATALOG_TABEL = "tests/mutanty_reczne"
 KLUCZ_TICKETU = re.compile(r"HAR-[0-9]+")
 KOD_BLEDU = 2
 DOPISEK_STOP = "wymaga STOP:"
@@ -84,21 +80,6 @@ def zmienione_pliki(korzen: Path, baza: str) -> tuple[list[str], list[str]]:
     return sorted(set(zmienione)), sorted(set(usuniete))
 
 
-def _liczby_tabeli(korzen: Path, ticket: str) -> tuple[int, int]:
-    sciezka = korzen / KATALOG_TABEL / f"{ticket}.toml"
-    try:
-        dane = tomllib.loads(sciezka.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as blad:
-        raise BladNarzedzia(f"brak albo nieczytelna tabela {sciezka.relative_to(korzen)}: {blad}") from blad
-    wiersze = []
-    for nazwa in ("mutant", "rownowazny"):
-        wartosc = dane.get(nazwa, [])
-        if not isinstance(wartosc, list):
-            raise BladNarzedzia(f"{sciezka.name}: [{nazwa}] musi byc lista tabel")
-        wiersze.append(len(wartosc))
-    return wiersze[0], wiersze[1]
-
-
 def _node_id_testow(zrodlo: str, plik: str) -> set[str]:
     try:
         drzewo = ast.parse(zrodlo)
@@ -150,15 +131,6 @@ def testy_nowe_i_usuniete(korzen: Path, baza: str, zmienione: list[str], usuniet
     return sorted(nowe), sorted(znikniete)
 
 
-def cudze_tabele(zmienione: list[str], usuniete: list[str], ticket: str) -> list[str]:
-    wlasna = f"{KATALOG_TABEL}/{ticket}.toml"
-    return sorted(
-        s
-        for s in [*zmienione, *usuniete]
-        if s.startswith(f"{KATALOG_TABEL}/") and s.endswith(".toml") and s != wlasna
-    )
-
-
 def wzorce_z_listy(lista: str) -> list[str]:
     wzorce = [w for w in re.split(r"[,\s]+", lista) if w]
     if not wzorce:
@@ -177,8 +149,7 @@ def _dozwolony(sciezka: str, wzorce: list[str]) -> bool:
 
 
 def pliki_spoza_listy(zmienione: list[str], usuniete: list[str], wzorce: list[str], ticket: str) -> list[str]:
-    wlasna = f"{KATALOG_TABEL}/{ticket}.toml"
-    return sorted(s for s in [*zmienione, *usuniete] if s != wlasna and not _dozwolony(s, wzorce))
+    return sorted(s for s in [*zmienione, *usuniete] if not _dozwolony(s, wzorce))
 
 
 def _lista(naglowek: str, pozycje: list[str], dopisek: str = "") -> list[str]:
@@ -190,18 +161,12 @@ def _lista(naglowek: str, pozycje: list[str], dopisek: str = "") -> list[str]:
 def raport(korzen: Path, ticket: str, baza: str, wzorce: list[str] | None) -> str:
     if not KLUCZ_TICKETU.fullmatch(ticket):
         raise BladNarzedzia(f"zly klucz ticketu {ticket!r} (oczekiwano HAR-<liczba>)")
-    mutanty, rownowazne = _liczby_tabeli(korzen, ticket)
     zmienione, usuniete = zmienione_pliki(korzen, baza)
     nowe, znikniete = testy_nowe_i_usuniete(korzen, baza, zmienione, usuniete)
     linie = [f"## Liczby z pliku i diffu ({ticket}, baza {baza})", ""]
-    linie.append(f"- wiersze `[[mutant]]` w `{KATALOG_TABEL}/{ticket}.toml`: {mutanty}")
-    linie.append(f"- wiersze `[[rownowazny]]` w tej tabeli: {rownowazne}")
-    linie.append("")
     linie.extend(_lista("Nowe testy", nowe))
     linie.append("")
     linie.extend(_lista("Usuniete testy", znikniete))
-    linie.append("")
-    linie.extend(_lista("Zmienione tabele innych ticketow", cudze_tabele(zmienione, usuniete, ticket), f" - {DOPISEK_STOP}"))
     if wzorce is not None:
         linie.append("")
         linie.extend(

@@ -11,6 +11,8 @@
 # (`source: engine`, kod wyjścia, ogon i skrót wyjścia). `contract-check` czeka na oba i czyta
 # ich dowody przez `consumes`; czerwony check pomija go jako `zaleznosc_nieudana`, brak
 # capability w projekcie jako `brak_wejscia`.
+# Krok `smoke-check` (HAR-220) tak samo uruchamia capability `smoke`; skill `smoke` jest
+# zbieraczem bez Basha i czyta `dowod-smoke.json` przez `consumes`.
 name: budowa
 steps:
   plan: {skill: plan}
@@ -24,5 +26,6 @@ steps:
   contract-check: {skill: contract-check, needs: [diff, typecheck, contract]}
   review-unknown: {skill: review-unknown, needs: [diff]}
   explain-change: {skill: explain-change, needs: [diff]}
-  smoke: {skill: smoke, needs: [contract-check, review-unknown, explain-change]}
+  smoke-check: {system: check, capability: smoke, needs: [contract-check, review-unknown, explain-change]}
+  smoke: {skill: smoke, needs: [smoke-check]}
   capture-lesson: {skill: capture-lesson, needs: [smoke], optional: true}
