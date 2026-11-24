@@ -2139,6 +2139,27 @@ def test_plik_py_w_katalogu_tabel_mutantow_nie_jest_wybierany_do_testow(tmp_path
     assert len(wyjscie.splitlines()) == 2
 
 
+def test_plik_w_katalogu_e2e_nie_jest_wybierany_do_testow(tmp_path, capsys):
+    repo = _repo_z_testami(
+        tmp_path,
+        {TEST_MODULU: PRZYPADKI[0].slaby_test, "tests/e2e/test_w_przegladarce.py": CZERWONY_Z_MODULEM},
+    )
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 1
+    assert len(wyjscie.splitlines()) == 2
+
+
+def test_katalog_o_nazwie_e2e_glebiej_w_tests_jest_przegladany(tmp_path, capsys):
+    przypadek = PRZYPADKI[0]
+    repo = _repo_z_testami(
+        tmp_path,
+        {TEST_MODULU: przypadek.slaby_test, "tests/inny/e2e/test_mocny.py": przypadek.mocny_test},
+    )
+    kod, wyjscie, _ = _narzedzie(repo, capsys)
+    assert kod == 0
+    assert wyjscie.splitlines() == ["zbadano 2"]
+
+
 def test_katalog_o_nazwie_mutanty_reczne_glebiej_w_tests_jest_przegladany(tmp_path, capsys):
     przypadek = PRZYPADKI[0]
     repo = _repo_z_testami(
