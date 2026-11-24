@@ -323,6 +323,21 @@ async def test_sciezka_z_dwiema_kropkami_jest_odmowiona_takze_gdy_konczy_w_katal
     assert TRESC_SEKRETNA not in json.dumps(odp)
 
 
+@pytest.mark.parametrize("sciezka", ["plan..md", "..plan.md", "a/..b/c.md"],
+                         ids=["kropki_w_nazwie_pliku", "kropki_na_poczatku_nazwy", "kropki_w_nazwie_katalogu"])
+async def test_nazwa_pliku_z_dwiema_kropkami_wewnatrz_skladnika_nie_jest_wyjsciem_poza_katalog_runu(
+    swiat, sciezka,
+):
+    # `..` odmawiamy tylko jako caly skladnik sciezki; "plan..md" to zwykla nazwa pliku
+    # (kontrola po podciagu `..` odmowilaby tez jej)
+    _zapisz(swiat, sciezka, b"zwykla tresc")
+
+    odp = await _czytaj(sciezka)
+
+    assert odp["ok"] is True, odp
+    assert odp["wynik"]["text"] == "zwykla tresc"
+
+
 async def test_sciezka_bezwzgledna_jest_odmowiona_takze_gdy_wskazuje_plik_w_katalogu_runu(swiat):
     plik = _zapisz(swiat, "plan.md", TRESC_SEKRETNA.encode())
 
@@ -405,7 +420,7 @@ async def test_zle_pole_sciezki_w_zapytaniu_o_artefakt_to_zle_dane(swiat, dane):
     _blad(odp, "zle_dane")
 
 
-@pytest.mark.parametrize("run_id", ["..", ".", "", "a/b", "a\\b", 5, None])
+@pytest.mark.parametrize("run_id", ["..", ".", "", "a/b", "a\\b", 5, None, "a\x00b"])
 async def test_zly_identyfikator_runu_w_zapytaniu_o_artefakt_to_zle_dane(swiat, run_id):
     (swiat.runy / "a").mkdir(exist_ok=True)
     (swiat.runy / "poza.md").write_text(TRESC_SEKRETNA, encoding="utf-8")
@@ -475,8 +490,9 @@ async def test_kolejka_fifo_w_katalogu_runu_jest_odmowiona_bez_zawieszenia(swiat
 # 5. Komunikaty odmow sa stale i czytelne dla czlowieka (HAR-182, poprawka 1)
 # =================================================================================
 
-async def test_zly_identyfikator_runu_ma_staly_komunikat_bez_tresci_zadania(swiat):
-    odp = await _czytaj("a.md", run_id="..")
+@pytest.mark.parametrize("run_id", ["..", "a\x00b"], ids=["kropki", "z_bajtem_zerowym"])
+async def test_zly_identyfikator_runu_ma_staly_komunikat_bez_tresci_zadania(swiat, run_id):
+    odp = await _czytaj("a.md", run_id=run_id)
 
     _blad(odp, "zle_dane", "niedozwolony identyfikator runu")
 

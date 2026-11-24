@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from cockpit.api import bus
 from cockpit.db.models import Run, RunStatus
+from cockpit.services import projekty
 from test_projekty_zmiana import KOMUNIKAT_PROJEKT_NIEZNANY, swiat
 from test_skille_api import _klient_z_katalogiem, _skill
 from test_workflowy_api import (
@@ -312,6 +313,31 @@ async def test_runner_projektu_offline_daje_409_z_podpowiedzia_a_run_nie_powstaj
     assert "cockpit-runner" in odp.json()["detail"]
     assert await _runy(swiat) == []
     assert wyslane == []
+
+
+async def test_runner_tracacy_lacznosc_miedzy_odczytem_pliku_a_katalogiem_definicji_daje_409_z_podpowiedzia_bez_runu(
+    swiat, wyslane, monkeypatch,
+):
+    _skille_testowe(swiat)
+    _zapisz_wf_na_dysku(swiat, "ok", WF_POPRAWNY)
+    klient = await _klient_z_katalogiem(swiat)
+    wywolania = []
+
+    def runner_online_raz(runner, polaczone):
+        # 1. wywolanie: odczyt pliku workflow; 2.: `katalog_definicji` (runner zniknal)
+        wywolania.append(runner.id)
+        return len(wywolania) == 1
+
+    monkeypatch.setattr(
+        "cockpit.services.zapytania_runnera.runner_online", runner_online_raz)
+
+    odp = await _start(klient, "ok", swiat.projekt_a)
+
+    assert len(wywolania) == 2   # warunek testu: padlo dokladnie drugie zapytanie
+    assert odp.status_code == 409, odp.text
+    assert odp.json()["detail"] == projekty.KOMUNIKAT_OFFLINE
+    assert await _runy(swiat) == []
+    assert _polecenia_run_workflow(wyslane) == []
 
 
 async def test_zaden_runner_zespolu_nie_jest_online_to_409_z_podpowiedzia_a_run_nie_powstaje(swiat, wyslane):

@@ -133,6 +133,8 @@ def _czytaj_artefakt(run_id: str, sciezka: str, limit: int) -> dict:
     """Artefakt z katalogu runu (HAR-182). Katalog liczy runner z `run_id`; sciezka jest wzgledna,
     a zakres to wylacznie ten katalog (dowiazanie na zewnatrz i sekret to odmowa). Plik wiekszy
     niz limit wraca obciety, z pelnym rozmiarem w bajtach; sciezek dysku runnera nie zwracamy."""
+    if "\0" in run_id:   # Zakres([katalog]) rzucilby z resolve() ValueError, nie zle_dane
+        raise BladOperacji("zle_dane", "niedozwolony identyfikator runu")
     try:
         katalog = katalog_runu(run_id)
     except BladWorktree:
