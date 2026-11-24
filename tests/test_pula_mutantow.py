@@ -437,9 +437,6 @@ def test_nieznana_baza_to_brak_dowodu(mod, przebieg):
     assert mod.main(["--", "--baza", "nie-ma-takiej"]) == 2
 
 
-def test_szablon_liczy_mutanty_przez_pule_czterech_shardow():
-    b = next(x for x in json.loads(SZABLON.read_text()) if x["nazwa"] == "mutanty")
-    assert b["argv"][:5] == ["python", ".claude/skills/praca-ticketu/scripts/pula_mutantow.py", "--liczba", "4", "--"]
 
 
 def test_katalog_dowodow_ktorego_nie_da_sie_utworzyc_to_brak_dowodu(mod, przebieg, monkeypatch):

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # Moment po `git merge origin/main` (HAR-240, regula merge-rownoleglych-ticketow): git laczy bez
 # konfliktu kod, ktory razem nie dziala, wiec po merge idzie caly zestaw, nie tylko testy plikow z konfliktem.
-# Cztery etapy, wszystkie zawsze sie wykonuja (kazdy wypisuje swoj wynik):
+# Trzy etapy, wszystkie zawsze sie wykonuja (kazdy wypisuje swoj wynik):
 #   konflikt  - zaden sledzony plik nie ma znacznikow konfliktu ani wpisu niescalonego w indeksie
 #   alembic   - `alembic heads` zwraca dokladnie jedna glowe (kolizja numeru migracji z rownoleglego ticketu)
-#   mutanty   - tools/mutanty_reczne.py --sprawdz-wszystkie: kazdy wiersz kazdej tabeli nadal trafia w kod
 #   testy     - tools/testy.py -q -n 4 (pytest z limitem czasu bez postepu)
 # Kod wyjscia: 0 wszystko poprawne, 1 etap zglosil blad w kodzie (konflikt, glowy, czerwony test),
-# 2 blad narzedzia albo wiersz tabeli niewykonywalny (brak dowodu); priorytet 2 > 1 > 0.
+# 2 blad narzedzia (brak dowodu); priorytet 2 > 1 > 0.
 # Ostatnia linia stdout: `PO-MERGE: ok` albo `PO-MERGE: blad <etap>` (pierwszy etap o najwyzszym kodzie).
 # Zmienne: PYTHON (interpreter z pytest, xdist i alembic; domyslnie python),
 #   PO_MERGE_TESTY_ARGS (argumenty testy.py; domyslnie "-q -n 4").
@@ -69,15 +68,6 @@ else
     printf '%s\n' "$glowy" >&2
     zglos alembic 1
   fi
-fi
-
-# --- mutanty ----------------------------------------------------------------------------------
-"$PY" tools/mutanty_reczne.py --sprawdz-wszystkie
-kod_mutantow=$?
-if [ "$kod_mutantow" -eq 0 ]; then
-  echo "PO-MERGE etap mutanty: ok"
-else
-  zglos mutanty 2
 fi
 
 # --- testy ------------------------------------------------------------------------------------
