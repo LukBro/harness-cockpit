@@ -586,6 +586,63 @@ async def test_domyslne_odczekanie_wraca_po_zadanym_czasie_bez_stop():
     await asyncio.wait_for(runner._czekaj(0.01), 2)      # TimeoutError = czeka bez konca
 
 
+def _wait_for_polykajacy_anulowanie():
+    """`asyncio.wait_for` z Pythona 3.11 w wyscigu: gdy anulowanie trafia w chwile konca
+    czekania wewnetrznego, `CancelledError` ginie, a wolajacy dostaje zwykly wynik
+    (naprawione w 3.12). Lokalnie jest nowszy Python, wiec to zachowanie symulujemy."""
+    prawdziwy = asyncio.wait_for
+
+    async def wait_for(aw, timeout):
+        try:
+            return await prawdziwy(aw, timeout)
+        except asyncio.CancelledError:
+            return None
+
+    return wait_for
+
+
+async def test_anulowanie_domyslnego_odczekania_dochodzi_do_wolajacego_takze_gdy_biblioteka_polyka_anulowanie(
+    monkeypatch,
+):
+    """HAR-224: odczekanie nie moze polknac anulowania. Gdy `wait_for` je polknie (3.11, symulowane
+    podmiana), zadanie runu stoi w odczekaniu `dosylaj`, wychodzi przez `_zatrzymany` zamiast
+    przez anulowanie, workflow biegnie dalej, a `stop()` wisi w `_anuluj_runy` (`asyncio.wait`
+    bez limitu). Poza tym jednym `cancel()` test niczego nie anuluje - sprawdza, co z nim zrobi `_czekaj`."""
+    runner = Runner("http://kokpit.test", TOKEN)
+    zadanie = asyncio.ensure_future(runner._czekaj(30))
+    try:
+        with monkeypatch.context() as m:
+            m.setattr(asyncio, "wait_for", _wait_for_polykajacy_anulowanie())
+            await asyncio.sleep(0.05)                    # odczekanie trwa
+            zadanie.cancel()
+            zakonczone, _ = await asyncio.wait({zadanie}, timeout=2)
+        assert zadanie in zakonczone, "odczekanie przezylo anulowanie"
+        assert zadanie.cancelled()
+    finally:
+        runner._zatrzymany.set()
+        zadanie.cancel()
+        await asyncio.wait({zadanie}, timeout=2)
+
+
+async def test_anulowanie_odczekania_w_tym_samym_kroku_co_ustawienie_flagi_zatrzymania_dochodzi_do_wolajacego():
+    """Odtwarza warunek wyscigu z `stop()` (client.py): flaga `_zatrzymany` i `cancel()` w tym
+    samym kroku petli, bez `await` pomiedzy - czekanie wewnetrzne konczy sie razem z anulowaniem.
+    Prawdziwy `_czekaj`, bez podmiany `wait_for`. Na Pythonie 3.12+ jest zielony takze na starym
+    kodzie; dowod oblewania daje dopiero 3.11, gdzie `wait_for` gubi wtedy `CancelledError`."""
+    runner = Runner("http://kokpit.test", TOKEN)
+    zadanie = asyncio.ensure_future(runner._czekaj(30))
+    try:
+        await asyncio.sleep(0.05)                        # odczekanie trwa
+        runner._zatrzymany.set()                         # kolejnosc jak w stop(): flaga, potem anulowanie
+        zadanie.cancel()
+        zakonczone, _ = await asyncio.wait({zadanie}, timeout=2)
+        assert zadanie in zakonczone, "odczekanie nie skonczylo sie po stop()"
+        assert zadanie.cancelled(), "anulowanie odczekania zostalo polkniete"
+    finally:
+        zadanie.cancel()
+        await asyncio.wait({zadanie}, timeout=2)
+
+
 async def test_domyslne_odczekanie_pozwala_dokonczyc_ponowienie_po_awarii_kokpitu():
     odpowiedzi = [500, 200]
     transport = httpx.MockTransport(lambda request: httpx.Response(odpowiedzi.pop(0)))
