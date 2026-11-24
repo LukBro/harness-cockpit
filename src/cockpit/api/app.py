@@ -219,35 +219,47 @@ async def runner_stream(
     s: AsyncSession = Depends(get_session),
 ) -> EventSourceResponse:
     """SSE w dol: polecenia dla runnera. Odpowiedzi wracaja POST-em."""
-    q = bus.runner_queue(r.id)
     runner_id, tenant_id = r.id, r.tenant_id
 
     async def gen():
+        pobrane = None   # polecenie pobrane z kolejki, jeszcze niewyslane (HAR-200)
         try:
-            # Oznaczenie w try, by zdjecie w finally zawsze mialo pare.
-            bus.mark_runner_connected(r.id)
+            # Rejestracja w try, by zdjecie w finally zawsze mialo pare. Nowy strumien
+            # zamyka poprzednie strumienie tego runnera: polecenie odbiera tylko najnowszy.
+            strumien = bus.otworz_strumien_runnera(runner_id)
             # Sygnal gotowosci: gdy runner go odbierze, kokpit juz uznaje go
             # za dostepnego (runner_online wymaga otwartego strumienia).
             yield {"event": "command", "data": json.dumps({"type": "polaczono"})}
             while True:
-                if await request.is_disconnected():
+                if strumien.zamkniety.is_set() or await request.is_disconnected():
                     break
-                polecenie = await q.get()
+                pobrane = await bus.nastepne_polecenie(strumien)
+                if pobrane is None:
+                    break    # strumien zastapiony nowszym
                 # zapytanie, na ktore kokpit juz nie czeka (timeout, anulowanie), nie jedzie do
                 # runnera: wykonaloby skutek bez odbiorcy odpowiedzi (HAR-201)
-                req_id = polecenie.get("req_id")
+                req_id = pobrane.get("req_id")
                 if req_id is not None and not bus.oczekuje(req_id):
+                    pobrane = None
                     continue
                 # polecenie przerwanego runu nie idzie do runnera po powrocie (HAR-37)
                 async with db_session.SessionLocal() as s2:
                     aktualne = await uslugi.polecenie_aktualne(
-                        s2, polecenie, runner_id, tenant_id
+                        s2, pobrane, runner_id, tenant_id
                     )
                 if not aktualne:
+                    pobrane = None
                     continue
+                # Generacje sprawdzamy po ostatnim await przed yield: zamkniety strumien
+                # nie wysyla; polecenie wraca do kolejki w finally.
+                if strumien.zamkniety.is_set():
+                    break
+                polecenie, pobrane = pobrane, None
                 yield {"event": "command", "data": json.dumps(polecenie)}
         finally:
-            bus.mark_runner_disconnected(r.id)
+            if pobrane is not None:
+                bus.zwroc_polecenie(runner_id, pobrane)
+            bus.zamknij_strumien(strumien)
 
     return EventSourceResponse(gen())
 
