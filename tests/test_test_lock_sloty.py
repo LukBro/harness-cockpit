@@ -181,9 +181,6 @@ def test_limit_bramki_testow_obejmuje_czekanie_na_slot_i_sam_przebieg():
     assert b["timeout"] - czekanie >= 5400  # dotychczasowy limit samych testow
 
 
-def test_szablon_ogranicza_dzieci_mutmuta_do_czterech():
-    argv = _bramka_z_szablonu("mutanty")["argv"]
-    assert argv[argv.index("--max-children") + 1] == "4"
 
 
 def test_jeden_slot_czeka_w_kolejce_blokady_a_nie_odpytuje_slotow(repo, monkeypatch):

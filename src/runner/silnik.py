@@ -24,7 +24,8 @@ Kroki zabite przy smierci runnera (stan `w_toku`) nie sa wznawiane: dostaja `ste
 
 Kazda sciezka konczy sie zdarzeniem `run_finished`. Wyjatki: zawieszenie na bramce (ostatnie
 zdarzenie to `step_waiting`; `run_finished` zmienilby w kokpicie `waiting` na "do odbioru"),
-anulowanie (`CancelledError`, po anulowaniu zadan krokow) i bledy samego `emit`
+anulowanie (`CancelledError`, po anulowaniu zadan krokow; `step_aborted` zglasza klient po
+`cancel_run`, a `zamknij_checkpoint` zamyka checkpoint z bramka) i bledy samego `emit`
 (np. `BrakMiejsca`) - decyduje o nich wolajacy. Nieudany zapis checkpointu to `step_failed`
 kroku bramki (bez `step_waiting`) i `run_finished`. Wyjatek wznowienia: polecenie ignorowane
 konczy sie samym `resume_ignored`.
@@ -385,10 +386,31 @@ async def _pauza_testowa() -> None:
         await asyncio.sleep(sekundy)
 
 
-async def _zapisz(p: Przygotowany, cp: Checkpoint) -> BladCheckpointu | None:
-    """Zapis checkpointu w watku; blad dysku wraca jako wartosc (silnik konczy run bledem)."""
+async def _zapis_do_konca(katalog: Path, cp: Checkpoint) -> None:
+    """Zapis checkpointu w watku, ktorego NIE przerywa anulowanie zadania: watek nie daje sie
+    zatrzymac, wiec po `CancelledError` czekamy na jego koniec i dopiero wtedy anulowanie
+    opuszcza zadanie (re-raise). Wolac pod `_BLOKADY` runu: blokada trzyma sie do konca zapisu,
+    wiec zamkniecie checkpointu po `cancel_run` nigdy nie wyprzedzi spoznionego `os.replace`."""
+    zapis = asyncio.ensure_future(asyncio.to_thread(zapisz_checkpoint, katalog, cp))
     try:
-        await asyncio.to_thread(zapisz_checkpoint, p.worktree.katalog_runu, cp)
+        await asyncio.shield(zapis)
+    except asyncio.CancelledError:
+        while not zapis.done():
+            try:
+                await asyncio.wait([zapis])
+            except asyncio.CancelledError:
+                pass            # kolejne anulowanie tez czeka na watek; re-raise nizej
+        if not zapis.cancelled():
+            zapis.exception()   # blad zapisu przy anulowaniu: odebrany, bez ostrzezenia asyncio
+        raise
+
+
+async def _zapisz(p: Przygotowany, cp: Checkpoint) -> BladCheckpointu | None:
+    """Zapis checkpointu pod blokada runu; blad dysku wraca jako wartosc (silnik konczy run
+    bledem). Nie jest wolany pod `_BLOKADY` (`_wykonaj_plan` dziala po `_przyjmij_decyzje`)."""
+    try:
+        async with _BLOKADY.setdefault(cp.run_id, asyncio.Lock()):
+            await _zapis_do_konca(p.worktree.katalog_runu, cp)
     except BladCheckpointu as e:
         return e
     return None
@@ -722,6 +744,31 @@ def _powod_ignorowania(cp: Checkpoint, step_id: str, decyzja: str) -> str | None
     return None
 
 
+async def zamknij_checkpoint(run_id: str, root: Path | None = None) -> bool:
+    """Zamyka checkpoint anulowanego runu: zapis bez `waiting_on` (HAR-126), pod ta sama
+    blokada runu co `_przyjmij_decyzje` i `_zapisz`, w watku jak `zapisz_checkpoint`. Po tym
+    `wznow_run` (takze po restarcie runnera) ignoruje `resume` z `_powod_ignorowania`.
+
+    `True` gdy zapisano zamkniecie; `False` gdy nie bylo czego zamykac: brak checkpointu (run
+    nieznany, zakonczony albo bez bramki) albo juz bez `waiting_on`. Inny blad odczytu albo
+    zapisu to `BladCheckpointu`; `ValueError` odczytu (bajt NUL w `run_id`) tlumaczymy na
+    `BladCheckpointu` (po nim zapis juz nie ruszy), zly identyfikator runu to `BladWorktree`."""
+    katalog = katalog_runu(run_id, root)
+    async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+        try:
+            cp = await asyncio.to_thread(wczytaj_checkpoint, katalog)
+        except BladCheckpointu as e:
+            if isinstance(e.__cause__, FileNotFoundError):
+                return False
+            raise
+        except ValueError as e:     # bajt NUL w sciezce: `read_text` nie rzuca bledem dziedziny
+            raise BladCheckpointu(f"odczyt checkpointu: {type(e).__name__}") from e
+        if cp.waiting_on is None:
+            return False
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True
+
+
 async def _porazka_wznowienia(emit: Emit, run_id: str, step_id: str, tekst: str) -> None:
     """`step_failed` kroku z polecenia i `run_finished`: bez pierwszego kokpit wyliczylby
     z samego `run_finished` falszywe "do odbioru" (evidence_required)."""
@@ -745,7 +792,7 @@ async def _przyjmij_decyzje(
         await emit(_zdarzenie(run_id, "resume_ignored", step_id, step_id, ignorowane))
         return None
     if decyzja == "reject":
-        await asyncio.to_thread(zapisz_checkpoint, katalog, replace(cp, waiting_on=None))
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
         await emit(_zdarzenie(
             run_id, "run_finished", step_id, "", powod or "",
             cost_usd=None, cost_source="unavailable"))
@@ -759,8 +806,7 @@ async def _przyjmij_decyzje(
     for id_kroku in przerwane:
         stany[id_kroku] = StanKroku.NIEUDANY
     await asyncio.to_thread(_zapisz_decyzje, p, run_id, step_id, decyzja, powod)
-    await asyncio.to_thread(
-        zapisz_checkpoint, katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))
+    await _zapis_do_konca(katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))
     return cp.workflow, p, stany, startowane, przerwane
 
 

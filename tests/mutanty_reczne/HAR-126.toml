@@ -1,0 +1,2215 @@
+# Tabela recznych mutantow HAR-126: anulowanie runu przez czlowieka (`POST /api/runs/{run_id}/cancel`,
+# `cancel_run` u runnera). Kazde `szukaj` wystepuje w pliku dokladnie raz.
+#
+# Wiersze z blokada wiersza (`with_for_update`) ida na PostgreSQL: test ma marker `baza`
+# i wymaga COCKPIT_TEST_DATABASE_URL=postgresql+asyncpg://.../cockpit_test.
+#
+# `Uprawnienie.uruchamianie` zamiast `Uprawnienie.zatwierdzanie` w trasie anulowania: role maja
+# oba uprawnienia razem, ale odmowa dla obserwatora niesie nazwe czynnosci z uprawnienia
+# ("zatwierdzac bramek"), wiec pelna tresc 403 odroznia mutanta.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    run, ev, polecenie = await uslugi.anuluj_run('''
+zamien = '''    dostep.wymagaj(k, Uprawnienie.uruchamianie)
+    run, ev, polecenie = await uslugi.anuluj_run('''
+test = "tests/test_dostep_http.py::test_obserwator_nie_anuluje_runu_swojego_zespolu_i_run_trwa_dalej"
+
+# =====================================================================================
+# src/cockpit/services/runs.py: anuluj_run
+# =====================================================================================
+
+# --- zbior anulowalnych statusow {running, waiting} ----------------------------------------------
+
+# Run oczekujacy na bramce przestaje byc anulowalny.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+zamien = '''if run.status not in (RunStatus.running,):
+            stan = run.status.value'''
+test = "tests/test_anulowanie_runu.py::test_anulowany_oczekujacy_run_ma_w_bazie_status_aborted_z_powodem_bez_zadania_u_runnera"
+
+# Run trwajacy przestaje byc anulowalny.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+zamien = '''if run.status not in (RunStatus.waiting,):
+            stan = run.status.value'''
+test = "tests/test_anulowanie_runu.py::test_anulowany_trwajacy_run_ma_w_bazie_status_aborted_a_nie_failed_z_powodem"
+
+# Warunek odwrocony.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+zamien = '''if run.status in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+test = "tests/test_anulowanie_runu.py::test_anulowany_trwajacy_run_ma_w_bazie_status_aborted_a_nie_failed_z_powodem"
+
+# Run do odbioru da sie anulowac.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+zamien = '''if run.status not in (*_STATUSY_TRWAJACE, RunStatus.to_accept):
+            stan = run.status.value'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_runu_w_stanie_innym_niz_w_toku_lub_oczekujacy_daje_409_bez_zmian"
+
+# Run jeszcze nie wystartowany da sie anulowac.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+zamien = '''if run.status not in (*_STATUSY_TRWAJACE, RunStatus.pending):
+            stan = run.status.value'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_runu_w_stanie_innym_niz_w_toku_lub_oczekujacy_daje_409_bez_zmian"
+
+# Run juz anulowany da sie anulowac drugi raz.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if run.status not in _STATUSY_TRWAJACE:
+            stan = run.status.value'''
+zamien = '''if run.status not in (*_STATUSY_TRWAJACE, RunStatus.aborted):
+            stan = run.status.value'''
+test = "tests/test_anulowanie_runu.py::test_drugie_anulowanie_tego_samego_runu_daje_409_i_nie_dopisuje_zdarzenia"
+
+# --- skutek anulowania ---------------------------------------------------------------------------
+
+# `failed` zamiast `aborted`.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''run.status = RunStatus.aborted
+        run.reason = POWOD_ANULOWANIA'''
+zamien = '''run.status = RunStatus.failed
+        run.reason = POWOD_ANULOWANIA'''
+test = "tests/test_anulowanie_runu.py::test_anulowany_trwajacy_run_ma_w_bazie_status_aborted_a_nie_failed_z_powodem"
+
+# Brak powodu anulowania.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''run.reason = POWOD_ANULOWANIA'''
+zamien = '''run.reason = None'''
+test = "tests/test_anulowanie_runu.py::test_anulowany_trwajacy_run_ma_w_bazie_status_aborted_a_nie_failed_z_powodem"
+
+# Zdarzenie anulowania bez autora.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''dane={"user_id": user_id},'''
+zamien = '''dane={},'''
+test = "tests/test_anulowanie_runu.py::test_zdarzenie_anulowania_niesie_id_uzytkownika_ktory_anulowal_a_nie_wlasciciela"
+
+# Zdarzenie innego rodzaju niz `run_cancelled`.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''KIND_ANULOWANIA = "run_cancelled"'''
+zamien = '''KIND_ANULOWANIA = "run_canceled"'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_zapisuje_jedno_zdarzenie_run_cancelled_w_zespole_runu"
+
+# Polecenie dla runnera bez identyfikatora runu.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''return run, ev, {"type": "cancel_run", "run_id": run_id}'''
+zamien = '''return run, ev, {"type": "cancel_run"}'''
+test = "tests/test_anulowanie_runu.py::test_serwis_anulowania_zwraca_run_zdarzenie_i_polecenie_dla_runnera"
+
+# --- blokada wiersza: sprawdzenie statusu i zapis w jednej transakcji ----------------------------
+
+# Bez `with_for_update` anulowanie, ktore przeczytalo `running`, nadpisuje `to_accept` po `run_finished`.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''await s.refresh(run, with_for_update=True)
+        if run.status not in _STATUSY_TRWAJACE:'''
+zamien = '''await s.refresh(run)
+        if run.status not in _STATUSY_TRWAJACE:'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_po_koncu_runu_zapisanym_w_trakcie_odczytu_daje_409_a_run_zostaje_do_odbioru"
+
+# Bez `with_for_update` dwa anulowania naraz zapisuja po zdarzeniu.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''await s.refresh(run, with_for_update=True)
+        if run.status not in _STATUSY_TRWAJACE:'''
+zamien = '''await s.refresh(run)
+        if run.status not in _STATUSY_TRWAJACE:'''
+test = "tests/test_anulowanie_runu.py::test_drugie_anulowanie_runu_przeplecione_z_pierwszym_daje_409_i_jedno_zdarzenie"
+
+# Zdarzenie anulowania dopisane do `RODZAJE_CZLOWIEKA` (runner nie moze go zglosic).
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''"run_cancelled",    # anulowanie runu przez czlowieka'''
+zamien = '''# anulowanie runu przez czlowieka'''
+test = "tests/test_anulowanie_runu.py::test_runner_nie_moze_zglosic_zdarzenia_run_cancelled_bo_to_decyzja_czlowieka"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''"run_cancelled",    # anulowanie runu przez czlowieka'''
+zamien = '''# anulowanie runu przez czlowieka'''
+test = "tests/test_decyzja_na_bramce.py::test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_piec"
+
+# =====================================================================================
+# src/cockpit/api/app.py: trasa cancel
+# =====================================================================================
+
+# Brak sprawdzenia uprawnienia: obserwator anuluje run.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    run, ev, polecenie = await uslugi.anuluj_run('''
+zamien = '''    run, ev, polecenie = await uslugi.anuluj_run('''
+test = "tests/test_dostep_http.py::test_obserwator_nie_anuluje_runu_swojego_zespolu_i_run_trwa_dalej"
+
+# Uprawnienie slabsze niz `zatwierdzanie` (obserwator ma `podglad`).
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    run, ev, polecenie = await uslugi.anuluj_run('''
+zamien = '''    dostep.wymagaj(k, Uprawnienie.podglad)
+    run, ev, polecenie = await uslugi.anuluj_run('''
+test = "tests/test_dostep_http.py::test_obserwator_nie_anuluje_runu_swojego_zespolu_i_run_trwa_dalej"
+
+# Zespol z sesji pominiety: run innego zespolu da sie anulowac.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''await uslugi.anuluj_run(s, run_id, k.tenant_id, k.user_id)'''
+zamien = '''await uslugi.anuluj_run(s, run_id, None, k.user_id)'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_runu_obcego_zespolu_daje_404_a_run_i_runnery_zostaja_nietkniete"
+
+# Autor anulowania pomylony z wlascicielem zespolu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''await uslugi.anuluj_run(s, run_id, k.tenant_id, k.user_id)'''
+zamien = '''await uslugi.anuluj_run(s, run_id, k.tenant_id, "nikt")'''
+test = "tests/test_anulowanie_runu.py::test_zdarzenie_anulowania_niesie_id_uzytkownika_ktory_anulowal_a_nie_wlasciciela"
+
+# Runner nie dostaje polecenia `cancel_run`.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    await bus.send_to_runner(run.runner_id, polecenie)
+    zdarzenie = uslugi.zdarzenie_na_szyne(ev)
+    await bus.publish_event(run.id, zdarzenie)
+    return RunAnulowany('''
+zamien = '''    zdarzenie = uslugi.zdarzenie_na_szyne(ev)
+    await bus.publish_event(run.id, zdarzenie)
+    return RunAnulowany('''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_wysyla_runnerowi_runu_dokladnie_jedno_polecenie_cancel_run"
+
+# Polecenie wysylane do runnera innego niz runner runu.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''await bus.send_to_runner(run.runner_id, polecenie)
+    zdarzenie = uslugi.zdarzenie_na_szyne(ev)
+    await bus.publish_event(run.id, zdarzenie)
+    return RunAnulowany('''
+zamien = '''await bus.send_to_runner("inny-runner", polecenie)
+    zdarzenie = uslugi.zdarzenie_na_szyne(ev)
+    await bus.publish_event(run.id, zdarzenie)
+    return RunAnulowany('''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_wysyla_runnerowi_runu_dokladnie_jedno_polecenie_cancel_run"
+
+# Przegladarka nie dostaje zdarzenia `run_cancelled`.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    await bus.publish_event(run.id, zdarzenie)
+    return RunAnulowany('''
+zamien = '''    return RunAnulowany('''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_jest_publikowane_przegladarce_jako_zdarzenie_run_cancelled"
+
+# Odpowiedz bez powodu z bazy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''return RunAnulowany(run_id=run.id, status=run.status, reason=run.reason)'''
+zamien = '''return RunAnulowany(run_id=run.id, status=run.status, reason="")'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_trwajacego_runu_daje_odpowiedz_ze_statusem_aborted_i_powodem"
+
+# =====================================================================================
+# src/runner/client.py: cancel_run, mapa zadan runow, ignorowanie spoznionego resume
+# =====================================================================================
+
+# Polecenie `cancel_run` nie jest rozpoznawane.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''elif cmd.get("type") == "cancel_run":'''
+zamien = '''elif cmd.get("type") == "cancel_run_":'''
+test = "tests/test_runner_klient.py::test_polecenie_cancel_run_odebrane_w_trakcie_kroku_zabija_cala_grupe_procesow_kroku"
+
+# Zadanie runu nie jest anulowane.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''            zadanie.cancel()
+        zamykanie = asyncio.create_task('''
+zamien = '''            pass
+        zamykanie = asyncio.create_task('''
+test = "tests/test_runner_klient.py::test_polecenie_cancel_run_odebrane_w_trakcie_kroku_zabija_cala_grupe_procesow_kroku"
+
+# Zadanie szukane po innym kluczu niz `run_id`: cancel_run nie trafia.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zadanie = self._runy.get(run_id)
+        if zadanie is None:'''
+zamien = '''zadanie = self._runy.get("inny")
+        if zadanie is None:'''
+test = "tests/test_runner_klient.py::test_polecenie_cancel_run_odebrane_w_trakcie_kroku_zabija_cala_grupe_procesow_kroku"
+
+# Anulowanie dotyka wszystkich runow, nie tylko wskazanego.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zadanie = self._runy.get(run_id)
+        if zadanie is None:'''
+zamien = '''zadanie = next(iter(self._runy.values()), None)
+        if zadanie is None:'''
+test = "tests/test_runner_klient.py::test_cancel_run_jednego_runu_nie_zabija_procesu_kroku_innego_runu"
+
+# Run bez zadania: brak gałęzi powrotu konczy sie wyjatkiem na `None.cancel()`.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        zadanie = self._runy.get(run_id)
+        if zadanie is None:'''
+zamien = '''        zadanie = self._runy.get(run_id)
+        if False:'''
+test = "tests/test_runner_klient.py::test_cancel_run_dla_runu_bez_zadania_nie_psuje_runnera_a_nastepny_krok_dziala"
+
+# Anulowany run nie jest zapamietany: spozniony resume go wznawia.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        self._anulowane[run_id] = None  # pragma: no mutate
+'''
+zamien = '''        pass
+'''
+test = "tests/test_runner_klient.py::test_wznowienie_anulowanego_runu_jest_ignorowane_a_wznowienie_innego_runu_dziala"
+
+# Resume ignorowany dla runow, ktore NIE byly anulowane.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id in self._anulowane:'''
+zamien = '''if isinstance(run_id, str) and run_id not in self._anulowane:'''
+test = "tests/test_runner_klient.py::test_wznowienie_anulowanego_runu_jest_ignorowane_a_wznowienie_innego_runu_dziala"
+
+# Resume anulowanego runu nie jest ignorowany.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id in self._anulowane:'''
+zamien = '''if False:'''
+test = "tests/test_runner_klient.py::test_wznowienie_anulowanego_runu_jest_ignorowane_a_wznowienie_innego_runu_dziala"
+
+# Zadanie wznowienia rejestrowane pod cudzym kluczem: cancel_run go nie widzi.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._zarejestruj_run(run_id, cmd, self._resume(cmd))'''
+zamien = '''self._zarejestruj_run("resume", cmd, self._resume(cmd))'''
+test = "tests/test_runner_klient.py::test_cancel_run_anuluje_zadanie_runu_workflow_albo_wznowienia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._zarejestruj_run(run_id, cmd, self._run_workflow(cmd))'''
+zamien = '''self._zarejestruj_run("workflow", cmd, self._run_workflow(cmd))'''
+test = "tests/test_runner_klient.py::test_cancel_run_anuluje_zadanie_runu_workflow_albo_wznowienia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._zarejestruj_run(run_id, cmd, self._krok_runu(cmd))'''
+zamien = '''self._zarejestruj_run("krok", cmd, self._krok_runu(cmd))'''
+test = "tests/test_runner_klient.py::test_polecenie_cancel_run_odebrane_w_trakcie_kroku_zabija_cala_grupe_procesow_kroku"
+
+# Koniec starszego zadania runu odpina nowsze zadanie tego samego runu (wznowienie po run_workflow).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if self._runy.get(run_id) is z:'''
+zamien = '''if True:'''
+test = "tests/test_runner_klient.py::test_koniec_starszego_zadania_runu_nie_odpina_nowszego_wznowienia_tego_samego_runu"
+
+# Zakonczone zadanie zostaje w mapie (nie znika po konczeniu).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''                del self._runy[run_id]'''
+zamien = '''                pass'''
+test = "tests/test_runner_klient.py::test_wznowienie_anulowanego_runu_jest_ignorowane_a_wznowienie_innego_runu_dziala"
+
+# Kod 3 (poza zasiegiem mutmuta): zaleznosci trasy cancel, model odpowiedzi, stale, limit pamieci.
+
+[[rownowazny]]
+plik = "src/runner/client.py"
+linia_tekst = "break  # pragma: no mutate"
+uzasadnienie = "po petli while w Runner.listen funkcja robi tylko return None, a w try nie ma finally: break i return daja ten sam wynik, zadne wejscie ich nie odroznia"
+
+# Identyfikator runu w sciezce to napis (UUID), nie liczba.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''async def anuluj_run(
+    run_id: str,'''
+zamien = '''async def anuluj_run(
+    run_id: int,'''
+test = "tests/test_dostep_http.py::test_czlonek_zespolu_anuluje_wlasny_run_a_run_dostaje_status_aborted"
+
+# Bez zaleznosci od sesji trasa cancel nie zna zespolu ani uzytkownika.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> RunAnulowany:'''
+zamien = '''    k: Kontekst = Depends(lambda: None),
+    s: AsyncSession = Depends(get_session),
+) -> RunAnulowany:'''
+test = "tests/test_dostep_http.py::test_bez_sesji_anulowanie_runu_dostaje_401_i_run_trwa_dalej"
+
+# Bez sesji bazy trasa cancel nie zapisze anulowania.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''    s: AsyncSession = Depends(get_session),
+) -> RunAnulowany:'''
+zamien = '''    s: AsyncSession = Depends(lambda: None),
+) -> RunAnulowany:'''
+test = "tests/test_dostep_http.py::test_czlonek_zespolu_anuluje_wlasny_run_a_run_dostaje_status_aborted"
+
+[[rownowazny]]
+plik = "src/cockpit/api/app.py"
+linia_tekst = ") -> RunAnulowany:"
+uzasadnienie = "trasa ma jawny response_model=RunAnulowany, wiec FastAPI ignoruje adnotacje zwracanego typu: zadne wejscie nie odroznia wersji z inna adnotacja"
+
+# Model odpowiedzi: nazwa w schemacie, powod nie jest pusty, status z zamknietej listy, run_id napis.
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''class RunAnulowany(BaseModel):
+    reason: str '''
+zamien = '''class RunAnulowany(ZdarzeniePrzyjete):
+    reason: str '''
+test = "tests/test_kontrakt_api.py::test_anulowanie_runu_zwraca_dokladnie_run_id_status_i_powod_zgodnie_z_baza"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    reason: str     # po anulowaniu powod jest zawsze ustawiony'''
+zamien = '''    reason: int     # po anulowaniu powod jest zawsze ustawiony'''
+test = "tests/test_kontrakt_api.py::test_anulowanie_runu_zwraca_dokladnie_run_id_status_i_powod_zgodnie_z_baza"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    reason: str     # po anulowaniu powod jest zawsze ustawiony
+    status: RunStatus
+    run_id: str'''
+zamien = '''    reason: str     # po anulowaniu powod jest zawsze ustawiony
+    status: str
+    run_id: str'''
+test = "tests/test_kontrakt_api.py::test_status_anulowanego_runu_w_schemacie_to_zamknieta_lista_stanow_runu"
+
+[[mutant]]
+plik = "src/cockpit/api/schematy.py"
+szukaj = '''    status: RunStatus
+    run_id: str
+
+
+class ZdarzenieRunu(BaseModel):'''
+zamien = '''    status: RunStatus
+    run_id: int
+
+
+class ZdarzenieRunu(BaseModel):'''
+test = "tests/test_kontrakt_api.py::test_anulowanie_runu_zwraca_dokladnie_run_id_status_i_powod_zgodnie_z_baza"
+
+# Rodzaj zdarzenia i powod anulowania zapisane w danych.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''POWOD_ANULOWANIA = "anulowany przez człowieka"'''
+zamien = '''POWOD_ANULOWANIA = "anulowany"'''
+test = "tests/test_anulowanie_runu.py::test_anulowany_trwajacy_run_ma_w_bazie_status_aborted_a_nie_failed_z_powodem"
+
+# Domyslny limit pamieci anulowanych: 0 wyrzuca anulowany run od razu, spozniony resume go wznawia.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''LIMIT_ANULOWANYCH = 1000 '''
+zamien = '''LIMIT_ANULOWANYCH = 0 '''
+test = "tests/test_runner_klient.py::test_wznowienie_anulowanego_runu_jest_ignorowane_a_wznowienie_innego_runu_dziala"
+
+# Dekorator trasy cancel (app.py:288-289): sciezka, model odpowiedzi i opisane bledy.
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''@app.post("/api/runs/{run_id}/cancel", response_model=RunAnulowany,'''
+zamien = '''@app.post("/api/runs/{run_id}/cancel_", response_model=RunAnulowany,'''
+test = "tests/test_dostep_http.py::test_czlonek_zespolu_anuluje_wlasny_run_a_run_dostaje_status_aborted"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''@app.post("/api/runs/{run_id}/cancel", response_model=RunAnulowany,'''
+zamien = '''@app.post("/api/runs/{run_id}/cancel", response_model=None,'''
+test = "tests/test_kontrakt_api.py::test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def anuluj_run('''
+zamien = '''          responses=odpowiedzi_bledow(403, 404, 409, 422))
+async def anuluj_run('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def anuluj_run('''
+zamien = '''          responses=odpowiedzi_bledow(401, 404, 409, 422))
+async def anuluj_run('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def anuluj_run('''
+zamien = '''          responses=odpowiedzi_bledow(401, 403, 409, 422))
+async def anuluj_run('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def anuluj_run('''
+zamien = '''          responses=odpowiedzi_bledow(401, 403, 404, 422))
+async def anuluj_run('''
+test = "tests/test_kontrakt_api.py::test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic"
+
+[[mutant]]
+plik = "src/cockpit/api/app.py"
+szukaj = '''          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def anuluj_run('''
+zamien = '''          responses=odpowiedzi_bledow(401, 403, 404, 409))
+async def anuluj_run('''
+# bez jawnego 422 FastAPI dokleja domyslny HTTPValidationError (kod 422 zostaje, zmienia sie model)
+test = "tests/test_kontrakt_api.py::test_schemat_nie_zawiera_domyslnego_bledu_walidacji_fastapi"
+
+# --- serwis: jawny rollback przed odmowa zwalnia blokade wiersza w tej samej sesji ----------------
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''            await s.rollback()      # zwalnia blokade wiersza'''
+zamien = '''            pass      # zwalnia blokade wiersza'''
+test = "tests/test_anulowanie_runu.py::test_odmowa_anulowania_konczy_transakcje_sesji_zamiast_zostawic_ja_z_blokada_wiersza"
+
+# --- client.py: stala powodu niedostepnego bufora (kod 3, linia 46) -------------------------------
+
+[[mutant]]
+plik = "src/runner/client.py"
+# `szukaj` to sam napis stalej, bez nazwy i znaku `=`: nie zalezy od formatowania linii.
+szukaj = '''"bufor zdarzen runnera niedostepny: zapis albo odczyt nie powiodl sie"'''
+zamien = '''"bufor niedostepny"'''
+test = "tests/test_runner_klient.py::test_porazka_startu_procesu_przy_niedzialajacym_buforze_daje_step_aborted_z_powodem_bufora"
+
+# --- client.py: stala powodu braku step_id (kod 3) ---------------------------------------------------
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''"polecenie run_step bez poprawnego step_id"'''
+zamien = '''"polecenie run_step"'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+# --- client.py: nieudany start procesu i niedzialajacy bufor ---------------------------------------
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except OSError as e:
+            # brak programu, brak praw: bez tego run zostalby w `running` bez konca kroku'''
+zamien = '''        except ZeroDivisionError as e:
+            # brak programu, brak praw: bez tego run zostalby w `running` bez konca kroku'''
+test = "tests/test_runner_klient.py::test_operacja_ktorej_proces_nie_wystartowal_konczy_krok_step_failed_a_potem_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''f"nie mozna uruchomic operacji: {type(e).__name__}")'''
+zamien = '''"nie mozna uruchomic operacji: OSError")'''
+test = "tests/test_runner_klient.py::test_operacja_ktorej_proces_nie_wystartowal_konczy_krok_step_failed_a_potem_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''            await self._zglos_koniec_runu(client, run_id, step_id, "step_failed", przyjety)
+        except BladBufora:'''
+zamien = '''            pass
+        except BladBufora:'''
+test = "tests/test_runner_klient.py::test_operacja_ktorej_proces_nie_wystartowal_konczy_krok_step_failed_a_potem_run_finished"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''            await self._zglos_koniec_runu(client, run_id, step_id, "step_failed", przyjety)
+        except BladBufora:'''
+zamien = '''            await self._zglos_koniec_runu(client, run_id, step_id, "step_failed", True)
+        except BladBufora:'''
+test = "tests/test_runner_klient.py::test_nieprzyjety_step_failed_po_nieudanym_starcie_procesu_nie_pozwala_zglosic_konca_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except BladBufora:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+
+    async def _odpowiedz_na_zapytanie'''
+zamien = '''        except ZeroDivisionError:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+
+    async def _odpowiedz_na_zapytanie'''
+test = "tests/test_runner_klient.py::test_porazka_startu_procesu_przy_niedzialajacym_buforze_daje_step_aborted_z_powodem_bufora"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except BladBufora:
+            # bufor zepsuty z innej przyczyny niz brak miejsca (prawa, limit, uszkodzenie)'''
+zamien = '''        except ZeroDivisionError:
+            # bufor zepsuty z innej przyczyny niz brak miejsca (prawa, limit, uszkodzenie)'''
+test = "tests/test_runner_klient.py::test_krok_z_dzialajacym_procesem_przy_niedzialajacym_buforze_ma_powod_zalezny_od_bledu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except BladBufora:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+        except NiewaznePoleZdarzenia as e:'''
+zamien = '''        except ZeroDivisionError:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+        except NiewaznePoleZdarzenia as e:'''
+test = "tests/test_runner_klient.py::test_odmowa_operacji_spoza_listy_przy_niedzialajacym_buforze_ma_powod_zalezny_od_bledu"
+
+# --- client.py: run_step bez poprawnego run_id i resume z niehaszowalnym run_id --------------------
+
+# Test sledzi wywolania `_krok_z_polecenia`: bez poprawnego run_id odrzuca strumien, zadanie nie
+# powstaje (ten sam komunikat wypisalby tez `_krok_z_polecenia`, wiec sam stderr nie odroznia).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id:
+                                # osobne zadanie: krok trwa'''
+zamien = '''if isinstance(run_id, str) or run_id:
+                                # osobne zadanie: krok trwa'''
+test = "tests/test_runner_klient.py::test_krok_bez_poprawnego_run_id_jest_odrzucony_bez_procesu_a_runner_dziala_dalej"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id:
+                                # osobne zadanie: krok trwa'''
+zamien = '''if isinstance(run_id, str):
+                                # osobne zadanie: krok trwa'''
+test = "tests/test_runner_klient.py::test_krok_bez_poprawnego_run_id_jest_odrzucony_bez_procesu_a_runner_dziala_dalej"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id:
+                                # osobne zadanie: krok trwa'''
+zamien = '''if run_id:
+                                # osobne zadanie: krok trwa'''
+test = "tests/test_runner_klient.py::test_krok_bez_poprawnego_run_id_jest_odrzucony_bez_procesu_a_runner_dziala_dalej"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print("polecenie run_step bez poprawnego run_id odrzucone",
+                                      file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_krok_bez_poprawnego_run_id_jest_odrzucony_bez_procesu_a_runner_dziala_dalej"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id in self._anulowane:'''
+zamien = '''if run_id in self._anulowane:'''
+test = "tests/test_runner_klient.py::test_resume_z_run_id_ktory_nie_jest_napisem_jest_odrzucone_a_runner_dziala_dalej"
+
+# --- anuluj_run: liczba prob przy kolizji numeru zdarzenia -------------------------------------
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''    for _ in range(_PROBY_SEQ):
+        await s.refresh(run, with_for_update=True)'''
+zamien = '''    for _ in range(2):
+        await s.refresh(run, with_for_update=True)'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_udaje_sie_w_ostatniej_dozwolonej_probie_po_kolizjach_numeru"
+
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''    for _ in range(_PROBY_SEQ):
+        await s.refresh(run, with_for_update=True)'''
+zamien = '''    for _ in range(2):
+        await s.refresh(run, with_for_update=True)'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_przy_stale_zajetym_numerze_zdarzenia_odmawia_po_wyczerpaniu_prob_i_nie_rusza_runu"
+
+# --- client.py: krok bez step_id, wyjatek w zadaniu runu, odrzucony token w zadaniu -----------------
+
+# `_krok_z_polecenia`: guard run_id (bezposrednie wywolanie: strumien juz odsiewa takie polecenia).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not isinstance(run_id, str) or not run_id:
+            print("polecenie run_step bez poprawnego run_id odrzucone", file=sys.stderr)'''
+zamien = '''if not isinstance(run_id, str) and not run_id:
+            print("polecenie run_step bez poprawnego run_id odrzucone", file=sys.stderr)'''
+test = "tests/test_runner_klient.py::test_polecenie_run_step_bez_poprawnego_run_id_jest_odrzucone_komunikatem_bez_zdarzen"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not isinstance(run_id, str) or not run_id:
+            print("polecenie run_step bez poprawnego run_id odrzucone", file=sys.stderr)'''
+zamien = '''if not isinstance(run_id, str):
+            print("polecenie run_step bez poprawnego run_id odrzucone", file=sys.stderr)'''
+test = "tests/test_runner_klient.py::test_polecenie_run_step_bez_poprawnego_run_id_jest_odrzucone_komunikatem_bez_zdarzen"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print("polecenie run_step bez poprawnego run_id odrzucone", file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_polecenie_run_step_bez_poprawnego_run_id_jest_odrzucone_komunikatem_bez_zdarzen"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''return                      # nie ma runu, ktory dalo by zakonczyc'''
+zamien = '''pass                        # nie ma runu, ktory dalo by zakonczyc'''
+test = "tests/test_runner_klient.py::test_polecenie_run_step_bez_poprawnego_run_id_jest_odrzucone_komunikatem_bez_zdarzen"
+
+# `_krok_z_polecenia`: guard step_id (run istnieje, wiec konczy sie porazka kroku "run").
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not isinstance(step_id, str) or not step_id:
+            # HAR-126'''
+zamien = '''if not isinstance(step_id, str) and not step_id:
+            # HAR-126'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not isinstance(step_id, str) or not step_id:
+            # HAR-126'''
+zamien = '''if not isinstance(step_id, str):
+            # HAR-126'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not isinstance(step_id, str) or not step_id:
+            # HAR-126'''
+zamien = '''if not step_id:
+            # HAR-126'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''_zglos_porazke_kroku(client, run_id, "run", POWOD_BRAK_STEP_ID)'''
+zamien = '''_zglos_porazke_kroku(client, run_id, "XXrunXX", POWOD_BRAK_STEP_ID)'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''_zglos_porazke_kroku(client, run_id, "run", POWOD_BRAK_STEP_ID)'''
+zamien = '''_zglos_porazke_kroku(client, run_id, "run", POWOD_SPOZA_LISTY)'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+# Bez `return` po porazce kroku krok z listy startowalby proces z step_id, ktorego nie ma.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate
+            return
+        argv = argv_operacji(cmd)'''
+zamien = '''await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate
+            pass
+        argv = argv_operacji(cmd)'''
+test = "tests/test_runner_klient.py::test_run_step_z_run_id_bez_poprawnego_step_id_zglasza_porazke_kroku_run_i_koniec_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate
+            return
+        argv = argv_operacji(cmd)'''
+zamien = '''await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate
+            pass
+        argv = argv_operacji(cmd)'''
+test = "tests/test_protokol_bez_argv.py::test_run_step_z_run_id_ale_bez_poprawnego_step_id_konczy_run_porazka_kroku_run"
+
+# Za dlugi run_id: porazki kroku nie ma jak zgloszyc, zostaje log, a wyjatek nie ucieka z zadania.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except NiewaznePoleZdarzenia as e:
+                # mutant `client=None` jest rownowazny'''
+zamien = '''except ZeroDivisionError as e:
+                # mutant `client=None` jest rownowazny'''
+test = "tests/test_runner_klient.py::test_krok_bez_step_id_z_za_dlugim_id_runu_zostawia_tylko_wpis_w_logu_i_nie_psuje_runnera"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate'''
+zamien = '''await self._zglos_niewazne_pole(client, "x", e)  # pragma: no mutate'''
+test = "tests/test_runner_klient.py::test_krok_bez_step_id_z_za_dlugim_id_runu_zostawia_tylko_wpis_w_logu_i_nie_psuje_runnera"
+
+# Niedzialajacy bufor przy porazce kroku bez step_id: `step_aborted` poza buforem (tylko ta galaz).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except BladBufora:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+
+    async def _odpowiedz_na_zapytanie'''
+zamien = '''        except ZeroDivisionError:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+
+    async def _odpowiedz_na_zapytanie'''
+test = "tests/test_runner_klient.py::test_porazka_kroku_bez_step_id_przy_niedzialajacym_buforze_daje_step_aborted_poza_buforem"
+
+# --- client.py: run_workflow bez poprawnego run_id i resume z niepoprawnym poleceniem ----------------
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id:
+                                self._zarejestruj_run(run_id, cmd, self._run_workflow(cmd))'''
+zamien = '''if isinstance(run_id, str) or run_id:
+                                self._zarejestruj_run(run_id, cmd, self._run_workflow(cmd))'''
+test = "tests/test_runner_klient.py::test_run_workflow_bez_poprawnego_run_id_jest_odrzucony_z_komunikatem_i_nie_startuje"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if isinstance(run_id, str) and run_id:
+                                self._zarejestruj_run(run_id, cmd, self._run_workflow(cmd))'''
+zamien = '''if isinstance(run_id, str):
+                                self._zarejestruj_run(run_id, cmd, self._run_workflow(cmd))'''
+test = "tests/test_runner_klient.py::test_run_workflow_bez_poprawnego_run_id_jest_odrzucony_z_komunikatem_i_nie_startuje"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print("polecenie run_workflow bez poprawnego run_id odrzucone",
+                                      file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_run_workflow_bez_poprawnego_run_id_jest_odrzucony_z_komunikatem_i_nie_startuje"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''elif self._decyzje_z_polecenia(cmd) is None:'''
+zamien = '''elif self._decyzje_z_polecenia(cmd) is not None:'''
+test = "tests/test_runner_klient.py::test_resume_z_run_id_ktory_nie_jest_napisem_jest_odrzucone_a_runner_dziala_dalej"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"resume odrzucone: niepoprawne polecenie {cmd!r}",
+                                      file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_resume_z_run_id_ktory_nie_jest_napisem_jest_odrzucone_a_runner_dziala_dalej"
+
+# Pierwszy `except TokenOdrzucony`: bez niego 401 trafia do ogolnej galezi (log "zakonczone bledem").
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except TokenOdrzucony as e:
+            self._token_odrzucony = e'''
+zamien = '''        except ZeroDivisionError as e:
+            self._token_odrzucony = e'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_w_zadaniu_runu_konczy_nasluch_bledem_tokenu_i_zabija_inne_procesy"
+
+# Bez anulowania zadania nasluchu listen() nie konczy sie po 401 w zadaniu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''                zadanie.cancel()            # listen() podnosi zapamietany wyjatek'''
+zamien = '''                pass            # listen() podnosi zapamietany wyjatek'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_w_zadaniu_runu_konczy_nasluch_bledem_tokenu_i_zabija_inne_procesy"
+
+# Drugi `except TokenOdrzucony` (401 przy zglaszaniu bledu zadania).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''            except TokenOdrzucony as t:
+                self._token_odrzucony = t'''
+zamien = '''            except ZeroDivisionError as t:
+                self._token_odrzucony = t'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_zglaszaniu_bledu_zadania_konczy_nasluch_bledem_tokenu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''                if self._zadanie is not None and not self._zadanie.done():
+                    self._zadanie.cancel()'''
+zamien = '''                if self._zadanie is not None and not self._zadanie.done():
+                    pass'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_zglaszaniu_bledu_zadania_konczy_nasluch_bledem_tokenu"
+
+# Wyjatek limitu pola: zostaje log, bez zdarzen dla kokpitu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''            except NiewaznePoleZdarzenia:
+                pass                            # run_id/step_id lamie limity: zostaje log'''
+zamien = '''            except ZeroDivisionError:
+                pass                            # run_id/step_id lamie limity: zostaje log'''
+test = "tests/test_runner_klient.py::test_zadanie_runu_ktore_sie_zepsulo_przy_za_dlugim_id_runu_zostawia_log_bez_zdarzen_dla_kokpitu"
+
+# Koniec nasluchu po 401 w zadaniu sprzata kroki (stop()) przed podniesieniem wyjatku.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''                await self.stop()
+                raise token_odrzucony'''
+zamien = '''                raise token_odrzucony'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_w_zadaniu_runu_konczy_nasluch_bledem_tokenu_i_zabija_inne_procesy"
+
+# --- client.py: listen() po 401 w zadaniu runu a stop() od czlowieka -------------------------------
+
+# Bez czlonu `not self._zatrzymany.is_set()` stop() po zapamietanym 401 konczy nasluch bledem tokenu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if self._token_odrzucony is not None and not self._zatrzymany.is_set():'''
+zamien = '''if self._token_odrzucony is not None:'''
+test = "tests/test_runner_klient.py::test_nasluch_zatrzymany_przez_stop_po_zapamietanym_odrzuceniu_tokenu_konczy_sie_bez_bledu_tokenu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if self._token_odrzucony is not None and not self._zatrzymany.is_set():'''
+zamien = '''if self._token_odrzucony is None and not self._zatrzymany.is_set():'''
+test = "tests/test_runner_klient.py::test_nasluch_zakonczony_odrzuconym_tokenem_zadania_runu_wraca_do_stanu_bez_anulowania"
+
+# `uncancel()` nie jest rownowazne: bez niego zadanie nasluchu konczy sie z licznikiem anulowan 1
+# (`Task.cancelling()`), czyli ze sladem po prosbie, ktora juz obsluzylismy.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''asyncio.current_task().uncancel()
+                await self.stop()'''
+zamien = '''pass
+                await self.stop()'''
+test = "tests/test_runner_klient.py::test_nasluch_zakonczony_odrzuconym_tokenem_zadania_runu_wraca_do_stanu_bez_anulowania"
+
+# Po sprzataniu nasluch musi podniesc zapamietany blad tokenu, nie wrocic po cichu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''                await self.stop()
+                raise token_odrzucony'''
+zamien = '''                await self.stop()
+                return None'''
+test = "tests/test_runner_klient.py::test_nasluch_zakonczony_odrzuconym_tokenem_zadania_runu_wraca_do_stanu_bez_anulowania"
+
+# =====================================================================================
+# client.py: step_aborted trwajacych krokow po cancel_run (`_pilnuj_zadania`)
+# =====================================================================================
+
+# Bez galezi `CancelledError` kroki anulowanego runu zostaja `running` w kokpicie.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except asyncio.CancelledError:
+            if asyncio.current_task() in self._anulowane_przez_czlowieka:'''
+zamien = '''except ZeroDivisionError:
+            if asyncio.current_task() in self._anulowane_przez_czlowieka:'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+# Warunek `in self._anulowane_przez_czlowieka`: tylko cancel_run zglasza, stop() nie.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if asyncio.current_task() in self._anulowane_przez_czlowieka:'''
+zamien = '''if asyncio.current_task() not in self._anulowane_przez_czlowieka:'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if asyncio.current_task() in self._anulowane_przez_czlowieka:'''
+zamien = '''if asyncio.current_task() not in self._anulowane_przez_czlowieka:'''
+test = "tests/test_runner_klient.py::test_stop_runnera_z_trwajacym_krokiem_nie_zglasza_step_aborted_bo_to_nie_anulowanie_przez_czlowieka"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if asyncio.current_task() in self._anulowane_przez_czlowieka:'''
+zamien = '''if True:'''
+test = "tests/test_runner_klient.py::test_stop_runnera_z_trwajacym_krokiem_nie_zglasza_step_aborted_bo_to_nie_anulowanie_przez_czlowieka"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if asyncio.current_task() in self._anulowane_przez_czlowieka:'''
+zamien = '''if False:'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._zglos_anulowanie_krokow(run_id)
+            raise'''
+zamien = '''pass
+            raise'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+# Bez `raise` zadanie runu konczy sie normalnie zamiast anulowaniem.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._zglos_anulowanie_krokow(run_id)
+            raise'''
+zamien = '''await self._zglos_anulowanie_krokow(run_id)
+            pass'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted"
+
+# =====================================================================================
+# client.py: `_zglos_anulowanie_krokow`
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''kroki = sorted(self._kroki_w_toku.get(run_id, ()))'''
+zamien = '''kroki = list(self._kroki_w_toku.get(run_id, ()))'''
+test = "tests/test_runner_klient.py::test_dwanascie_krokow_w_toku_jednego_runu_dostaje_step_aborted_po_kolei_posortowane"
+
+# Run bez sladu krokow: bez wartosci domyslnej `sorted(None)` zastapilby anulowanie wyjatkiem.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''kroki = sorted(self._kroki_w_toku.get(run_id, ()))'''
+zamien = '''kroki = sorted(self._kroki_w_toku.get(run_id))'''
+test = "tests/test_runner_klient.py::test_zadanie_runu_zakonczone_sukcesem_albo_anulowaniem_nie_jest_zglaszane_jako_blad"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not kroki:
+            return'''
+zamien = '''if kroki:
+            return'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_step_aborted_kroku_w_toku_z_workflow_i_z_wznowienia"
+
+# Bez kroku w toku nie otwieramy klienta HTTP (bez `return` petla jest pusta, wiec tylko to rozni).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not kroki:
+            return'''
+zamien = '''if not kroki:
+            pass'''
+test = "tests/test_runner_klient.py::test_anulowanie_runu_bez_krokow_w_toku_nie_laczy_sie_z_kokpitem_a_z_krokiem_zglasza_mu_przerwanie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+zamien = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_failed", text=TEKST_ANULOWANIA)'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+zamien = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text="")'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+zamien = '''client, run_id=run_id, step_id="run", agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+zamien = '''client, run_id="x", step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+# Tozsamosc w `step_aborted`: agent i proba ze `step_started` (bez nich kokpit zaklada drugi wiersz kroku).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+zamien = '''client, run_id=run_id, step_id=step_id, agent_id="",
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+test = "tests/test_runner_klient.py::test_step_aborted_niesie_agenta_i_proba_ze_step_started_dla_dwoch_prob_i_dwoch_agentow_jednego_kroku"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+zamien = '''client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=1, kind="step_aborted", text=TEKST_ANULOWANIA)'''
+test = "tests/test_runner_klient.py::test_step_aborted_niesie_agenta_i_proba_ze_step_started_dla_dwoch_prob_i_dwoch_agentow_jednego_kroku"
+# Pole ponad limit: log i dalej, bez wyjatku.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except NiewaznePoleZdarzenia:
+                        print(f"step_aborted niewyslany'''
+zamien = '''except ZeroDivisionError:
+                        print(f"step_aborted niewyslany'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"step_aborted niewyslany: run {run_id[:36]!r} - pola ponad limit",
+                              file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"step_aborted niewyslany: run {run_id[:36]!r} - pola ponad limit",'''
+zamien = '''print(f"step_aborted niewyslany: run {run_id[:37]!r} - pola ponad limit",'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_run_id_zostawia_w_logu_obciete_do_36_znakow_id_i_nic_w_kokpicie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"step_aborted niewyslany: run {run_id[:36]!r} - pola ponad limit",'''
+zamien = '''print(f"step_aborted niewyslany: run {run_id[:36]!r} - pola ponad limit XX",'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted"
+
+# 401 przy wysylce step_aborted konczy nasluch bledem tokenu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''        except ZeroDivisionError as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_wysylce_step_aborted_konczy_nasluch_bledem_tokenu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''        except TokenOdrzucony as t:
+            pass
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_wysylce_step_aborted_konczy_nasluch_bledem_tokenu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''        except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                pass'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_wysylce_step_aborted_konczy_nasluch_bledem_tokenu"
+
+# =====================================================================================
+# client.py: sledzenie krokow w toku (`_sledz_start_kroku`, `_sledz_koniec_kroku`, `_krok_runu`)
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zdarzenie.get("kind") == "step_started"'''
+zamien = '''zdarzenie.get("kind") != "step_started"'''
+test = "tests/test_runner_klient.py::test_start_kroku_dopisuje_tozsamosc_kroku_do_trwajacych_tego_runu_obok_wczesniejszych"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zdarzenie.get("kind") == "step_started"'''
+zamien = '''zdarzenie.get("kind") == "XXstep_startedXX"'''
+test = "tests/test_runner_klient.py::test_start_kroku_dopisuje_tozsamosc_kroku_do_trwajacych_tego_runu_obok_wczesniejszych"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''== "step_started" and isinstance(run_id, str)'''
+zamien = '''== "step_started" or isinstance(run_id, str)'''
+test = "tests/test_runner_klient.py::test_krok_nie_jest_sledzony_bez_step_started_z_poprawna_tozsamoscia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''== "step_started" and isinstance(run_id, str)'''
+zamien = '''== "step_started" and True'''
+test = "tests/test_runner_klient.py::test_krok_nie_jest_sledzony_bez_step_started_z_poprawna_tozsamoscia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''isinstance(run_id, str)
+                and tozsamosc is not None):
+            self._kroki_w_toku.setdefault'''
+zamien = '''isinstance(run_id, str)
+                or tozsamosc is not None):
+            self._kroki_w_toku.setdefault'''
+test = "tests/test_runner_klient.py::test_krok_nie_jest_sledzony_bez_step_started_z_poprawna_tozsamoscia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''and tozsamosc is not None):
+            self._kroki_w_toku.setdefault'''
+zamien = '''and True):
+            self._kroki_w_toku.setdefault'''
+test = "tests/test_runner_klient.py::test_krok_nie_jest_sledzony_bez_step_started_z_poprawna_tozsamoscia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''and tozsamosc is not None):
+            self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)'''
+zamien = '''and tozsamosc is not None):
+            self._kroki_w_toku[run_id] = {tozsamosc}'''
+test = "tests/test_runner_klient.py::test_start_kroku_dopisuje_tozsamosc_kroku_do_trwajacych_tego_runu_obok_wczesniejszych"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''and tozsamosc is not None):
+            self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)'''
+zamien = '''and tozsamosc is not None):
+            self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc[0])'''
+test = "tests/test_runner_klient.py::test_start_kroku_dopisuje_tozsamosc_kroku_do_trwajacych_tego_runu_obok_wczesniejszych"
+
+# Bez tozsamosci kroku nic nie jest sledzone (start) ani zdejmowane (koniec).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''tozsamosc = _tozsamosc_kroku(zdarzenie)
+        if (zdarzenie.get("kind") == "step_started"'''
+zamien = '''tozsamosc = None
+        if (zdarzenie.get("kind") == "step_started"'''
+test = "tests/test_runner_klient.py::test_start_kroku_dopisuje_tozsamosc_kroku_do_trwajacych_tego_runu_obok_wczesniejszych"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''tozsamosc = _tozsamosc_kroku(zdarzenie)
+        if (zdarzenie.get("kind") in ("step_finished", "step_failed")'''
+zamien = '''tozsamosc = None
+        if (zdarzenie.get("kind") in ("step_finished", "step_failed")'''
+test = "tests/test_runner_klient.py::test_koniec_kroku_zdejmuje_z_trwajacych_tylko_krok_o_tej_samej_tozsamosci_w_swoim_runie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''("step_finished", "step_failed")'''
+zamien = '''("XXstep_finishedXX", "step_failed")'''
+test = "tests/test_runner_klient.py::test_koniec_kroku_zdejmuje_z_trwajacych_tylko_krok_o_tej_samej_tozsamosci_w_swoim_runie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''("step_finished", "step_failed")'''
+zamien = '''("step_finished", "XXstep_failedXX")'''
+test = "tests/test_runner_klient.py::test_koniec_kroku_zdejmuje_z_trwajacych_tylko_krok_o_tej_samej_tozsamosci_w_swoim_runie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zdarzenie.get("kind") in ("step_finished", "step_failed")'''
+zamien = '''zdarzenie.get("kind") not in ("step_finished", "step_failed")'''
+test = "tests/test_runner_klient.py::test_zdarzenie_ktore_nie_konczy_kroku_runu_zostawia_trwajace_kroki_bez_zmian"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''"step_failed") and isinstance(run_id, str)'''
+zamien = '''"step_failed") or isinstance(run_id, str)'''
+test = "tests/test_runner_klient.py::test_zdarzenie_ktore_nie_konczy_kroku_runu_zostawia_trwajace_kroki_bez_zmian"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''"step_failed") and isinstance(run_id, str)'''
+zamien = '''"step_failed") and True'''
+test = "tests/test_runner_klient.py::test_zdarzenie_ktore_nie_konczy_kroku_runu_zostawia_trwajace_kroki_bez_zmian"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''isinstance(run_id, str)
+                and tozsamosc is not None):
+            self._kroki_w_toku.get('''
+zamien = '''isinstance(run_id, str)
+                or tozsamosc is not None):
+            self._kroki_w_toku.get('''
+test = "tests/test_runner_klient.py::test_zdarzenie_ktore_nie_konczy_kroku_runu_zostawia_trwajace_kroki_bez_zmian"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''and tozsamosc is not None):
+            self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)'''
+zamien = '''and tozsamosc is not None):
+            self._kroki_w_toku[run_id].discard(tozsamosc)'''
+test = "tests/test_runner_klient.py::test_zdarzenie_ktore_nie_konczy_kroku_runu_zostawia_trwajace_kroki_bez_zmian"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''and tozsamosc is not None):
+            self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)'''
+zamien = '''and tozsamosc is not None):
+            self._kroki_w_toku.get(run_id, set()).add(tozsamosc)'''
+test = "tests/test_runner_klient.py::test_koniec_kroku_zdejmuje_z_trwajacych_tylko_krok_o_tej_samej_tozsamosci_w_swoim_runie"
+
+# `po_zakonczeniu`: po koncu zadania runner nie trzyma sladu po runie ani po anulowanym zadaniu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._anulowane_przez_czlowieka.discard(z)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_step_aborted_kroku_w_toku_z_workflow_i_z_wznowienia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._kroki_w_toku.pop(run_id, None)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_step_aborted_kroku_w_toku_z_workflow_i_z_wznowienia"
+
+# Bez wartosci domyslnej `pop` rzuca `KeyError` w callbacku zadania bez sladu krokow (log ERROR petli).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._kroki_w_toku.pop(run_id, None)'''
+zamien = '''self._kroki_w_toku.pop(run_id)'''
+test = "tests/test_runner_klient.py::test_zadanie_runu_zakonczone_sukcesem_albo_anulowaniem_nie_jest_zglaszane_jako_blad"
+
+# `emit` workflow i wznowienia: start sledzony przed wyslaniem, koniec po jego przyjeciu.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''run_id = cmd.get("run_id")
+                self._sledz_start_kroku(run_id, zdarzenie)'''
+zamien = '''run_id = cmd.get("run_id")
+                pass'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_step_aborted_kroku_w_toku_z_workflow_i_z_wznowienia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''async def emit(zdarzenie: dict) -> None:
+                self._sledz_start_kroku(run_id, zdarzenie)'''
+zamien = '''async def emit(zdarzenie: dict) -> None:
+                pass'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_step_aborted_kroku_w_toku_z_workflow_i_z_wznowienia"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+zamien = '''pass
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+test = "tests/test_runner_klient.py::test_krok_zakonczony_przed_cancel_run_nie_dostaje_step_aborted_a_trwajacy_dostaje"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wznow_run('''
+zamien = '''pass
+
+            try:
+                await silnik.wznow_run('''
+test = "tests/test_runner_klient.py::test_krok_zakonczony_przed_cancel_run_nie_dostaje_step_aborted_a_trwajacy_dostaje"
+
+# Kolejnosc: start kroku sledzony PRZED wyslaniem (krok odrzucony przez pole tez trwa).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''run_id = cmd.get("run_id")
+                self._sledz_start_kroku(run_id, zdarzenie)
+                async with self._zapis_zdarzen:
+                    przyjete = await self.send_event(client, **zdarzenie)'''
+zamien = '''run_id = cmd.get("run_id")
+                async with self._zapis_zdarzen:
+                    przyjete = await self.send_event(client, **zdarzenie)
+                self._sledz_start_kroku(run_id, zdarzenie)'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''async def emit(zdarzenie: dict) -> None:
+                self._sledz_start_kroku(run_id, zdarzenie)
+                async with self._zapis_zdarzen:
+                    przyjete = await self.send_event(client, **zdarzenie)'''
+zamien = '''async def emit(zdarzenie: dict) -> None:
+                async with self._zapis_zdarzen:
+                    przyjete = await self.send_event(client, **zdarzenie)
+                self._sledz_start_kroku(run_id, zdarzenie)'''
+test = "tests/test_runner_klient.py::test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dostaje_step_aborted"
+
+# Koniec kroku zdejmuje go z trwajacych dopiero po PRZYJECIU przez kokpit (workflow i wznowienie).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+zamien = '''self._sledz_koniec_kroku(run_id, zdarzenie)
+                    przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    pass
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+test = "tests/test_runner_klient.py::test_krok_ktorego_koniec_nie_dotarl_do_kokpitu_dostaje_po_anulowaniu_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wznow_run('''
+zamien = '''self._sledz_koniec_kroku(run_id, zdarzenie)
+                    przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    pass
+
+            try:
+                await silnik.wznow_run('''
+test = "tests/test_runner_klient.py::test_krok_ktorego_koniec_nie_dotarl_do_kokpitu_dostaje_po_anulowaniu_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+zamien = '''if True:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+test = "tests/test_runner_klient.py::test_krok_ktorego_koniec_nie_dotarl_do_kokpitu_dostaje_po_anulowaniu_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wznow_run('''
+zamien = '''if True:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wznow_run('''
+test = "tests/test_runner_klient.py::test_krok_ktorego_koniec_nie_dotarl_do_kokpitu_dostaje_po_anulowaniu_step_aborted"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+zamien = '''if not przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wykonaj_run(cmd, emit)'''
+test = "tests/test_runner_klient.py::test_krok_zakonczony_przed_cancel_run_nie_dostaje_step_aborted_a_trwajacy_dostaje"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wznow_run('''
+zamien = '''if not przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
+
+            try:
+                await silnik.wznow_run('''
+test = "tests/test_runner_klient.py::test_krok_zakonczony_przed_cancel_run_nie_dostaje_step_aborted_a_trwajacy_dostaje"
+
+# `_krok_runu`: krok sledzony od polecenia do konca, tylko dla poprawnych identyfikatorow.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (isinstance(run_id, str) or run_id and isinstance(step_id, str) and step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (isinstance(run_id, str) and run_id or isinstance(step_id, str) and step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) or step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (run_id and isinstance(step_id, str) and step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (isinstance(run_id, str) and isinstance(step_id, str) and step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (isinstance(run_id, str) and run_id and step_id):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):'''
+zamien = '''if not (isinstance(run_id, str) and run_id and isinstance(step_id, str)):'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._krok_z_polecenia(client, cmd)
+            return
+        # `run_command` wysyla zdarzenia kroku'''
+zamien = '''await self._krok_z_polecenia(client, cmd)
+            pass
+        # `run_command` wysyla zdarzenia kroku'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+# Tozsamosc kroku `run_step`: bez agenta i proby, wiec kokpit czyta ja jako (krok, "", 1).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''tozsamosc = (step_id, "", 1)'''
+zamien = '''tozsamosc = (step_id, "XXXX", 1)'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''tozsamosc = (step_id, "", 1)'''
+zamien = '''tozsamosc = (step_id, "", 2)'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''tozsamosc = (step_id, "", 1)'''
+zamien = '''tozsamosc = (run_id, "", 1)'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)
+        async with self._klient_http() as client:'''
+zamien = '''pass
+        async with self._klient_http() as client:'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
+
+    async def _anuluj_runy'''
+zamien = '''pass
+
+    async def _anuluj_runy'''
+test = "tests/test_runner_klient.py::test_krok_ktory_skonczyl_sie_przed_cancel_run_nie_dostaje_step_aborted_gdy_run_ma_nowsze_zadanie"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
+
+    async def _anuluj_runy'''
+zamien = '''pass
+
+    async def _anuluj_runy'''
+test = "tests/test_runner_klient.py::test_krok_runu_jest_sledzony_od_polecenia_do_konca_tylko_dla_poprawnych_identyfikatorow"
+
+# =====================================================================================
+# client.py: `_anuluj_run`, `_zamknij_checkpoint`, `_anuluj_runy`
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._anulowane_przez_czlowieka.add(zadanie)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"cancel_run: run {run_id[:36]!r} nie ma zadania u runnera", file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_runner_klient.py::test_cancel_run_dla_runu_bez_zadania_jest_w_logu_z_obcietym_do_36_znakow_id"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"cancel_run: run {run_id[:36]!r} nie ma zadania u runnera", file=sys.stderr)'''
+zamien = '''print(f"cancel_run: run {run_id[:37]!r} nie ma zadania u runnera", file=sys.stderr)'''
+test = "tests/test_runner_klient.py::test_cancel_run_dla_runu_bez_zadania_jest_w_logu_z_obcietym_do_36_znakow_id"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zamykanie = asyncio.create_task(self._zamknij_checkpoint(run_id, zadanie))'''
+zamien = '''zamykanie = asyncio.create_task(self._zamknij_checkpoint(run_id, None))'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czeka_na_koniec_anulowanego_zadania_zeby_jego_zapis_go_nie_wyprzedzil"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._zamykania.add(zamykanie)'''
+zamien = '''pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_stop_runnera_odczekuje_trwajace_zamykanie_checkpointu_anulowanego_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''zamykanie.add_done_callback(self._zamykania.discard)'''
+zamien = '''pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_stop_runnera_odczekuje_trwajace_zamykanie_checkpointu_anulowanego_runu"
+
+# Run `waiting` nie ma zadania: `if zadanie is not None` nie moze czekac na `None`.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if zadanie is not None:
+            await asyncio.wait([zadanie])'''
+zamien = '''if True:
+            await asyncio.wait([zadanie])'''
+test = "tests/test_zamykanie_checkpointu.py::test_cancel_run_runu_na_bramce_zamyka_checkpoint_a_resume_nowego_runnera_nie_startuje_kroku"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if zadanie is not None:
+            await asyncio.wait([zadanie])'''
+zamien = '''if zadanie is None:
+            await asyncio.wait([zadanie])'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czeka_na_koniec_anulowanego_zadania_zeby_jego_zapis_go_nie_wyprzedzil"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if zadanie is not None:
+            await asyncio.wait([zadanie])'''
+zamien = '''if zadanie is not None:
+            pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czeka_na_koniec_anulowanego_zadania_zeby_jego_zapis_go_nie_wyprzedzil"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except BladDziedziny as e:
+            print(f"cancel_run: checkpoint runu'''
+zamien = '''except ZeroDivisionError as e:
+            print(f"cancel_run: checkpoint runu'''
+test = "tests/test_zamykanie_checkpointu.py::test_gdy_nie_da_sie_zamknac_checkpointu_anulowanego_runu_log_mowi_ktorego_runu_i_dlaczego_a_anulowanie_nie_pada"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''print(f"cancel_run: checkpoint runu {run_id[:36]!r} niezamkniety: {type(e).__name__}",
+                  file=sys.stderr)'''
+zamien = '''pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_gdy_nie_da_sie_zamknac_checkpointu_anulowanego_runu_log_mowi_ktorego_runu_i_dlaczego_a_anulowanie_nie_pada"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''checkpoint runu {run_id[:36]!r} niezamkniety'''
+zamien = '''checkpoint runu {run_id[:37]!r} niezamkniety'''
+test = "tests/test_zamykanie_checkpointu.py::test_gdy_nie_da_sie_zamknac_checkpointu_anulowanego_runu_log_mowi_ktorego_runu_i_dlaczego_a_anulowanie_nie_pada"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''niezamkniety: {type(e).__name__}'''
+zamien = '''niezamkniety: {e}'''
+test = "tests/test_zamykanie_checkpointu.py::test_gdy_nie_da_sie_zamknac_checkpointu_anulowanego_runu_log_mowi_ktorego_runu_i_dlaczego_a_anulowanie_nie_pada"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if zamykania:
+            await asyncio.wait(zamykania)'''
+zamien = '''if True:
+            await asyncio.wait(zamykania)'''
+test = "tests/test_runner_klient.py::test_stop_runnera_z_trwajacym_krokiem_nie_zglasza_step_aborted_bo_to_nie_anulowanie_przez_czlowieka"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if zamykania:
+            await asyncio.wait(zamykania)'''
+zamien = '''if not zamykania:
+            await asyncio.wait(zamykania)'''
+test = "tests/test_zamykanie_checkpointu.py::test_stop_runnera_odczekuje_trwajace_zamykanie_checkpointu_anulowanego_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if zamykania:
+            await asyncio.wait(zamykania)'''
+zamien = '''if zamykania:
+            pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_stop_runnera_odczekuje_trwajace_zamykanie_checkpointu_anulowanego_runu"
+
+# =====================================================================================
+# silnik.py: `zamknij_checkpoint`
+# =====================================================================================
+
+# Bez `root` zamkniecie szuka runu w katalogu domowym, nie w katalogu podanym przez wolajacego.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''katalog = katalog_runu(run_id, root)
+    async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+        try:'''
+zamien = '''katalog = katalog_runu(run_id, None)
+    async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+        try:'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czekajacego_na_bramce_zdejmuje_oczekiwanie_i_zostawia_reszte"
+
+# Bez wspolnej blokady runu zamkniecie i wznowienie czytaja ten sam stary stan.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+        try:'''
+zamien = '''async with asyncio.Lock():
+        try:'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_i_wznowienie_przeplecione_nie_zostawiaja_runu_wznowionego_i_zamknietego"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''except BladCheckpointu as e:
+            if isinstance(e.__cause__, FileNotFoundError):'''
+zamien = '''except ZeroDivisionError as e:
+            if isinstance(e.__cause__, FileNotFoundError):'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_runu_bez_checkpointu_nie_jest_bledem_i_nic_nie_zapisuje"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if isinstance(e.__cause__, FileNotFoundError):
+                return False'''
+zamien = '''if True:
+                return False'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_uszkodzonego_albo_nieczytelnego_checkpointu_to_blad_checkpointu"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if isinstance(e.__cause__, FileNotFoundError):
+                return False'''
+zamien = '''if False:
+                return False'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_runu_bez_checkpointu_nie_jest_bledem_i_nic_nie_zapisuje"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if isinstance(e.__cause__, FileNotFoundError):
+                return False'''
+zamien = '''if isinstance(e.__cause__, OSError):
+                return False'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_uszkodzonego_albo_nieczytelnego_checkpointu_to_blad_checkpointu"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if isinstance(e.__cause__, FileNotFoundError):
+                return False'''
+zamien = '''if isinstance(e.__cause__, FileNotFoundError):
+                return True'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_runu_bez_checkpointu_nie_jest_bledem_i_nic_nie_zapisuje"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''return False
+            raise
+        except ValueError as e:'''
+zamien = '''return False
+            pass
+        except ValueError as e:'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_uszkodzonego_albo_nieczytelnego_checkpointu_to_blad_checkpointu"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if cp.waiting_on is None:
+            return False
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))'''
+zamien = '''if cp.waiting_on is not None:
+            return False
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czekajacego_na_bramce_zdejmuje_oczekiwanie_i_zostawia_reszte"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if cp.waiting_on is None:
+            return False
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))'''
+zamien = '''if False:
+            return False
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))'''
+test = "tests/test_zamykanie_checkpointu.py::test_run_ktory_juz_nie_czeka_na_bramce_nie_ma_czego_zamykac_a_jego_checkpoint_zostaje_nietkniety"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if cp.waiting_on is None:
+            return False
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))'''
+zamien = '''if cp.waiting_on is None:
+            return True
+        await _zapis_do_konca(katalog, replace(cp, waiting_on=None))'''
+test = "tests/test_zamykanie_checkpointu.py::test_run_ktory_juz_nie_czeka_na_bramce_nie_ma_czego_zamykac_a_jego_checkpoint_zostaje_nietkniety"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True'''
+zamien = '''await _zapis_do_konca(katalog, replace(cp))
+    return True'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czekajacego_na_bramce_zdejmuje_oczekiwanie_i_zostawia_reszte"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True'''
+zamien = '''pass
+    return True'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czekajacego_na_bramce_zdejmuje_oczekiwanie_i_zostawia_reszte"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True'''
+zamien = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return False'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czekajacego_na_bramce_zdejmuje_oczekiwanie_i_zostawia_reszte"
+
+# Wynik zamkniecia to dokladnie `True` (test sprawdza `is True`), nie dowolna wartosc.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True'''
+zamien = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return None'''
+test = "tests/test_zamykanie_checkpointu.py::test_zamkniecie_checkpointu_czekajacego_na_bramce_zdejmuje_oczekiwanie_i_zostawia_reszte"
+
+# Bajt NUL w id runu: `ValueError` odczytu to `BladCheckpointu` (wasko, tylko wokol odczytu).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''except ValueError as e:     # bajt NUL'''
+zamien = '''except ZeroDivisionError as e:     # bajt NUL'''
+test = "tests/test_zamykanie_checkpointu.py::test_run_z_bajtem_nul_w_id_nie_da_sie_zamknac_a_przyczyna_zostaje_w_bledzie_checkpointu"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''raise BladCheckpointu(f"odczyt checkpointu: {type(e).__name__}") from e'''
+zamien = '''raise BladCheckpointu(f"odczyt checkpointu: {type(e).__name__}") from None'''
+test = "tests/test_zamykanie_checkpointu.py::test_run_z_bajtem_nul_w_id_nie_da_sie_zamknac_a_przyczyna_zostaje_w_bledzie_checkpointu"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''raise BladCheckpointu(f"odczyt checkpointu: {type(e).__name__}") from e'''
+zamien = '''raise BladCheckpointu(f"odczyt checkpointu: {e}") from e'''
+test = "tests/test_zamykanie_checkpointu.py::test_run_z_bajtem_nul_w_id_nie_da_sie_zamknac_a_przyczyna_zostaje_w_bledzie_checkpointu"
+
+# `_zapis_do_konca`: anulowanie czeka na watek zapisu, kolejne tez; blad zapisu jest odebrany.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await asyncio.shield(zapis)'''
+zamien = '''await zapis'''
+test = "tests/test_zamykanie_checkpointu.py::test_zapis_checkpointu_przerwany_anulowaniem_konczy_sie_przed_wyjsciem_z_anulowania"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''except asyncio.CancelledError:
+        while not zapis.done():'''
+zamien = '''except ZeroDivisionError:
+        while not zapis.done():'''
+test = "tests/test_zamykanie_checkpointu.py::test_zapis_checkpointu_przerwany_anulowaniem_konczy_sie_przed_wyjsciem_z_anulowania"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''while not zapis.done():'''
+zamien = '''while False:'''
+test = "tests/test_zamykanie_checkpointu.py::test_zapis_checkpointu_przerwany_anulowaniem_konczy_sie_przed_wyjsciem_z_anulowania"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''while not zapis.done():'''
+zamien = '''if not zapis.done():'''
+test = "tests/test_zamykanie_checkpointu.py::test_drugie_anulowanie_w_trakcie_czekania_na_zapis_tez_czeka_na_jego_koniec"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''except asyncio.CancelledError:
+                pass            # kolejne'''
+zamien = '''except ZeroDivisionError:
+                pass            # kolejne'''
+test = "tests/test_zamykanie_checkpointu.py::test_drugie_anulowanie_w_trakcie_czekania_na_zapis_tez_czeka_na_jego_koniec"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''except asyncio.CancelledError:
+                pass            # kolejne'''
+zamien = '''except asyncio.CancelledError:
+                raise           # kolejne'''
+test = "tests/test_zamykanie_checkpointu.py::test_drugie_anulowanie_w_trakcie_czekania_na_zapis_tez_czeka_na_jego_koniec"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if not zapis.cancelled():
+            zapis.exception()'''
+zamien = '''if zapis.cancelled():
+            zapis.exception()'''
+test = "tests/test_zamykanie_checkpointu.py::test_awaria_dysku_podczas_anulowania_runu_nie_blokuje_anulowania_i_nie_zostawia_cichego_bledu"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if not zapis.cancelled():
+            zapis.exception()'''
+zamien = '''if not zapis.cancelled():
+            pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_awaria_dysku_podczas_anulowania_runu_nie_blokuje_anulowania_i_nie_zostawia_cichego_bledu"
+
+# Bez `raise` zadanie konczy sie normalnie, a nie anulowaniem.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''zapis.exception()   # blad zapisu przy anulowaniu: odebrany, bez ostrzezenia asyncio
+        raise'''
+zamien = '''zapis.exception()   # blad zapisu przy anulowaniu: odebrany, bez ostrzezenia asyncio
+        pass'''
+test = "tests/test_zamykanie_checkpointu.py::test_zapis_checkpointu_przerwany_anulowaniem_konczy_sie_przed_wyjsciem_z_anulowania"
+
+# `_zapisz`: zapis pod blokada runu, ta sama co w `zamknij_checkpoint` i `wznow_run`.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''async with _BLOKADY.setdefault(cp.run_id, asyncio.Lock()):'''
+zamien = '''async with asyncio.Lock():'''
+test = "tests/test_zamykanie_checkpointu.py::test_anulowanie_runu_w_trakcie_zapisu_bramki_nie_zostawia_checkpointu_czekajacego_na_decyzje"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''async with _BLOKADY.setdefault(cp.run_id, asyncio.Lock()):'''
+zamien = '''async with _BLOKADY.setdefault(None, asyncio.Lock()):'''
+test = "tests/test_zamykanie_checkpointu.py::test_anulowanie_runu_w_trakcie_zapisu_bramki_nie_zostawia_checkpointu_czekajacego_na_decyzje"
+
+# Zapis bramki idzie przez `_zapis_do_konca` (bez niego anulowanie wraca przed `os.replace`).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''            await _zapis_do_konca(p.worktree.katalog_runu, cp)'''
+zamien = '''            await asyncio.to_thread(zapisz_checkpoint, p.worktree.katalog_runu, cp)'''
+test = "tests/test_zamykanie_checkpointu.py::test_anulowanie_runu_w_trakcie_zapisu_bramki_nie_zostawia_checkpointu_czekajacego_na_decyzje"
+
+# Starszy krok runu konczy sie po nowszym zadaniu, ktore zdjelo wpis runu: domyslna wartosc `get`.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
+
+    async def _anuluj_runy'''
+zamien = '''self._kroki_w_toku.get(run_id, None).discard(tozsamosc)
+
+    async def _anuluj_runy'''
+test = "tests/test_runner_klient.py::test_krok_konczacy_sie_po_nowszym_zadaniu_tego_samego_runu_konczy_sie_bez_bledu"
+
+# =====================================================================================
+# client.py: `_tozsamosc_kroku` (krok, agent, proba; domyslnie "" i 1; zly typ to None)
+# =====================================================================================
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''agent_id = "" if agent_id is None else agent_id'''
+zamien = '''agent_id = "XX" if agent_id is None else agent_id'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''agent_id = "" if agent_id is None else agent_id'''
+zamien = '''agent_id = "" if agent_id is not None else agent_id'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''agent_id = "" if agent_id is None else agent_id'''
+zamien = '''agent_id = "" if agent_id is None else ""'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''attempt = 1 if attempt is None else attempt'''
+zamien = '''attempt = 2 if attempt is None else attempt'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''attempt = 1 if attempt is None else attempt'''
+zamien = '''attempt = 1 if attempt is not None else attempt'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''attempt = 1 if attempt is None else attempt'''
+zamien = '''attempt = 1 if attempt is None else 1'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+# Brak pola w zdarzeniu to nie to samo co zly typ: bez normalizacji `None` zdarzenie bylo nieslednione.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''agent_id = zdarzenie.get("agent_id")
+    attempt'''
+zamien = '''agent_id = zdarzenie.get("agent_id", "XX")
+    attempt'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''attempt = zdarzenie.get("attempt")
+    agent_id = "" if'''
+zamien = '''attempt = zdarzenie.get("attempt", 2)
+    agent_id = "" if'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+# =====================================================================================
+# client.py: `_zamknij_checkpoint` lapie blad dziedziny (nie tylko blad checkpointu)
+# =====================================================================================
+
+# Zly identyfikator runu to `BladWorktree`: zawezenie do `BladCheckpointu` wypuszcza go z zadania.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except BladDziedziny as e:
+            print(f"cancel_run: checkpoint runu'''
+zamien = '''except silnik.BladCheckpointu as e:
+            print(f"cancel_run: checkpoint runu'''
+test = "tests/test_zamykanie_checkpointu.py::test_anulowanie_runu_ze_zlym_id_zostawia_w_logu_przyczyne_a_runner_dziala_dalej_bez_awarii"
+
+# =====================================================================================
+# client.py: uwagi krytyka (rundy 4): kroki procesow po bledzie bufora, log bledu zadania, e -> None
+# =====================================================================================
+
+# Przy bledzie bufora (nie brak miejsca) trwajace procesy innych krokow sa zatrzymywane.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''# bufor zepsuty z innej przyczyny niz brak miejsca (prawa, limit, uszkodzenie)
+            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))'''
+zamien = '''# bufor zepsuty z innej przyczyny niz brak miejsca (prawa, limit, uszkodzenie)
+            pass'''
+test = "tests/test_brak_miejsca.py::test_niedzialajacy_bufor_z_innej_przyczyny_niz_brak_miejsca_zatrzymuje_trwajacy_proces_kroku"
+
+# Zadanie anulowane nie jest zglaszane jako blad (`z.exception()` na anulowanym rzuca w callbacku).
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not z.cancelled() and z.exception() is not None:'''
+zamien = '''if z.exception() is not None:'''
+test = "tests/test_runner_klient.py::test_zadanie_runu_zakonczone_sukcesem_albo_anulowaniem_nie_jest_zglaszane_jako_blad"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if not z.cancelled() and z.exception() is not None:'''
+zamien = '''if not z.cancelled() or z.exception() is not None:'''
+test = "tests/test_runner_klient.py::test_zadanie_runu_zakonczone_sukcesem_albo_anulowaniem_nie_jest_zglaszane_jako_blad"
+
+# Wyjatek pola w krokach bez step_id: log niesie tresc bledu (`e`), nie `None`.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate'''
+zamien = '''await self._zglos_niewazne_pole(client, run_id, None)  # pragma: no mutate'''
+test = "tests/test_runner_klient.py::test_krok_bez_step_id_z_za_dlugim_id_runu_zostawia_tylko_wpis_w_logu_i_nie_psuje_runnera"
+
+# =====================================================================================
+# silnik.py: zapis zamykajacy w `zamknij_checkpoint` idzie przez `_zapis_do_konca`
+# =====================================================================================
+
+# Bez `_zapis_do_konca` blokada runu puszcza przed `os.replace` i `wznow_run` wznawia anulowany run.
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True'''
+zamien = '''await asyncio.to_thread(zapisz_checkpoint, katalog, replace(cp, waiting_on=None))
+    return True'''
+test = "tests/test_zamykanie_checkpointu.py::test_anulowane_zamykanie_checkpointu_w_trakcie_zapisu_konczy_sie_dopiero_gdy_checkpoint_jest_zamkniety"
+
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''await _zapis_do_konca(katalog, replace(cp, waiting_on=None))
+    return True'''
+zamien = '''await asyncio.to_thread(zapisz_checkpoint, katalog, replace(cp, waiting_on=None))
+    return True'''
+test = "tests/test_zamykanie_checkpointu.py::test_wznowienie_czekajace_na_zamykanie_anulowanego_runu_jest_ignorowane_i_nie_uruchamia_agenta"
+
+# Anulowane wewnetrzne zadanie zapisu: bez warunku `zapis.exception()` rzuca NOWE anulowanie bez
+# powodu i zastepuje to z powodem czlowieka (`args == ()` zamiast `("anulowanie-czlowieka",)`).
+[[mutant]]
+plik = "src/runner/silnik.py"
+szukaj = '''if not zapis.cancelled():'''
+zamien = '''if True:'''
+test = "tests/test_zamykanie_checkpointu.py::test_powod_anulowania_przez_czlowieka_dociera_do_wolajacego_gdy_zapis_checkpointu_zostal_przerwany"
+
+# =====================================================================================
+# src/cockpit/services/runs.py: anuluj_run, obsluga bledu zapisu zdarzenia anulowania
+# =====================================================================================
+
+# Bez zlapania `IntegrityError` kolizja numeru zdarzenia przerywa anulowanie zamiast je ponowic.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''except IntegrityError as e:
+            await s.rollback()
+            if not _kolizja_numeru(e):
+                raise
+            continue'''
+zamien = '''except ZeroDivisionError as e:
+            await s.rollback()
+            if not _kolizja_numeru(e):
+                raise
+            continue'''
+test = "tests/test_anulowanie_runu.py::test_kolizja_numeru_zdarzenia_przy_anulowaniu_jest_ponawiana_i_run_zostaje_anulowany"
+
+# Inny blad zapisu niz kolizja numeru nie moze byc polkniety i ponawiany.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''if not _kolizja_numeru(e):
+                raise
+            continue    # numer zajety rownolegle: status i seq liczymy od nowa'''
+zamien = '''if not _kolizja_numeru(e):
+                pass
+            continue    # numer zajety rownolegle: status i seq liczymy od nowa'''
+test = "tests/test_anulowanie_runu.py::test_inny_blad_zapisu_niz_kolizja_numeru_przy_anulowaniu_nie_jest_ponawiany_ani_polykany"
+
+# Bez `rollback` po bledzie zapisu sesja zostaje w stanie bledu i ponowienie sie nie powiedzie.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''except IntegrityError as e:
+            await s.rollback()
+            if not _kolizja_numeru(e):
+                raise
+            continue'''
+zamien = '''except IntegrityError as e:
+            pass
+            if not _kolizja_numeru(e):
+                raise
+            continue'''
+test = "tests/test_anulowanie_runu.py::test_kolizja_numeru_zdarzenia_przy_anulowaniu_jest_ponawiana_i_run_zostaje_anulowany"
+
+# Bez dodania zdarzenia do sesji anulowanie nie zostawia `run_cancelled` w bazie.
+[[mutant]]
+plik = "src/cockpit/services/runs.py"
+szukaj = '''s.add(ev)
+        try:
+            await s.commit()'''
+zamien = '''pass
+        try:
+            await s.commit()'''
+test = "tests/test_anulowanie_runu.py::test_anulowanie_zapisuje_jedno_zdarzenie_run_cancelled_w_zespole_runu"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''step_id = zdarzenie.get("step_id")
+    agent_id'''
+zamien = '''step_id = zdarzenie.get("step_idXX")
+    agent_id'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (not isinstance(step_id, str) and not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            and not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) and isinstance(attempt, bool)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+# Bool jest podklasa int: `attempt: true` to zly typ.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (False or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (not isinstance(step_id, str) or False
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):'''
+zamien = '''if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or False or isinstance(attempt, bool)):'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        return None
+    return (step_id, agent_id, attempt)'''
+zamien = '''        return (step_id, agent_id, attempt)
+    return (step_id, agent_id, attempt)'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''        return None
+    return (step_id, agent_id, attempt)'''
+zamien = '''        return None
+    return (step_id, attempt, agent_id)'''
+test = "tests/test_runner_klient.py::test_tozsamosc_kroku_to_krok_agent_i_proba_z_domyslnymi_pustym_agentem_i_proba_1"
+
+# =====================================================================================
+# client.py: 401 przy `step_aborted` a zadanie nasluchu (`_zglos_anulowanie_krokow`)
+# =====================================================================================
+
+# Bez nasluchu (`_zadanie is None`) `or` siegnelby po `None.done()`.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None or not self._zadanie.done():
+                self._zadanie.cancel()'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_step_aborted_bez_nasluchu_jest_zapamietany_bez_bledu"
+
+# Zakonczony nasluch nie jest anulowany drugi raz: `or` wolalby `cancel()` mimo `done()`.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None or not self._zadanie.done():
+                self._zadanie.cancel()'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_step_aborted_anuluje_nasluch_tylko_gdy_ten_jeszcze_trwa"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_step_aborted_anuluje_nasluch_tylko_gdy_ten_jeszcze_trwa"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()'''
+zamien = '''except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and self._zadanie.done():
+                self._zadanie.cancel()'''
+test = "tests/test_runner_klient.py::test_odrzucony_token_przy_step_aborted_anuluje_nasluch_tylko_gdy_ten_jeszcze_trwa"
+
+# =====================================================================================
+# client.py: stale (kod 3, poza zasiegiem mutmuta)
+# =====================================================================================
+
+# Tekst `step_aborted` po anulowaniu: test porownuje z wlasnym literalem cala tresc, nie fragment.
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''TEKST_ANULOWANIA = "anulowany przez człowieka"'''
+zamien = '''TEKST_ANULOWANIA = "XXanulowany przez człowiekaXX"'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+[[mutant]]
+plik = "src/runner/client.py"
+szukaj = '''TEKST_ANULOWANIA = "anulowany przez człowieka"'''
+zamien = '''TEKST_ANULOWANIA = "anulowany"'''
+test = "tests/test_runner_klient.py::test_po_cancel_run_kokpit_dostaje_dokladnie_jedno_step_aborted_kroku_run_step_z_powodem_anulowania"
+
+# Alias tozsamosci kroku jest tylko adnotacja (`from __future__ import annotations`, client.py:6):
+# nie jest obliczany w runtime, wiec zadna zmiana jego wartosci nie zmienia zachowania.
+[[rownowazny]]
+plik = "src/runner/client.py"
+linia_tekst = "TozsamoscKroku = tuple[str, str, int]"
+uzasadnienie = "alias wystepuje tylko w adnotacjach (_tozsamosc_kroku -> TozsamoscKroku | None i dict[str, set[TozsamoscKroku]]), a przy `from __future__ import annotations` adnotacje nie sa obliczane; zadne wejscie nie odroznia wartosci aliasu, bo nic w kodzie ani w testach jej nie czyta"

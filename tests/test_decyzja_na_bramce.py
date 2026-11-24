@@ -1023,7 +1023,7 @@ async def test_zatwierdzenie_po_restarcie_kokpitu_wysyla_resume_przez_nowa_szyne
 # =====================================================================================
 
 # Lista przypadkow niezalezna od `runs.RODZAJE_CZLOWIEKA` (usuniecie wpisu z kodu nie usuwa testu).
-RODZAJE_DECYZJI_CZLOWIEKA = ("decision", "integrated", "committed", "acceptance")
+RODZAJE_DECYZJI_CZLOWIEKA = ("decision", "integrated", "committed", "acceptance", "run_cancelled")
 
 
 async def _zdarzenia_rodzaju(maker, run_id: str, kind: str) -> list:
@@ -1104,7 +1104,8 @@ async def test_zwykle_zdarzenie_od_runnera_nadal_sie_zapisuje(swiat):
     assert po[2][-1][1] == "step_started"
 
 
-def test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_cztery():
-    assert runs.RODZAJE_CZLOWIEKA == frozenset({"decision", "integrated", "committed", "acceptance"})
+def test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_piec():
+    assert runs.RODZAJE_CZLOWIEKA == frozenset(
+        {"decision", "integrated", "committed", "acceptance", "run_cancelled"})
     # niezmienna lista: kod nie moze jej rozszerzyc w runtime (set == frozenset daje True)
     assert type(runs.RODZAJE_CZLOWIEKA) is frozenset

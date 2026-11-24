@@ -1107,21 +1107,20 @@ def test_prompt_krytyka_kaze_wpisac_plik_poza_przydzialem_jako_uwage_bez_odjecia
     assert "odjęcie z rubryki" not in tresc
 
 
-def test_prompt_krytyka_kaze_liczyc_mutanty_przyrostowo_od_zapisu_bramki(ep):
-    # krok 6 audytu: krytyk nie powtarza pelnego mutmuta, tylko liczy od zapisu przebiegu bramki w katalogu stanu
+def test_prompt_krytyka_nie_kaze_uruchamiac_mutantow(ep):
+    # 2026-11-24 wlasciciel: mutanty to raport CI, nie bramka sesji
     ep.stan_bazowy()
     ep.bramki([BRAMKA_OK])
     assert ep.skrypt("bramka_testow.py", KEY).kod == 0
     assert ep.skrypt("prompt_krytyka.py", KEY, "--rubryka", str(RUBRYKA)).kod == 0
     tresc = " ".join((ep.kat / "krytyk-prompt-1.md").read_text(encoding="utf-8").split())
-    assert f"`python tools/mutanty_zmian.py --baza origin/main --od-przebiegu {ep.kat / 'mutanty'}`" in tresc
-    assert "Kod wyjścia inny niż `bramki.mutanty.kod` w stanie" in tresc
-    assert "`python tools/mutanty_reczne.py --sprawdz-wszystkie`" in tresc
+    assert "Mutanty: nie uruchamiasz ich i nie punktujesz" in tresc
+    assert "mutanty_zmian.py" not in tresc
+    assert "mutanty_reczne.py" not in tresc
 
 
-def test_szablon_mutantow_zapisuje_przebieg_w_katalogu_stanu_tam_gdzie_szuka_krytyk():
-    b = next(b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] == "mutanty")
-    assert b["argv"][b["argv"].index("--od-przebiegu") + 1] == "{KATALOG_STANU}/mutanty"
+def test_szablon_bramek_sesji_nie_ma_bramki_mutantow():
+    assert [b["nazwa"] for b in json.loads(SZABLON.read_text(encoding="utf-8"))] == ["lint", "warstwy", "testy"]
 
 
 def test_ponowna_ocena_nie_odejmuje_za_plik_poza_przydzialem(ep):
@@ -1234,9 +1233,9 @@ def test_bramki_zgodne_z_szablonem_nie_daja_ostrzezen(ep):
 
 
 def test_brak_bramki_z_szablonu_daje_ostrzezenie_z_nazwa(ep):
-    bramki = [b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] not in ("mutanty", "warstwy")]
+    bramki = [b for b in json.loads(SZABLON.read_text(encoding="utf-8")) if b["nazwa"] not in ("testy", "warstwy")]
     assert _ostrzezenia(_zapisz_bramki(ep, bramki)) == [
-        "OSTRZEZENIE: brak bramki z szablonu: mutanty", "OSTRZEZENIE: brak bramki z szablonu: warstwy"]
+        "OSTRZEZENIE: brak bramki z szablonu: testy", "OSTRZEZENIE: brak bramki z szablonu: warstwy"]
 
 
 def _z_szablonem(*dodatkowe: dict) -> list[dict]:

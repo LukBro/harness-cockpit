@@ -63,6 +63,7 @@ from .schematy import (
     PlikZapisany,
     PokrycieRunu,
     Projekt,
+    RunAnulowany,
     RunnerZameldowany,
     RunnerZespolu,
     RunNaLiscie,
@@ -289,6 +290,21 @@ async def podejmij_decyzje(
     await bus.publish_event(wynik.run.id, uslugi.zdarzenie_na_szyne(ev))
     return DecyzjaPrzyjeta(run_id=wynik.run.id, status=wynik.run.status,
                            step_id=wynik.step_id, reason=wynik.run.reason)
+
+
+@app.post("/api/runs/{run_id}/cancel", response_model=RunAnulowany,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def anuluj_run(
+    run_id: str,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> RunAnulowany:
+    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    run, ev, polecenie = await uslugi.anuluj_run(s, run_id, k.tenant_id, k.user_id)
+    await bus.send_to_runner(run.runner_id, polecenie)
+    zdarzenie = uslugi.zdarzenie_na_szyne(ev)
+    await bus.publish_event(run.id, zdarzenie)
+    return RunAnulowany(run_id=run.id, status=run.status, reason=run.reason)
 
 
 @app.post("/api/events", response_model=ZdarzeniePrzyjete,

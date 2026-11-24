@@ -29,7 +29,7 @@ from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Base, Run, Runner
-from procesy import czekaj_na_warunek, zadanie_tla, zapamietaj_proces
+from procesy import czekaj, czekaj_na_warunek, zadanie_tla, zapamietaj_proces
 from runner import client as runner_client
 from runner.bufor import BrakMiejsca, Bufor
 from runner.client import POWOD_SPOZA_LISTY, Runner as RunnerKlient, argv_operacji
@@ -348,7 +348,7 @@ async def _runner_ze_strumieniem(polecenia: list[dict], monkeypatch,
         try:
             yield atrapa, uruchomione, nasluch
         finally:
-            await runner.stop()
+            await czekaj(runner.stop(), LIMIT_S, "stop() runnera")
 
 
 async def _poczekaj_na_koniec_runu(atrapa: _AtrapaKokpitu, run_id: str, step_id: str) -> None:
@@ -438,18 +438,18 @@ async def test_runner_odrzuca_polecenie_bez_poprawnej_nazwy_operacji_i_dalej_obs
         assert not nasluch.done()                   # nasłuch żyje: odmowa nie zrywa strumienia
 
 
-KOMUNIKAT_BEZ_ID = "polecenie bez run_id/step_id odrzucone: operacja spoza listy"
+KOMUNIKAT_BEZ_RUN_ID = "polecenie run_step bez poprawnego run_id odrzucone"
+POWOD_BEZ_STEP_ID = "polecenie run_step bez poprawnego step_id"
 KOMUNIKAT_BRAK_MIEJSCA = "brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)"
 
 
 @pytest.mark.parametrize("pola", [
     {"step_id": "s7"},                              # brak run_id
     {"run_id": 5, "step_id": "s7"},                 # run_id nie jest napisem
-    {"run_id": "run-zly"},                          # brak step_id
-    {"run_id": "run-zly", "step_id": 7},            # step_id nie jest napisem
+    {"run_id": "", "step_id": "s7"},                # pusty run_id
     {"run_id": None, "step_id": None},
 ])
-async def test_polecenie_spoza_listy_bez_identyfikatorow_kroku_nie_trafia_do_kokpitu_i_strumien_zyje(
+async def test_run_step_bez_poprawnego_run_id_jest_odrzucony_komunikatem_i_nic_nie_trafia_do_kokpitu(
     monkeypatch, capsys, pola,
 ):
     polecenia = [
@@ -459,13 +459,44 @@ async def test_polecenie_spoza_listy_bez_identyfikatorow_kroku_nie_trafia_do_kok
     async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, nasluch):
         await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
 
-        # do kokpitu dociera wylacznie drugie polecenie: odmowa bez adresata nie ma dokad pojsc
+        # do kokpitu dociera wylacznie drugie polecenie: bez run_id nie ma runu do zakonczenia
         assert {z["run_id"] for z in atrapa.zdarzenia()} == {"run-ok"}
         assert atrapa.kind_i_tekst("run-ok", "s1")[-2:] == [
             ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
         assert uruchomione == [ARGV_SZKIELET]
         assert not nasluch.done()
-        assert capsys.readouterr().err.splitlines().count(KOMUNIKAT_BEZ_ID) == 1  # cala linia
+        assert capsys.readouterr().err.splitlines().count(KOMUNIKAT_BEZ_RUN_ID) == 1  # cala linia
+
+
+@pytest.mark.parametrize("operacja", ["nieznana", "szkielet"],
+                         ids=["operacja_spoza_listy", "operacja_szkielet"])
+@pytest.mark.parametrize("pola", [
+    {},                                             # brak step_id (dla `szkielet` byl KeyError)
+    {"step_id": ""},                                # pusty step_id
+    {"step_id": 7},                                 # step_id nie jest napisem
+    {"step_id": None},
+], ids=["brak_step_id", "pusty_step_id", "step_id_nie_napis", "step_id_null"])
+async def test_run_step_z_run_id_ale_bez_poprawnego_step_id_konczy_run_porazka_kroku_run(
+    monkeypatch, capsys, pola, operacja,
+):
+    polecenia = [
+        {"type": "run_step", "run_id": "run-zly", "operacja": operacja, **pola},
+        _krok("run-ok", "s1", operacja="szkielet"),
+    ]
+    async with _runner_ze_strumieniem(polecenia, monkeypatch) as (atrapa, uruchomione, nasluch):
+        # polecenia to osobne zadania: czekamy na koniec obu runow
+        await _poczekaj_na_koniec_runu(atrapa, "run-zly", "run")
+        await _poczekaj_na_koniec_runu(atrapa, "run-ok", "s1")
+
+        zdarzenia = [z for z in atrapa.zdarzenia() if z["run_id"] == "run-zly"]
+        assert [(z["kind"], z["step_id"], z["text"]) for z in zdarzenia] == [
+            ("step_failed", "run", POWOD_BEZ_STEP_ID), ("run_finished", "run", "")]
+        assert all(z["cost_usd"] is None and z["cost_source"] == "unavailable" for z in zdarzenia)
+        assert atrapa.kind_i_tekst("run-ok", "s1")[-2:] == [
+            ("step_finished", "kod wyjscia 0"), ("run_finished", "")]
+        assert uruchomione == [ARGV_SZKIELET]       # run-zly nie uruchomil procesu
+        assert not nasluch.done()
+        assert capsys.readouterr().err.splitlines().count(KOMUNIKAT_BEZ_RUN_ID) == 0
 
 
 async def test_runner_otwiera_strumien_polecen_metoda_get(monkeypatch):

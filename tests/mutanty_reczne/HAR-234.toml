@@ -38,7 +38,7 @@ test = "tests/test_decyzja_na_bramce.py::test_runner_nie_odblokuje_bramki_zdarze
 plik = "src/cockpit/services/runs.py"
 szukaj = "RODZAJE_CZLOWIEKA: frozenset[str] = frozenset({"
 zamien = "RODZAJE_CZLOWIEKA: frozenset[str] = set({"
-test = "tests/test_decyzja_na_bramce.py::test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_cztery"
+test = "tests/test_decyzja_na_bramce.py::test_rodzaje_zdarzen_zarezerwowane_dla_czlowieka_to_dokladnie_piec"
 
 [[mutant]]
 plik = "src/cockpit/services/runs.py"

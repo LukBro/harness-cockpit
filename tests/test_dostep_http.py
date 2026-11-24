@@ -119,6 +119,7 @@ TRASY_RUNU = {
     "strumien_runu": ("GET", "/api/runs/{run}/events"),
     "integracja_runu": ("POST", "/api/runs/{run}/integrate"),
     "commit_runu": ("POST", "/api/runs/{run}/commit"),
+    "anulowanie_runu": ("POST", "/api/runs/{run}/cancel"),
 }
 
 
@@ -310,6 +311,85 @@ async def test_odbior_runu_ktory_jeszcze_trwa_dostaje_409_a_zdarzenie_nie_powsta
 
     assert odp.status_code == 409
     assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+
+
+# --- HAR-126: anulowanie runu to akcja czlowieka z uprawnieniem `zatwierdzanie` ------------------
+
+async def _status_i_powod_runu(swiat, run_id: str) -> tuple[RunStatus, str | None]:
+    async with swiat.maker() as s:
+        run = (await s.execute(select(Run).where(Run.id == run_id))).scalar_one()
+        return run.status, run.reason
+
+
+async def test_obserwator_nie_anuluje_runu_swojego_zespolu_i_run_trwa_dalej(swiat):
+    """Run jest `running`, wiec bez odmowy roli wynikiem byloby 200, nie 403."""
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/cancel")
+
+    assert odp.status_code == 403
+    # pelna tresc: nazwa czynnosci zalezy od wymaganego uprawnienia (`zatwierdzanie`)
+    assert odp.json() == {"detail": "rola viewer nie może zatwierdzać bramek"}
+    assert await _status_i_powod_runu(swiat, swiat.run_a) == (RunStatus.running, None)
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+    assert bus.runner_queue(swiat.runner_a).empty()
+
+
+async def test_czlonek_zespolu_anuluje_wlasny_run_a_run_dostaje_status_aborted(swiat):
+    klient = await _zalogowany(swiat, swiat.czlonek_a)
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/cancel")
+
+    assert odp.status_code == 200
+    assert await _status_i_powod_runu(swiat, swiat.run_a) == (
+        RunStatus.aborted, "anulowany przez człowieka")
+    assert bus.runner_queue(swiat.runner_a).get_nowait() == {
+        "type": "cancel_run", "run_id": swiat.run_a}
+
+
+async def test_czlonek_zespolu_nie_anuluje_runu_cudzego_zespolu(swiat):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    assert (await klient.post(f"/api/runs/{swiat.run_a}/cancel")).status_code == 200  # nie brak trasy
+    bus.runner_queue(swiat.runner_a).get_nowait()
+
+    odp = await klient.post(f"/api/runs/{swiat.run_b}/cancel")
+
+    assert odp.status_code == 404
+    assert await _status_i_powod_runu(swiat, swiat.run_b) == (RunStatus.running, None)
+    assert await _liczba_zdarzen(swiat, swiat.run_b) == 0
+    assert bus.runner_queue(swiat.runner_b).empty()
+
+
+async def test_bez_sesji_anulowanie_runu_dostaje_401_i_run_trwa_dalej(swiat):
+    klient = swiat.nowy_klient()
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/cancel")
+
+    assert odp.status_code == 401
+    assert await _status_i_powod_runu(swiat, swiat.run_a) == (RunStatus.running, None)
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 0
+
+
+async def test_anulowanie_runu_bez_tokenu_csrf_dostaje_403_a_run_trwa_dalej(swiat):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    del klient.headers[NAGLOWEK_CSRF]
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/cancel")
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "brak tokenu CSRF"}
+    assert await _status_i_powod_runu(swiat, swiat.run_a) == (RunStatus.running, None)
+
+
+async def test_anulowanie_runu_ze_zlym_tokenem_csrf_dostaje_403_a_run_trwa_dalej(swiat):
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    klient.headers[NAGLOWEK_CSRF] = "zly-token"
+
+    odp = await klient.post(f"/api/runs/{swiat.run_a}/cancel")
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "nieprawidłowy token CSRF"}
+    assert await _status_i_powod_runu(swiat, swiat.run_a) == (RunStatus.running, None)
 
 
 # --- HAR-180: capabilities projektu (PATCH) i skille projektu (GET) ----------------------------
@@ -783,6 +863,7 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("POST", "/api/runs/{run_id}/commit"): {"kontekst_sesji"},
         ("GET", "/api/runs/{run_id}/dowody"): {"kontekst_sesji"},
         ("POST", "/api/runs/{run_id}/decyzja-odbioru"): {"kontekst_sesji"},
+        ("POST", "/api/runs/{run_id}/cancel"): {"kontekst_sesji"},
         ("GET", "/api/konto/ja"): {"kontekst_sesji"},
         ("GET", "/api/pliki"): {"kontekst_sesji"},
         ("GET", "/api/pliki/lista"): {"kontekst_sesji"},
@@ -828,6 +909,7 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("POST", "/api/runs/{run_id}/commit"),
         ("GET", "/api/runs/{run_id}/dowody"),
         ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
+        ("POST", "/api/runs/{run_id}/cancel"),
         ("GET", "/api/pliki"),
         ("GET", "/api/pliki/lista"),
         ("PUT", "/api/pliki"),

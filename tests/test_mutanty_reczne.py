@@ -2651,14 +2651,6 @@ def test_stan_sprzed_naprawy_ma_dokladnie_cztery_zepsute_wiersze_tabel_har_0_i_h
     ), zrzut.err
 
 
-def test_wszystkie_tabele_recznych_mutantow_w_repozytorium_wskazuja_istniejacy_kod_i_testy(capsys):
-    # Tabele celuja w oryginalny kod: pod mutmut kopia w mutants/ ma funkcje powielone przez
-    # mutmut, wiec `szukaj` wystepowaloby tam wiele razy.
-    kod = _sprawdz_wszystkie(_korzen_gita())
-
-    zrzut = capsys.readouterr()
-    assert kod == 0, zrzut.err
-    assert re.search(r"sprawdzono \d+ \w+ w \d+ \w+", zrzut.out), zrzut.out
 
 
 # --- HAR-225, runda poprawkowa: plik wiersza, kolekcja, srodowisko kolekcji ------------
@@ -2937,35 +2929,6 @@ def _stary_stan_z_aktualnych_plikow(repo: Path) -> None:
         _tabela_w_repo(repo, tabela, tresc)
 
 
-def test_stan_sprzed_naprawy_zbudowany_z_aktualnych_plikow_daje_kod_2_z_dokladnie_czterema_zepsutymi_wierszami(
-    tmp_path, capsys
-):
-    repo = tmp_path / "stary-stan"
-    repo.mkdir()
-    _stary_stan_z_aktualnych_plikow(repo)
-
-    kod = _sprawdz_wszystkie(repo)
-
-    zrzut = capsys.readouterr()
-    linie = _bledy_wierszy(zrzut.err)
-    assert kod == 2, zrzut.out
-    assert sorted(linie) == sorted(
-        [
-            f"{PREFIKS_TABEL}HAR-0.toml #2",
-            f"{PREFIKS_TABEL}HAR-0.toml #7",
-            f"{PREFIKS_TABEL}HAR-0.toml #10",
-            f"{PREFIKS_TABEL}HAR-79.toml #35",
-        ]
-    ), zrzut.err
-    assert "wystepuje 0 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #2"]
-    assert "wystepuje 0 razy" in linie[f"{PREFIKS_TABEL}HAR-0.toml #7"]
-    # Liczba wystapien rosnie z kazda nowa trasa o tej samej linii (HAR-172 dodal trzecia),
-    # wiec oczekiwanie liczymy z aktualnego pliku; wiersz psuje sie, gdy wystapien jest wiecej niz jedno.
-    for klucz in (("HAR-0.toml", 10), ("HAR-79.toml", 35)):
-        pola = STARE_WIERSZE[klucz]
-        ile = (_korzen_gita() / pola["plik"]).read_text(encoding="utf-8").count(pola["szukaj"])
-        assert ile > 1, pola
-        assert f"wystepuje {ile} razy" in linie[f"{PREFIKS_TABEL}{klucz[0]} #{klucz[1]}"]
 
 
 # =============================================================================

@@ -521,6 +521,35 @@ async def test_runner_po_powrocie_nie_dostaje_polecenia_przerwanego_runu_i_run_s
     assert len(await _zdarzenia(przerwany)) == zdarzen_przed
 
 
+async def test_runner_po_powrocie_dostaje_cancel_run_anulowanego_runu_a_jego_stary_krok_juz_nie(
+    swiat, polaczenia,
+):
+    """HAR-126: anulowanie nie wymaga polaczonego runnera. Krok anulowanego runu czeka w kolejce
+    i jest odrzucany jak kazdy krok przerwanego runu, ale `cancel_run` musi dojsc: runner mogl
+    miec zadanie tego runu, zanim stracil polaczenie."""
+    run_id = await _run(swiat.browarek, R_STARY)
+    await bus.send_to_runner(
+        R_STARY, {"type": "run_step", "run_id": run_id, "step_id": "s0", "operacja": "szkielet"})
+    assert R_STARY not in bus.connected_runner_ids()
+
+    odpowiedz = await swiat.klient.post(f"/api/runs/{run_id}/cancel")
+
+    assert odpowiedz.status_code == 200
+    polaczenia.append(R_STARY)
+    r = await swiat.klient.post("/api/runners/register", json={"name": "macbook"},
+                                headers=NAGLOWEK)
+    assert r.status_code == 200
+    strumien = await _otworz_strumien()
+    try:
+        polecenie = await _pierwsze_po_polaczeniu(strumien)
+    finally:
+        await strumien.aclose()
+
+    assert polecenie == {"type": "cancel_run", "run_id": run_id}
+    assert bus.runner_queue(R_STARY).empty()
+    assert await _w_bazie(run_id) == (RunStatus.aborted, "anulowany przez człowieka")
+
+
 async def test_runner_po_powrocie_dostaje_polecenia_ktore_nie_sa_krokami_runu(swiat, polaczenia):
     polaczenia.append(R_STARY)
     await bus.send_to_runner(R_STARY, {"type": "ping"})

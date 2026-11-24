@@ -431,8 +431,10 @@ test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_jest_ostatnim_wejsc
 
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '''async with _BLOKADY.setdefault(run_id, asyncio.Lock()):'''
-zamien = '''async with asyncio.Lock():'''
+szukaj = '''async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
+            start = await _przyjmij_decyzje('''
+zamien = '''async with asyncio.Lock():
+            start = await _przyjmij_decyzje('''
 test = "tests/test_wznowienie_runu.py::test_dwa_wspolbiezne_polecenia_wznowienia_uruchamiaja_krok_za_bramka_dokladnie_raz"
 
 # Czas decyzji bez strefy.
@@ -454,7 +456,7 @@ test = "tests/test_polecenie_resume.py::test_polecenie_resume_trafia_do_silnika_
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = '''self._runy.add(wznowienie)'''
+szukaj = '''self._runy[run_id] = zadanie'''
 zamien = '''pass'''
 test = "tests/test_polecenie_resume.py::test_stop_runnera_anuluje_trwajace_wznowienie"
 
@@ -483,21 +485,28 @@ test = "tests/test_polecenie_resume.py::test_brak_miejsca_na_zdarzenia_wznowieni
 # Slad odmowy idzie na stdout zamiast stderr.
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = '''niepoprawne polecenie {cmd!r}", file=sys.stderr)'''
-zamien = '''niepoprawne polecenie {cmd!r}", file=sys.stdout)'''
+# (odmowa jest w petli polecen: `_resume` dostaje juz tylko poprawne polecenia, HAR-126)
+szukaj = '''print(f"resume odrzucone: niepoprawne polecenie {cmd!r}",
+                                      file=sys.stderr)'''
+zamien = '''print(f"resume odrzucone: niepoprawne polecenie {cmd!r}",
+                                      file=sys.stdout)'''
 test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[brak_run_id]"
 
 # Kazdy czlon warunku walidacji ma wejscie, ktore odrzuca tylko on.
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = '''not isinstance(run_id, str) or not run_id'''
-zamien = '''not isinstance(run_id, str)'''
+szukaj = '''not isinstance(run_id, str) or not run_id
+            or not isinstance(step_id, str)'''
+zamien = '''not isinstance(run_id, str)
+            or not isinstance(step_id, str)'''
 test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[pusty_run_id]"
 
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = '''not isinstance(run_id, str) or not run_id'''
-zamien = '''not run_id'''
+szukaj = '''not isinstance(run_id, str) or not run_id
+            or not isinstance(step_id, str)'''
+zamien = '''not run_id
+            or not isinstance(step_id, str)'''
 test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_do_silnika_i_zostawia_slad_na_stderr[run_id_nie_jest_napisem]"
 
 [[mutant]]
@@ -551,8 +560,8 @@ test = "tests/test_polecenie_resume.py::test_zle_polecenie_resume_nie_dochodzi_d
 # Zakonczone wznowienie zostaje w zadaniach runnera.
 [[mutant]]
 plik = "src/runner/client.py"
-szukaj = '''wznowienie.add_done_callback(self._runy.discard)'''
-zamien = '''wznowienie.add_done_callback(lambda _: None)'''
+szukaj = '''if self._runy.get(run_id) is z:'''
+zamien = '''if False:'''
 test = "tests/test_polecenie_resume.py::test_zakonczone_wznowienie_znika_z_zadan_runnera"
 
 # =====================================================================================
@@ -570,10 +579,8 @@ test = "tests/test_wznowienie_runu.py::test_surowy_oserror_z_dysku_przy_wznowien
 [[mutant]]
 plik = "src/runner/silnik.py"
 szukaj = '''    await asyncio.to_thread(_zapisz_decyzje, p, run_id, step_id, decyzja, powod)
-    await asyncio.to_thread(
-        zapisz_checkpoint, katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))'''
-zamien = '''    await asyncio.to_thread(
-        zapisz_checkpoint, katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))
+    await _zapis_do_konca(katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))'''
+zamien = '''    await _zapis_do_konca(katalog, _checkpoint(run_id, cp.workflow, p, stany, startowane, None))
     await asyncio.to_thread(_zapisz_decyzje, p, run_id, step_id, decyzja, powod)'''
 test = "tests/test_wznowienie_runu.py::test_nieudany_zapis_artefaktu_decyzji_to_porazka_kroku_i_koniec_runu_bez_startu_agenta"
 
@@ -636,8 +643,10 @@ test = "tests/test_wznowienie_runu.py::test_artefakt_decyzji_zapisuje_polskie_zn
 # Wspolna blokada dla wszystkich runow.
 [[mutant]]
 plik = "src/runner/silnik.py"
-szukaj = '''_BLOKADY.setdefault(run_id, asyncio.Lock())'''
-zamien = '''_BLOKADY.setdefault(None, asyncio.Lock())'''
+szukaj = '''_BLOKADY.setdefault(run_id, asyncio.Lock()):
+            start = await _przyjmij_decyzje('''
+zamien = '''_BLOKADY.setdefault(None, asyncio.Lock()):
+            start = await _przyjmij_decyzje('''
 test = "tests/test_wznowienie_runu.py::test_blokada_wznowienia_jest_osobna_dla_kazdego_runu_a_nie_wspolna_dla_wszystkich"
 
 # Sciezka repozytorium gubiona w checkpoincie po wznowieniu.

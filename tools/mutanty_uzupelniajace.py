@@ -74,6 +74,8 @@ WYWOLANIA_USUWALNE = ("sorted", "strip")
 LIMIT_DOMYSLNY = 1200.0
 RAPORT_JUNIT = ".mutanty-uzupelniajace-junit.xml"
 KATALOG_TABEL = mutanty_reczne.KATALOG_TABEL
+# pytest leci z `-o addopts=`, wiec `-m "not e2e"` z pyproject znika; e2e wymaga przegladarki i PostgreSQL
+KATALOG_E2E = ("tests", "e2e")
 DLUGOSC_OPISU = 60
 
 
@@ -883,12 +885,12 @@ def _importuje_modul(nazwa: str, tresc: str, modul: str) -> bool:
 
 
 def _tresci_testow(korzen: Path) -> dict[str, str]:
-    """Pliki `.py` pod `tests/` (bez `tests/mutanty_reczne/`) -> tresc."""
+    """Pliki `.py` pod `tests/` (bez `tests/mutanty_reczne/` i `tests/e2e/`) -> tresc."""
     tresci: dict[str, str] = {}
-    pominiety = Path(*KATALOG_TABEL)
+    pominiete = {Path(*KATALOG_TABEL), Path(*KATALOG_E2E)}
     for katalog, podkatalogi, pliki in os.walk(korzen / "tests", onerror=_blad_katalogu):
         wzgledny = Path(katalog).relative_to(korzen)
-        podkatalogi[:] = sorted(p for p in podkatalogi if wzgledny / p != pominiety)
+        podkatalogi[:] = sorted(p for p in podkatalogi if wzgledny / p not in pominiete)
         for plik in sorted(pliki):
             if not plik.endswith(".py"):
                 continue

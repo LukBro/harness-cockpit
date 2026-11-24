@@ -48,5 +48,5 @@ Proponowany domyślny stan: wyłączona; po włączeniu protokół z `pipeline.m
 
 ## Propozycja przebiegu mutation-check - v1.26.0 l. 1486-1565
 
-W harness-cockpit mutacje są bramką projektu (`tools/mutanty_zmian.py`, `tools/mutanty_reczne.py`)
-w `bramki.json`, więc propozycja skilla `monolynx:mutation-check` się nie pojawia.
+W harness-cockpit mutacje nie są bramką (decyzja 2026-11-24, raport w CI), więc propozycja skilla
+`monolynx:mutation-check` się nie pojawia.

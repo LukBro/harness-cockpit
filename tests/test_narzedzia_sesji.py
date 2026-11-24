@@ -2374,8 +2374,10 @@ def test_po_merge_wszystko_poprawne_daje_ok_kod_0_i_uruchamia_testy_na_czterech_
     assert kod == 0
     assert ostatnia == "PO-MERGE: ok"
     assert "bringing up nodes" in wyjscie
-    for etap in ("konflikt", "alembic", "mutanty", "testy"):
+    for etap in ("konflikt", "alembic", "testy"):
         assert f"PO-MERGE etap {etap}: ok" in wyjscie
+    # 2026-11-24 wlasciciel: tabele mutantow recznych nie sa juz bramka
+    assert "etap mutanty" not in wyjscie
 
 
 @pytest.mark.parametrize(
@@ -2468,15 +2470,6 @@ def test_po_merge_alembic_ktory_sam_pada_to_blad_narzedzia_kod_2(repo_po_merge):
     assert "alembic heads zakonczyl sie kodem" in bledy
 
 
-def test_po_merge_wiersz_tabeli_nietrafiajacy_w_kod_daje_blad_etapu_mutanty_kod_2(repo_po_merge):
-    _zapisz(repo_po_merge, "tests/mutanty_reczne/X.toml", TABELA_DOBRA.replace("WARTOSC = 1", "WARTOSC = 100"))
-    _git(repo_po_merge, "add", "-A")
-    kod, ostatnia, _, bledy = _po_merge(repo_po_merge)
-    assert kod == 2
-    assert ostatnia == "PO-MERGE: blad mutanty"
-    assert "tests/mutanty_reczne/X.toml #1" in bledy
-
-
 def test_po_merge_czerwony_test_daje_blad_etapu_testy_kod_1(repo_po_merge):
     _zapisz(repo_po_merge, "tests/test_ok.py", "def test_ok():\n    assert 1 == 2\n")
     kod, ostatnia, _, _ = _po_merge(repo_po_merge)
@@ -2527,11 +2520,10 @@ def test_po_merge_przy_dwoch_bledach_o_tym_samym_kodzie_nazywa_pierwszy_etap(rep
 
 def test_po_merge_blad_narzedzia_wygrywa_z_bledem_w_kodzie_niezaleznie_od_kolejnosci_etapow(repo_po_merge):
     _zapisz(repo_po_merge, "src/inny.py", f"{ZNACZNIK_START} HEAD\n")  # konflikt, kod 1 - pierwszy etap
-    _zapisz(repo_po_merge, "tests/mutanty_reczne/X.toml", TABELA_DOBRA.replace("WARTOSC = 1", "WARTOSC = 100"))  # kod 2
     _git(repo_po_merge, "add", "-A")
-    kod, ostatnia, _, _ = _po_merge(repo_po_merge)
+    kod, ostatnia, _, _ = _po_merge(repo_po_merge, testy_args="-q -k nie_ma_takiego_testu")  # testy: kod 2
     assert kod == 2
-    assert ostatnia == "PO-MERGE: blad mutanty"
+    assert ostatnia == "PO-MERGE: blad testy"
 
 
 def test_po_merge_wszystkie_etapy_wykonuja_sie_mimo_wczesniejszego_bledu(repo_po_merge):
@@ -2540,7 +2532,6 @@ def test_po_merge_wszystkie_etapy_wykonuja_sie_mimo_wczesniejszego_bledu(repo_po
     kod, _, wyjscie, bledy = _po_merge(repo_po_merge)
     assert kod == 1
     assert "PO-MERGE etap alembic: ok" in wyjscie
-    assert "PO-MERGE etap mutanty: ok" in wyjscie
     assert "PO-MERGE etap testy: ok" in wyjscie
     assert "PO-MERGE etap konflikt: blad (kod 1)" in bledy
 
