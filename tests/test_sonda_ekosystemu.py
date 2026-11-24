@@ -47,7 +47,7 @@ TYPECHECK_NODE = "npx --no -- tsc --noEmit --extendedDiagnostics --tsBuildInfoFi
 PROBY = {
     "python": {"pytest": [["-q", "-p", "no:cacheprovider"]], "ruff": [["check", "--no-cache", "."]]},
     "ruby": {"bundle": [["exec", "rspec"], ["exec", "rubocop"]]},
-    "go": {"go": [["test", "./..."], ["vet", "./..."]]},
+    "go": {"go": [["test", "./..."], ["vet", "-x", "./..."]]},
     "node": {"npm": [["test"]],
              "npx": [["--no", "--", "tsc", "--noEmit", "--extendedDiagnostics",
                       "--tsBuildInfoFile", "/dev/null"]]},
@@ -57,7 +57,7 @@ PROBY = {
 OCZEKIWANE = {
     "python": ("pyproject.toml", {"test_narrow": "pytest -q", "lint": "ruff check ."}),
     "ruby": ("Gemfile", {"test_narrow": "bundle exec rspec", "lint": "bundle exec rubocop"}),
-    "go": ("go.mod", {"test_narrow": "go test ./...", "lint": "go vet ./..."}),
+    "go": ("go.mod", {"test_narrow": "go test ./...", "lint": "go vet -x ./..."}),
     "node": ("package.json", {"test_narrow": "npm test", "typecheck": TYPECHECK_NODE}),
 }
 WSZYSTKIE_ATRAPY = ("pytest", "ruff", "bundle", "go", "npm", "npx")
@@ -89,6 +89,10 @@ def swiat(tmp_path, monkeypatch):
     def atrapa(nazwa, **opcje):
         if nazwa == "npx":   # prawdziwy tsc --noEmit przy sukcesie milczy (kod 0, puste wyjscie)
             opcje.setdefault("milczy_bez", "--extendedDiagnostics")
+        if nazwa == "go":
+            # zalozenie ze zrodla Go 1.27.4, nie pomiar: `go vet` milczy przy sukcesie, `-x` wypisuje
+            # `WORK=...`, `-json` wypisuje JSON; `go test` wypisuje zawsze
+            opcje.setdefault("milczy_bez", ("test", "-x", "-json"))
         _zainstaluj_atrape(bin_, logi, nazwa, **opcje)
 
     def wszystkie(**opcje):
@@ -102,10 +106,14 @@ def swiat(tmp_path, monkeypatch):
 def _zainstaluj_atrape(bin_: Path, logi: Path, nazwa: str, *, kod: int = 0,
                        wyjscie: str = "atrapa dziala\n", spij: bool = False,
                        cache: tuple[str, str] | None = None, bytecode: bool = False,
-                       na_stderr: bool = False, milczy_bez: str | None = None) -> None:
+                       na_stderr: bool = False,
+                       milczy_bez: str | tuple[str, ...] | None = None,
+                       kod_gdy: tuple[str, str, int] | None = None) -> None:
     """Skrypt `bin_/nazwa`: dziennik wywolania, opcjonalny zapis cache jak prawdziwe narzedzie,
     potem `wyjscie` na stdout (albo stderr) i kod wyjscia `kod`; `spij` zawiesza go (z potomkiem)
-    do zabicia; `milczy_bez`: bez tego argumentu nic nie wypisuje (jak tsc bez diagnostyki)."""
+    do zabicia; `milczy_bez`: napis albo krotka alternatyw - gdy zadnego z nich nie ma w argumentach,
+    nic nie wypisuje (jak tsc bez diagnostyki); `kod_gdy=(a, b, k)`: gdy argumenty zawieraja `a`,
+    a nie zawieraja `b`, kod wyjscia to `k` (np. `go vet` z uwagami: kod 1 bez -json)."""
     (bin_ / f"{nazwa}.out").write_text(wyjscie, encoding="utf-8")
     sk = shlex.quote
     linie = [
@@ -131,8 +139,15 @@ def _zainstaluj_atrape(bin_: Path, logi: Path, nazwa: str, *, kod: int = 0,
         ]
     wypisz = "/bin/cat " + sk(str(bin_ / f"{nazwa}.out")) + (" >&2" if na_stderr else "")
     if milczy_bez is not None:
-        wypisz = f"case \" $* \" in *{sk(milczy_bez)}*) {wypisz};; esac"
-    linie += [wypisz, f"exit {kod}"]
+        alternatywy = (milczy_bez,) if isinstance(milczy_bez, str) else milczy_bez
+        wzorce = "|".join(f"*{sk(a)}*" for a in alternatywy)
+        wypisz = f"case \" $* \" in {wzorce}) {wypisz};; esac"
+    linie.append(f"KOD={kod}")
+    if kod_gdy is not None:
+        zawiera, brak, inny_kod = kod_gdy
+        linie.append(f"case \" $* \" in *{sk(zawiera)}*) case \" $* \" in *{sk(brak)}*) ;; "
+                     f"*) KOD={inny_kod};; esac;; esac")
+    linie += [wypisz, "exit $KOD"]
     skrypt = bin_ / nazwa
     skrypt.write_text("\n".join(linie) + "\n", encoding="utf-8")
     skrypt.chmod(0o755)
@@ -661,7 +676,7 @@ async def test_proba_uruchamia_dokladnie_te_argumenty_w_repozytorium_ze_srodowis
 
 
 @pytest.mark.parametrize(("ekosystem", "atrapa", "tylko_dla", "lint"), [
-    ("go", "go", "test", "go vet ./..."),
+    ("go", "go", "test", "go vet -x ./..."),
     ("ruby", "bundle", "rspec", "bundle exec rubocop"),
 ], ids=["go", "ruby"])
 async def test_status_przypisuje_wynik_do_wlasciwej_capability_gdy_atrapa_odpowiada_roznie_na_podkomendy(
@@ -686,6 +701,39 @@ async def test_wynik_dotyczy_tej_samej_komendy_co_proba_bo_tsc_bez_diagnostyki_m
 
     assert wynik["capabilities"]["typecheck"] == TYPECHECK_NODE
     assert wynik["status"]["typecheck"]["obecna"] is True
+
+
+async def test_go_vet_bez_x_milczy_wiec_brak_wyjscia_nie_jest_zielony_a_z_x_jest(swiat):
+    swiat.wszystkie()   # atrapa go milczy dla `vet` bez -x, jak prawdziwy go vet przy sukcesie
+
+    bez = await _sprawdz("go vet ./...", swiat.korzen)
+    z = await _sprawdz("go vet -x ./...", swiat.korzen)
+
+    assert (bez, z) == (_wynik(False, "puste wyjście"), _wynik(True, ""))
+
+
+async def test_lint_go_na_zdrowym_repozytorium_jest_obecny_z_komenda_z_x(swiat):
+    swiat.wszystkie()
+    repo = _repo(swiat, "app", "go")
+
+    wynik = await _zaproponuj(repo)
+
+    assert wynik["status"]["lint"] == {"komenda": "go vet -x ./...", "obecna": True, "powod": ""}
+    assert wynik["capabilities"]["lint"] == "go vet -x ./..."
+
+
+async def test_lint_go_na_repozytorium_z_uwagami_vet_jest_nieobecny_z_kodem_wyjscia_1(swiat):
+    swiat.wszystkie()
+    # vet z uwagami: kod 1, gdy nie ma -json; -x tez wypisuje `WORK=...`, wiec samo wyjscie nie rozstrzyga
+    swiat.atrapa("go", wyjscie="WORK=/tmp/go-build123\n", na_stderr=True,
+                 kod_gdy=("vet", "-json", 1))
+    repo = _repo(swiat, "app", "go")
+
+    wynik = await _zaproponuj(repo)
+
+    assert wynik["status"]["lint"] == {
+        "komenda": "go vet -x ./...", "obecna": False, "powod": "kod wyjścia 1"}
+    assert wynik["capabilities"] == {"test_narrow": "go test ./..."}
 
 
 async def test_atrapa_tsc_bez_diagnostyki_milczy_wiec_sonda_widzi_brak_dowodu(swiat):

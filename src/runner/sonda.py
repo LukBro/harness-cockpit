@@ -13,8 +13,8 @@ sprawdzony ani gwarantowany; testy projektu moga pisac swoje pliki.
 
 Powody nieobecnosci sa stale i nie niosa tresci wyjscia ani argumentow komendy (moga miec sekret).
 Proces: bez powloki, wlasna grupa procesow zabijana po limicie, stdin z /dev/null; wzor procesu
-to `runner.dowody`. Komenda docelowa capability jest ta sama, ktora przeszla probe, wiec przechodzi
-tez krok `system: check` (kod 0 i niepuste wyjscie).
+to `runner.dowody`. Komenda docelowa rozni sie od probnej tylko flagami bez zapisu dla pytest
+i ruff (`-p no:cacheprovider`, `--no-cache`); dla pozostalych jest identyczna z probna.
 """
 from __future__ import annotations
 
@@ -39,8 +39,10 @@ POWOD_PUSTE_WYJSCIE = "puste wyjście"
 
 # `tsc --noEmit` przy sukcesie milczy, a kod 0 bez wyjscia to brak dowodu: --extendedDiagnostics
 # wypisuje statystyki. `--tsBuildInfoFile /dev/null` nie zostawia tsbuildinfo (takze przy
-# `composite`). `npx --no --` uzywa tylko lokalnego `tsc` (npm 10.9.9: bez `--` argument `tsc`
-# bylby wartoscia `--no`); bez lokalnego typescript trafia na obcy pakiet `tsc` i konczy kodem 1.
+# `composite`). `npx --no --`: npx szuka `tsc` w node_modules/.bin od cwd w gore, potem w
+# globalnym prefiksie npm, potem w cache npx (nie na PATH); przy --no nie instaluje pakietu, ale
+# moze pobrac manifest (npm 10.9.9: bez `--` argument `tsc` bylby wartoscia `--no`). Zmierzone:
+# bez lokalnego typescript trafil na obcy pakiet `tsc` i skonczyl kodem 1.
 TYPECHECK_NODE = "npx --no -- tsc --noEmit --extendedDiagnostics --tsBuildInfoFile /dev/null"
 
 # stos -> [(capability, komenda docelowa (do project.yaml), komenda probna (bez zapisu w repo))]
@@ -55,7 +57,14 @@ TABELA: dict[str, list[tuple[str, str, str]]] = {
     ],
     "go": [
         ("test_narrow", "go test ./...", "go test ./..."),
-        ("lint", "go vet ./...", "go vet ./..."),
+        # zweryfikowane w zrodle Go 1.27.4 (plik:linia), nie uruchomione na prawdziwym go: brak go
+        # na maszynie, uruchomienie pobranego toolchainu odrzucone przez uprawnienia.
+        # Dowodem lintu Go jest kod wyjscia: bez -json cmd/go ustawia kod != 0 przy uwagach
+        # (vet/vet.go:207-215, 393-395). `go vet ./...` milczy przy sukcesie, a kod 0 bez wyjscia
+        # to brak dowodu; `-x` wypisuje na stderr `WORK=...` bezwarunkowo (work/action.go:312-318,
+        # load/printer.go:53), takze gdy wynik pochodzi z cache, a sonda czyta stderr jako wyjscie
+        # (stderr=STDOUT) - WORK= tylko spelnia wymog niepustego wyjscia.
+        ("lint", "go vet -x ./...", "go vet -x ./..."),
     ],
     "node": [
         ("test_narrow", "npm test", "npm test"),
