@@ -33,6 +33,8 @@ from runner.odbior import (
 from runner.worktree import BladWorktree, katalog_runu
 from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_sekretem
 
+# Pola ramki zapytania, nie argumenty operacji (HAR-201: `nadano_o`, `wazne_s`).
+POLA_PROTOKOLU = ("type", "req_id", "nadano_o", "wazne_s")
 LIMIT_WYNIKOW = 2000
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
 DOMYSLNY_LIMIT_ODCZYTU_KB = 512
@@ -611,7 +613,7 @@ async def wykonaj(polecenie: dict) -> dict:
     if operacja is None:
         return {"req_id": req_id, "ok": False, "blad": f"nieznana operacja: {typ}",
                 "kod": "nieznana_operacja"}
-    dane = {k: v for k, v in polecenie.items() if k not in ("type", "req_id")}
+    dane = {k: v for k, v in polecenie.items() if k not in POLA_PROTOKOLU}
     try:
         wynik = await operacja(dane)
     except BladOperacji as e:

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import importlib.metadata
 import json
+import math
 import os
 import re
 import shutil
@@ -80,6 +81,32 @@ def argv_operacji(cmd: Mapping[str, Any]) -> tuple[str, ...] | None:
     if not isinstance(nazwa, str):
         return None
     return OPERACJE_RUNU.get(nazwa)
+
+
+def _liczba_skonczona(wartosc: object) -> float | None:
+    """Skonczona liczba (int albo float, nie bool) jako float; inaczej None. Int ponad zakres
+    float (OverflowError) to tez None."""
+    if isinstance(wartosc, bool) or not isinstance(wartosc, (int, float)):
+        return None
+    try:
+        liczba = float(wartosc)
+    except OverflowError:
+        return None
+    return liczba if math.isfinite(liczba) else None
+
+
+def _odmowa_zapytania(cmd: Mapping[str, Any], teraz: float) -> tuple[str, str] | None:
+    """(kod, komunikat), gdy zapytania kokpitu nie wolno wykonac: brak albo zly `nadano_o` /
+    `wazne_s`, albo wiek ponad limit waznosci. Komunikaty stale: bez tresci zapytania."""
+    nadano_o = _liczba_skonczona(cmd.get("nadano_o"))
+    if nadano_o is None:
+        return ("zly_czas_nadania", "zapytanie bez poprawnego czasu nadania (nadano_o)")
+    wazne_s = _liczba_skonczona(cmd.get("wazne_s"))
+    if wazne_s is None or wazne_s <= 0:
+        return ("zly_limit_waznosci", "zapytanie bez poprawnego limitu waznosci (wazne_s)")
+    if teraz - nadano_o > wazne_s:
+        return ("przeterminowane", "zapytanie przeterminowane: kokpit nie czeka juz na odpowiedz")
+    return None
 
 
 class StrumienZamkniety(Exception):
@@ -459,8 +486,15 @@ class Runner:
             )
 
     async def _odpowiedz_na_zapytanie(self, client: httpx.AsyncClient, cmd: dict) -> None:
-        """Wykonuje operacje i odsyla wynik POST-em. Nigdy token, naglowki ani tresc odpowiedzi w logu."""
-        wynik = await operacje.wykonaj(cmd)
+        """Wykonuje operacje i odsyla wynik POST-em. Nigdy token, naglowki ani tresc odpowiedzi w logu.
+        Zapytanie bez poprawnego czasu nadania i limitu waznosci albo przeterminowane (kokpit juz
+        na nie nie czeka) jest odrzucane BEZ wykonania (HAR-201)."""
+        odmowa = _odmowa_zapytania(cmd, time.time())
+        if odmowa is not None:
+            kod, blad = odmowa
+            wynik = {"req_id": cmd.get("req_id"), "ok": False, "blad": blad, "kod": kod}
+        else:
+            wynik = await operacje.wykonaj(cmd)
         url = f"{self.base_url}/api/runners/odpowiedzi"
         try:
             try:

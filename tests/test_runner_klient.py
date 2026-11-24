@@ -12,6 +12,7 @@ import contextlib
 import json
 import re
 import sys
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -22,6 +23,7 @@ from procesy import (
     czekaj,
     czekaj_bez_anulowania,
     czekaj_na_warunek,
+    czy_zyje,
     grupa_istnieje,
     grupa_umarla,
     zadanie_tla,
@@ -2599,6 +2601,56 @@ async def test_stop_runnera_z_trwajacym_krokiem_nie_zglasza_step_aborted_bo_to_n
     strumien = StrumienPolecen()
     transport, zdarzenia = kokpit_ze_strumieniem(strumien)
     runner, _ = _runner(transport=transport)
+    pgid = None
+    try:
+        async with zadanie_tla(runner.listen(), "nasluch runnera"):
+            if rodzaj == "run_step":
+                strumien.wyslij(_krok(RUN_ID, "spij"))
+                pgid = await _czekaj_na_agenta(plik)
+            else:
+                strumien.wyslij(POLECENIA_RUNU[rodzaj])
+                await czekaj_na_warunek(
+                    lambda: any(z["kind"] == "step_started" for z in zdarzenia),
+                    LIMIT_ANULOWANIA_S, "start kroku w silniku")
+            assert RUN_ID in runner._runy           # krok trwa, zadanie runu zyje
+            await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+            assert runner._runy == {}               # zadanie runu skonczylo sie przed powrotem stop()
+            if pgid is not None:                    # HAR-201: po stop() krok nie zostawia sieroty
+                pid_agenta = int(plik.read_text().split()[0])
+                assert await grupa_umarla(pgid, limit=LIMIT_ANULOWANIA_S), "grupa kroku zyje po stop()"
+                assert not czy_zyje(pid_agenta)
+    finally:
+        await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
+
+    assert _step_aborted(zdarzenia) == []
+    assert not {z["kind"] for z in zdarzenia} & RODZAJE_KONCA
+
+
+def _kokpit_z_odpowiedziami(strumien: StrumienPolecen):
+    """Jak `kokpit_ze_strumieniem`, a POST /api/runners/odpowiedzi trafia do trzeciej listy."""
+    transport, zdarzenia = kokpit_ze_strumieniem(strumien)
+    odpowiedzi: list[dict] = []
+    bazowy = transport.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/runners/odpowiedzi":
+            odpowiedzi.append(json.loads(request.content))
+            return httpx.Response(204)
+        return bazowy(request)
+
+    return httpx.MockTransport(handler), zdarzenia, odpowiedzi
+
+
+@pytest.mark.parametrize("rodzaj", ["run_step", "run_workflow", "resume"])
+async def test_zapytanie_kokpitu_w_trakcie_trwajacego_kroku_dostaje_odpowiedz_przed_koncem_kroku(
+    monkeypatch, tmp_path, rodzaj,
+):
+    plik = tmp_path / "agent.pid"
+    monkeypatch.setattr(runner_client, "OPERACJE_RUNU", {"spij": _agent_kroku(plik)})
+    _silnik_ktory_emituje_i_wisi(monkeypatch, [_start("s1")])
+    strumien = StrumienPolecen()
+    transport, zdarzenia, odpowiedzi = _kokpit_z_odpowiedziami(strumien)
+    runner, _ = _runner(transport=transport)
     try:
         async with zadanie_tla(runner.listen(), "nasluch runnera"):
             if rodzaj == "run_step":
@@ -2609,14 +2661,18 @@ async def test_stop_runnera_z_trwajacym_krokiem_nie_zglasza_step_aborted_bo_to_n
                 await czekaj_na_warunek(
                     lambda: any(z["kind"] == "step_started" for z in zdarzenia),
                     LIMIT_ANULOWANIA_S, "start kroku w silniku")
-            assert RUN_ID in runner._runy           # krok trwa, zadanie runu zyje
-            await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
-            assert runner._runy == {}               # zadanie runu skonczylo sie przed powrotem stop()
+            assert RUN_ID in runner._runy                   # krok trwa i nie skonczy sie sam
+
+            strumien.wyslij({"type": "ping", "req_id": "z-w-trakcie",
+                             "nadano_o": time.time(), "wazne_s": 15.0})
+            await czekaj_na_warunek(
+                lambda: odpowiedzi, LIMIT_ANULOWANIA_S, "odpowiedz na zapytanie w trakcie kroku")
+
+            assert odpowiedzi == [{"req_id": "z-w-trakcie", "ok": True, "wynik": {"pong": True}}]
+            assert RUN_ID in runner._runy                   # odpowiedz przyszla, a krok dalej trwa
+            assert not {z["kind"] for z in zdarzenia} & RODZAJE_KONCA
     finally:
         await czekaj(runner.stop(), LIMIT_ANULOWANIA_S, "stop() runnera")
-
-    assert _step_aborted(zdarzenia) == []
-    assert not {z["kind"] for z in zdarzenia} & RODZAJE_KONCA
 
 
 async def test_dwanascie_krokow_w_toku_jednego_runu_dostaje_step_aborted_po_kolei_posortowane(
