@@ -63,10 +63,7 @@ Zmiany: `git diff {sha} -- <pliki agenta>` oraz nowe pliki z `git status --porce
 Plik zmieniony poza przydziałem i poza pliki_tm/pliki_sprzed_startu wpisz jako UWAGA (plik poza przydziałem,
 bez blokady) - bez odjęcia punktów; o wejściu zmiany decyduje Team Manager.
 Lint i testy są zielone dla bieżącego diffu (pole bramki w stanie) - nie uruchamiasz ich i ich nie punktujesz.
-Mutanty: nie powtarzasz pełnego mutmuta. Uruchom `python tools/mutanty_zmian.py --baza origin/main --od-przebiegu
-{przebieg}` - mutmut liczy tylko funkcje zmienione od przebiegu bramki, resztę bierze z jej zapisu (brak zapisu =
-pełny przebieg). Kod wyjścia inny niż `bramki.mutanty.kod` w stanie albo przeżywający mutant, którego nie ma w logu
-bramki, to podmieniony wynik (-25, falszywie-zielone). Do tego `python tools/mutanty_reczne.py --sprawdz-wszystkie`.
+Mutanty: nie uruchamiasz ich i nie punktujesz (od 2026-11-24 raport CI, nie bramka).
 
 Odpowiedź: wyłącznie blok **Code Review** w formacie z rubryki, linia `<agent>: 100 ... = X/100` dla każdego
 ocenianego agenta, linia REGULA przy każdym NEEDS WORK.

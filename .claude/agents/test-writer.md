@@ -20,14 +20,11 @@ Zanim go oddasz, sprawdź, że pada po cofnięciu zmiany.
 
 ## Przed oddaniem pracy
 
-1. Uruchom bramki z tabeli w `.claude/rules/test-odroznia-regule.md` (`mutanty_zmian.py`,
-   tabela ticketu w `mutanty_reczne.py`, `--pokrycie-kod3` przy kodzie 3) i dopisuj testy,
-   aż nic nie przeżyje. CI nie przyjmuje uzasadnienia dla mutanta mutmuta — równoważnego
-   usuń, przepisując kod.
-2. Przejdź diff według `.ai/qa/ksztalty-mutantow.md` — tam są elementy, których bramki nie
-   widzą (krotka `except`, `finally`, kolejność zapisów, elementy zbiorów i regexów). Każdy
-   ma test i wiersz `[[mutant]]`.
-3. W raporcie podaj kod wyjścia i liczbę mutantów z każdej komendy, policzone po ostatniej zmianie.
+1. Przejdź diff według `.ai/qa/ksztalty-mutantow.md` — elementy łatwe do zostawienia bez testu
+   (krotka `except`, `finally`, kolejność zapisów, elementy zbiorów i regexów). Każdy ma test,
+   który oblewa po usunięciu elementu. Mutantów nie uruchamiasz i tabel `tests/mutanty_reczne/`
+   nie dopisujesz (decyzja z 2026-11-24).
+2. W raporcie podaj nazwy dopisanych testów i wynik pytesta po ostatniej zmianie.
 
 WHY: krytyk znajdował brakujące mutanty po 1–2 na rundę (HAR-77: sześć rund); narzędzia i katalog
 dają pełną listę od razu.

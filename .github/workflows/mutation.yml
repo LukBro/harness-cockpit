@@ -175,39 +175,6 @@ jobs:
 
       - run: pip install -e ".[dev]"
 
-      # HAR-225: KAZDA tabela tests/mutanty_reczne/*.toml jest sprawdzana na kazdym PR, nie tylko
-      # tabele zmienione w PR (krok `mutanty reczne` wykonuje mutacje tylko dla zmienionych).
-      # Inaczej zmiana kodu albo nazwy testu w jednym tickecie psuje tabele innych po cichu, a
-      # czerwono robi sie dopiero w PR, ktory tej tabeli dotknie. Sprawdzenie nie naklada mutacji
-      # i niczego nie uruchamia poza kolekcja testow, wiec trwa sekundy. Celowo bez `if`, bez
-      # `git diff` i bez wyjsc kroku `front`. Kod 0 to jedyny zielony wynik: kazdy inny kod
-      # (bledy wierszy, brak tabel, zero wierszy, blad kolekcji) oblewa krok.
-      - name: sprawdzenie tabel mutantów ręcznych
-        run: |
-          mkdir -p mutants
-          kod=0
-          python3 tools/mutanty_reczne.py --sprawdz-wszystkie > mutants/tabele-reczne.txt 2> mutants/tabele-reczne.err || kod=$?
-          {
-            echo "## Tabele mutantów ręcznych"
-            echo
-            case "$kod" in
-              0)
-                cat mutants/tabele-reczne.txt
-                ;;
-              *)
-                echo "Zepsute wiersze albo błąd narzędzia (kod $kod, krok jest czerwony):"
-                echo
-                echo '```'
-                cat mutants/tabele-reczne.err
-                echo '```'
-                ;;
-            esac
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$kod" != "0" ]; then
-            echo "::error::sprawdzenie tabel mutantów ręcznych zakończyło się kodem $kod: $(tr '\n' ' ' < mutants/tabele-reczne.err)"
-            exit 1
-          fi
-
       # Tylko odczyt: cache zapisywal mutation-main (przed shardami). Restore po checkoucie, wiec zrodla maja
       # nowszy mtime niz kopie w mutants/ (mutmut generuje je od nowa, hashe decyduja o wynikach).
       # Bez golego prefiksu `mutmut-v1-`: kopia testow w mutants/ tylko przybywa, wiec cache
@@ -234,67 +201,6 @@ jobs:
         run: |
           python3 tools/statystyki_mutmuta.py scal --katalog-dowodow dowody
 
-      # HAR-156: reczny mutant w web/ albo sprawdzany testem e2e potrzebuje zbudowanego frontu,
-      # Chromium i prawdziwego Postgresa; wynik ma zalezec od kodu, nie od srodowiska. Krok
-      # wykrycia pyta o to tabele zmienione w PR (to samo zapytanie co w kroku `mutanty reczne`),
-      # a Node i przegladarka wykonuja sie tylko dla front=1. PR bez takich wierszy ich nie
-      # instaluje. Baza zalezy od osobnego wyjscia tabele=1 (HAR-221): dostaje ja kazdy PR
-      # ze zmieniona tabela, nie tylko z wierszami frontu. Blad wykrycia (zla tabela) oblewa krok.
-      - name: front dla mutantów ręcznych
-        id: front
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          git fetch origin "$BASE_REF"
-          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
-          if [ -z "$tabele" ]; then
-            echo "front=0" >> "$GITHUB_OUTPUT"
-            echo "tabele=0" >> "$GITHUB_OUTPUT"
-          else
-            # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
-            python3 tools/mutanty_reczne.py --czy-front $tabele >> "$GITHUB_OUTPUT"
-            # Dopiero po udanym wykryciu: pod `bash -e` blad skryptu konczy krok, zanim tabele=1 trafi do wyjscia.
-            echo "tabele=1" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-node@v7
-        if: steps.front.outputs.front == '1'
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: przeglądarka dla mutantów ręcznych
-        if: steps.front.outputs.front == '1'
-        run: |
-          playwright install --with-deps chromium
-
-      # Baza dla testow e2e i testow bazy (HAR-221): wiersz tabeli wskazujacy test bazy, np.
-      # migracje, bez bazy jest pomijany i konczy sie kodem 2, wiec nie wolno jej wiazac z front=1.
-      # Kontener z healthcheckiem, czekamy az bedzie zdrowy. Brak zdrowia
-      # to czerwony krok, a adres bazy trafia do wyjscia kroku dopiero po sukcesie. Adres idzie
-      # jako wyjscie kroku, nie do srodowiska calego joba: dostaje go tylko krok `mutanty reczne`.
-      # Srodowisko joba trafiloby tez do mutmuta i testy `baza` biegly pod nim rownolegle na
-      # wspolnej bazie, a wynik mutmuta zalezalby od tego, czy PR ma wiersze frontu.
-      - name: PostgreSQL dla mutantów ręcznych
-        id: postgres
-        if: steps.front.outputs.tabele == '1'
-        run: |
-          docker run -d --name postgres-mutanty -e POSTGRES_USER=cockpit -e POSTGRES_PASSWORD=cockpit -e POSTGRES_DB=cockpit_test -p 5432:5432 --health-cmd "pg_isready -U cockpit -d cockpit_test" --health-interval 5s --health-timeout 5s --health-retries 10 postgres:16
-          zdrowa=0
-          for proba in $(seq 1 60); do
-            if status="$(docker inspect -f '{{.State.Health.Status}}' postgres-mutanty)" && [ "$status" = "healthy" ]; then
-              zdrowa=1
-              break
-            fi
-            sleep 2
-          done
-          if [ "$zdrowa" != "1" ]; then
-            echo "::error::PostgreSQL nie stal sie zdrowy w 120 s - testy e2e nie maja bazy, nic nie zmierzono"
-            exit 1
-          fi
-          echo "adres=postgresql+asyncpg://cockpit:cockpit@localhost:5432/cockpit_test" >> "$GITHUB_OUTPUT"
-
       - uses: actions/download-artifact@v4
         with:
           pattern: zmiany-*
@@ -310,15 +216,14 @@ jobs:
           command -v mutmut >/dev/null || { echo "::error::narzedzie mutacyjne (mutmut) nie jest zainstalowane na runnerze - nic nie zmierzono, check nie moze przejsc"; exit 1; }
           git fetch origin "$BASE_REF"
           mkdir -p mutants
-          # Kod wyjscia narzedzia: 0 = czysto, 1 = przezywajace mutanty (czerwony krok),
-          # 3 = zmiany poza zasiegiem mutmuta (HAR-144: zielony krok, lista do recznego
-          # sprawdzenia w podsumowaniu), inny = blad narzedzia (czerwony krok).
+          # 2026-11-24 wlasciciel: mutanty to raport, nie bramka (0 prawdziwych bledow w 12.11-24.11).
+          # Kod wyjscia narzedzia: 0 = czysto, 1 = przezywajace mutanty (ostrzezenie, zielony krok),
+          # 3 = zmiany poza zasiegiem mutmuta (ostrzezenie), inny = blad narzedzia (czerwony krok:
+          # zepsute narzedzie to brak raportu, nie czysto).
           # Przechwytujemy go do zmiennej, zeby trafil do `case` ponizej, a nie zostal polkniety.
           kod=0
           # Statusy mutantow z shardow `mutation-zmiany`; brak dowodu ktoregokolwiek shardu to kod 2.
           python3 tools/mutanty_zmian.py --baza "origin/$BASE_REF" --z-shardow zmiany --liczba-shardow "$LICZBA_SHARDOW_ZMIAN" > mutants/mutanty-zmian.txt 2> mutants/mutanty-zmian.err || kod=$?
-          # Krok `mutanty reczne` czyta ten kod: bez pliku nie wiadomo, czy mutmut pokryl zmiane.
-          echo "$kod" > mutants/mutanty-zmian.kod
           {
             echo "## Mutanty zmienionych funkcji"
             echo
@@ -327,7 +232,7 @@ jobs:
                 echo "czysto - brak przezywajacych mutantow albo brak zmienionych funkcji"
                 ;;
               1)
-                echo "Przezywajace mutanty zmienionych funkcji (bramka - krok jest czerwony):"
+                echo "Przezywajace mutanty zmienionych funkcji (raport, nie blokuje merge):"
                 echo
                 echo '```'
                 cat mutants/mutanty-zmian.txt
@@ -336,7 +241,7 @@ jobs:
               3)
                 echo "### bez mutantów — sprawdź ręcznie"
                 echo
-                echo "Zmiany poza zasięgiem mutmuta - wymagają ręcznego mutanta i testu (krok jest zielony):"
+                echo "Zmiany poza zasięgiem mutmuta (raport, nie blokuje merge):"
                 echo
                 echo '```'
                 cat mutants/mutanty-zmian.txt
@@ -355,207 +260,16 @@ jobs:
             0)
               ;;
             1)
-              echo "::error::przezywajace mutanty zmienionych funkcji - lista w podsumowaniu zadania i w artefakcie mutation-report"
-              exit 1
+              echo "::warning::przezywajace mutanty zmienionych funkcji - lista w podsumowaniu zadania i w artefakcie mutation-report"
               ;;
             3)
-              echo "::warning::zmiany poza zasiegiem mutmuta - lista w podsumowaniu zadania; dopisz reczny mutant i test"
+              echo "::warning::zmiany poza zasiegiem mutmuta - lista w podsumowaniu zadania"
               ;;
             *)
               echo "::error::mutanty_zmian.py zakonczyl sie bledem (kod $kod): $(tr '\n' ' ' < mutants/mutanty-zmian.err)"
               exit 1
               ;;
           esac
-
-      # HAR-150: zmiany, ktorych mutmut nie mutuje (web/, tools/, cicd/ albo kod 3 narzedzia
-      # mutantow zmian), wymagaja tabeli tests/mutanty_reczne/<ticket>.toml zmienionej w PR.
-      # Brak tabeli to brak dowodu, wiec czerwony krok. Tabela zmieniona w PR jest wykonywana
-      # niezaleznie od zasiegu: jej czerwony wynik nie moze zostac zignorowany.
-      # Adres bazy testowej (HAR-156) tylko tutaj; gdy krok bazy byl pominiety, wartosc jest pusta
-      # i testy traktuja ja jak brak bazy.
-      - name: mutanty ręczne
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          COCKPIT_TEST_DATABASE_URL: ${{ steps.postgres.outputs.adres }}
-        run: |
-          if [ ! -f mutants/mutanty-zmian.kod ]; then
-            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
-            exit 1
-          fi
-          kod_zmian="$(cat mutants/mutanty-zmian.kod)"
-          zmiany="$(git diff --name-only --no-renames "origin/$BASE_REF...HEAD")"
-          # Tylko istniejace pliki: tabela usunieta w PR nie jest dowodem.
-          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
-          poza_zasiegiem=0
-          if [ "$kod_zmian" = "3" ]; then
-            poza_zasiegiem=1
-          fi
-          if printf '%s\n' "$zmiany" | grep -qE '^(web|tools|cicd)/'; then
-            poza_zasiegiem=1
-          fi
-          if [ -z "$tabele" ]; then
-            if [ "$poza_zasiegiem" = "1" ]; then
-              {
-                echo "## Mutanty ręczne"
-                echo
-                echo "brak dowodu: zmiana poza zasięgiem mutmuta bez tabeli tests/mutanty_reczne/<ticket>.toml"
-              } >> "$GITHUB_STEP_SUMMARY"
-              echo "::error::brak dowodu: zmiana poza zasiegiem mutmuta (web/, tools/, cicd/ albo kod 3) wymaga tabeli tests/mutanty_reczne/<ticket>.toml - .claude/rules/test-odroznia-regule.md"
-              exit 1
-            fi
-            {
-              echo "## Mutanty ręczne"
-              echo
-              echo "nie dotyczy - zmiany w zasięgu mutmuta"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
-          kod=0
-          python3 tools/mutanty_reczne.py $tabele > mutants/mutanty-reczne.txt 2> mutants/mutanty-reczne.err || kod=$?
-          {
-            echo "## Mutanty ręczne"
-            echo
-            case "$kod" in
-              0)
-                echo "wszystkie ręczne mutanty zabite"
-                ;;
-              1)
-                echo "Przeżywające ręczne mutanty (krok jest czerwony):"
-                echo
-                echo '```'
-                cat mutants/mutanty-reczne.txt
-                echo '```'
-                ;;
-              *)
-                echo "błąd narzędzia (kod $kod):"
-                echo
-                echo '```'
-                cat mutants/mutanty-reczne.err
-                echo '```'
-                ;;
-            esac
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$kod" != "0" ]; then
-            echo "::error::mutanty_reczne.py zakonczyl sie kodem $kod: $(tr '\n' ' ' < mutants/mutanty-reczne.err)"
-            exit 1
-          fi
-
-      # HAR-228: kazda linia z kodu 3 (`bez mutantów — sprawdź ręcznie`) ma wiersz [[mutant]]
-      # albo [[rownowazny]] w tabeli zmienionej w PR. Sama obecnosc tabeli (krok `mutanty ręczne`)
-      # nie dowodzi, ze pokrywa wlasnie te linie. Brak pliku z kodem to brak dowodu; kod zmian
-      # inny niz 3 to nie dotyczy (lista istnieje tylko dla kodu 3). Kod narzedzia: 0 zielony,
-      # 1 brak dowodu, kazdy inny to blad narzedzia - czerwony krok.
-      - name: pokrycie linii bez mutantów
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ ! -f mutants/mutanty-zmian.kod ]; then
-            {
-              echo "## Pokrycie linii bez mutantów"
-              echo
-              echo "brak dowodu: nie ma mutants/mutanty-zmian.kod"
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::brak dowodu: nie ma mutants/mutanty-zmian.kod - nie wiadomo, czy mutmut pokryl zmiany"
-            exit 1
-          fi
-          kod_zmian="$(cat mutants/mutanty-zmian.kod)"
-          if [ "$kod_zmian" != "3" ]; then
-            {
-              echo "## Pokrycie linii bez mutantów"
-              echo
-              echo "nie dotyczy - mutanty_zmian.py zakończył się kodem $kod_zmian"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # Pomijamy tabele usuniete w PR (--diff-filter=d): usunieta nie jest dowodem.
-          tabele="$(git diff --name-only --no-renames --diff-filter=d "origin/$BASE_REF...HEAD" -- 'tests/mutanty_reczne/*.toml')"
-          # Sciezki tabel nie zawieraja bialych znakow (wzorzec tests/mutanty_reczne/*.toml).
-          kod=0
-          python3 tools/mutanty_reczne.py --pokrycie-kod3 mutants/mutanty-zmian.txt $tabele > mutants/pokrycie-kod3.txt 2> mutants/pokrycie-kod3.err || kod=$?
-          {
-            echo "## Pokrycie linii bez mutantów"
-            echo
-            case "$kod" in
-              0)
-                echo "wszystkie linie bez mutantów mają wiersz albo uzasadnienie"
-                ;;
-              1)
-                echo "brak dowodu — linie bez wiersza [[mutant]] i bez [[rownowazny]]:"
-                echo
-                echo '```'
-                cat mutants/pokrycie-kod3.txt
-                echo '```'
-                ;;
-              *)
-                echo "błąd narzędzia (kod $kod):"
-                echo
-                echo '```'
-                cat mutants/pokrycie-kod3.err
-                echo '```'
-                ;;
-            esac
-          } >> "$GITHUB_STEP_SUMMARY"
-          case "$kod" in
-            0)
-              ;;
-            1)
-              echo "::error::brak dowodu: linie bez wiersza tabeli ręcznych mutantów: $(paste -sd' ' mutants/pokrycie-kod3.txt)"
-              exit 1
-              ;;
-            *)
-              echo "::error::błąd narzędzia: mutanty_reczne.py --pokrycie-kod3 zakończył się kodem $kod: $(paste -sd' ' mutants/pokrycie-kod3.err)"
-              exit 1
-              ;;
-          esac
-
-      # HAR-241: kształty, których mutmut nie generuje (element krotki `except`, instrukcja,
-      # kolejność, element zbioru/krotki/mapy, `sorted`/`.strip()`, element wyrażenia regularnego).
-      # Kod narzędzia: 0 zielony (`zbadano N` albo `brak zmienionych funkcji`), 1 przeżywający
-      # mutant, 3 miejsca do ręcznego sprawdzenia (`plik:linia: sprawdz recznie`), każdy inny
-      # to błąd narzędzia (np. zero zebranych testów) - czerwony krok.
-      # Stoi po kroku pokrycia, żeby nie rozdzielać kroków czytających kod mutantów zmian.
-      - name: mutanty uzupełniające
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          mkdir -p mutants
-          kod=0
-          python3 tools/mutanty_uzupelniajace.py --baza "origin/$BASE_REF" > mutants/mutanty-uzupelniajace.txt 2> mutants/mutanty-uzupelniajace.err || kod=$?
-          {
-            echo "## Mutanty uzupełniające"
-            echo
-            case "$kod" in
-              0)
-                cat mutants/mutanty-uzupelniajace.txt
-                ;;
-              1)
-                echo "Przeżywające mutanty uzupełniające (krok jest czerwony):"
-                echo
-                echo '```'
-                cat mutants/mutanty-uzupelniajace.txt
-                echo '```'
-                ;;
-              3)
-                echo "Miejsca do ręcznego sprawdzenia (bez dowodu, krok jest czerwony):"
-                echo
-                echo '```'
-                cat mutants/mutanty-uzupelniajace.txt
-                echo '```'
-                ;;
-              *)
-                echo "błąd narzędzia (kod $kod):"
-                echo
-                echo '```'
-                cat mutants/mutanty-uzupelniajace.err
-                echo '```'
-                ;;
-            esac
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$kod" != "0" ]; then
-            echo "::error::mutanty_uzupelniajace.py zakończył się kodem $kod: $(tr '\n' ' ' < mutants/mutanty-uzupelniajace.err) $(tr '\n' ' ' < mutants/mutanty-uzupelniajace.txt)"
-            exit 1
-          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -564,14 +278,6 @@ jobs:
           path: |
             mutants/mutanty-zmian.txt
             mutants/mutanty-zmian.err
-            mutants/mutanty-reczne.txt
-            mutants/mutanty-reczne.err
-            mutants/tabele-reczne.txt
-            mutants/tabele-reczne.err
-            mutants/pokrycie-kod3.txt
-            mutants/pokrycie-kod3.err
-            mutants/mutanty-uzupelniajace.txt
-            mutants/mutanty-uzupelniajace.err
 
   mutation-main-shard:
     if: github.event_name == 'push'

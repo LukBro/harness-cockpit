@@ -16,9 +16,8 @@ Skrypt daje jeden werdykt (kod wyjścia) i krótkie wyjście, które wklejasz do
 | Moment | Skrypt | Werdykt |
 | -- | -- | -- |
 | Testy w trakcie pracy (wąskie i pełne) | `python tools/testy.py <argumenty pytesta>` | kod pytesta; **2** = zawieszenie (po 20 min bez postępu, zmiana: `--bez-postepu SEKUNDY`), stdout: `zawieszenie: <node id>` |
-| Przed review (pełne testy, mutanty zmian) | `bash tools/testy_pelne.sh`, potem `python tools/mutanty_zmian.py` (baza: `origin/main`) | kody jak w `test-odroznia-regule`: 0 czysto, 1 przeżywające, 2 błąd narzędzia, 3 sprawdź ręcznie |
-| Tabele ręcznych mutantów (po zmianie kodu) | `python tools/mutanty_reczne.py --sprawdz-wszystkie`, swoja tabela: `python tools/mutanty_reczne.py tests/mutanty_reczne/<ticket>.toml` | 0 / 1 przeżywające / 2 błąd |
-| Po `git merge origin/main` | `bash tools/po_merge_main.sh` | ostatnia linia `PO-MERGE: ok` albo `PO-MERGE: blad <etap>` (`konflikt`, `alembic`, `mutanty`, `testy`); kod 0 / 1 / 2 |
+| Przed review (pełne testy) | `bash tools/testy_pelne.sh` | 0 zielono, inny kod czerwono |
+| Po `git merge origin/main` | `bash tools/po_merge_main.sh` | ostatnia linia `PO-MERGE: ok` albo `PO-MERGE: blad <etap>` (`konflikt`, `alembic`, `testy`); kod 0 / 1 / 2 |
 | Raport z liczbami | `python tools/liczby_raportu.py --pliki "<lista z sekcji Pliki dotykane>"` | markdown do wklejenia: wiersze `[[mutant]]` i `[[rownowazny]]`, nowe i usunięte testy, cudze tabele i pliki spoza listy z dopiskiem `wymaga STOP:` |
 | Oddanie PR | `bash tools/oddaj_pr.sh --tytul "<tytuł>" --tresc <plik z opisem PR>` | ostatnia linia `ODDAJ-PR: ok <url>` albo `ODDAJ-PR: odmowa <powód>`; ścieżka wrażliwa w diffie: PR powstaje, skrypt pisze `merge reczny` |
 
