@@ -85,11 +85,29 @@ async def kroki_runu(s: AsyncSession, run: Run) -> list[StepRun]:
     )
 
 
+async def _ostatnie_proby(s: AsyncSession, run: Run) -> dict[tuple[str, str], StepRun]:
+    """Ostatnia proba kazdej pary (step_id, agent_id); pozniejsza zastepuje wczesniejsza."""
+    ostatnie: dict[tuple[str, str], StepRun] = {}
+    for w in await kroki_runu(s, run):   # rosnaco po probie
+        ostatnie[(w.step_id, w.agent_id)] = w
+    return ostatnie
+
+
 async def nieudane_kroki(s: AsyncSession, run: Run) -> list[str]:
     """Posortowane `step_id` krokow, ktorych ostatnia proba (ktoregos agenta) jest `failed`."""
-    ostatnie: dict[tuple[str, str], StepRun] = {}
-    for w in await kroki_runu(s, run):   # rosnaco po probie: pozniejsza podmienia wczesniejsza
-        ostatnie[(w.step_id, w.agent_id)] = w
+    ostatnie = await _ostatnie_proby(s, run)
     return sorted({
         krok for (krok, _), w in ostatnie.items() if w.status == StepStatus.failed
     })
+
+
+# Lista dozwolona: kazdy nowy `StepStatus` domyslnie nie jest dowodem ukonczenia.
+# `failed` rozstrzyga `nieudane_kroki` (pierwszenstwo przed brakiem dowodu).
+_STANY_DOWODU = frozenset({StepStatus.finished, StepStatus.skipped, StepStatus.failed})
+
+
+async def brak_dowodu_ukonczenia(s: AsyncSession, run: Run) -> bool:
+    """Brak dowodu ukonczenia (`evidence_required`): run bez zadnego kroku albo z ostatnia
+    proba kroku inna niz `finished`/`skipped`/`failed`. Brak wierszy to brak dowodu."""
+    ostatnie = await _ostatnie_proby(s, run)
+    return not ostatnie or any(w.status not in _STANY_DOWODU for w in ostatnie.values())
