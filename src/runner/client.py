@@ -23,10 +23,12 @@ import httpx
 from pydantic import ValidationError
 
 from cockpit.api.schematy import EventIn
+from cockpit.services.errors import BladDziedziny
 from runner import operacje, silnik
-from runner.bufor import BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
+from runner.bufor import BladBufora, BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
 
+LIMIT_ANULOWANYCH = 1000      # pamietane runy anulowane (ignorowanie spoznionego resume)
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
 
 # Limity czasu polaczen HTTP (HAR-198). Bez nich martwe polaczenie (zerwana siec bez RST)
@@ -42,6 +44,29 @@ OPERACJE_RUNU: Mapping[str, tuple[str, ...]] = MappingProxyType({
     "szkielet": ("echo", "szkielet dziala"),
 })
 POWOD_SPOZA_LISTY = "operacja spoza listy dozwolonych"
+POWOD_BRAK_STEP_ID = "polecenie run_step bez poprawnego step_id"
+POWOD_BUFOR_NIEDOSTEPNY = "bufor zdarzen runnera niedostepny: zapis albo odczyt nie powiodl sie"
+TEKST_ANULOWANIA = "anulowany przez człowieka"
+
+
+# Klucz wiersza kroku w kokpicie bez runu: (step_id, agent_id, attempt); brak agent_id to "",
+# brak attempt to 1 (jak `zastosuj_zdarzenie_kroku`, ktory czyta takze jawne None jako 1), wiec
+# w krotce nigdy None i sorted nie rzuca TypeError.
+TozsamoscKroku = tuple[str, str, int]
+
+
+def _tozsamosc_kroku(zdarzenie: Mapping[str, Any]) -> TozsamoscKroku | None:
+    """Tozsamosc kroku ze zdarzenia silnika; `None` w agent_id i attempt to brak pola (domyslne
+    "" i 1), pole o zlym typie to `None` zamiast tozsamosci (krok nie jest sledzony)."""
+    step_id = zdarzenie.get("step_id")
+    agent_id = zdarzenie.get("agent_id")
+    attempt = zdarzenie.get("attempt")
+    agent_id = "" if agent_id is None else agent_id
+    attempt = 1 if attempt is None else attempt
+    if (not isinstance(step_id, str) or not isinstance(agent_id, str)
+            or not isinstance(attempt, int) or isinstance(attempt, bool)):
+        return None
+    return (step_id, agent_id, attempt)
 
 
 def argv_operacji(cmd: Mapping[str, Any]) -> tuple[str, ...] | None:
@@ -151,9 +176,20 @@ class Runner:
             else _limit_prob_z_srodowiska()
         )
         self._proba_laczenia = 0
+        self._token_odrzucony: TokenOdrzucony | None = None   # 401 w zadaniu runu -> listen()
         self._zapytania: set[asyncio.Task] = set()
-        # runy workflow (HAR-80): osobne zadania, zyja niezaleznie od strumienia polecen
-        self._runy: set[asyncio.Task] = set()
+        # zadania runu (HAR-80, HAR-126): run_workflow, resume i run_step, po `run_id`; zyja
+        # niezaleznie od strumienia polecen, a `cancel_run` anuluje zadanie z tej mapy
+        self._runy: dict[str, asyncio.Task] = {}
+        # runy anulowane przez czlowieka (najnowsze na koncu): spozniony `resume` jest ignorowany
+        self._anulowane: dict[str, None] = {}
+        # zadania anulowane przez `cancel_run` (nie przez stop()): tylko one zglaszaja `step_aborted`
+        self._anulowane_przez_czlowieka: set[asyncio.Task] = set()
+        # kroki trwajace per run (step_started bez konca; run_step od polecenia do konca kroku):
+        # to je zglasza `step_aborted` po anulowaniu, zeby StepRun nie zostal `running`
+        self._kroki_w_toku: dict[str, set[TozsamoscKroku]] = {}
+        # zamykanie checkpointu anulowanego runu (zadania w tle; stop() je odczekuje)
+        self._zamykania: set[asyncio.Task] = set()
         self._zapis_zdarzen = asyncio.Lock()    # jeden zapis do bufora naraz: kolejnosc zdarzen
 
     async def register(self, client: httpx.AsyncClient) -> None:
@@ -342,12 +378,19 @@ class Runner:
                 client, run_id=run_id, step_id=step_id, kind="step_aborted", text=powod)
             return
         started = time.monotonic()
-        proc = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            start_new_session=True,          # wlasna grupa procesow
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,          # wlasna grupa procesow
+            )
+        except OSError as e:
+            # brak programu, brak praw: bez tego run zostalby w `running` bez konca kroku
+            await self._zglos_porazke_kroku(
+                client, run_id, step_id,
+                f"nie mozna uruchomic operacji: {type(e).__name__}")
+            return
         self._procesy.add(proc)
         try:
             if self._zatrzymany.is_set():
@@ -387,6 +430,29 @@ class Runner:
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",
                 text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
             )
+        except BladBufora:
+            # bufor zepsuty z innej przyczyny niz brak miejsca (prawa, limit, uszkodzenie)
+            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
+
+    async def _zglos_porazke_kroku(
+        self, client: httpx.AsyncClient, run_id: str, step_id: str, tekst: str,
+    ) -> None:
+        """`step_failed` przez bufor i po jego przyjeciu `run_finished` (HAR-78). Gdy bufor
+        nie dziala (takze brak miejsca), kokpit dostaje `step_aborted` poza buforem."""
+        try:
+            przyjety = await self.send_event(
+                client, run_id=run_id, step_id=step_id, kind="step_failed", text=tekst,
+                cost_usd=None, cost_source="unavailable")
+            await self._zglos_koniec_runu(client, run_id, step_id, "step_failed", przyjety)
+        except BladBufora:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
+            )
 
     async def _odpowiedz_na_zapytanie(self, client: httpx.AsyncClient, cmd: dict) -> None:
         """Wykonuje operacje i odsyla wynik POST-em. Nigdy token, naglowki ani tresc odpowiedzi w logu."""
@@ -418,12 +484,167 @@ class Runner:
         if zadania:
             await asyncio.wait(zadania)     # odczekanie, zeby po powrocie nie zostaly zadania
 
+    async def _pilnuj_zadania(
+        self, run_id: str, cmd: dict, korutyna: Awaitable[None],
+    ) -> None:
+        """Wspolny punkt dla `run_step`, `run_workflow` i `resume`: wyjatek zadania nie moze
+        zostawic runu w `running` bez konca kroku i runu (evidence_required).
+        `CancelledError` przechodzi bez konca kroku i runu (stan `aborted` zapisal kokpit); po
+        `cancel_run` (nie po stop()) trwajace kroki dostaja `step_aborted`, a anulowanie leci dalej.
+        `TokenOdrzucony` idzie do petli nasluchu (kod 2 z komunikatem o nowym tokenie)."""
+        try:
+            await korutyna
+        except asyncio.CancelledError:
+            if asyncio.current_task() in self._anulowane_przez_czlowieka:
+                await self._zglos_anulowanie_krokow(run_id)
+            raise
+        except TokenOdrzucony as e:
+            self._token_odrzucony = e
+            zadanie = self._zadanie
+            if zadanie is not None and not zadanie.done():
+                zadanie.cancel()            # listen() podnosi zapamietany wyjatek
+        except Exception as e:  # noqa: BLE001
+            # WHY szeroki: granica zadania w tle - kazdy inny wyjatek (kod silnika, biblioteka)
+            # konczy sie tak samo: zdarzeniem konca i logiem; wlasciwego typu nie znamy z gory.
+            step_id = cmd.get("step_id")
+            nazwa_typu = type(e).__name__       # bez tresci i tracebacku: moga niesc sekret
+            try:
+                async with self._klient_http() as client:
+                    await self._zglos_porazke_kroku(
+                        client, run_id, step_id if isinstance(step_id, str) and step_id else "run",
+                        f"zadanie runu zakonczone bledem: {nazwa_typu}")
+            except NiewaznePoleZdarzenia:
+                pass                            # run_id/step_id lamie limity: zostaje log
+            except TokenOdrzucony as t:
+                self._token_odrzucony = t
+                if self._zadanie is not None and not self._zadanie.done():
+                    self._zadanie.cancel()
+            print(f"zadanie runu {run_id[:36]!r} zakonczone bledem: {nazwa_typu}",
+                  file=sys.stderr)
+
+    async def _zglos_anulowanie_krokow(self, run_id: str) -> None:
+        """`step_aborted` dla kazdego trwajacego kroku anulowanego runu, w nowym kliencie HTTP
+        (klient zadania jest juz zamkniety) i poza buforem: jedna proba, bez ponawiania, zeby
+        anulowanie sie nie zawieszalo. Bez `step_finished`, `step_failed` i `run_finished`."""
+        kroki = sorted(self._kroki_w_toku.get(run_id, ()))
+        if not kroki:
+            return
+        try:
+            async with self._klient_http() as client:
+                for step_id, agent_id, attempt in kroki:
+                    try:
+                        # ta sama tozsamosc co `step_started` (wiersz kroku: run, krok, agent,
+                        # proba): inaczej kokpit zalozylby drugi wiersz, a pierwszy zostalby `running`
+                        await self._wyslij_bezposrednio(
+                            client, run_id=run_id, step_id=step_id, agent_id=agent_id,
+                            attempt=attempt, kind="step_aborted", text=TEKST_ANULOWANIA)
+                    except NiewaznePoleZdarzenia:
+                        print(f"step_aborted niewyslany: run {run_id[:36]!r} - pola ponad limit",
+                              file=sys.stderr)
+        except TokenOdrzucony as t:
+            self._token_odrzucony = t
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()
+
+    def _sledz_start_kroku(self, run_id: object, zdarzenie: Mapping[str, Any]) -> None:
+        """Przed wyslaniem `step_started`: krok trwa od tej chwili (anulowanie w trakcie wysylki
+        tez ma go zglosic). Run bez poprawnego `run_id` nie jest sledzony."""
+        tozsamosc = _tozsamosc_kroku(zdarzenie)
+        if (zdarzenie.get("kind") == "step_started" and isinstance(run_id, str)
+                and tozsamosc is not None):
+            self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)
+
+    def _sledz_koniec_kroku(self, run_id: object, zdarzenie: Mapping[str, Any]) -> None:
+        """Po PRZYJECIU konca kroku przez kokpit (wolajacy wola to tylko, gdy `send_event` dal
+        True): krok (ta sama tozsamosc co przy starcie) nie jest w toku. Odrzucony koniec kroku
+        zostawia go w `_kroki_w_toku`, wiec anulowanie zglosi `step_aborted`."""
+        tozsamosc = _tozsamosc_kroku(zdarzenie)
+        if (zdarzenie.get("kind") in ("step_finished", "step_failed") and isinstance(run_id, str)
+                and tozsamosc is not None):
+            self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
+
+    def _zarejestruj_run(self, run_id: str, cmd: dict, korutyna: Awaitable[None]) -> None:
+        """Zadanie runu w mapie `run_id -> zadanie`; po jego koncu wpis znika, o ile nie
+        zajelo go nowsze zadanie tego runu (np. `resume` po `run_workflow`)."""
+        zadanie = asyncio.create_task(self._pilnuj_zadania(run_id, cmd, korutyna))
+        self._runy[run_id] = zadanie
+
+        def po_zakonczeniu(z: asyncio.Task) -> None:
+            self._anulowane_przez_czlowieka.discard(z)
+            if self._runy.get(run_id) is z:
+                del self._runy[run_id]
+                self._kroki_w_toku.pop(run_id, None)
+            if not z.cancelled() and z.exception() is not None:
+                # bez tego wyjatek zadania ginie bez sladu; nazwa typu, bez tresci (moze niesc sekret)
+                print(f"zadanie runu {run_id[:36]!r} zakonczone bledem: "
+                      f"{type(z.exception()).__name__}", file=sys.stderr)
+
+        zadanie.add_done_callback(po_zakonczeniu)
+
+    def _anuluj_run(self, cmd: dict) -> None:
+        """`cancel_run`: anuluje zadanie runu (`CancelledError` -> `_zakoncz_krok` zabija grupe
+        procesow), potem trwajace kroki dostaja `step_aborted` (`_pilnuj_zadania`). Runner nie
+        zglasza konca kroku ani runu: stan `aborted` zapisal kokpit. Checkpoint runu zostaje
+        zamkniety (bez `waiting_on`), takze dla runu bez zadania (`waiting`): inaczej `resume`
+        po restarcie runnera wznowilby anulowany run. Run zakonczony albo nieznany to nie blad."""
+        run_id = cmd.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
+            print(f"cancel_run odrzucone: niepoprawne polecenie {cmd!r}", file=sys.stderr)
+            return
+        # mutant "" jest rownowazny (slownik jest uporzadkowanym zbiorem, czytane sa tylko klucze)
+        self._anulowane[run_id] = None  # pragma: no mutate
+        while len(self._anulowane) > LIMIT_ANULOWANYCH:
+            del self._anulowane[next(iter(self._anulowane))]
+        zadanie = self._runy.get(run_id)
+        if zadanie is None:
+            print(f"cancel_run: run {run_id[:36]!r} nie ma zadania u runnera", file=sys.stderr)
+        else:
+            self._anulowane_przez_czlowieka.add(zadanie)
+            zadanie.cancel()
+        zamykanie = asyncio.create_task(self._zamknij_checkpoint(run_id, zadanie))
+        self._zamykania.add(zamykanie)
+        zamykanie.add_done_callback(self._zamykania.discard)
+
+    async def _zamknij_checkpoint(self, run_id: str, zadanie: asyncio.Task | None) -> None:
+        """Checkpoint anulowanego runu bez `waiting_on`, pod ta sama blokada co `wznow_run`.
+        Zadanie runu dostaje czas na koniec; zapisy checkpointu silnika koncza sie przed wyjsciem
+        anulowania z zadania i ida pod ta sama blokada runu (`silnik._zapis_do_konca`,
+        `_zapisz`), wiec zamkniecie ich nie wyprzedzi. Blad dziedziny (zapis, odczyt, katalog runu) to log z typem bledu: anulowanie
+        nie wywraca petli polecen. Brak checkpointu (run nieznany albo zakonczony) to nie blad."""
+        if zadanie is not None:
+            await asyncio.wait([zadanie])
+        try:
+            await silnik.zamknij_checkpoint(run_id)
+        except BladDziedziny as e:
+            print(f"cancel_run: checkpoint runu {run_id[:36]!r} niezamkniety: {type(e).__name__}",
+                  file=sys.stderr)
+
+    async def _krok_runu(self, cmd: dict) -> None:
+        """Krok `run_step` w wlasnym kliencie HTTP, jak `_run_workflow`: zamkniecie strumienia
+        polecen nie zrywa klienta kroku. Krok trwa od polecenia do powrotu z `_krok_z_polecenia`;
+        przy `CancelledError` zostaje w `_kroki_w_toku` dla `_zglos_anulowanie_krokow`."""
+        run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
+        if not (isinstance(run_id, str) and run_id and isinstance(step_id, str) and step_id):
+            # zle polecenie: `_krok_z_polecenia` zglosi je sam, nie ma kroku do anulowania
+            async with self._klient_http() as client:
+                await self._krok_z_polecenia(client, cmd)
+            return
+        # `run_command` wysyla zdarzenia kroku bez agent_id i attempt: kokpit czyta je jako ("", 1)
+        tozsamosc = (step_id, "", 1)
+        self._kroki_w_toku.setdefault(run_id, set()).add(tozsamosc)
+        async with self._klient_http() as client:
+            await self._krok_z_polecenia(client, cmd)
+        self._kroki_w_toku.get(run_id, set()).discard(tozsamosc)
+
     async def _anuluj_runy(self) -> None:
-        zadania = list(self._runy)
+        zadania = list(self._runy.values())
         for zadanie in zadania:
             zadanie.cancel()
         if zadania:
             await asyncio.wait(zadania)
+        zamykania = list(self._zamykania)       # krotkie: zamkniecie checkpointu dobiega konca
+        if zamykania:
+            await asyncio.wait(zamykania)
 
     def _klient_http(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -437,8 +658,12 @@ class Runner:
         async with self._klient_http() as client:
 
             async def emit(zdarzenie: dict) -> None:
+                run_id = cmd.get("run_id")
+                self._sledz_start_kroku(run_id, zdarzenie)
                 async with self._zapis_zdarzen:
-                    await self.send_event(client, **zdarzenie)
+                    przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
 
             try:
                 await silnik.wykonaj_run(cmd, emit)
@@ -467,16 +692,16 @@ class Runner:
 
     async def _resume(self, cmd: dict) -> None:
         """Wznowienie runu po decyzji (HAR-173) w wlasnym kliencie HTTP, jak `_run_workflow`."""
-        parametry = self._decyzje_z_polecenia(cmd)
-        if parametry is None:
-            print(f"resume odrzucone: niepoprawne polecenie {cmd!r}", file=sys.stderr)
-            return
-        run_id, step_id, decyzja, powod = parametry
+        # polecenie jest już zwalidowane w `_nasluchuj` (przed rejestracją zadania)
+        run_id, step_id, decyzja, powod = self._decyzje_z_polecenia(cmd)  # type: ignore[misc]
         async with self._klient_http() as client:
 
             async def emit(zdarzenie: dict) -> None:
+                self._sledz_start_kroku(run_id, zdarzenie)
                 async with self._zapis_zdarzen:
-                    await self.send_event(client, **zdarzenie)
+                    przyjete = await self.send_event(client, **zdarzenie)
+                if przyjete:
+                    self._sledz_koniec_kroku(run_id, zdarzenie)
 
             try:
                 await silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)
@@ -550,7 +775,9 @@ class Runner:
                         raise
                     przyczyna = f"http={e.response.status_code}"
                 if self._zatrzymany.is_set():
-                    break
+                    # mutant `return` jest rownowazny: po petli `while` funkcja robi tylko
+                    # `return None`, a w `try` nie ma `finally`
+                    break  # pragma: no mutate
                 sekundy = odczekanie(self._proba_laczenia)
                 print(
                     f"strumien polecen przerwany ({przyczyna}) - lacze ponownie za {sekundy} s",
@@ -559,6 +786,12 @@ class Runner:
                 await self._odczekaj(sekundy)
                 self._proba_laczenia += 1
         except asyncio.CancelledError:
+            if self._token_odrzucony is not None and not self._zatrzymany.is_set():
+                # zadanie runu dostalo 401: sprzatamy kroki i konczymy jak przy 401 w petli
+                token_odrzucony = self._token_odrzucony
+                asyncio.current_task().uncancel()
+                await self.stop()
+                raise token_odrzucony
             if not self._zatrzymany.is_set():
                 raise                       # cudze anulowanie nie jest nasze do polkniecia
             asyncio.current_task().uncancel()
@@ -567,16 +800,27 @@ class Runner:
     async def _krok_z_polecenia(self, client: httpx.AsyncClient, cmd: dict) -> None:
         """Rozwiazuje nazwe operacji na argv z lokalnej listy; polecenia spoza listy
         konczy `step_failed` bez startu procesu, a po jego przyjeciu `run_finished`."""
+        run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
+        if not isinstance(run_id, str) or not run_id:
+            print("polecenie run_step bez poprawnego run_id odrzucone", file=sys.stderr)
+            return                      # nie ma runu, ktory dalo by zakonczyc
+        if not isinstance(step_id, str) or not step_id:
+            # HAR-126: run istnieje, wiec konczymy go zdarzeniami; wartosci step_id nie ma w tekscie
+            try:
+                await self._zglos_porazke_kroku(client, run_id, "run", POWOD_BRAK_STEP_ID)
+            except NiewaznePoleZdarzenia as e:
+                # mutant `client=None` jest rownowazny: tu NiewaznePoleZdarzenia z
+                # `_zglos_porazke_kroku` moze byc tylko run_id ponad 36 znakow (reszta pol
+                # zdarzenia jest stala i poprawna), a wtedy `send_event` w `_zglos_niewazne_pole`
+                # rzuca w `_sprawdz_zdarzenie` przed uzyciem `client`, wiec klient nie jest dotykany
+                await self._zglos_niewazne_pole(client, run_id, e)  # pragma: no mutate
+            return
         argv = argv_operacji(cmd)
         if argv is not None:
             try:
-                await self.run_command(client, cmd["run_id"], cmd["step_id"], list(argv))
+                await self.run_command(client, run_id, step_id, list(argv))
             except NiewaznePoleZdarzenia as e:
-                await self._zglos_niewazne_pole(client, cmd["run_id"], e)
-            return
-        run_id, step_id = cmd.get("run_id"), cmd.get("step_id")
-        if not isinstance(run_id, str) or not isinstance(step_id, str):
-            print("polecenie bez run_id/step_id odrzucone: operacja spoza listy", file=sys.stderr)
+                await self._zglos_niewazne_pole(client, run_id, e)
             return
         try:
             odmowa_przyjeta = await self.send_event(
@@ -589,6 +833,11 @@ class Runner:
             await self._wyslij_bezposrednio(
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",
                 text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+            )
+        except BladBufora:
+            await self._wyslij_bezposrednio(
+                client, run_id=run_id, step_id=step_id, kind="step_aborted",
+                text=POWOD_BUFOR_NIEDOSTEPNY,
             )
         except NiewaznePoleZdarzenia as e:
             await self._zglos_niewazne_pole(client, run_id, e)
@@ -621,16 +870,34 @@ class Runner:
                             print("strumien otwarty", file=sys.stderr)
                             self._proba_laczenia = 0
                         elif cmd.get("type") == "run_step":
-                            await self._krok_z_polecenia(client, cmd)
+                            run_id = cmd.get("run_id")
+                            if isinstance(run_id, str) and run_id:
+                                # osobne zadanie: krok trwa, a polecenie cancel_run ma dojsc;
+                                # brak poprawnego step_id rozstrzyga `_krok_z_polecenia`
+                                self._zarejestruj_run(run_id, cmd, self._krok_runu(cmd))
+                            else:
+                                print("polecenie run_step bez poprawnego run_id odrzucone",
+                                      file=sys.stderr)
                         elif cmd.get("type") == "run_workflow":
                             # osobne zadanie: run trwa dlugo, a strumien czytamy dalej
-                            run = asyncio.create_task(self._run_workflow(cmd))
-                            self._runy.add(run)
-                            run.add_done_callback(self._runy.discard)
+                            run_id = cmd.get("run_id")
+                            if isinstance(run_id, str) and run_id:
+                                self._zarejestruj_run(run_id, cmd, self._run_workflow(cmd))
+                            else:
+                                print("polecenie run_workflow bez poprawnego run_id odrzucone",
+                                      file=sys.stderr)
+                        elif cmd.get("type") == "cancel_run":
+                            self._anuluj_run(cmd)
                         elif cmd.get("type") == "resume":
-                            wznowienie = asyncio.create_task(self._resume(cmd))
-                            self._runy.add(wznowienie)
-                            wznowienie.add_done_callback(self._runy.discard)
+                            run_id = cmd.get("run_id")
+                            if isinstance(run_id, str) and run_id in self._anulowane:
+                                print(f"resume ignorowane: run {run_id[:36]!r} anulowany",
+                                      file=sys.stderr)
+                            elif self._decyzje_z_polecenia(cmd) is None:
+                                print(f"resume odrzucone: niepoprawne polecenie {cmd!r}",
+                                      file=sys.stderr)
+                            else:
+                                self._zarejestruj_run(run_id, cmd, self._resume(cmd))
                         elif "req_id" in cmd:
                             # osobne zadanie: wolna operacja nie wstrzymuje czytania strumienia
                             zadanie = asyncio.create_task(

@@ -134,6 +134,12 @@ class ZdarzeniePrzyjete(BaseModel):
     seq: int
 
 
+class RunAnulowany(BaseModel):
+    reason: str     # po anulowaniu powod jest zawsze ustawiony
+    status: RunStatus
+    run_id: str
+
+
 class ZdarzenieRunu(BaseModel):
     seq: int
     kind: str

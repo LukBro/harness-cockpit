@@ -677,18 +677,23 @@ async def test_brak_miejsca_przy_potwierdzaniu_wyslanego_zdarzenia_tez_przerywa_
     assert sum(1 for z in zdarzenia if z["kind"] == "step_aborted") == 1
 
 
-async def test_inny_blad_bufora_niz_brak_miejsca_przerywa_krok_wyjatkiem_a_nie_przerwaniem_runu(
+async def test_niedzialajacy_bufor_z_innej_przyczyny_niz_brak_miejsca_przerywa_krok_z_powodem_bufora(
     tmp_path, monkeypatch,
 ):
+    # HAR-126: run nie zostaje w `running` bez konca kroku, a kokpit nie dostaje falszywego
+    # "brak miejsca" (ENOSPC): przyczyna to niedostepny bufor, nie pelny dysk
     _podstaw_dysk(monkeypatch, 10_000)
     _awaria_na_plikach_bufora(monkeypatch, "fsync", errno.EACCES)
     transport, zadania = _kokpit()
 
-    with pytest.raises(BladBufora) as wyjatek:
-        await _krok(_runner(), transport, ["sh", "-c", "exit 0"])
+    await _krok(_runner(), transport, ["sh", "-c", "exit 0"])
 
-    assert type(wyjatek.value) is BladBufora
-    assert _zdarzenia(zadania) == []                   # kokpit nie dostal falszywego "brak miejsca"
+    zdarzenia = _zdarzenia(zadania)
+    assert [(z["kind"], z["text"]) for z in zdarzenia] == [
+        ("step_aborted",
+         "bufor zdarzen runnera niedostepny: zapis albo odczyt nie powiodl sie")]
+    assert zdarzenia[0]["text"] != KOMUNIKAT_ENOSPC
+    assert (zdarzenia[0]["run_id"], zdarzenia[0]["step_id"]) == (RUN_ID, STEP_ID)
 
 
 # --- 7. trwajacy proces kroku zatrzymany ---------------------------------------------------------
@@ -709,6 +714,28 @@ async def test_brak_miejsca_przy_zapisie_zdarzen_zatrzymuje_trwajacy_proces_krok
         assert dlugi.returncode is not None            # zabity, nie czeka 30 s
         assert [z["kind"] for z in _zdarzenia(zadania)] == ["step_aborted"]
         assert not runner._zatrzymany.is_set()         # to nie jest stop(): nasluch i heartbeat zyja
+    finally:
+        await zakoncz_proces(dlugi, nazwa="dlugi")
+
+
+async def test_niedzialajacy_bufor_z_innej_przyczyny_niz_brak_miejsca_zatrzymuje_trwajacy_proces_kroku(
+    tmp_path, monkeypatch,
+):
+    # jak przy braku miejsca (wyzej): bez bufora zaden krok nie zapisze zdarzen, wiec proces
+    # innego kroku nie moze zostac sierota, a nasluch zyje
+    _podstaw_dysk(monkeypatch, 10_000)
+    runner = _runner()
+    dlugi = await uruchom_proces("sleep", "30")
+    runner._procesy.add(dlugi)
+    try:
+        _awaria_na_plikach_bufora(monkeypatch, "fsync", errno.EACCES)
+        transport, zadania = _kokpit()
+
+        await _krok(runner, transport, ["sh", "-c", "exit 0"])
+
+        assert dlugi.returncode is not None
+        assert [z["kind"] for z in _zdarzenia(zadania)] == ["step_aborted"]
+        assert not runner._zatrzymany.is_set()
     finally:
         await zakoncz_proces(dlugi, nazwa="dlugi")
 

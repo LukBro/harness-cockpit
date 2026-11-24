@@ -807,7 +807,7 @@ async def test_krok_polecenia_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i
     _asercje_konca_runu(kokpit, tmp_path)
 
 
-async def test_polecenie_spoza_listy_z_pustym_step_id_konczy_run_step_failed_i_run_finished(
+async def test_polecenie_z_pustym_step_id_konczy_run_porazka_kroku_run_z_powodem_braku_step_id(
     tmp_path,
 ):
     kokpit = _Kokpit()
@@ -816,6 +816,23 @@ async def test_polecenie_spoza_listy_z_pustym_step_id_konczy_run_step_failed_i_r
     async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
         await runner._krok_z_polecenia(
             client, {"run_id": "run-1", "step_id": "", "operacja": "nieznana-operacja"})
+
+    zdarzenia = _zdarzenia_z_transportu(kokpit)
+    assert [(z["kind"], z["run_id"], z["step_id"]) for z in zdarzenia] == [
+        ("step_failed", "run-1", "run"), ("run_finished", "run-1", "run")]
+    assert zdarzenia[0]["text"] == "polecenie run_step bez poprawnego step_id"
+    assert Bufor(tmp_path / "bufor").niepotwierdzone() == []
+
+
+async def test_polecenie_spoza_listy_z_za_dlugim_step_id_konczy_run_step_failed_i_run_finished(
+    tmp_path,
+):
+    kokpit = _Kokpit()
+    runner = _runner_z_kokpitem(tmp_path, kokpit)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(kokpit)) as client:
+        await runner._krok_z_polecenia(
+            client, {"run_id": "run-1", "step_id": "s" * 101, "operacja": "nieznana-operacja"})
 
     zdarzenia = _zdarzenia_z_transportu(kokpit)
     assert [(z["kind"], z["run_id"], z["step_id"]) for z in zdarzenia] == [
