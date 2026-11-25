@@ -736,6 +736,7 @@
                   "run_finished",
                   "resume_ignored",
                   "context_manifest",
+                  "ticket_ostrzezenie",
                   "decision",
                   "integrated",
                   "committed",
@@ -1627,6 +1628,20 @@
             ],
             "title": "Project Id"
           },
+          "ticket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TicketRunuZProjektu"
+              },
+              {
+                "$ref": "#/components/schemas/TicketRunuWklejony"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket"
+          },
           "ticket_id": {
             "anyOf": [
               {
@@ -2215,6 +2230,60 @@
           "ostrzezenia"
         ],
         "title": "TicketPobrany",
+        "type": "object"
+      },
+      "TicketRunuWklejony": {
+        "additionalProperties": false,
+        "description": "Ticket wklejony przez czlowieka; runner sklada z niego `ticket.json` bez sieci (HAR-117).",
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "wklejony": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Wklejony",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wklejony"
+        ],
+        "title": "TicketRunuWklejony",
+        "type": "object"
+      },
+      "TicketRunuZProjektu": {
+        "additionalProperties": false,
+        "description": "Ticket do pobrania przez runnera od dostawcy z `project.yaml` projektu (HAR-117).",
+        "properties": {
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "projekt": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Projekt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projekt",
+          "id"
+        ],
+        "title": "TicketRunuZProjektu",
         "type": "object"
       },
       "TokenCsrf": {

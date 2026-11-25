@@ -176,6 +176,7 @@ CZYSTE = {
         "_bledy", "_linia", "_sciezka_decyzji", "_sciezka_decyzji(id_kroku).as_posix",
         "_tekst_bledu", "_zdarzenie", "ma_bledy",
         "_sciezka_raportu", "_blad_identyfikatora",
+        "ostrzezenie_o_opisie",
     ),
     **_grupa(
         "czysta funkcja grafu na danych w pamieci; `ValueError` (cel poza sciezka) tlumaczy "
@@ -230,6 +231,14 @@ _ODCZYT_AGENTOW_BRAMKI = (
     "checkpoint, brak i uszkodzona kopia workflow, brak kroku w checkpoincie i w workflow, "
     "OSError i ValueError z odczytu workflow, zly identyfikator runu)"
 )
+_TICKET_RUNU = (
+    "HAR-117: wywolane tylko dla polecenia z polem `ticket`, a scenariusze tej listy go nie "
+    "niosa. Na prawdziwych funkcjach tests/test_zamrozenie_ticketu.py konczy run `step_failed` + "
+    "`run_finished`: blad dostawcy (BladIntegracji), odpowiedz bez ticketu albo o zlym ksztalcie, "
+    "wklejenie z samych bialych znakow i zapis do zablokowanego katalogu runu. Gałąź innego "
+    "wyjatku dostawcy (tlumaczona na BladTicketu z nazwa typu) nie ma tam jeszcze testu - do "
+    "dopisania w tym pliku przez wlasciciela testu"
+)
 # (granica, funkcja wejsciowa) -> uzasadnienie
 NIEWSTRZYKIWALNE = {
     ("(p.worktree.sciezka / raport).stat", "wykonaj_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
@@ -246,6 +255,8 @@ NIEWSTRZYKIWALNE = {
     ("json.loads", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
     ("json.loads", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
     ("_zapisz_atomowo", "wykonaj_run"): _ZAPIS_RAPORTU,
+    ("ticket_ze_zlecenia", "wykonaj_run"): _TICKET_RUNU,
+    ("zamroz", "wykonaj_run"): _TICKET_RUNU,
     ("emit", "wykonaj_run"): "bledy `emit` (np. BrakMiejsca) opisuje docstring modulu: decyduje o nich wolajacy",
     ("emit", "wznow_run"): "bledy `emit` (np. BrakMiejsca) opisuje docstring modulu: decyduje o nich wolajacy",
     ("_blad_przed_startem", "wykonaj_run"): _OBSLUGA_BLEDU,
