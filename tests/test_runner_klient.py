@@ -1700,7 +1700,7 @@ async def test_cancel_run_anuluje_zadanie_runu_workflow_albo_wznowienia(
 async def test_wznowienie_anulowanego_runu_jest_ignorowane_a_wznowienie_innego_runu_dziala(
     monkeypatch,
 ):
-    async def wznowienie(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie(run_id, step_id, decyzja, emit, powod=None, **kw):
         await emit({"run_id": run_id, "step_id": step_id, "kind": "step_started"})
 
     monkeypatch.setattr(runner_client.silnik, "wznow_run", wznowienie)
@@ -1795,7 +1795,7 @@ async def test_run_workflow_bez_poprawnego_run_id_jest_odrzucony_z_komunikatem_i
 ):
     wywolania: list[str] = []
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         wywolania.append(cmd["run_id"])
 
     monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
@@ -1860,7 +1860,7 @@ async def test_wznowienie_anulowanego_runu_jest_odnotowane_w_logu_z_obcietym_do_
 ):
     zywe: list[str] = []
 
-    async def wznowienie(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie(run_id, step_id, decyzja, emit, powod=None, **kw):
         zywe.append(run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wznow_run", wznowienie)
@@ -1884,7 +1884,7 @@ async def test_zadanie_runu_ktore_sie_zepsulo_przy_za_dlugim_id_runu_zostawia_lo
     # odpowiedzialby 4xx), wiec zostaje tylko log z nazwa typu, bez tresci wyjatku
     wystartowal = asyncio.Event()
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         wystartowal.set()
         raise RuntimeError("sekret-xyz")
 
@@ -1915,7 +1915,7 @@ async def test_zadanie_runu_zakonczone_sukcesem_albo_anulowaniem_nie_jest_zglasz
 ):
     wystartowal = asyncio.Event()
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         wystartowal.set()
         if koniec == "anulowanie":
             await asyncio.sleep(300)
@@ -1949,7 +1949,7 @@ async def test_niepoprawne_cancel_run_jest_odnotowane_w_logu_z_cala_trescia_pole
 ):
     zywe: list[str] = []
 
-    async def wznowienie(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie(run_id, step_id, decyzja, emit, powod=None, **kw):
         zywe.append(run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wznow_run", wznowienie)
@@ -1966,7 +1966,7 @@ async def test_cancel_run_dla_runu_bez_zadania_jest_w_logu_z_obcietym_do_36_znak
 ):
     zywe: list[str] = []
 
-    async def wznowienie(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie(run_id, step_id, decyzja, emit, powod=None, **kw):
         zywe.append(run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wznow_run", wznowienie)
@@ -1985,7 +1985,7 @@ async def test_runner_pamieta_dokladnie_limit_anulowanych_runow_a_najstarszy_wyp
     monkeypatch.setattr(runner_client, "LIMIT_ANULOWANYCH", 3)
     wznowione: list[str] = []
 
-    async def wznowienie(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie(run_id, step_id, decyzja, emit, powod=None, **kw):
         wznowione.append(run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wznow_run", wznowienie)
@@ -2011,7 +2011,7 @@ async def test_resume_z_run_id_ktory_nie_jest_napisem_jest_odrzucone_a_runner_dz
 ):
     zywe: list[str] = []
 
-    async def wznowienie(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie(run_id, step_id, decyzja, emit, powod=None, **kw):
         zywe.append(run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wznow_run", wznowienie)
@@ -2331,10 +2331,10 @@ async def _nasluch_do_konca(runner: Runner) -> None:
 def _emitujace_zadania(monkeypatch) -> None:
     """Silnik i wznowienie probuja wyslac zdarzenie przez `emit` (kokpit odpowie 401)."""
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         await emit({"run_id": cmd["run_id"], "step_id": "s0", "kind": "output", "text": "x"})
 
-    async def wznow(run_id, step_id, decyzja, emit, powod=None):
+    async def wznow(run_id, step_id, decyzja, emit, powod=None, **kw):
         await emit({"run_id": run_id, "step_id": step_id, "kind": "output", "text": "x"})
 
     monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
@@ -2560,7 +2560,7 @@ async def test_nieudane_zgloszenie_porazki_zadania_runu_zostawia_w_logu_obciete_
 ):
     wystartowal = asyncio.Event()
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         wystartowal.set()
         raise RuntimeError("tresc-pierwszego")
 
@@ -2609,10 +2609,10 @@ def _silnik_ktory_emituje_i_wisi(monkeypatch, emitowane: list[dict]) -> asyncio.
         wystartowal.set()
         await asyncio.sleep(300)
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         await zawies(emit, cmd["run_id"])
 
-    async def wznow(run_id, step_id, decyzja, emit, powod=None):
+    async def wznow(run_id, step_id, decyzja, emit, powod=None, **kw):
         await zawies(emit, run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
@@ -2877,10 +2877,10 @@ async def test_step_aborted_z_za_dlugim_step_id_jest_w_logu_a_nastepny_krok_dost
         wystartowal.set()
         await asyncio.sleep(300)
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         await przebieg(emit, cmd["run_id"])
 
-    async def wznow(run_id, step_id, decyzja, emit, powod=None):
+    async def wznow(run_id, step_id, decyzja, emit, powod=None, **kw):
         await przebieg(emit, run_id)
 
     monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
@@ -2912,7 +2912,7 @@ async def test_step_aborted_z_za_dlugim_run_id_zostawia_w_logu_obciete_do_36_zna
     run_id = "w" * 40
     wystartowal = asyncio.Event()
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         with contextlib.suppress(NiewaznePoleZdarzenia):
             await emit({"run_id": cmd["run_id"], **_start("s1")})        # krok sledzony, start odrzucony
         wystartowal.set()
