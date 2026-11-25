@@ -27,6 +27,7 @@ from .kroki import (
 from .pokrycie import (
     PokrycieBramek, WynikBramki, WynikKrokuWeryfikujacego, pokrycie_bramek,
 )
+from .sesje import na_utc
 from .walidacja import sprawdz_pomiar
 
 
@@ -102,6 +103,28 @@ async def _nastepny_seq(s: AsyncSession, run_id: str, tenant_id: str) -> int:
     ).scalar_one() + 1
 
 
+async def _z_ponowieniem_seq(s: AsyncSession, podejscie):
+    """Jedyna petla ponawiania numeru zdarzenia (HAR-25, HAR-211).
+
+    `podejscie()` przygotowuje zapis (liczy seq, dodaje zdarzenie) i zwraca wynik; helper
+    robi `commit`. Kolizja (run_id, seq) cofa cala transakcje i wola `podejscie` od nowa,
+    kazdy inny `IntegrityError` leci wyzej po rollbacku. Po `_PROBY_SEQ` probach StanNiemozliwy.
+    """
+    for _ in range(_PROBY_SEQ):
+        wynik = await podejscie()
+        try:
+            await s.commit()
+        except IntegrityError as e:
+            await s.rollback()
+            if not _kolizja_numeru(e):
+                raise
+            continue
+        return wynik
+    raise StanNiemozliwy(
+        f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
+    )
+
+
 def komunikat_niepelnego_strumienia(zapisano: int, wyslano: int) -> str | None:
     if zapisano == wyslano:
         return None
@@ -152,11 +175,8 @@ def runner_online(
     """
     if runner.id not in polaczone or runner.last_seen_at is None:
         return False
-    widziany = runner.last_seen_at
-    if widziany.tzinfo is None:       # SQLite oddaje daty bez strefy; zapisujemy UTC
-        widziany = widziany.replace(tzinfo=timezone.utc)
     teraz = teraz or datetime.now(timezone.utc)
-    return teraz - widziany < timedelta(seconds=settings.runner_offline_after_s)
+    return teraz - na_utc(runner.last_seen_at) < timedelta(seconds=settings.runner_offline_after_s)
 
 
 async def runnery_zespolu(
@@ -172,9 +192,7 @@ async def runnery_zespolu(
     for runner in runnery:
         widziany = runner.last_seen_at
         if widziany is not None:
-            if widziany.tzinfo is None:   # SQLite oddaje daty bez strefy; zapisujemy UTC
-                widziany = widziany.replace(tzinfo=timezone.utc)
-            widziany = widziany.astimezone(timezone.utc).isoformat()
+            widziany = na_utc(widziany).astimezone(timezone.utc).isoformat()
         lista.append({
             "id": runner.id,
             "name": runner.name,
@@ -184,6 +202,17 @@ async def runnery_zespolu(
             "last_seen_at": widziany,
         })
     return lista
+
+
+async def pierwszy_runner_online(
+    s: AsyncSession, tenant_id: str, polaczone: Collection[str], runner_id: str | None = None,
+) -> Runner | None:
+    """Online runner zespolu o najmniejszym id albo None; z `runner_id` tylko ten runner."""
+    zapytanie = select(Runner).where(Runner.tenant_id == tenant_id)
+    if runner_id is not None:
+        zapytanie = zapytanie.where(Runner.id == runner_id)
+    runnery = (await s.execute(zapytanie.order_by(Runner.id))).scalars().all()
+    return next((r for r in runnery if runner_online(r, polaczone)), None)
 
 
 async def utworz_run(
@@ -217,7 +246,7 @@ async def utworz_run(
         ).scalar_one_or_none()
         if aktywny is not None:
             raise WymagaPotwierdzenia(aktywny)
-    zapytanie_runnerow = select(Runner).where(Runner.tenant_id == tenant_id).order_by(Runner.id)
+    runner_projektu = None
     if project_id is not None:
         runner_projektu = (
             await s.execute(
@@ -228,13 +257,7 @@ async def utworz_run(
         ).scalar_one_or_none()
         if runner_projektu is None:
             raise NieZnaleziono("projekt nieznany")
-        zapytanie_runnerow = zapytanie_runnerow.where(Runner.id == runner_projektu)
-    runnery = (await s.execute(zapytanie_runnerow)).scalars().all()
-    runner = next(
-        (r for r in runnery
-         if runner_online(r, polaczone)),
-        None,
-    )
+    runner = await pierwszy_runner_online(s, tenant_id, polaczone, runner_projektu)
     if runner is None:
         raise StanNiemozliwy(
             "runner offline - uruchom runnera na swojej maszynie (cockpit-runner)"
@@ -455,7 +478,7 @@ async def zapisz_zdarzenie(
     if istniejace is not None:
         return istniejace, False
 
-    for _ in range(_PROBY_SEQ):
+    async def podejscie() -> tuple[Event, bool]:
         # blokada wiersza: status odczytany tu nie zmieni sie do commitu, wiec powod
         # przerwania dostaje tylko zdarzenie, ktore faktycznie przestawilo run (HAR-47)
         # obiekt spoza sesji nie ma wiersza do zablokowania, a zapis zdarzenia i tak
@@ -481,63 +504,68 @@ async def zapisz_zdarzenie(
                 run.reason = komunikat
 
         ev = Event(tenant_id=tenant_id, run_id=run_id, seq=seq, step_id=step_id,
-                   event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind, text=zapisany, cost_usd=cost_usd,
+                   event_id=event_id, agent_id=agent_id, agent_type=agent_type, kind=kind,
+                   text=zapisany, cost_usd=cost_usd,
                    cost_source=cost_source, tokens=tokens, duration_ms=duration_ms,
                    text_truncated=obciety, text_full_len=pelna, attempt=attempt,
                    dane=dane or None)
-        # bez autoflush: zdarzenie i zmiany krokow ida do bazy w `commit`; zapytania widza
-        # wiersze krokow z wczesniejszych zdarzen, a w tej transakcji jest jedno zdarzenie.
-        with s.no_autoflush:
-            s.add(ev)
-            await zastosuj_zdarzenie_kroku(
-                s, run, kind, step_id, agent_id, attempt, zapisany,
-                cost_usd=cost_usd, tokens_in=tokens_in, tokens_out=tokens_out,
-                num_turns=num_turns, session_id=session_id)
-            nieudane = await nieudane_kroki(s, run) if kind == _KONIEC_RUNU else []
-            # Trzy czlony tylko oszczedzaja zapytanie (wynik daje `nastepny_status`, ktory
-            # czyta `bez_dowodu` wylacznie dla tych statusow, `run_finished` i braku nieudanych).
-            bez_dowodu = (
-                kind == _KONIEC_RUNU and not nieudane
-                and status_przed in _STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED
-                and await brak_dowodu_ukonczenia(s, run)
-            )
-            run.status = nastepny_status(status_przed, kind, nieudane, bez_dowodu)
-            if (kind == "step_aborted" and status_przed != RunStatus.aborted
-                    and run.status == RunStatus.aborted):
-                run.reason = zapisany
-            if (kind == _KONIEC_RUNU and status_przed != RunStatus.failed
-                    and run.status == RunStatus.failed):
-                run.reason = (
-                    powod_nieudanych_krokow(nieudane) if nieudane else POWOD_BRAK_DOWODU
-                )
-            if kind == _KONIEC_RUNU and run.status in _STATUSY_Z_POKRYCIEM:
-                pokrycie = await pokrycie_runu(s, run, kroki_weryfikujace)
-                if pokrycie is not None:
-                    _zapisz_pokrycie(run, pokrycie)
-        try:
-            await s.commit()
-        except IntegrityError as e:
-            if _kolizja_zdarzenia(e):
-                # ten sam event_id zapisany rownolegle: oddajemy zapisane, bez zmian runu
-                await s.rollback()
-                istniejace = await _zdarzenie_o_id(s, run_id, tenant_id, event_id)
-                if istniejace is None:
-                    raise   # kolizja z cudzym zespolem: nie jest to nasz duplikat
-                return istniejace, False
-            if not _kolizja_numeru(e):
-                # inny blad zapisu (klucz obcy, NOT NULL): ponowienie tylko by go ukrylo
-                await s.rollback()
-                raise
-            # numer zajety przez rownolegly zapis: cofamy cala transakcje (zdarzenie
-            # i zmiany runu); poczatek petli wczytuje run od nowa i liczy numer, status
-            # i reason jeszcze raz. Rollback zamiast SAVEPOINT - dziala tak samo na SQLite i PG.
-            await s.rollback()
-            continue
+        await _zastosuj_zdarzenie(
+            s, run, ev, status_przed, kind=kind, step_id=step_id, agent_id=agent_id,
+            attempt=attempt, zapisany=zapisany, cost_usd=cost_usd, tokens_in=tokens_in,
+            tokens_out=tokens_out, num_turns=num_turns, session_id=session_id,
+            kroki_weryfikujace=kroki_weryfikujace)
         return ev, True
 
-    raise StanNiemozliwy(
-        f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
-    )
+    try:
+        return await _z_ponowieniem_seq(s, podejscie)
+    except IntegrityError as e:
+        if not _kolizja_zdarzenia(e):
+            raise
+        # ten sam event_id zapisany rownolegle: oddajemy zapisane, bez zmian runu
+        # (helper cofnal transakcje)
+        istniejace = await _zdarzenie_o_id(s, run_id, tenant_id, event_id)
+        if istniejace is None:
+            raise   # kolizja z cudzym zespolem: nie jest to nasz duplikat
+        return istniejace, False
+
+
+async def _zastosuj_zdarzenie(
+    s: AsyncSession, run: Run, ev: Event, status_przed: RunStatus, *,
+    kind: str, step_id: str, agent_id: str, attempt: int | None, zapisany: str,
+    cost_usd: float | None, tokens_in: int | None, tokens_out: int | None,
+    num_turns: int | None, session_id: str | None,
+    kroki_weryfikujace: Sequence[str] | None,
+) -> None:
+    """Dodaje zdarzenie do sesji i przelicza krok, status, powod i pokrycie runu (bez commitu)."""
+    # bez autoflush: zdarzenie i zmiany krokow ida do bazy w `commit`; zapytania widza
+    # wiersze krokow z wczesniejszych zdarzen, a w tej transakcji jest jedno zdarzenie.
+    with s.no_autoflush:
+        s.add(ev)
+        await zastosuj_zdarzenie_kroku(
+            s, run, kind, step_id, agent_id, attempt, zapisany,
+            cost_usd=cost_usd, tokens_in=tokens_in, tokens_out=tokens_out,
+            num_turns=num_turns, session_id=session_id)
+        nieudane = await nieudane_kroki(s, run) if kind == _KONIEC_RUNU else []
+        # Trzy czlony tylko oszczedzaja zapytanie (wynik daje `nastepny_status`, ktory
+        # czyta `bez_dowodu` wylacznie dla tych statusow, `run_finished` i braku nieudanych).
+        bez_dowodu = (
+            kind == _KONIEC_RUNU and not nieudane
+            and status_przed in _STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED
+            and await brak_dowodu_ukonczenia(s, run)
+        )
+        run.status = nastepny_status(status_przed, kind, nieudane, bez_dowodu)
+        if (kind == "step_aborted" and status_przed != RunStatus.aborted
+                and run.status == RunStatus.aborted):
+            run.reason = zapisany
+        if (kind == _KONIEC_RUNU and status_przed != RunStatus.failed
+                and run.status == RunStatus.failed):
+            run.reason = (
+                powod_nieudanych_krokow(nieudane) if nieudane else POWOD_BRAK_DOWODU
+            )
+        if kind == _KONIEC_RUNU and run.status in _STATUSY_Z_POKRYCIEM:
+            pokrycie = await pokrycie_runu(s, run, kroki_weryfikujace)
+            if pokrycie is not None:
+                _zapisz_pokrycie(run, pokrycie)
 
 
 async def zdarzenia_runu(s: AsyncSession, run: Run, po_seq: int | None = None) -> list[Event]:
@@ -572,7 +600,7 @@ async def przerwij_runy_offline(
 
     przerwane: list[str] = []
     for run_id, tenant_id in cele:
-        for _ in range(_PROBY_SEQ):
+        async def podejscie(run_id=run_id, tenant_id=tenant_id) -> bool:
             wynik = await s.execute(
                 update(Run)
                 .where(Run.id == run_id, Run.tenant_id == tenant_id,
@@ -581,24 +609,15 @@ async def przerwij_runy_offline(
             )
             if wynik.rowcount != 1:
                 await s.rollback()      # wyscig: status zmieniony przez inna sesje
-                break
+                return False
             s.add(Event(tenant_id=tenant_id, run_id=run_id, kind=KIND_PRZERWANIA,
                         text=POWOD_RUNNER_OFFLINE,
                         text_full_len=len(POWOD_RUNNER_OFFLINE),
                         seq=await _nastepny_seq(s, run_id, tenant_id)))
-            try:
-                await s.commit()
-            except IntegrityError as e:
-                await s.rollback()
-                if not _kolizja_numeru(e):
-                    raise
-                continue    # numer zajety rownolegle: update i seq liczymy od nowa
+            return True
+
+        if await _z_ponowieniem_seq(s, podejscie):
             przerwane.append(run_id)
-            break
-        else:
-            raise StanNiemozliwy(
-                f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
-            )
     return przerwane
 
 
@@ -640,7 +659,7 @@ async def anuluj_run(
     """
     run = await run_dla_najemcy(s, run_id, tenant_id)
     run_id = run.id    # po rollbacku obiekty sesji sa wygaszone - trzymamy same napisy
-    for _ in range(_PROBY_SEQ):
+    async def podejscie() -> tuple[Run, Event, dict]:
         await s.refresh(run, with_for_update=True)
         if run.status not in _STATUSY_TRWAJACE:
             stan = run.status.value     # przed rollbackiem, ktory wygasza obiekt
@@ -656,24 +675,14 @@ async def anuluj_run(
                    dane={"user_id": user_id},
                    seq=await _nastepny_seq(s, run_id, tenant_id))
         s.add(ev)
-        try:
-            await s.commit()
-        except IntegrityError as e:
-            await s.rollback()
-            if not _kolizja_numeru(e):
-                raise
-            continue    # numer zajety rownolegle: status i seq liczymy od nowa
         return run, ev, {"type": "cancel_run", "run_id": run_id}
-    raise StanNiemozliwy(
-        f"nie udalo sie nadac numeru zdarzenia po {_PROBY_SEQ} probach - ponow zapis"
-    )
+
+    return await _z_ponowieniem_seq(s, podejscie)
 
 
 def czas_zdarzenia(ev: Event) -> str:
     """Czas zdarzenia jako ISO 8601 w UTC (HAR-121); SQLite oddaje daty bez strefy - to UTC."""
-    if ev.at.tzinfo is None:
-        return ev.at.replace(tzinfo=timezone.utc).isoformat()
-    return ev.at.astimezone(timezone.utc).isoformat()
+    return na_utc(ev.at).astimezone(timezone.utc).isoformat()
 
 
 def zdarzenie_na_szyne(ev: Event) -> dict:
@@ -722,14 +731,11 @@ async def runy_zespolu(
     )).scalars().all()
     lista = []
     for run in runy:
-        utworzony = run.created_at
-        if utworzony.tzinfo is None:   # SQLite oddaje daty bez strefy; zapisujemy UTC
-            utworzony = utworzony.replace(tzinfo=timezone.utc)
         lista.append({
             "id": run.id,
             "workflow": run.workflow,
             "status": run.status,
-            "created_at": utworzony.astimezone(timezone.utc).isoformat(),
+            "created_at": na_utc(run.created_at).astimezone(timezone.utc).isoformat(),
             "project_id": run.project_id,
         })
     return lista
