@@ -415,8 +415,12 @@ def _workflow_projektu(zakres: Zakres, projekt: Path) -> list[dict]:
         try:
             if not stat.S_ISREG(os.stat(cel).st_mode):
                 continue
-        except OSError:
+        except (FileNotFoundError, NotADirectoryError):
             continue   # zniknal w trakcie albo wiszace dowiazanie
+        except OSError as e:
+            # brak praw, blad wejscia-wyjscia: pominiety plik dalby katalog, ktory wyglada na
+            # pelny, a kokpit usunalby z bazy workflow, ktorego nie umielismy sprawdzic
+            raise _blad_dysku(e) from None
         wynik.append({"sciezka": f".cockpit/workflows/{nazwa}"})
     return wynik
 

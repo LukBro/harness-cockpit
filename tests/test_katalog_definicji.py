@@ -12,6 +12,7 @@ Nazwy testow w jezyku dziedziny, nie technologii (CLAUDE.md).
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import json
 import os
@@ -1260,6 +1261,96 @@ async def test_workflow_przez_dowiazanie_poza_zakres_i_wiszace_dowiazanie_nie_uc
 
     assert odp["wynik"]["projekty"][0]["workflow"] == [{"sciezka": ".cockpit/workflows/b.yaml"}]
     assert ZNACZNIK not in json.dumps(odp)
+
+
+# ---- runner: pliki workflow, ktorych nie da sie sprawdzic (HAR-210) ------------------------
+
+def _stat_z_awaria_dla(monkeypatch, nazwa_pliku: str, wyjatek: OSError) -> None:
+    """`os.stat` pliku workflow o tej nazwie rzuca `wyjatek` (root omija prawa dostepu, wiec
+    odmowe symulujemy); inne sciezki dzialaja normalnie."""
+    prawdziwe = os.stat
+
+    def stat_z_awaria(sciezka, *a, **kw):
+        if isinstance(sciezka, (str, bytes, os.PathLike)) and (
+                Path(os.fsdecode(sciezka)).name == nazwa_pliku):
+            raise wyjatek
+        return prawdziwe(sciezka, *a, **kw)
+
+    monkeypatch.setattr(os, "stat", stat_z_awaria)
+
+
+def _dwa_workflow(projekt) -> None:
+    katalog_wf = projekt.korzen / ".cockpit/workflows"
+    _pisz(katalog_wf / "dobry.yaml", "name: dobry\n")
+    _pisz(katalog_wf / "zamkniety.yaml", f"name: zamkniety # {ZNACZNIK}\n")
+
+
+async def test_workflow_bez_praw_do_pliku_to_blad_brak_uprawnien_a_nie_ciche_pominiecie(
+    projekt, monkeypatch,
+):
+    _dwa_workflow(projekt)
+    _stat_z_awaria_dla(monkeypatch, "zamkniety.yaml",
+                       PermissionError(13, f"Permission denied: {ZNACZNIK}"))
+
+    odp = await _wyk()
+
+    assert odp["ok"] is False
+    assert odp["kod"] == "brak_uprawnien"
+    assert odp["req_id"] == "r-1"
+    assert "wynik" not in odp                              # nigdy polowiczna lista bez zamknietego pliku
+    assert ZNACZNIK not in json.dumps(odp)
+    assert "zamkniety" not in json.dumps(odp)               # ani sciezki, ani nazwy z wyjatku
+
+
+@pytest.mark.parametrize("kod_bledu", [errno.EIO, errno.EMFILE], ids=["EIO", "EMFILE"])
+async def test_workflow_z_innym_bledem_dysku_niz_brak_pliku_to_blad_dysku_a_nie_ciche_pominiecie(
+    projekt, monkeypatch, kod_bledu,
+):
+    _dwa_workflow(projekt)
+    _stat_z_awaria_dla(monkeypatch, "zamkniety.yaml", OSError(kod_bledu, ZNACZNIK))
+
+    odp = await _wyk()
+
+    assert odp["ok"] is False
+    assert odp["kod"] == "blad_dysku"
+    assert ZNACZNIK not in json.dumps(odp)
+
+
+@pytest.mark.parametrize(
+    "wyjatek",
+    [FileNotFoundError(errno.ENOENT, "zniknal"), NotADirectoryError(errno.ENOTDIR, "nie katalog")],
+    ids=["brak_pliku", "element_sciezki_nie_jest_katalogiem"],
+)
+async def test_workflow_ktorego_plik_zniknal_albo_ma_zla_sciezke_jest_pominiety_bez_bledu(
+    projekt, monkeypatch, wyjatek,
+):
+    _dwa_workflow(projekt)
+    _stat_z_awaria_dla(monkeypatch, "zamkniety.yaml", wyjatek)
+
+    [wpis] = await _projekty()
+
+    assert wpis["workflow"] == [{"sciezka": ".cockpit/workflows/dobry.yaml"}]
+
+
+async def test_katalog_zwracajacy_blad_uprawnien_do_pliku_workflow_nie_kasuje_workflow_w_bazie(
+    projekt, zespoly, monkeypatch,
+):
+    """Runner -> kokpit przez prawdziwy kod obu stron: odpowiedz `ok: false` runnera trafia do
+    `odswiez_katalog`, a wiersz workflow zapisany wczesniej zostaje w bazie."""
+    _dwa_workflow(projekt)
+    await _wstaw(zespoly, zespoly.ids.a, "runner-a", STARA_DATA, projekt=str(projekt.korzen),
+                 rodzaj="workflow", klucz="zamkniety", nazwa="zamkniety", rola=None,
+                 sciezka=".cockpit/workflows/zamkniety.yaml")
+    przed = await _wiersze(zespoly)
+    assert [w["klucz"] for w in przed] == ["zamkniety"]
+    _stat_z_awaria_dla(monkeypatch, "zamkniety.yaml", PermissionError(13, "Permission denied"))
+
+    odpowiedz_runnera = await _wyk()
+    blad, _ = await _odswiez_blad(zespoly, zespoly.ids.a, odpowiedz_runnera)
+
+    assert odpowiedz_runnera["ok"] is False
+    assert type(blad) is StanNiemozliwy
+    assert await _wiersze(zespoly) == przed   # workflow dalej w bazie, bez zmiany daty odswiezenia
 
 
 # ---- runner: pliki skilli, ktorych nie da sie odczytac ----------------------------------
