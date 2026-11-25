@@ -85,11 +85,20 @@ async def _obsluz_nieoczekiwany_blad(_: Request, exc: Exception) -> JSONResponse
 
 
 def _bezpieczne_dla_json(wartosc: object) -> object:
-    """Liczby nieskonczone i NaN (JSON ich nie zna) zamienia na napis, rekurencyjnie."""
+    """Zamienia na napis to, czego odpowiedz JSON nie zniesie, rekurencyjnie: liczby
+    nieskonczone i NaN oraz napisy niekodowalne w UTF-8 (samotny surogat, np. "\\ud800"),
+    ktore dostaja zapis ze znakami ucieczki; dotyczy kluczy slownika i wartosci. Zwykle napisy
+    zostaja bez zmian; dwa klucze, ktore po oczyszczeniu daja ten sam napis, scalaja sie."""
     if isinstance(wartosc, float) and not math.isfinite(wartosc):
         return str(wartosc)
+    if isinstance(wartosc, str):
+        try:
+            wartosc.encode("utf-8")
+        except UnicodeEncodeError:
+            return wartosc.encode("utf-8", "backslashreplace").decode("utf-8")
+        return wartosc
     if isinstance(wartosc, dict):
-        return {k: _bezpieczne_dla_json(v) for k, v in wartosc.items()}
+        return {_bezpieczne_dla_json(k): _bezpieczne_dla_json(v) for k, v in wartosc.items()}
     if isinstance(wartosc, (list, tuple)):
         return [_bezpieczne_dla_json(v) for v in wartosc]
     return wartosc
