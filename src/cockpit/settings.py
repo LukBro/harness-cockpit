@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     smtp_haslo: SecretStr | None = None
     smtp_nadawca: str | None = None
     smtp_starttls: bool = True
-    smtp_timeout_s: int = Field(default=10, ge=1)
+    smtp_timeout_s: int = Field(default=10, ge=1, le=3600)   # HAR-91: COCKPIT_SMTP_TIMEOUT_S, gorna granica chroni socket.settimeout
     adres_publiczny: str | None = None   # adres kokpitu w linkach z listow
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None

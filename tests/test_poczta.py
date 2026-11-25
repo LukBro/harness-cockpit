@@ -212,6 +212,16 @@ def test_limit_czasu_smtp_ponizej_sekundy_jest_odrzucony_a_sekunda_przyjeta():
     assert Settings(_env_file=None, smtp_timeout_s=1).smtp_timeout_s == 1
 
 
+@pytest.mark.parametrize("limit", [3601, 10**10])
+def test_limit_czasu_smtp_powyzej_godziny_jest_odrzucony(limit):
+    with pytest.raises(ValidationError, match="smtp_timeout_s"):
+        Settings(_env_file=None, smtp_timeout_s=limit)
+
+
+def test_limit_czasu_smtp_rowny_godzinie_jest_przyjety():
+    assert Settings(_env_file=None, smtp_timeout_s=3600).smtp_timeout_s == 3600
+
+
 def test_haslo_smtp_jest_sekretem_ukrytym_w_tekstowym_zapisie_ustawien():
     ustawienia = Settings(_env_file=None, smtp_haslo=HASLO_SMTP)
 
