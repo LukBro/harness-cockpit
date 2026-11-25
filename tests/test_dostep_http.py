@@ -847,6 +847,9 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("GET", "/api/health"): {"trasa_publiczna"},
         ("POST", "/api/konto/rejestracja"): {"trasa_publiczna"},
         ("POST", "/api/konto/logowanie"): {"trasa_publiczna"},
+        ("POST", "/api/konto/reset"): {"trasa_publiczna"},            # HAR-105
+        ("POST", "/api/konto/reset/potwierdz"): {"trasa_publiczna"},  # HAR-105
+        ("GET", "/api/konto/konfiguracja"): {"trasa_publiczna"},      # HAR-105
         ("POST", "/api/events"): {"runner_z_tokenu"},
         ("POST", "/api/runners/register"): {"runner_z_tokenu"},
         ("POST", "/api/runners/heartbeat"): {"runner_z_tokenu"},
@@ -934,6 +937,9 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("GET", "/api/tickety/{id_ticketu:path}"),
         ("POST", "/api/konto/rejestracja"),
         ("POST", "/api/konto/logowanie"),
+        ("POST", "/api/konto/reset"),
+        ("POST", "/api/konto/reset/potwierdz"),
+        ("GET", "/api/konto/konfiguracja"),
         ("GET", "/api/konto/ja"),
         ("POST", "/api/konto/wyloguj"),
         ("POST", "/api/konto/wyloguj-wszedzie"),
