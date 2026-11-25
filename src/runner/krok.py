@@ -48,8 +48,9 @@ from runner.straznik import (
     ZMIENNA_PYTHONPATH_AGENTA,
 )
 
-# Katalog runu (artefakty silnika). Rola bez zapisu nie pisze w nim nigdzie; jedyny wyjatek
-# migawki to KATALOG_SKILLI_RUNU (skille skopiowane przez runner).
+# Katalog runu (artefakty silnika). Rola bez zapisu nie pisze w nim nigdzie; wyjatki
+# migawki sa dwa (WYJATKI_MIGAWKI): KATALOG_SKILLI_RUNU (skille skopiowane przez runner)
+# i RAPORTY_NAPRAWY_SILNIKA (zapis silnika).
 KATALOG_RUNU = Path(".cockpit") / "_run"
 # Raporty porazki zapisuje silnik w worktree (`silnik._sciezka_raportu`), gdy rownolegly recenzent
 # ma migawke: to zapis silnika, nie recenzenta. Wyjatek migawki to dokladnie ten ksztalt sciezki

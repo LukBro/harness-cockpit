@@ -37,8 +37,9 @@ KLUCZE_DEFINICJI = frozenset({KLUCZ_ROLI, KLUCZ_TIERU, KLUCZ_MODELU, *KLUCZE_ZAP
 
 # Domyslny prefiks linii werdyktu w artefakcie skilla (HAR-177).
 PREFIKS_WERDYKTU = "WERDYKT:"
-# Jedyny wyjatek migawki recenzenta (HAR-209): skille skopiowane przez runner (HAR-5).
-# Uzywaja go skills.py (materializacja), agent.py (sciezka w prompcie) i krok.py (migawka).
+# Pierwszy z dwoch wyjatkow migawki recenzenta (HAR-209): skille skopiowane przez runner (HAR-5).
+# Drugi, raporty naprawy silnika, to RAPORTY_NAPRAWY_SILNIKA w runner/krok.py (WYJATKI_MIGAWKI).
+# Uzywaja tego katalogu skills.py (materializacja), agent.py (sciezka w prompcie) i krok.py (migawka).
 KATALOG_SKILLI_RUNU = Path(".cockpit") / "_run" / "skills"
 
 _PRAWDA = frozenset({"true", "yes", "tak", "on", "1"})

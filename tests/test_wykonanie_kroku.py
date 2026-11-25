@@ -740,6 +740,41 @@ sys.exit(3)
 """
 
 
+async def test_recenzent_startujacy_gdy_raport_naprawy_juz_lezy_w_worktree_nie_ma_naruszenia(run):
+    """Raport zapisany PRZED krokiem (ponowienie, kolejny krok) jest w migawce `przed`; migawka `po`
+    go pomija, wiec wyjatek musi dzialac w obu migawkach, inaczej fałszywe `usuniete`."""
+    raport = run / _sciezka_raportu("implementuj", 1)
+    raport.parent.mkdir(parents=True)
+    raport.write_text("raport porazki")
+
+    wynik, _ = await uruchom(spec(Rola.reviewer), atrapa(), run)
+
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
+    assert raport.read_text() == "raport porazki"
+
+
+async def test_wyjatek_raportu_naprawy_tylko_w_migawce_po_kroku_daje_falszywe_usuniecie(
+    run, monkeypatch
+):
+    """Odtwarza wada: migawka `przed` bez wyjatku raportu (jak po zamianie argumentu w `wykonaj_krok`)."""
+    raport = run / _sciezka_raportu("implementuj", 1)
+    raport.parent.mkdir(parents=True)
+    raport.write_text("raport porazki")
+    prawdziwa = modul_kroku.migawka
+
+    def migawka_przed_bez_raportu(katalog, wyjatki=()):
+        return prawdziwa(katalog, [KATALOG_SKILLI_RUNU])
+
+    monkeypatch.setattr(modul_kroku, "migawka", migawka_przed_bez_raportu)
+
+    wynik, _ = await uruchom(spec(Rola.reviewer), atrapa(), run)
+
+    assert wynik == WynikKroku(
+        status="nieudany",
+        powod=NARUSZENIE + "usuniete: " + _sciezka_raportu("implementuj", 1).as_posix(),
+        kod_wyjscia=0)
+
+
 async def _run_z_rownoleglym_recenzentem(tmp_path) -> tuple[list[dict], object]:
     s = swiat_silnika(
         tmp_path,

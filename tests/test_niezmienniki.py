@@ -891,7 +891,7 @@ def test_wyjatek_migawki_z_gwiazdka_nie_obejmuje_sciezki_o_innym_literalnym_segm
 def test_wyjatek_migawki_wymaga_zgodnosci_kazdego_segmentu_a_nie_dowolnego(tmp_path):
     wyjatki = [Path("a") / "*" / "c"]
 
-    # b/x/c zgadza sie tylko na ostatnim segmencie, a/x/y na pierwszych dwoch
+    # b/x/c zgadza sie na segmentach 2 i 3 (nie na pierwszym), a/x/y na segmentach 1 i 2 (nie na trzecim)
     widoczne = _sciezki_migawki(tmp_path, wyjatki, "b/x/c", "a/x/y", "a/x/c")
 
     assert widoczne == {"b/x/c", "a/x/y"}
@@ -905,7 +905,7 @@ def test_wyjatek_migawki_z_gwiazdka_nie_obejmuje_sciezek_o_innej_liczbie_segment
     assert widoczne == {"a/x/y/c", "a/c", "a/x/c/f.txt"}
 
 
-def test_wyjatek_migawki_pomija_krotszy_wyjatek_i_stosuje_nastepny_pasujacy(tmp_path):
+def test_wyjatek_migawki_pomija_wyjatek_dluzszy_niz_sciezka_i_stosuje_nastepny_pasujacy(tmp_path):
     """Pierwszy wyjatek jest dluzszy niz sciezka `x`; drugi pasuje i musi zadzialac."""
     wyjatki = [Path("a/b/c"), Path("x")]
 
