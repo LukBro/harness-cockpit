@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     logowanie_blokada_s: int = Field(default=900, ge=1)           # czas blokady (para i globalna)
     logowanie_limit_globalny: int = Field(default=50, ge=1)       # nieudane proby adresu z dowolnych IP
     logowanie_okno_globalne_s: int = Field(default=3600, ge=1)    # okno limitu globalnego
+    # Ile sekund wazny jest link resetu hasla (HAR-105; env COCKPIT_RESET_WAZNY_S). ge=1: 0 wygasalby od razu.
+    reset_wazny_s: int = Field(default=3600, ge=1, le=86400)   # le: doba
     # Zapytania kokpitu do runnera (HAR-49; env COCKPIT_RUNNER_ZAPYTANIE_TIMEOUT_S,
     # COCKPIT_RUNNER_ODPOWIEDZ_MAX_KB). gt/ge: 0 czekaloby bez sensu albo odrzucalo wszystko.
     runner_zapytanie_timeout_s: float = Field(default=15, gt=0)

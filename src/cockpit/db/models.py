@@ -233,6 +233,21 @@ class Sesja(Base):
     )
 
 
+class TokenResetu(Base):
+    """Jednorazowy token resetu hasla (HAR-105): w bazie tylko sha256, jawny token ma tylko list."""
+    __tablename__ = "token_resetu"
+    __table_args__ = (UniqueConstraint("skrot", name="uq_token_resetu_skrot"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("user.id"), index=True)
+    skrot: Mapped[str] = mapped_column(String(64))         # sha256 tokenu z listu
+    utworzony_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    wygasa_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    uzyty_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+
 class BlokadaLogowania(Base):
     """Licznik nieudanych logowan (HAR-46): klucz to sha256 pary (adres, IP) albo adresu.
 

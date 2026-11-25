@@ -1022,6 +1022,19 @@
         "title": "KomentarzTicketu",
         "type": "object"
       },
+      "KonfiguracjaKonta": {
+        "properties": {
+          "reset_hasla": {
+            "title": "Reset Hasla",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reset_hasla"
+        ],
+        "title": "KonfiguracjaKonta",
+        "type": "object"
+      },
       "KrokRunu": {
         "properties": {
           "agent_id": {
@@ -1475,6 +1488,28 @@
         "title": "PomiarKrokuOdbioru",
         "type": "object"
       },
+      "PotwierdzenieResetu": {
+        "properties": {
+          "nowe_haslo": {
+            "format": "password",
+            "maxLength": 256,
+            "title": "Nowe Haslo",
+            "type": "string",
+            "writeOnly": true
+          },
+          "token": {
+            "maxLength": 200,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "nowe_haslo"
+        ],
+        "title": "PotwierdzenieResetu",
+        "type": "object"
+      },
       "ProblemKroku": {
         "properties": {
           "komunikat": {
@@ -1576,6 +1611,33 @@
           "created_at"
         ],
         "title": "Projekt",
+        "type": "object"
+      },
+      "ProsbaOReset": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ProsbaOReset",
+        "type": "object"
+      },
+      "ResetPrzyjety": {
+        "properties": {
+          "komunikat": {
+            "title": "Komunikat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "komunikat"
+        ],
+        "title": "ResetPrzyjety",
         "type": "object"
       },
       "RunAnulowany": {
@@ -3044,6 +3106,34 @@
         "summary": "Ja"
       }
     },
+    "/api/konto/konfiguracja": {
+      "get": {
+        "operationId": "konfiguracja_api_konto_konfiguracja_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KonfiguracjaKonta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Konfiguracja"
+      }
+    },
     "/api/konto/logowanie": {
       "post": {
         "operationId": "logowanie_api_konto_logowanie_post",
@@ -3168,6 +3258,125 @@
           }
         },
         "summary": "Rejestracja"
+      }
+    },
+    "/api/konto/reset": {
+      "post": {
+        "operationId": "prosba_o_reset_api_konto_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProsbaOReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetPrzyjety"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Prosba O Reset"
+      }
+    },
+    "/api/konto/reset/potwierdz": {
+      "post": {
+        "operationId": "potwierdzenie_resetu_api_konto_reset_potwierdz_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PotwierdzenieResetu"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Potwierdzenie Resetu"
       }
     },
     "/api/konto/wyloguj": {

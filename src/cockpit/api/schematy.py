@@ -418,6 +418,14 @@ class Profil(BaseModel):
     csrf: str
 
 
+class KonfiguracjaKonta(BaseModel):
+    reset_hasla: bool   # czy kokpit moze wyslac link resetu (poczta i adres publiczny)
+
+
+class ResetPrzyjety(BaseModel):
+    komunikat: str   # ten sam dla kazdego adresu: odpowiedz nie zdradza, czy konto istnieje
+
+
 class UstawieniaPoczty(BaseModel):
     skonfigurowana: bool
     powod: str | None   # brak powodu to null (poczta skonfigurowana), nigdy pusty napis
