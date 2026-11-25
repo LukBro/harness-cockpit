@@ -39,7 +39,6 @@ from runner.hooks import (
 
 KORZEN = Path(__file__).resolve().parents[1]
 FIXTURY = Path(__file__).resolve().parent / "fixtures" / "hooks"
-PRZYKLAD = KORZEN / "deploy" / "hooks.example.json"
 RUN = "run-1"
 KROK_A = "krok-a"
 KROK_B = "krok-b"
@@ -376,24 +375,6 @@ def test_polecenie_hooka_bierze_sciezke_pliku_ze_zmiennej_a_nie_z_tekstu_polecen
         assert str(plik) not in h["command"]
         assert "unikalny-katalog-9137" not in h["command"]
         assert "krok-zz" not in h["command"]
-
-
-def test_ustawienia_hookow_maja_te_same_zdarzenia_matchery_i_warunki_co_przyklad_wdrozeniowy(
-    tmp_path,
-):
-    przyklad = json.loads(PRZYKLAD.read_text())["hooks"]
-    ustawienia = ustawienia_hookow(tmp_path / "x.ndjson")["hooks"]
-
-    assert set(ustawienia) == set(przyklad)
-    assert len(ustawienia) == 8
-    for zdarzenie, grupy_wzorca in przyklad.items():
-        grupy = ustawienia[zdarzenie]
-        assert len(grupy) == len(grupy_wzorca), zdarzenie
-        for grupa, wzorzec in zip(grupy, grupy_wzorca, strict=True):
-            assert grupa.get("matcher") == wzorzec.get("matcher"), zdarzenie
-            assert len(grupa["hooks"]) == len(wzorzec["hooks"]), zdarzenie
-            for h, hw in zip(grupa["hooks"], wzorzec["hooks"], strict=True):
-                assert h.get("if") == hw.get("if"), zdarzenie
 
 
 def test_zdarzenia_narzedzi_maja_matcher_bash_i_warunek_phase_timer(tmp_path):

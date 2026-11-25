@@ -20,6 +20,7 @@ from cockpit.db.models import Definicja, Runner
 from . import zapytania_runnera
 from .errors import BlednySkill, StanNiemozliwy
 from .skills import ZRODLA, skill_z_tekstu
+from .sesje import na_utc
 from .zapytania_runnera import Wyslij
 
 # Dlugosci kolumn `definicja`: dluzsza wartosc to zepsuta pozycja, nie blad calego odswiezenia.
@@ -173,9 +174,7 @@ def _wiersze(
 
 def _iso(moment: datetime) -> str:
     """ISO 8601 z +00:00; SQLite oddaje daty bez strefy - to zawsze UTC."""
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc).isoformat()
-    return moment.astimezone(timezone.utc).isoformat()
+    return na_utc(moment).astimezone(timezone.utc).isoformat()
 
 
 async def katalog(s: AsyncSession, tenant_id: str) -> dict:

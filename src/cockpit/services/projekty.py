@@ -19,6 +19,7 @@ from . import zapytania_runnera
 from .errors import NieZnaleziono, RunnerOffline, StanNiemozliwy
 from .projekt import PLIK_PROJEKTU, zmien_capabilities
 from .runs import runner_online
+from .sesje import na_utc
 from .zapytania_runnera import Wyslij
 
 _MAX_SCIEZKA = 4096   # dlugosci kolumn `project`
@@ -51,9 +52,7 @@ def _sprawdz_ksztalt(wynik: Any) -> tuple[str, str, list[str]]:
 
 def _iso(moment: datetime) -> str:
     """ISO 8601 z +00:00; SQLite oddaje daty bez strefy - to zawsze UTC."""
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc).isoformat()
-    return moment.astimezone(timezone.utc).isoformat()
+    return na_utc(moment).astimezone(timezone.utc).isoformat()
 
 
 def _pozycja(p: Project) -> dict:
