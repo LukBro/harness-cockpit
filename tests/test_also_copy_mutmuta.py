@@ -17,7 +17,10 @@ from procesy import uruchom_i_zbierz
 KORZEN = Path(__file__).resolve().parents[1]
 # dzis nieskopiowane, a czytane wylacznie przez testy, ktore nie pokrywaja mutowanego kodu (z podkatalogami)
 ZNANE_WYJATKI = {".claude/rules", ".claude/settings.json", ".claude/agent-memory", "docs", "README.md",
-                 ".gitattributes"}
+                 ".gitattributes",
+                 # tests/test_narzedzia_sesji.py tworzy deploy/compose.yaml w repozytorium tymczasowym
+                 # (HAR-211: katalog deploy/ znika z repo, wpis also_copy tez)
+                 "deploy"}
 # katalogi kopiowane czesciowo, ktore testy czytaja w calosci (rglob po src/) - wyjatek tylko dla tej
 # dokladnej sciezki, nie dla jej podkatalogow
 ZNANE_CZESCIOWE = {".claude", "src", "src/cockpit"}

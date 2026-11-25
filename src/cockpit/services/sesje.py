@@ -30,7 +30,7 @@ def teraz() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _utc(dt: datetime) -> datetime:
+def na_utc(dt: datetime) -> datetime:
     # SQLite oddaje naive datetime z kolumn DateTime(timezone=True); to zawsze UTC
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
@@ -39,7 +39,7 @@ async def _aktywna(s: AsyncSession, identyfikator: str) -> Sesja:
     sesja = (
         await s.execute(select(Sesja).where(Sesja.skrot == skrot(identyfikator)))
     ).scalar_one_or_none()
-    if sesja is None or sesja.uniewazniona_at is not None or _utc(sesja.wygasa_at) <= teraz():
+    if sesja is None or sesja.uniewazniona_at is not None or na_utc(sesja.wygasa_at) <= teraz():
         raise BrakDostepu(KOMUNIKAT_SESJI)
     return sesja
 

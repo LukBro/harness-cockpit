@@ -800,10 +800,10 @@ def test_czas_z_innej_strefy_zostaje_bez_zmian_a_czas_bez_strefy_dostaje_utc():
     plus_dwa = datetime(2024, 3, 1, 12, 0, tzinfo=timezone(timedelta(hours=2)))
     bez_strefy = datetime(2024, 3, 1, 12, 0)
 
-    assert sesje._utc(plus_dwa) is plus_dwa
-    assert sesje._utc(plus_dwa).utcoffset() == timedelta(hours=2)
-    assert sesje._utc(bez_strefy) == datetime(2024, 3, 1, 12, 0, tzinfo=timezone.utc)
-    assert sesje._utc(bez_strefy).utcoffset() == timedelta(0)
+    assert sesje.na_utc(plus_dwa) is plus_dwa
+    assert sesje.na_utc(plus_dwa).utcoffset() == timedelta(hours=2)
+    assert sesje.na_utc(bez_strefy) == datetime(2024, 3, 1, 12, 0, tzinfo=timezone.utc)
+    assert sesje.na_utc(bez_strefy).utcoffset() == timedelta(0)
 
 
 async def test_identyfikator_i_token_csrf_nowej_sesji_maja_po_32_bajty_losowosci(maker):

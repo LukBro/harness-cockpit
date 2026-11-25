@@ -38,7 +38,7 @@ from cockpit.api import bus
 from cockpit.api.app import app
 from cockpit.db import session as db_session
 from cockpit.db.models import Definicja, Project
-from cockpit.services import skille_api, zapytania_runnera
+from cockpit.services import runs, skille_api, zapytania_runnera
 from cockpit.services.errors import BlednySkill, StanNiemozliwy
 from cockpit.settings import settings
 from runner import operacje
@@ -2214,7 +2214,7 @@ def _runner_z_awaria_odczytu_domu(swiat, monkeypatch, *, odpowiedz=None, offline
     online, wiec odczyt pliku domowego trafia w `RunnerOffline`."""
     prawdziwy = swiat.runner
     stan = {"offline": False}
-    oryginal = zapytania_runnera.runner_online
+    oryginal = runs.runner_online
 
     async def wyslij(runner_id, typ, dane, timeout_s):
         dom = typ == "read_file" and dane["sciezka"].startswith("~/")
@@ -2233,7 +2233,7 @@ def _runner_z_awaria_odczytu_domu(swiat, monkeypatch, *, odpowiedz=None, offline
         return not stan["offline"] and oryginal(runner, polaczone, teraz)
 
     monkeypatch.setattr(bus, "zapytaj", wyslij)
-    monkeypatch.setattr(zapytania_runnera, "runner_online", runner_online)
+    monkeypatch.setattr(runs, "runner_online", runner_online)
 
 
 def _ostrzezenia_serwisu(caplog) -> list[str]:

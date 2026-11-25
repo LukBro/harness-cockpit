@@ -80,7 +80,6 @@ source_paths = [
 # alembic/ i alembic.ini: demo szkieletu (tools/demo_szkielet.py) buduje schemat
 # migracjami; bez nich test pada na niezmutowanym kodzie i mutmut przerywa przebieg.
 # .github/workflows/: test kroku mutacji uruchamia skrypt z workflow mutation.yml.
-# deploy/: test kernela czyta rejestracje hookow z deploy/hooks.example.json (HAR-22).
 # .cockpit/skills/: test skilli budowy czyta SKILL.md repozytorium przez rejestr (HAR-73).
 # mutmut kopiuje plik z also_copy bez tworzenia katalogow nadrzednych (FileNotFoundError),
 # wiec wpis jest katalogiem; katalog kopiuje copytree, ktore je tworzy.
@@ -94,7 +93,6 @@ also_copy = [
   "src/cockpit/__main__.py",
   "src/cockpit/settings.py",
   "src/cockpit/db/",
-  "src/cockpit/collector/",
   "src/cockpit/web/",
   "tools/",
   "cicd/",
@@ -104,7 +102,6 @@ also_copy = [
   ".claude/hooks/",
   # .claude/skills/: test bramek skilla praca-ticketu czyta skrypty i rubrykę (PR #176)
   ".claude/skills/",
-  "deploy/",
   ".cockpit/",
   "web/",
   # CLAUDE.md i .ai/: testy warstw instrukcji i walidatora lekcji czytaja prawdziwe

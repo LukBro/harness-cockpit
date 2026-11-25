@@ -34,8 +34,7 @@ _STRAZ_ROLI = Path(__file__).resolve().parent / "straz_roli.py"
 _MATCHER_STRAZY = "Bash|Write|Edit|MultiEdit|NotebookEdit"
 _PREFIKS_POWTORZENIA = "agent powtarza zablokowaną komendę: "
 
-# Zdarzenia zgodne z deploy/hooks.example.json; runner nie czyta tego pliku w runtime
-# (wheel go nie zawiera), spojnosc pilnuje test.
+# Zdarzenia hookow rejestrowane w ustawieniach agenta kroku; test kroku hookow pilnuje spojnosci.
 ZDARZENIA: dict[str, dict[str, str]] = {
     "SessionStart": {},
     "SubagentStart": {},
