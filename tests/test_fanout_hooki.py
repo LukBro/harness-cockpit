@@ -127,6 +127,8 @@ time.sleep(float(os.environ.get("FANOUT_SPANIE", "0")))
 if not na_koncu:
     wynik()
 (znaczniki / ("koniec_" + agent + ".txt")).write_text("1")
+if os.environ.get("FANOUT_USUN_USTAWIENIA") == "1" and opis["ustawienia"]:
+    Path(opis["ustawienia"]).unlink(missing_ok=True)    # plik znika przed sprzataniem kroku
 if os.environ.get("FANOUT_USUN_CLAUDE") == "1":
     os.remove(sys.argv[0])      # kolejne kroki nie znajda programu `claude`
 kod = int(os.environ.get("FANOUT_KOD", "0"))
@@ -177,6 +179,7 @@ def przygotuj(
     *, kod: int = 0, spanie: float = 0.0, krok: str = KROK, kroki: list[K] | None = None,
     z_claude: bool = True, hooki_na_koncu: bool = False, pada_skill: str = "",
     liczba: int = LICZBA, stop_ostatni: bool = False, usun_claude: bool = False,
+    usun_ustawienia: bool = False,
 ) -> SwiatHookow:
     if kroki is None:
         s = swiat(tmp_path, [K(krok, skill="s_analiza", extra=f", fanout: {LICZBA}")],
@@ -204,6 +207,7 @@ def przygotuj(
     monkeypatch.setenv("FANOUT_PADA_SKILL", pada_skill)
     monkeypatch.setenv("FANOUT_STOP_OSTATNI", "1" if stop_ostatni else "0")
     monkeypatch.setenv("FANOUT_USUN_CLAUDE", "1" if usun_claude else "0")
+    monkeypatch.setenv("FANOUT_USUN_USTAWIENIA", "1" if usun_ustawienia else "0")
 
     prawdziwy = silnik.wykonaj_run
     prawdziwe_wznowienie = silnik.wznow_run
@@ -546,6 +550,11 @@ async def test_krok_konczy_sie_po_limicie_doczytania_gdy_kokpit_nie_odpowiada_na
 
         assert time.monotonic() - poczatek < 15                    # limit doczytania to 1 s, nie 30 s
         assert kokpit.zawieszone >= 1                              # wysylka hooka naprawde stanela
+        # po limicie nie zostaje zadanie czekajace na oproznienie kolejki czytnika (Queue.join)
+        oczekujace = [
+            getattr(t.get_coro(), "__qualname__", "") for t in asyncio.all_tasks()
+            if t is not asyncio.current_task()]
+        assert [n for n in oczekujace if n.endswith("Queue.join")] == []
 
 
 async def test_anulowanie_runu_nie_czeka_na_kokpit_ktory_nie_odpowiada_na_zdarzenia_hookow(
@@ -660,8 +669,24 @@ async def test_po_kroku_nie_zostaje_zadne_zadanie_czytnika_ani_przekazywania_hoo
     zostale = [
         getattr(t.get_coro(), "__qualname__", repr(t.get_coro()))
         for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    assert [n for n in zostale if "przekazuj" in n or "_petla" in n] == []
+    assert [n for n in zostale if "przekazuj" in n or "_petla" in n or n.endswith("Queue.join")] == []
     assert sw.runner._hooki == {}
+
+
+async def test_plik_ustawien_ktory_znika_przed_sprzataniem_kroku_nie_jest_bledem_ani_wpisem_w_logu(
+    tmp_path, monkeypatch, z_baza, capsys,
+):
+    sw = swiat_z_baza(tmp_path, monkeypatch, z_baza, usun_ustawienia=True)
+
+    await sw.przebieg()
+
+    sciezki = {z["ustawienia"] for z in sw.start_agentow()}
+    assert sciezki and None not in sciezki, "agent nie dostal pliku --settings"
+    assert len(list(sw.znaczniki.glob("koniec_*.txt"))) == LICZBA   # agenci usuneli plik przed koncem
+    assert "nie zostal usuniety" not in capsys.readouterr().err
+    kinds = [e.kind for e in await wszystkie_zdarzenia()]
+    assert kinds.count("run_finished") == 1
+    assert "step_failed" not in kinds
 
 
 class OpoznionyKokpit(RejestrujacyKokpit):

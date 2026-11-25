@@ -180,13 +180,12 @@ _limit_prob_z_srodowiska = maks_prob_bledu_serwera   # parametr Runner.__init__ 
 
 def _blad_startu_programu(polecenie: Sequence[str]) -> str | None:
     """Tekst bledu OSError (taki jak od `Popen` w strazniku), gdy programu polecenia nie da sie
-    uruchomic: brak na PATH albo brak prawa wykonania; inaczej None."""
+    uruchomic, bo go nie ma na PATH; inaczej None. Brak prawa wykonania NIE jest tu obsluzony
+    osobno: `shutil.which` pomija plik bez prawa wykonania, wiec to tez daje ENOENT."""
     program = polecenie[0]
     if shutil.which(program) is not None:
         return None
-    kod = errno.EACCES if "/" in program and os.path.exists(program) else errno.ENOENT
-    blad = PermissionError if kod == errno.EACCES else FileNotFoundError
-    return str(blad(kod, os.strerror(kod), program))
+    return str(FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), program))
 
 
 @dataclass
@@ -837,6 +836,7 @@ class Runner:
             try:
                 # prefiks `env` ukrylby brak programu pod kodem 127 zamiast komunikatu startu
                 # straznika, wiec sprawdzamy program sami i zglaszamy ten sam tekst porazki
+                # (tylko brak programu na PATH; brak prawa wykonania nie jest obsluzony osobno)
                 blad_startu = _blad_startu_programu(polecenie)
                 if blad_startu is not None:
                     return WynikKroku(
