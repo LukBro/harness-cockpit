@@ -26,6 +26,8 @@ from cockpit.services.workflow_walidacja import (
     CYKL,
     FOREACH_BEZ_PRODUCENTA,
     FOREACH_ZLY_FORMAT,
+    FOREACH_NA_KROKU_SYSTEMOWYM,
+    FOREACH_Z_FANOUT,
     LIMIT_NA_KROKU_SYSTEMOWYM,
     NIEPRZENOSNY_SKILL,
     NIEZNANA_ZALEZNOSC,
@@ -274,14 +276,128 @@ def test_poprawny_workflow_daje_pusta_liste_problemow(tmp_path, repo, dom, skill
 name: w
 steps:
   plan: {skill: planista}
-  wykonaj: {skill: wykonawca, needs: [plan], foreach: "plan.json#zadania", fanout: 3, consensus: 3}
+  wykonaj: {skill: wykonawca, needs: [plan], foreach: "plan.json#zadania"}
+  porownaj: {skill: wykonawca, needs: [plan], fanout: 3, consensus: 3}
   review:
     skill: recenzent
-    needs: [wykonaj]
+    needs: [wykonaj, porownaj]
     on_fail: {retry: plan, max: 2}
 """,
     )
     assert waliduj_workflow(wf, rejestr_z(repo, dom), dom) == []
+
+
+# --- HAR-98: foreach i fanout wykluczaja sie (liczbe procesow daje artefakt, nie fanout) ---------
+
+
+def workflow_foreach_z_fanoutem(tmp_path, repo, skille_repo, krok_foreach: str):
+    napisz_skill(skille_repo, "pisarz", produces=["plan.json"])
+    napisz_skill(skille_repo, "s")
+    return workflow_z(
+        tmp_path,
+        f"""
+name: w
+steps:
+  pisz: {{skill: pisarz}}
+  rozdziel: {{skill: s, needs: [pisz], {krok_foreach}}}
+""",
+    )
+
+
+@pytest.mark.parametrize("fanout", [2, 3])
+def test_foreach_razem_z_fanout_wiekszym_niz_jeden_jest_bledem_kroku(
+    tmp_path, repo, dom, skille_repo, fanout
+):
+    wf = workflow_foreach_z_fanoutem(
+        tmp_path, repo, skille_repo, f'foreach: "plan.json#zadania", fanout: {fanout}')
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    p = problem(problemy, FOREACH_Z_FANOUT, "rozdziel")
+    assert p.poziom == Poziom.blad
+    assert p.komunikat == (
+        f"foreach i fanout {fanout} wykluczaja sie: liczbe procesow daje lista z artefaktu, "
+        "nie fanout")
+    assert ma_bledy(problemy)
+
+
+def test_foreach_na_kroku_systemowym_jest_odrzucony_z_nazwa_kroku(tmp_path, repo, dom, skille_repo):
+    napisz_skill(skille_repo, "autor", produces=["plan.json"])
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  autor: {skill: autor}\n"
+        "  diff: {system: diff, needs: [autor], foreach: 'plan.json#zadania'}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert problemy == [Problem(
+        "diff", FOREACH_NA_KROKU_SYSTEMOWYM,
+        "pole foreach nie ma skutku na kroku bez skilla diff: "
+        "foreach dotyczy tylko kroku agentowego",
+        Poziom.blad)]
+    assert FOREACH_NA_KROKU_SYSTEMOWYM == "foreach_na_kroku_systemowym"
+
+
+def test_krok_systemowy_bez_foreach_nie_ma_bledu_foreach_na_kroku_systemowym(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "autor")
+    wf = workflow_z(
+        tmp_path, "name: w\nsteps:\n  autor: {skill: autor}\n  diff: {system: diff, needs: [autor]}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert FOREACH_NA_KROKU_SYSTEMOWYM not in kody(problemy)
+
+
+def test_foreach_na_kroku_ze_skillem_nie_jest_bledem_foreach_na_kroku_systemowym(
+    tmp_path, repo, dom, skille_repo
+):
+    wf = workflow_foreach_z_fanoutem(
+        tmp_path, repo, skille_repo, 'foreach: "plan.json#zadania"')
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert FOREACH_NA_KROKU_SYSTEMOWYM not in kody(problemy)
+
+
+def test_foreach_z_fanout_jeden_nie_jest_bledem(tmp_path, repo, dom, skille_repo):
+    wf = workflow_foreach_z_fanoutem(
+        tmp_path, repo, skille_repo, 'foreach: "plan.json#zadania", fanout: 1')
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert FOREACH_Z_FANOUT not in kody(problemy)
+    assert not ma_bledy(problemy)
+
+
+def test_fanout_bez_foreach_nie_jest_bledem_foreach_z_fanout(tmp_path, repo, dom, skille_repo):
+    wf = workflow_foreach_z_fanoutem(tmp_path, repo, skille_repo, "fanout: 3")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert FOREACH_Z_FANOUT not in kody(problemy)
+
+
+def test_foreach_o_zlym_formacie_razem_z_fanout_ma_oba_bledy(tmp_path, repo, dom, skille_repo):
+    wf = workflow_foreach_z_fanoutem(
+        tmp_path, repo, skille_repo, "foreach: bezhasha, fanout: 2")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    problem(problemy, FOREACH_ZLY_FORMAT, "rozdziel")
+    problem(problemy, FOREACH_Z_FANOUT, "rozdziel")
+
+
+def test_foreach_bez_producenta_razem_z_fanout_ma_oba_bledy(tmp_path, repo, dom, skille_repo):
+    wf = workflow_foreach_z_fanoutem(
+        tmp_path, repo, skille_repo, 'foreach: "brak.json#zadania", fanout: 2')
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    problem(problemy, FOREACH_BEZ_PRODUCENTA, "rozdziel")
+    problem(problemy, FOREACH_Z_FANOUT, "rozdziel")
 
 
 # --- przypadki brzegowe -------------------------------------------------
