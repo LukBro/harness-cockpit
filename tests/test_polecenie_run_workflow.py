@@ -33,8 +33,8 @@ from cockpit.services import projekty
 from cockpit.services import runs as uslugi
 from cockpit.services.errors import NieZnaleziono
 from procesy import czekaj_na_warunek, zadanie_tla
-from runner.bufor import BrakMiejsca, Bufor
-from runner.client import Runner
+from runner.bufor import BladBufora, BrakMiejsca, Bufor
+from runner.client import POWOD_BUFOR_NIEDOSTEPNY, Runner, TokenOdrzucony
 from sesja_testowa import zaloguj_klienta, zaloz_runnera, zaloz_wlasciciela
 
 TOKEN = "run-workflow-token-5512"
@@ -325,6 +325,91 @@ async def test_brak_miejsca_na_zdarzenia_kontroluje_run_przerwaniem_a_nie_wyjatk
     assert przerwanie["step_id"] == "run"            # przerwanie dotyczy calego runu
     assert przerwanie["text"] == "brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)"
     assert bledy == []                                # zadanie nie zostawia niepobranego wyjatku
+
+
+@pytest.fixture
+async def niepobrane_wyjatki():
+    """Lista kontekstow wyjatkow, ktorych nikt nie pobral z zadan (handler petli zdarzen)."""
+    bledy: list[dict] = []
+    petla = asyncio.get_running_loop()
+    stary = petla.get_exception_handler()
+    petla.set_exception_handler(lambda p, kontekst: bledy.append(kontekst))
+    try:
+        yield bledy
+    finally:
+        petla.set_exception_handler(stary)
+
+
+async def test_blad_bufora_z_silnika_konczy_run_przerwaniem_poza_buforem_ze_sladem_na_stderr(
+    tmp_path, monkeypatch, capsys, niepobrane_wyjatki,
+):
+    async def silnik(polecenie, emit, *args, **kwargs):
+        raise BladBufora("zapis bufora: brak uprawnien")     # dokladnie BladBufora, nie BrakMiejsca
+
+    monkeypatch.setattr("runner.silnik.wykonaj_run", silnik)
+    kokpit = Kokpit()
+    runner = _runner(kokpit, tmp_path)
+    async with zadanie_tla(runner.listen(), "nasluch runnera"):
+        kokpit.wyslij(POLECENIE)
+        await _poczekaj(lambda: kokpit.zdarzenia, "przerwanie runu u kokpitu")
+        await _poczekaj(lambda: not runner._runy, "koniec zadania runu")
+        await asyncio.sleep(0.1)                          # ewentualne dalsze zdarzenia zdaza dojsc
+
+    (przerwanie,) = kokpit.zdarzenia                      # bez step_failed i run_finished przez bufor
+    assert przerwanie["kind"] == "step_aborted"
+    assert przerwanie["run_id"] == RUN_ID
+    assert przerwanie["step_id"] == "run"
+    assert przerwanie["text"] == POWOD_BUFOR_NIEDOSTEPNY
+    linie = capsys.readouterr().err.splitlines()
+    assert f"run {RUN_ID!r}: bufor zdarzen niedostepny: BladBufora" in linie
+    assert niepobrane_wyjatki == []
+
+
+async def test_blad_bufora_z_silnika_dla_run_id_ponad_limit_obcina_go_w_linii_stderr(
+    tmp_path, monkeypatch, capsys, niepobrane_wyjatki,
+):
+    run_id = "r" * 40                                    # ponad obciecie 36; kokpit odrzuci go jako pole
+    wystartowal = asyncio.Event()
+
+    async def silnik(polecenie, emit, *args, **kwargs):
+        wystartowal.set()
+        raise BladBufora("zapis bufora: brak uprawnien")
+
+    monkeypatch.setattr("runner.silnik.wykonaj_run", silnik)
+    kokpit = Kokpit()
+    runner = _runner(kokpit, tmp_path)
+    async with zadanie_tla(runner.listen(), "nasluch runnera"):
+        kokpit.wyslij({**POLECENIE, "run_id": run_id})
+        await asyncio.wait_for(wystartowal.wait(), LIMIT_S)
+        await _poczekaj(lambda: not runner._runy, "koniec zadania runu")
+
+    linie = capsys.readouterr().err.splitlines()
+    assert f"run {run_id[:36]!r}: bufor zdarzen niedostepny: BladBufora" in linie
+    assert niepobrane_wyjatki == []
+
+
+@pytest.mark.parametrize("run_id", [RUN_ID, "r" * 40])    # drugi: ponad obciecie 36
+async def test_odmowa_tokenu_w_zadaniu_runu_zostawia_na_stderr_cala_linie_i_konczy_nasluch_odmowa(
+    tmp_path, monkeypatch, capsys, niepobrane_wyjatki, run_id,
+):
+    async def silnik(polecenie, emit, *args, **kwargs):
+        raise TokenOdrzucony()
+
+    monkeypatch.setattr("runner.silnik.wykonaj_run", silnik)
+    kokpit = Kokpit()
+    runner = _runner(kokpit, tmp_path)
+    async with zadanie_tla(runner.listen(), "nasluch runnera") as nasluch:
+        kokpit.wyslij({**POLECENIE, "run_id": run_id})
+        await _poczekaj(nasluch.done, "nasluch konczy sie odmowa tokenu")
+        with pytest.raises(TokenOdrzucony):               # pobranie wyjatku nasluchu
+            nasluch.result()
+        await asyncio.sleep(0.1)
+
+    assert isinstance(runner._token_odrzucony, TokenOdrzucony)
+    linie = capsys.readouterr().err.splitlines()
+    assert f"zadanie runu {run_id[:36]!r} zakonczone odmowa tokenu: TokenOdrzucony" in linie
+    assert kokpit.zdarzenia == []                         # odmowa nie jest zdarzeniem runu
+    assert niepobrane_wyjatki == []
 
 
 # =====================================================================================

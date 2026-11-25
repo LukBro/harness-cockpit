@@ -538,6 +538,8 @@ class Runner:
             raise
         except TokenOdrzucony as e:
             self._token_odrzucony = e
+            print(f"zadanie runu {run_id[:36]!r} zakonczone odmowa tokenu: {type(e).__name__}",
+                  file=sys.stderr)
             zadanie = self._zadanie
             if zadanie is not None and not zadanie.done():
                 zadanie.cancel()            # listen() podnosi zapamietany wyjatek
@@ -712,6 +714,16 @@ class Runner:
                 await self._wyslij_bezposrednio(
                     client, run_id=cmd.get("run_id"), step_id="run", kind="step_aborted",
                     text="brak miejsca: zapis zdarzen runnera nie powiodl sie (ENOSPC)",
+                )
+            except BladBufora as e:
+                # bufor zepsuty z innej przyczyny niz brak miejsca (BrakMiejsca jest wyzej);
+                # `step_failed` i `run_finished` poszlyby przez ten sam bufor, wiec przerwanie
+                # idzie poza nim
+                print(f"run {str(cmd.get('run_id'))[:36]!r}: bufor zdarzen niedostepny: "
+                      f"{type(e).__name__}", file=sys.stderr)
+                await self._wyslij_bezposrednio(
+                    client, run_id=cmd.get("run_id"), step_id="run", kind="step_aborted",
+                    text=POWOD_BUFOR_NIEDOSTEPNY,
                 )
 
     @staticmethod
