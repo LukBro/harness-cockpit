@@ -99,7 +99,7 @@ def _aktywna(wiersz: BlokadaLogowania | None, teraz: datetime) -> bool:
     return (
         wiersz is not None
         and wiersz.zablokowane_do is not None
-        and sesje._utc(wiersz.zablokowane_do) > teraz
+        and sesje.na_utc(wiersz.zablokowane_do) > teraz
     )
 
 
@@ -115,7 +115,7 @@ def _zapisz_nieudana(
         wiersz = BlokadaLogowania(klucz=klucz, nieudane=1, pierwsza_at=teraz)
         s.add(wiersz)
     elif (
-        sesje._utc(wiersz.pierwsza_at) + timedelta(seconds=okno_s) <= teraz
+        sesje.na_utc(wiersz.pierwsza_at) + timedelta(seconds=okno_s) <= teraz
         or wiersz.zablokowane_do is not None
     ):
         # nowe liczenie: okno minelo albo wygasla blokada (aktywnej tu nie ma)
@@ -144,7 +144,7 @@ async def zaloguj(s: AsyncSession, email: str, haslo: str, ip: str) -> User:
     para = await _wiersz(s, k_pary)
     adres = await _wiersz(s, k_adresu)
 
-    koniec = [sesje._utc(w.zablokowane_do) for w in (para, adres) if _aktywna(w, teraz)]
+    koniec = [sesje.na_utc(w.zablokowane_do) for w in (para, adres) if _aktywna(w, teraz)]
     if koniec:
         # bez weryfikacji hasla i bez zmiany licznikow, takze przy poprawnym hasle
         minuty = max(1, math.ceil((max(koniec) - teraz).total_seconds() / 60))
