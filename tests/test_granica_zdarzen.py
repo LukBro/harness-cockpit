@@ -141,27 +141,85 @@ def _napisy(wezel: ast.AST) -> set[str]:
     return {n.value for n in ast.walk(wezel) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
 
 
-def _rodzaje_wysylane_przez_runnera() -> set[str]:
+_WARIANT_MUTANTA = re.compile(r"__mutmut_\d+$")
+
+
+def _wezly_bez_wariantow_mutanta(wezel: ast.AST):
+    """Jak `ast.walk`, ale bez poddrzew funkcji `x_<nazwa>__mutmut_<n>`: pod mutmutem plik
+    runnera zawiera zmutowane kopie funkcji (napisy `XX...XX`, wielkie litery), a to nie jest
+    kod, ktory runner wysyla. `__mutmut_orig` i trampoliny zostaja skanowane."""
+    if isinstance(wezel, (ast.FunctionDef, ast.AsyncFunctionDef)) and _WARIANT_MUTANTA.search(
+        wezel.name
+    ):
+        return
+    yield wezel
+    for dziecko in ast.iter_child_nodes(wezel):
+        yield from _wezly_bez_wariantow_mutanta(dziecko)
+
+
+def _rodzaje_ze_zrodla(tekst: str) -> set[str]:
     """Napisy podane jako rodzaj: `kind=...`, `"kind": ...`, `kind_*=...` i drugi argument
     pozycyjny `_zdarzenie(run_id, <rodzaj>, ...)` w silniku. Prefiks `hook:` ma osobny test."""
     znalezione: set[str] = set()
-    for plik in sorted((KORZEN / "src" / "runner").glob("*.py")):
-        drzewo = ast.parse(plik.read_text(encoding="utf-8"))
-        for w in ast.walk(drzewo):
-            if isinstance(w, ast.keyword) and w.arg is not None and w.arg.startswith("kind"):
-                znalezione |= _napisy(w.value)
-            elif isinstance(w, ast.Dict):
-                for klucz, wartosc in zip(w.keys, w.values):
-                    if isinstance(klucz, ast.Constant) and klucz.value == "kind":
-                        znalezione |= _napisy(wartosc)
-            elif isinstance(w, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id.startswith("kind") for t in w.targets
-            ):
-                znalezione |= _napisy(w.value)
-            elif (isinstance(w, ast.Call) and isinstance(w.func, ast.Name)
-                  and w.func.id == "_zdarzenie" and len(w.args) >= 2):
-                znalezione |= _napisy(w.args[1])
+    for w in _wezly_bez_wariantow_mutanta(ast.parse(tekst)):
+        if isinstance(w, ast.keyword) and w.arg is not None and w.arg.startswith("kind"):
+            znalezione |= _napisy(w.value)
+        elif isinstance(w, ast.Dict):
+            for klucz, wartosc in zip(w.keys, w.values):
+                if isinstance(klucz, ast.Constant) and klucz.value == "kind":
+                    znalezione |= _napisy(wartosc)
+        elif isinstance(w, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id.startswith("kind") for t in w.targets
+        ):
+            znalezione |= _napisy(w.value)
+        elif (isinstance(w, ast.Call) and isinstance(w.func, ast.Name)
+              and w.func.id == "_zdarzenie" and len(w.args) >= 2):
+            znalezione |= _napisy(w.args[1])
     return {k for k in znalezione if not k.startswith("hook:")}
+
+
+def _rodzaje_wysylane_przez_runnera() -> set[str]:
+    znalezione: set[str] = set()
+    for plik in sorted((KORZEN / "src" / "runner").glob("*.py")):
+        znalezione |= _rodzaje_ze_zrodla(plik.read_text(encoding="utf-8"))
+    return znalezione
+
+
+ZRODLO_Z_WARIANTEM_MUTANTA = '''
+def x_f__mutmut_1():
+    return {"kind": "XXoutputXX"}
+
+
+def x_f__mutmut_orig():
+    return {"kind": "output"}
+
+
+def x_f__mutmut_12():
+    return g(kind="OUTPUT")
+
+
+async def x_h__mutmut_3():
+    return {"kind": "STEP_STARTED"}
+'''
+
+
+def test_skaner_pomija_warianty_mutanta_a_zostawia_wersje_oryginalna():
+    assert _rodzaje_ze_zrodla(ZRODLO_Z_WARIANTEM_MUTANTA) == {"output"}
+
+
+def test_skaner_nadal_czyta_funkcje_o_zwyklej_nazwie_i_trampoline():
+    zrodlo = (
+        'def f():\n    return g(kind="step_started")\n\n'
+        'def x_g():\n    return {"kind": "step_failed"}\n\n'
+        'def g_mutmut_nie_wariant():\n    return {"kind": "run_finished"}\n\n'
+        'def wyslij_v2():\n    return {"kind": "step_aborted"}\n\n'            # koncowka `\d+`, bez `__mutmut_`
+        'def x_f_mutmut_1():\n    return {"kind": "step_skipped"}\n\n'         # jedno podkreslenie
+        'def x_f__mutmut_1_pomocnik():\n    return {"kind": "step_waiting"}\n'  # cos po numerze
+    )
+
+    assert _rodzaje_ze_zrodla(zrodlo) == {
+        "step_started", "step_failed", "run_finished", "step_aborted", "step_skipped",
+        "step_waiting"}
 
 
 def test_skaner_rodzajow_runnera_znajduje_znane_rodzaje_silnika():
