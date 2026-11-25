@@ -6,6 +6,7 @@ Procesy w osobnej grupie, zeby zabicie nie zostawialo sierot (BRO-104).
 from __future__ import annotations
 
 import asyncio
+import errno
 import importlib.metadata
 import json
 import math
@@ -16,7 +17,9 @@ import signal
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -25,9 +28,10 @@ from pydantic import ValidationError
 
 from cockpit.api.schematy import EventIn
 from cockpit.services.errors import BladDziedziny
-from runner import operacje, silnik
+from runner import bufor, hooks, operacje, silnik
 from runner.bufor import BladBufora, BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
+from runner.krok import WynikKroku, wykonaj_krok
 
 LIMIT_ANULOWANYCH = 1000      # pamietane runy anulowane (ignorowanie spoznionego resume)
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
@@ -48,6 +52,7 @@ POWOD_SPOZA_LISTY = "operacja spoza listy dozwolonych"
 POWOD_BRAK_STEP_ID = "polecenie run_step bez poprawnego step_id"
 POWOD_BUFOR_NIEDOSTEPNY = "bufor zdarzen runnera niedostepny: zapis albo odczyt nie powiodl sie"
 TEKST_ANULOWANIA = "anulowany przez człowieka"
+CZAS_DOCZYTANIA_HOOKOW_S = 30   # tyle po kroku czekamy na wyslanie ostatnich zdarzen hookow
 
 
 # Klucz wiersza kroku w kokpicie bez runu: (step_id, agent_id, attempt); brak agent_id to "",
@@ -173,6 +178,26 @@ def maks_prob_bledu_serwera() -> int:
 _limit_prob_z_srodowiska = maks_prob_bledu_serwera   # parametr Runner.__init__ przesłania nazwę
 
 
+def _blad_startu_programu(polecenie: Sequence[str]) -> str | None:
+    """Tekst bledu OSError (taki jak od `Popen` w strazniku), gdy programu polecenia nie da sie
+    uruchomic, bo go nie ma na PATH; inaczej None. Brak prawa wykonania NIE jest tu obsluzony
+    osobno: `shutil.which` pomija plik bez prawa wykonania, wiec to tez daje ENOENT."""
+    program = polecenie[0]
+    if shutil.which(program) is not None:
+        return None
+    return str(FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), program))
+
+
+@dataclass
+class _PrzypisanieHookow:
+    """Zasoby hookow jednego kroku, liczone odwolaniami wariantow fanoutu."""
+    plik: Path
+    ustawienia: Path
+    czytnik: hooks.CzytnikHookow
+    zadanie: asyncio.Task
+    odwolania: int = 0
+
+
 class Runner:
     def __init__(
         self,
@@ -218,6 +243,8 @@ class Runner:
         # zamykanie checkpointu anulowanego runu (zadania w tle; stop() je odczekuje)
         self._zamykania: set[asyncio.Task] = set()
         self._zapis_zdarzen = asyncio.Lock()    # jeden zapis do bufora naraz: kolejnosc zdarzen
+        # hooki kroku (HAR-94): jedno przypisanie na (run_id, step_id), wspolne dla wariantow fanoutu
+        self._hooki: dict[tuple[str, str], _PrzypisanieHookow] = {}
 
     async def register(self, client: httpx.AsyncClient) -> None:
         r = await client.post(
@@ -709,6 +736,125 @@ class Runner:
             transport=self._transport,
         )
 
+    def _zajmij_hooki(
+        self, client: httpx.AsyncClient, run_id: str, step_id: str,
+    ) -> _PrzypisanieHookow:
+        """Przypisanie hookow (plik, ustawienia, czytnik, przekazywanie) wspolne dla wszystkich
+        wariantow fanoutu tego samego kroku; kolejny wariant tylko podnosi licznik odwolan.
+        `BladPlikuHookow` (zly identyfikator, dysk) przechodzi do wolajacego jako blad dziedziny.
+        Bez `await`: miedzy sprawdzeniem mapy a wpisem nie ma przeplotu zadan."""
+        klucz = (run_id, step_id)
+        przypisanie = self._hooki.get(klucz)
+        if przypisanie is None:
+            katalog = bufor.katalog_stanu()
+            plik = hooks.plik_hookow(katalog, run_id, step_id)
+            ustawienia = hooks.plik_ustawien(
+                katalog, run_id, step_id, hooks.ustawienia_hookow(plik))
+            czytnik = hooks.CzytnikHookow(plik, run_id, step_id)
+
+            async def wyslij(**zdarzenie: Any) -> bool:
+                async with self._zapis_zdarzen:     # ta sama kolejnosc zapisu co `emit` silnika
+                    return await self.send_event(client, **zdarzenie)
+
+            czytnik.start()
+            zadanie = asyncio.create_task(hooks.przekazuj(czytnik, wyslij))
+            przypisanie = _PrzypisanieHookow(plik, ustawienia, czytnik, zadanie)
+            self._hooki[klucz] = przypisanie
+        przypisanie.odwolania += 1
+        return przypisanie
+
+    async def _doczytaj_hooki(self, przypisanie: _PrzypisanieHookow) -> None:
+        """Ostatnie zdarzenia z pliku (agent konczy proces tuz po hooku `SubagentStop`) i
+        odczekanie, az `przekazuj` je wysle; z limitem czasu i bez wieszania sie na martwym zadaniu."""
+        przypisanie.czytnik.odczytaj_nowe()
+        oproznienie = asyncio.ensure_future(przypisanie.czytnik.kolejka.join())
+        try:
+            await asyncio.wait(
+                {oproznienie, przypisanie.zadanie}, timeout=CZAS_DOCZYTANIA_HOOKOW_S,
+                return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if not oproznienie.done():
+                oproznienie.cancel()
+                await asyncio.wait({oproznienie})
+
+    async def _zwolnij_hooki(
+        self, run_id: str, step_id: str, przypisanie: _PrzypisanieHookow, doczytac: bool,
+    ) -> None:
+        """Ostatni wariant sprzata: czytnik, zadanie przekazywania i plik ustawien (takze po
+        porazce i anulowaniu). Wpis znika z mapy przed pierwszym `await`."""
+        przypisanie.odwolania -= 1
+        if przypisanie.odwolania > 0:
+            return
+        self._hooki.pop((run_id, step_id), None)
+        try:
+            if doczytac:
+                await self._doczytaj_hooki(przypisanie)
+        finally:
+            try:
+                await przypisanie.czytnik.zatrzymaj()
+            finally:
+                przypisanie.zadanie.cancel()
+                await asyncio.wait({przypisanie.zadanie})
+                try:
+                    przypisanie.ustawienia.unlink(missing_ok=True)
+                except OSError as e:
+                    print(f"hooki: plik ustawien kroku {step_id[:36]!r} nie zostal usuniety: "
+                          f"{type(e).__name__}", file=sys.stderr)
+                # WHY: `plik_hookow` tylko dopisuje, a nowy czytnik (ponowienie kroku, spozniony
+                # wariant fanoutu) startuje od offsetu 0 - bez obciecia wyslalby zdarzenia
+                # poprzedniej proby drugi raz z nowym event_id (duplikaty w bazie).
+                try:
+                    os.truncate(przypisanie.plik, 0)
+                except OSError as e:
+                    print(f"hooki: plik hookow kroku {step_id[:36]!r} nie zostal obciety: "
+                          f"{type(e).__name__}", file=sys.stderr)
+                self._zbadaj_przekazywanie(przypisanie.zadanie, step_id)
+
+    def _zbadaj_przekazywanie(self, zadanie: asyncio.Task, step_id: str) -> None:
+        """Wyjatek, ktory zakonczyl przekazywanie hookow: log z nazwa typu (bez tresci), a odmowa
+        tokenu idzie do petli nasluchu jak w `_pilnuj_zadania`."""
+        if zadanie.cancelled():
+            return
+        blad = zadanie.exception()
+        print(f"hooki: przekazywanie kroku {step_id[:36]!r} zakonczone bledem: "
+              f"{type(blad).__name__}", file=sys.stderr)
+        if isinstance(blad, TokenOdrzucony):
+            self._token_odrzucony = blad
+            if self._zadanie is not None and not self._zadanie.done():
+                self._zadanie.cancel()
+
+    def _agent_z_hookami(self, client: httpx.AsyncClient) -> silnik.UruchomAgenta:
+        """Opakowanie `wykonaj_krok` dla silnika: agent kroku dostaje `--settings <plik>` z hookami
+        i `COCKPIT_HOOK_FILE` (prefiks `env` w argv), a zdarzenia hookow ida do kokpitu.
+
+        Znany kompromis: sciezka pliku hookow jest w argv (widoczna w `ps`). To sciezka, nie
+        sekret; tresc ustawien lezy w pliku 0600 w katalogu stanu runnera."""
+
+        async def uruchom(spec, polecenie, katalog, emit, **opcje):
+            przypisanie = self._zajmij_hooki(client, spec.run_id, spec.step_id)
+            doczytac = True
+            try:
+                # prefiks `env` ukrylby brak programu pod kodem 127 zamiast komunikatu startu
+                # straznika, wiec sprawdzamy program sami i zglaszamy ten sam tekst porazki
+                # (tylko brak programu na PATH; brak prawa wykonania nie jest obsluzony osobno)
+                blad_startu = _blad_startu_programu(polecenie)
+                if blad_startu is not None:
+                    return WynikKroku(
+                        status="nieudany", powod=f"nie można uruchomić polecenia: {blad_startu}",
+                        kod_wyjscia=None)
+                argv = [
+                    "env", f"{hooks.ZMIENNA_PLIKU}={przypisanie.plik}",
+                    *polecenie, "--settings", str(przypisanie.ustawienia),
+                ]
+                return await wykonaj_krok(spec, argv, katalog, emit, **opcje)
+            except asyncio.CancelledError:
+                doczytac = False        # anulowanie nie czeka na wysylke zalegajacych zdarzen
+                raise
+            finally:
+                await self._zwolnij_hooki(spec.run_id, spec.step_id, przypisanie, doczytac)
+
+        return uruchom
+
     async def _run_workflow(self, cmd: dict) -> None:
         """Run workflow w wlasnym kliencie HTTP: zerwanie strumienia polecen nie przerywa
         runu (BRO-75), a zdarzenia silnika ida do kokpitu przez `send_event`."""
@@ -723,7 +869,8 @@ class Runner:
                     self._sledz_koniec_kroku(run_id, zdarzenie)
 
             try:
-                await silnik.wykonaj_run(cmd, emit)
+                await silnik.wykonaj_run(
+                    cmd, emit, uruchom_agenta=self._agent_z_hookami(client))
             except NiewaznePoleZdarzenia as e:
                 await self._zglos_niewazne_pole(client, cmd.get("run_id"), e)
             except BrakMiejsca:
@@ -771,7 +918,9 @@ class Runner:
                     self._sledz_koniec_kroku(run_id, zdarzenie)
 
             try:
-                await silnik.wznow_run(run_id, step_id, decyzja, emit, powod=powod)
+                await silnik.wznow_run(
+                    run_id, step_id, decyzja, emit, powod=powod,
+                    uruchom_agenta=self._agent_z_hookami(client))
             except NiewaznePoleZdarzenia as e:
                 await self._zglos_niewazne_pole(client, run_id, e)
             except BrakMiejsca:

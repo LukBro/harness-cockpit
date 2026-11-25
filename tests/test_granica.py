@@ -923,7 +923,7 @@ async def test_run_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run_finish
 ):
     kokpit = _Kokpit()
 
-    async def silnik_z_za_dlugim_krokiem(cmd, emit):
+    async def silnik_z_za_dlugim_krokiem(cmd, emit, **kw):
         await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
 
     monkeypatch.setattr(modul_klienta.silnik, "wykonaj_run", silnik_z_za_dlugim_krokiem)
@@ -938,7 +938,7 @@ async def test_wznowienie_ze_zdarzeniem_ponad_limit_konczy_sie_step_failed_i_run
 ):
     kokpit = _Kokpit()
 
-    async def silnik_wznowienia(run_id, step_id, decyzja, emit, powod=None):
+    async def silnik_wznowienia(run_id, step_id, decyzja, emit, powod=None, **kw):
         await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
 
     monkeypatch.setattr(modul_klienta.silnik, "wznow_run", silnik_wznowienia)
@@ -1006,7 +1006,7 @@ async def test_run_z_run_id_ponad_limit_nie_ma_komu_zglosic_konca_i_nie_rzuca(
 ):
     kokpit = _Kokpit()
 
-    async def silnik_z_zlym_run_id(cmd, emit):
+    async def silnik_z_zlym_run_id(cmd, emit, **kw):
         await emit({**BAZA_ZDARZENIA, "run_id": "r" * 37})
 
     monkeypatch.setattr(modul_klienta.silnik, "wykonaj_run", silnik_z_zlym_run_id)
@@ -1138,7 +1138,7 @@ async def test_run_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_przerwa
     kokpit = _Kokpit()
     runner = _runner_z_buforem_bez_miejsca(tmp_path, kokpit, monkeypatch)
 
-    async def silnik_z_za_dlugim_krokiem(cmd, emit):
+    async def silnik_z_za_dlugim_krokiem(cmd, emit, **kw):
         await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
 
     monkeypatch.setattr(modul_klienta.silnik, "wykonaj_run", silnik_z_za_dlugim_krokiem)
@@ -1154,7 +1154,7 @@ async def test_wznowienie_ze_zdarzeniem_ponad_limit_i_pelnym_buforem_konczy_sie_
     kokpit = _Kokpit()
     runner = _runner_z_buforem_bez_miejsca(tmp_path, kokpit, monkeypatch)
 
-    async def silnik_wznowienia(run_id, step_id, decyzja, emit, powod=None):
+    async def silnik_wznowienia(run_id, step_id, decyzja, emit, powod=None, **kw):
         await emit({**BAZA_ZDARZENIA, "step_id": "s" * 101})
 
     monkeypatch.setattr(modul_klienta.silnik, "wznow_run", silnik_wznowienia)

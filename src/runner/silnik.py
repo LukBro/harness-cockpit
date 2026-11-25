@@ -81,6 +81,7 @@ from runner.checkpoint import (
 )
 from runner.dowody import wykonaj_check, wykonaj_mutate_diff
 from runner.graf import StanKroku, kroki_do_powtorzenia, nastepne
+from runner.konsensus import WynikWariantu, rozstrzygnij
 from runner.kotwice import PLIK_NOTATKI
 from runner.krok import (
     KATALOG_RUNU,
@@ -327,6 +328,8 @@ def _wejscie(p: Przygotowany, id_kroku: str, artefakt: str) -> list[str]:
                 return [str(p.worktree.katalog_runu / krok.id / artefakt)]
         elif artefakt in p.rejestr.skille[krok.skill].produces:
             # najblizszy producent konczy szukanie; bez fanoutu wejscie to sama nazwa
+            if krok.fanout > 1 and krok.consensus is not None:
+                return [(KATALOG_ARTEFAKTOW / artefakt).as_posix()]   # kopia zwyciezcy (HAR-95)
             return _wejscia_wariantow(p, krok, artefakt) if krok.fanout > 1 else [artefakt]
     return [artefakt]
 
@@ -400,16 +403,80 @@ async def _krok(
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
     agenci = _agenci_kroku(krok)
     if len(agenci) == 1:
-        return await _wariant(
+        wynik = await _wariant(
             run_id, krok, skill, krok.id, False, wejscia, p, profil, uruchom_agenta, emit,
             proba, ogon)
+        if krok.consensus is None or wynik.status != "zakonczony":
+            return wynik
+        # jeden wariant tez glosuje: pusty werdykt to brak dowodu (evidence_required)
+        return await _konsensus(p, krok, skill, ((krok.id, wynik),), jeden=True)
     # fanout (HAR-83): warianty biegna rownolegle i wszystkie dobiegaja konca, takze po porazce
     # jednego; wyjatek wariantu to jego porazka, poza `BladBufora` (zepsuty zapis zdarzen)
     wyniki = await asyncio.gather(*(
         _wariant(run_id, krok, skill, agent_id, True, wejscia, p, profil, uruchom_agenta, emit,
                  proba, ogon)
         for agent_id in agenci), return_exceptions=True)
-    return _zbierz_warianty(krok.id, agenci, wyniki)
+    wynik = _zbierz_warianty(krok.id, agenci, wyniki)
+    if krok.consensus is None:
+        return wynik
+    return await _konsensus(p, krok, skill, wynik.warianty)
+
+
+def _sciezka_artefaktu_wariantu(
+    p: Przygotowany, krok: Krok, skill: Any, agent_id: str, nazwa: str, jeden: bool = False,
+) -> Path:
+    """Gdzie lezy artefakt wariantu: rola z zapisem w worktree, bez zapisu w katalogu runu.
+
+    `jeden` (fanout 1): artefakt pod zwykla nazwa, bez podkatalogu wariantu."""
+    if jeden:
+        if profil_roli(skill.role).zapis:
+            return p.worktree.sciezka / nazwa
+        return p.worktree.katalog_runu / krok.id / nazwa
+    wzgledna = sciezka_wyjscia_wariantu(krok.id, agent_id, nazwa)   # tez waliduje `nazwa`
+    if profil_roli(skill.role).zapis:
+        return p.worktree.sciezka / wzgledna
+    return p.worktree.katalog_runu / krok.id / podkatalog_wariantu(agent_id) / nazwa
+
+
+def _kopiuj_zwyciezce(zrodla_i_cele: Sequence[tuple[Path, Path]]) -> None:
+    for zrodlo, cel in zrodla_i_cele:
+        cel.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(zrodlo, cel)
+
+
+async def _konsensus(
+    p: Przygotowany, krok: Krok, skill: Any, warianty: tuple[tuple[str, WynikKroku], ...],
+    *, jeden: bool = False,
+) -> WynikKroku:
+    """Wynik kroku z `consensus` (HAR-95): glosuja zdane warianty z werdyktem w artefakcie.
+
+    Zdany: artefakty zwyciezcy sa kopiowane do `KATALOG_ARTEFAKTOW/<nazwa>` (takze dla roli bez
+    zapisu); podkatalogi wariantow zostaja. Niespelniony: krok nieudany z opisem, a zdane warianty
+    dostaja `step_failed` (kazdy wiersz (krok, agent) musi sie zakonczyc)."""
+    assert krok.consensus is not None
+    sciezki = {
+        a: tuple(_sciezka_artefaktu_wariantu(p, krok, skill, a, n, jeden) for n in skill.produces)
+        for a, _ in warianty}
+    r = rozstrzygnij(
+        {a: WynikWariantu(w.status, sciezki[a]) for a, w in warianty}, krok.consensus)
+    if jeden:   # artefakty leza juz pod zwykla nazwa: bez kopii i bez wierszy wariantow
+        if r.zwyciezca is None:
+            return WynikKroku(status="nieudany", powod=r.opis, kod_wyjscia=None)
+        return dict(warianty)[r.zwyciezca]
+    if r.zwyciezca is None:
+        return WynikKroku(
+            status="nieudany", powod=r.opis, kod_wyjscia=None, warianty=tuple(
+                (a, w if w.status != "zakonczony" else replace(
+                    w, status="nieudany", powod="konsensus niespełniony"))
+                for a, w in warianty))
+    cele = [p.worktree.sciezka / KATALOG_ARTEFAKTOW / n for n in skill.produces]
+    try:
+        await asyncio.to_thread(_kopiuj_zwyciezce, list(zip(sciezki[r.zwyciezca], cele)))
+    except OSError as e:
+        raise PorazkaKroku(f"nie można skopiować wyniku wariantu {r.zwyciezca}: {e}") from e
+    return WynikKroku(
+        status="zakonczony", powod=None, kod_wyjscia=dict(warianty)[r.zwyciezca].kod_wyjscia,
+        warianty=warianty)
 
 
 def _zbierz_warianty(

@@ -758,7 +758,7 @@ async def test_po_anulowaniu_przez_api_krok_workflow_z_agentem_i_proba_nie_zosta
     run_id = await swiat.run(swiat.tenant_a, swiat.runner_a, RunStatus.running)
     wystartowal = asyncio.Event()
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         await emit({"run_id": cmd["run_id"], "kind": "step_started", "step_id": "b",
                     "agent_id": "b", "attempt": 2, "text": ""})
         wystartowal.set()
