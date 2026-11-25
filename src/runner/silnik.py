@@ -492,6 +492,8 @@ def _zapisz_raport_porazki(
     # inne kodowanie chroni reczny mutant
     tresc = ("\n".join(linie) + "\n").encode("utf-8")  # pragma: no mutate
     try:
+        # rownolegly recenzent ma migawke worktree; ten plik to zapis silnika, a nie jego
+        # (wzorzec RAPORTY_NAPRAWY_SILNIKA w krok.py musi obejmowac _sciezka_raportu)
         _zapisz_atomowo(p.worktree.sciezka / _sciezka_raportu(cel, proba_celu), tresc)
     except OSError as e:
         return type(e).__name__

@@ -11,11 +11,12 @@ import re
 from collections.abc import Mapping
 
 from runner.secrets import mask
+from runner.straznik import WZORZEC_TOKENU
 
 _SEKRETY: set[str] = set()
-# Glob COCKPIT_*_TOKEN z ticketu obejmuje pusty środek, a get_token("") czyta
-# zmienną COCKPIT__TOKEN; szerszy wzorzec maskuje więcej sekretów, więc jest bezpieczniejszy.
-_ZMIENNA_TOKENU = re.compile(r"COCKPIT_.*_TOKEN")
+# Wzorzec zmiennej z tokenem kokpitu jest jeden, w straznik.py (obejmuje pusty srodek:
+# get_token("") czyta COCKPIT__TOKEN); ten sam wycina je ze srodowiska agenta.
+_ZMIENNA_TOKENU = WZORZEC_TOKENU
 _BEARER = re.compile(r"(Bearer\s+)(\S+)")
 # HAR-219: komenda Basha w zdarzeniu ToolDenied. Wartosc przypisania `NAZWA=wartosc`, gdy nazwa
 # (bez rozroznienia wielkosci liter) zawiera czlon sekretu; wartosc w cudzyslowach moze miec spacje.

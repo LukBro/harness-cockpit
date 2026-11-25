@@ -770,6 +770,194 @@ def test_zmiana_pliku_roboczego_w_repozytorium_git_jest_naruszeniem(tmp_path):
     assert sprawdz_tylko_odczyt(przed, repo) is not None
 
 
+# --- HAR-209: nieczytelny katalog to blad, nie pusta migawka -----------------
+
+def _walk_z_nieczytelnym_podkatalogiem(top, topdown=True, onerror=None, followlinks=False):
+    """Jak `os.walk` na katalogu bez prawa odczytu (root ignoruje prawa, wiec symulacja)."""
+    yield (str(top), ["zamkniety"], ["a.txt"])
+    if onerror is not None:
+        onerror(PermissionError(13, "Brak dostępu", os.path.join(top, "zamkniety")))
+
+
+def test_nieczytelny_podkatalog_w_migawce_to_blad_a_nie_pominiecie_go(
+    tmp_path, monkeypatch
+):
+    plik(tmp_path, "a.txt", "tresc")
+    monkeypatch.setattr("cockpit.services.walidacja.os.walk", _walk_z_nieczytelnym_podkatalogiem)
+
+    with pytest.raises(OSError):
+        migawka(tmp_path)
+
+
+def test_migawka_nieistniejacego_katalogu_to_blad_a_nie_pusta_migawka(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        migawka(tmp_path / "nie-ma-takiego-katalogu")
+
+
+def test_nieczytelny_podkatalog_przy_sprawdzeniu_tylko_odczytu_to_blad_a_nie_zgoda(
+    tmp_path, monkeypatch
+):
+    """Pusta migawka `po` wygladalaby jak usuniecie wszystkiego albo, przy pustej `przed`, jak czysto."""
+    plik(tmp_path, "a.txt", "tresc")
+    przed = migawka(tmp_path)
+    monkeypatch.setattr("cockpit.services.walidacja.os.walk", _walk_z_nieczytelnym_podkatalogiem)
+
+    with pytest.raises(OSError):
+        sprawdz_tylko_odczyt(przed, tmp_path)
+
+
+def test_sprawdzenie_tylko_odczytu_pustej_migawki_nie_przechodzi_na_nieczytelnym_katalogu(
+    tmp_path, monkeypatch
+):
+    """Przypadek, w ktorym pusty wynik daje zielone przejscie: `przed` puste, `po` puste przez ukryty blad."""
+    monkeypatch.setattr("cockpit.services.walidacja.os.walk", _walk_z_nieczytelnym_podkatalogiem)
+
+    with pytest.raises(OSError):
+        sprawdz_tylko_odczyt({}, tmp_path)
+
+
+def _sciezki_migawki(tmp_path, wyjatki, *sciezki) -> set[str]:
+    for sciezka in sciezki:
+        plik(tmp_path, sciezka, "tresc")
+    return set(migawka(tmp_path, wyjatki))
+
+
+def test_wyjatek_migawki_z_gwiazdka_obejmuje_dowolny_segment_na_jej_miejscu(tmp_path):
+    wyjatki = [Path("a") / "*" / "c.txt"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/x/c.txt", "a/inny/c.txt")
+
+    assert widoczne == set()
+
+
+def test_wyjatek_migawki_z_gwiazdka_nie_ukrywa_tego_co_lezy_pod_sciezka_o_nazwie_z_wzorca(tmp_path):
+    """Katalog `c.txt` zamiast pliku: wyjatek opisuje plik, wiec zawartosc katalogu zostaje widoczna."""
+    wyjatki = [Path("a") / "*" / "c.txt"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/x/c.txt/f")
+
+    assert widoczne == {"a/x/c.txt/f"}
+
+
+def test_wyjatek_migawki_bez_wzorca_obejmuje_cale_drzewo_pod_katalogiem(tmp_path):
+    wyjatki = [Path("a") / "b"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/b/c/d/f.txt", "a/b/g.txt")
+
+    assert widoczne == set()
+
+
+@pytest.mark.parametrize("pusty", [Path(""), Path(".")])
+def test_pusty_wyjatek_migawki_nie_ukrywa_zadnego_pliku(tmp_path, pusty):
+    """Pusta sciezka ma zero segmentow i dopasowalaby kazdy plik; strazniczy `if not w.parts` ja pomija."""
+    widoczne = _sciezki_migawki(tmp_path, [pusty], "a.txt")
+
+    assert widoczne == {"a.txt"}
+
+
+@pytest.mark.parametrize("pusty", [Path(""), Path(".")])
+def test_pusty_wyjatek_migawki_nie_ukrywa_zapisu_recenzenta(tmp_path, pusty):
+    przed = migawka(tmp_path, [pusty])
+    plik(tmp_path, "a.txt", "samowola")
+
+    naruszenie = sprawdz_tylko_odczyt(przed, tmp_path, [pusty])
+
+    assert naruszenie is not None
+    assert naruszenie.niezmiennik == Niezmiennik.reviewer_readonly
+    assert "nowe: a.txt" in naruszenie.szczegol
+
+
+@pytest.mark.parametrize("pusty", [Path(""), Path(".")])
+def test_pusty_wyjatek_migawki_nie_ukrywa_zmiany_istniejacego_pliku(tmp_path, pusty):
+    sciezka = plik(tmp_path, "a.txt", "stare")
+    przed = migawka(tmp_path, [pusty])
+    sciezka.write_text("nowe")
+
+    naruszenie = sprawdz_tylko_odczyt(przed, tmp_path, [pusty])
+
+    assert naruszenie is not None
+    assert "zmienione: a.txt" in naruszenie.szczegol
+
+
+def test_wyjatek_migawki_z_gwiazdka_nie_obejmuje_sciezki_o_innym_literalnym_segmencie(tmp_path):
+    wyjatki = [Path("a") / "*" / "c"]
+
+    # ta sama liczba segmentow co wyjatek: decyduje porownanie ostatniego segmentu
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/x/d")
+
+    assert widoczne == {"a/x/d"}
+
+
+def test_wyjatek_migawki_wymaga_zgodnosci_kazdego_segmentu_a_nie_dowolnego(tmp_path):
+    wyjatki = [Path("a") / "*" / "c"]
+
+    # b/x/c zgadza sie na segmentach 2 i 3 (nie na pierwszym), a/x/y na segmentach 1 i 2 (nie na trzecim)
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "b/x/c", "a/x/y", "a/x/c")
+
+    assert widoczne == {"b/x/c", "a/x/y"}
+
+
+def test_wyjatek_migawki_z_gwiazdka_nie_obejmuje_sciezek_o_innej_liczbie_segmentow(tmp_path):
+    wyjatki = [Path("a") / "*" / "c"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/x/y/c", "a/c", "a/x/c/f.txt")
+
+    assert widoczne == {"a/x/y/c", "a/c", "a/x/c/f.txt"}
+
+
+def test_wyjatek_migawki_pomija_wyjatek_dluzszy_niz_sciezka_i_stosuje_nastepny_pasujacy(tmp_path):
+    """Pierwszy wyjatek jest dluzszy niz sciezka `x`; drugi pasuje i musi zadzialac."""
+    wyjatki = [Path("a/b/c"), Path("x")]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "x", "y")
+
+    assert widoczne == {"y"}
+
+
+def test_znak_zapytania_w_wyjatku_migawki_zastepuje_jeden_znak_i_nie_obejmuje_zawartosci_katalogu(
+    tmp_path
+):
+    wyjatki = [Path("a") / "b?"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/b1", "a/b2/f")
+
+    assert widoczne == {"a/b2/f"}
+
+
+def test_nawias_kwadratowy_w_wyjatku_migawki_wybiera_znak_z_klasy_i_nie_obejmuje_zawartosci_katalogu(
+    tmp_path
+):
+    wyjatki = [Path("a") / "[bc]"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/b", "a/c/f", "a/d")
+
+    assert widoczne == {"a/c/f", "a/d"}
+
+
+def test_wyjatek_migawki_z_gwiazdka_w_nazwie_pliku_obejmuje_tylko_pasujace_nazwy(tmp_path):
+    wyjatki = [Path("a") / "proba_*.md"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/proba_1.md", "a/proba_12.md", "a/inna.md")
+
+    assert widoczne == {"a/inna.md"}
+
+
+def test_wyjatek_migawki_bez_gwiazdki_obejmuje_tylko_dokladnie_ten_segment(tmp_path):
+    wyjatki = [Path("a") / "b"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/b/f.txt", "a/bb/f.txt", "a/B/f.txt", "a/f.txt")
+
+    assert widoczne == {"a/bb/f.txt", "a/B/f.txt", "a/f.txt"}
+
+
+def test_wyjatek_migawki_dluzszy_niz_sciezka_nie_obejmuje_pliku_na_wyzszym_poziomie(tmp_path):
+    wyjatki = [Path("a") / "b" / "c"]
+
+    widoczne = _sciezki_migawki(tmp_path, wyjatki, "a/b")
+
+    assert widoczne == {"a/b"}
+
+
 # --- Naruszenie i komunikaty -----------------------------------------------
 
 def test_naruszenie_bez_szczegolu_ma_sama_nazwe_niezmiennika():

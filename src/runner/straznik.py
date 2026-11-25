@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import errno
 import os
+import re
 import signal
 import stat
 import subprocess
@@ -52,6 +53,10 @@ FD_WEJSCIA = 0  # potok od runnera: jego EOF oznacza smierc runnera
 ZMIENNA_PYTHONPATH_AGENTA = "RUNNER_PYTHONPATH_AGENTA"
 # Znacznik braku: runner nie mial PYTHONPATH w ogole (pusta wartosc to co innego).
 ZMIENNA_BRAK_PYTHONPATH_AGENTA = "RUNNER_BRAK_PYTHONPATH_AGENTA"
+# Sekrety kokpitu w srodowisku runnera; agent ich nie dostaje. COCKPIT_TOKEN_FILE
+# (sciezka, nie sekret) i cudze tokeny uzytkownika zostaja. Srodek moze byc pusty:
+# get_token("") czyta COCKPIT__TOKEN (secrets.py). Ten sam wzorzec maskuje logi (maskowanie.py).
+WZORZEC_TOKENU = re.compile(r"COCKPIT_.*_TOKEN")
 
 
 def _srodowisko_agenta(srodowisko: Mapping[str, str]) -> dict[str, str]:
@@ -60,9 +65,10 @@ def _srodowisko_agenta(srodowisko: Mapping[str, str]) -> dict[str, str]:
     Znacznik wartosci (ZMIENNA_PYTHONPATH_AGENTA) odtwarza PYTHONPATH, takze pusty,
     i ma pierwszenstwo. Sam znacznik braku (ZMIENNA_BRAK_PYTHONPATH_AGENTA) usuwa
     PYTHONPATH. Bez obu znacznikow (straznik uruchomiony recznie) srodowisko zostaje
-    bez zmian. Znaczniki nie trafiaja do agenta.
+    bez zmian. Znaczniki nie trafiaja do agenta. Tokeny kokpitu (`COCKPIT_*_TOKEN`)
+    tez nie: agent ma powloke i `env`, a sekret w jego srodowisku wycieka do logow (HAR-209).
     """
-    kopia = dict(srodowisko)
+    kopia = {k: v for k, v in srodowisko.items() if not WZORZEC_TOKENU.fullmatch(k)}
     wartosc = kopia.pop(ZMIENNA_PYTHONPATH_AGENTA, None)
     brak = ZMIENNA_BRAK_PYTHONPATH_AGENTA in kopia
     kopia.pop(ZMIENNA_BRAK_PYTHONPATH_AGENTA, None)

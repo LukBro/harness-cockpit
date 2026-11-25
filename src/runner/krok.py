@@ -31,6 +31,7 @@ from cockpit.services.invariants import profil_roli
 from cockpit.services.walidacja import (
     KontraktWerdyktu,
     Naruszenie,
+    KATALOG_SKILLI_RUNU,
     Niezmiennik,
     dowod_z_pliku,
     migawka,
@@ -47,8 +48,15 @@ from runner.straznik import (
     ZMIENNA_PYTHONPATH_AGENTA,
 )
 
-# Katalog runu to jedyne miejsce, w ktorym rola bez zapisu moze pisac (werdykty).
+# Katalog runu (artefakty silnika). Rola bez zapisu nie pisze w nim nigdzie; wyjatki
+# migawki sa dwa (WYJATKI_MIGAWKI): KATALOG_SKILLI_RUNU (skille skopiowane przez runner)
+# i RAPORTY_NAPRAWY_SILNIKA (zapis silnika).
 KATALOG_RUNU = Path(".cockpit") / "_run"
+# Raporty porazki zapisuje silnik w worktree (`silnik._sciezka_raportu`), gdy rownolegly recenzent
+# ma migawke: to zapis silnika, nie recenzenta. Wyjatek migawki to dokladnie ten ksztalt sciezki
+# (`*` = jeden segment), nie caly `.cockpit/_run/artifacts`.
+RAPORTY_NAPRAWY_SILNIKA = KATALOG_RUNU / "artifacts" / "*" / "_naprawa" / "proba_*.md"
+WYJATKI_MIGAWKI = [KATALOG_SKILLI_RUNU, RAPORTY_NAPRAWY_SILNIKA]
 ROZMIAR_KAWALKA = 64 * 1024
 # Najwiekszy wynik agenta (stdout), jaki runner zapisze jako artefakt roli bez zapisu.
 LIMIT_ARTEFAKTU = 8 * 1024 * 1024
@@ -490,7 +498,7 @@ async def wykonaj_krok(
     przed = None
     if tylko_odczyt:
         try:
-            przed = await asyncio.to_thread(migawka, katalog, [KATALOG_RUNU])
+            przed = await asyncio.to_thread(migawka, katalog, WYJATKI_MIGAWKI)
         except OSError as blad:
             return _porazka(f"nie można wykonać migawki katalogu: {blad}", None)
 
@@ -605,7 +613,7 @@ async def wykonaj_krok(
     if przed is not None:
         try:
             naruszenie = await asyncio.to_thread(
-                sprawdz_tylko_odczyt, przed, katalog, [KATALOG_RUNU]
+                sprawdz_tylko_odczyt, przed, katalog, WYJATKI_MIGAWKI
             )
         except OSError as blad:
             return _porazka(
