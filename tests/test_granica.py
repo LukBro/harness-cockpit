@@ -13,11 +13,11 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal, Optional
 
 import httpx
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, StringConstraints, ValidationError
 from procesy import uruchom_proces_sync, zakoncz_proces_sync
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -174,6 +174,164 @@ def test_naruszenia_wielu_par_ida_w_kolejnosci_par(klient):
         "LimitWiekszy.nazwa: String(36) max_length=50 > 36",
         "BezLimitu.nazwa: String(36) bez max_length",
     ]
+
+
+# --- sprawdz: Literal i unie (HAR-208: `kind` to Literal albo napis `hook:<zdarzenie>`) ---------
+
+
+class LiteralMiesciSie(BaseModel):
+    # najdluzsza wartosc ma dokladnie 36 znakow, tyle co kolumna
+    nazwa: Literal["a", "b" * 36]
+
+
+class LiteralZaDlugi(BaseModel):
+    nazwa: Literal["a", "b" * 37]
+
+
+class UniaLiteralIStrBezLimitu(BaseModel):
+    nazwa: Literal["a"] | str
+
+
+class UniaLiteralIStrZLimitemPonadKolumne(BaseModel):
+    nazwa: Literal["a"] | Annotated[str, Field(max_length=50)]
+
+
+class UniaGalezieKrotszaIDluzszaOdKolumny(BaseModel):
+    # minimum po galeziach (10) dalo by czysty wynik; obowiazuje maksimum (50)
+    nazwa: Annotated[str, Field(max_length=10)] | Annotated[str, Field(max_length=50)]
+
+
+class UniaGalezieWKolumnie(BaseModel):
+    nazwa: Annotated[str, Field(max_length=10)] | Annotated[str, Field(max_length=36)]
+
+
+class UniaLiteralDluzszyOdGaleziNapisu(BaseModel):
+    # Literal (37) dluzszy od galezi napisu (10): maksimum to dlugosc Literalu
+    nazwa: Literal["c" * 37] | Annotated[str, Field(max_length=10)]
+
+
+class UniaLiteralIStrZLimitemWKolumnie(BaseModel):
+    nazwa: Literal["a"] | Annotated[str, Field(max_length=36)]
+
+
+class UniaStrTylkoZWzorcem(BaseModel):
+    nazwa: Literal["a"] | Annotated[str, StringConstraints(pattern=r"^hook:[A-Za-z0-9_]+$")]
+
+
+class UniaStrZWzorcemILimitem(BaseModel):
+    nazwa: Literal["a"] | Annotated[
+        str, StringConstraints(pattern=r"^hook:[A-Za-z0-9_]+$", max_length=36)]
+
+
+class TypNieoceniany(BaseModel):
+    nazwa: list[str]
+
+
+class UniaZTypemNieocenianym(BaseModel):
+    nazwa: Literal["a"] | list[str]
+
+
+def test_literal_z_wartosciami_miescicymi_sie_w_kolumnie_jest_czysty(klient):
+    assert sprawdz([(LiteralMiesciSie, Tabela)], klient) == []
+
+
+def test_literal_z_wartoscia_dluzsza_od_kolumny_jest_naruszeniem_z_dlugoscia_najdluzszej(klient):
+    assert sprawdz([(LiteralZaDlugi, Tabela)], klient) == [
+        "LiteralZaDlugi.nazwa: String(36) max_length=37 > 36"]
+
+
+def test_unia_literalu_i_napisu_bez_limitu_jest_naruszeniem_bez_max_length(klient):
+    assert sprawdz([(UniaLiteralIStrBezLimitu, Tabela)], klient) == [
+        "UniaLiteralIStrBezLimitu.nazwa: String(36) bez max_length"]
+
+
+def test_unia_literalu_i_napisu_z_limitem_ponad_kolumne_jest_naruszeniem(klient):
+    assert sprawdz([(UniaLiteralIStrZLimitemPonadKolumne, Tabela)], klient) == [
+        "UniaLiteralIStrZLimitemPonadKolumne.nazwa: String(36) max_length=50 > 36"]
+
+
+def test_unia_galezi_z_limitami_bierze_maksimum_a_nie_minimum(klient):
+    assert sprawdz([(UniaGalezieKrotszaIDluzszaOdKolumny, Tabela)], klient) == [
+        "UniaGalezieKrotszaIDluzszaOdKolumny.nazwa: String(36) max_length=50 > 36"]
+
+
+def test_unia_galezi_z_maksimum_rownym_kolumnie_jest_czysta(klient):
+    assert sprawdz([(UniaGalezieWKolumnie, Tabela)], klient) == []
+
+
+def test_unia_gdzie_literal_jest_dluzszy_od_limitu_napisu_bierze_dlugosc_literalu(klient):
+    assert sprawdz([(UniaLiteralDluzszyOdGaleziNapisu, Tabela)], klient) == [
+        "UniaLiteralDluzszyOdGaleziNapisu.nazwa: String(36) max_length=37 > 36"]
+
+
+def test_unia_literalu_i_napisu_z_limitem_w_kolumnie_jest_czysta(klient):
+    assert sprawdz([(UniaLiteralIStrZLimitemWKolumnie, Tabela)], klient) == []
+
+
+def test_galaz_napisu_z_samym_wzorcem_bez_max_length_jest_naruszeniem(klient):
+    assert sprawdz([(UniaStrTylkoZWzorcem, Tabela)], klient) == [
+        "UniaStrTylkoZWzorcem.nazwa: String(36) bez max_length"]
+
+
+def test_galaz_napisu_ze_wzorcem_i_max_length_w_kolumnie_jest_czysta(klient):
+    assert sprawdz([(UniaStrZWzorcemILimitem, Tabela)], klient) == []
+
+
+class TypNieocenianyZLimitemPola(BaseModel):
+    # limit z pola nie zastepuje oceny typu: lista nie jest napisem
+    nazwa: list[str] = Field(max_length=10)
+
+
+class NapisZBrakiemWartosciBezAdnotacji(BaseModel):
+    nazwa: str | None = None            # `types.UnionType`, gałąź `None` pomijana
+
+
+class OpcjonalnyNapisZLimitemPonadKolumne(BaseModel):
+    nazwa: Optional[Annotated[str, Field(max_length=50)]] = None    # `typing.Union`
+
+
+class UniaGalezZDwomaLimitami(BaseModel):
+    # w gałęzi obowiązuje węższy (30), między gałęziami szerszy z gałęzi: 30 <= 36
+    nazwa: Annotated[str, Field(max_length=50), Field(max_length=30)] | Literal["a"]
+
+
+class LiteralZLimitemZBazyAnnotated(BaseModel):
+    # limit pochodzi z bazy `Annotated` (Literal 37), a metadane nie niosą max_length
+    nazwa: Annotated[Literal["b" * 37], StringConstraints(pattern="^b+$")] | Literal["a"]
+
+
+class LiteralZNieNapisami(BaseModel):
+    nazwa: Literal["a", None, 123456]    # `str(None)` to 4 znaki, `str(123456)` to 6
+
+
+@pytest.mark.parametrize(
+    "model", [TypNieoceniany, UniaZTypemNieocenianym, TypNieocenianyZLimitemPola])
+def test_typ_ktorego_narzedzie_nie_umie_ocenic_to_blad_narzedzia_a_nie_wynik(klient, model):
+    with pytest.raises(BladNarzedzia, match=r"^nie umiem ocenić limitu typu "):
+        sprawdz([(model, Tabela)], klient)
+
+
+def test_napis_opcjonalny_bez_limitu_jest_naruszeniem_bez_max_length(klient):
+    assert sprawdz([(NapisZBrakiemWartosciBezAdnotacji, Tabela)], klient) == [
+        "NapisZBrakiemWartosciBezAdnotacji.nazwa: String(36) bez max_length"]
+
+
+def test_napis_opcjonalny_z_limitem_ponad_kolumne_jest_naruszeniem_mimo_galezi_none(klient):
+    assert sprawdz([(OpcjonalnyNapisZLimitemPonadKolumne, Tabela)], klient) == [
+        "OpcjonalnyNapisZLimitemPonadKolumne.nazwa: String(36) max_length=50 > 36"]
+
+
+def test_galaz_unii_z_dwoma_limitami_liczy_wezszy_a_miedzy_galeziami_szerszy(klient):
+    assert sprawdz([(UniaGalezZDwomaLimitami, Tabela)], klient) == []
+
+
+def test_literal_w_annotated_bierze_limit_z_bazy_typu_mimo_metadanych_bez_limitu(klient):
+    assert sprawdz([(LiteralZLimitemZBazyAnnotated, Tabela)], klient) == [
+        "LiteralZLimitemZBazyAnnotated.nazwa: String(36) max_length=37 > 36"]
+
+
+def test_literal_z_wartosciami_niebedacymi_napisami_liczy_dlugosc_ich_zapisu(klient):
+    assert sprawdz([(LiteralZNieNapisami, Tabela)], klient) == []
 
 
 # --- sprawdz: brak dowodu to blad narzedzia ----------------------------------------------------
@@ -439,8 +597,10 @@ POLA_Z_LIMITEM = [
     pytest.param("step_id", "s" * 100, "s" * 101, id="step_id"),
     pytest.param("agent_id", "a" * 100, "a" * 101, id="agent_id"),
     pytest.param("agent_type", "t" * 100, "t" * 101, id="agent_type"),
-    pytest.param("kind", "k" * 50, "k" * 51, id="kind"),
-    pytest.param("cost_source", "c" * 20, "c" * 21, id="cost_source"),
+    # rodzaje stale to zamkniety Literal; limit 50 znakow dotyczy tylko rodzaju `hook:<zdarzenie>`
+    pytest.param("kind", "hook:" + "k" * 45, "hook:" + "k" * 46, id="kind"),
+    pytest.param("tokens", 2_147_483_647, 2_147_483_648, id="tokens"),
+    pytest.param("duration_ms", 2_147_483_647, 2_147_483_648, id="duration_ms"),
     pytest.param("session_id", "i" * 100, "i" * 101, id="session_id"),
     pytest.param("verdict", "v" * 200, "v" * 201, id="verdict"),
     pytest.param("kroki_weryfikujace", ["k"] * 1000, ["k"] * 1001, id="kroki_weryfikujace_liczba"),
@@ -562,11 +722,11 @@ async def test_komunikat_kilku_niewaznych_pol_laczy_je_srednikiem_w_kolejnosci_p
 ):
     with pytest.raises(NiewaznePoleZdarzenia) as wyjatek:
         await _wyslij(
-            funkcja, _Kokpit(), Bufor(tmp_path / "bufor"), run_id="r" * 37, kind="k" * 51)
+            funkcja, _Kokpit(), Bufor(tmp_path / "bufor"), run_id="r" * 37, cost_source="x")
 
     assert str(wyjatek.value) == (
-        f"zdarzenie {'k' * 51}: run_id: String should have at most 36 characters; "
-        "kind: String should have at most 50 characters")
+        "zdarzenie output: run_id: String should have at most 36 characters; "
+        "cost_source: Input should be 'measured' or 'unavailable'")
 
 
 @pytest.mark.parametrize("funkcja", FUNKCJE_WYSYLKI)

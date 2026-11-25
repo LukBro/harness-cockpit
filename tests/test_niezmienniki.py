@@ -453,8 +453,11 @@ def test_brak_pomiaru_zapisany_jako_brak_jest_poprawny():
     assert sprawdz_pomiar(None, "unavailable") is None
 
 
-def test_niezerowy_koszt_przy_zrodle_unavailable_nie_jest_zerem_zmyslonym():
-    assert sprawdz_pomiar(0.5, "unavailable") is None
+def test_niezerowy_koszt_przy_zrodle_unavailable_to_zmyslony_pomiar():
+    # HAR-208: `unavailable` wtedy i tylko wtedy, gdy kosztu brak (None)
+    naruszenie = sprawdz_pomiar(0.5, "unavailable")
+    assert naruszenie is not None
+    assert naruszenie.niezmiennik == Niezmiennik.measured_or_null
 
 
 # --- evidence_required -----------------------------------------------------

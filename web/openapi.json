@@ -674,7 +674,10 @@
           },
           "cost_source": {
             "default": "unavailable",
-            "maxLength": 20,
+            "enum": [
+              "measured",
+              "unavailable"
+            ],
             "title": "Cost Source",
             "type": "string"
           },
@@ -703,6 +706,8 @@
           "duration_ms": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -718,9 +723,34 @@
             "type": "string"
           },
           "kind": {
-            "maxLength": 50,
-            "title": "Kind",
-            "type": "string"
+            "anyOf": [
+              {
+                "enum": [
+                  "output",
+                  "step_started",
+                  "step_finished",
+                  "step_failed",
+                  "step_aborted",
+                  "step_skipped",
+                  "step_waiting",
+                  "run_finished",
+                  "resume_ignored",
+                  "context_manifest",
+                  "decision",
+                  "integrated",
+                  "committed",
+                  "acceptance",
+                  "run_cancelled"
+                ],
+                "type": "string"
+              },
+              {
+                "maxLength": 50,
+                "pattern": "^hook:[A-Za-z0-9_]{1,45}$",
+                "type": "string"
+              }
+            ],
+            "title": "Kind"
           },
           "kotwice": {
             "anyOf": [
@@ -829,6 +859,8 @@
           "tokens": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {

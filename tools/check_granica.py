@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ast
 import sys
+import types
+import typing
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -22,9 +24,47 @@ class BladNarzedzia(Exception):
     """Narzędzie nie ma czego sprawdzić albo nie umie odczytać wejścia (kod wyjścia 2)."""
 
 
+def _limity_z_metadanych(metadane) -> list[int]:
+    """`max_length` z elementów metadanych; `Field(...)` w `Annotated` niesie je w `.metadata`."""
+    limity: list[int] = []
+    for m in metadane:
+        if getattr(m, "max_length", None) is not None:
+            limity.append(m.max_length)
+        limity.extend(_limity_z_metadanych(getattr(m, "metadata", None) or ()))
+    return limity
+
+
+def _limit_typu(typ) -> int | None:
+    """Największa długość napisu, jaką przepuszcza typ; None = bez limitu.
+
+    `Literal` to najdłuższa wartość, unia to maksimum po gałęziach (gałąź bez limitu daje None),
+    napis ma limit z `Annotated`. Typ, którego narzędzie nie umie ocenić, to `BladNarzedzia`."""
+    ogon = typing.get_origin(typ)
+    if ogon is typing.Annotated:
+        baza, *metadane = typing.get_args(typ)
+        limity = _limity_z_metadanych(metadane)
+        z_bazy = _limit_typu(baza)
+        if z_bazy is not None:
+            limity.append(z_bazy)
+        return min(limity) if limity else None
+    if ogon is typing.Literal:
+        return max(len(str(w)) for w in typing.get_args(typ))
+    if ogon is typing.Union or ogon is types.UnionType:
+        galezie = [g for g in typing.get_args(typ) if g is not type(None)]
+        limity = [_limit_typu(g) for g in galezie]
+        if any(limit is None for limit in limity):
+            return None
+        return max(limity)
+    if typ is str:
+        return None
+    raise BladNarzedzia(f"nie umiem ocenić limitu typu {typ!r}")
+
+
 def _max_length(pole) -> int | None:
-    """Najmniejszy `max_length` z metadanych pola pydantic; None, gdy go nie ma."""
-    limity = [m.max_length for m in pole.metadata if getattr(m, "max_length", None) is not None]
+    """Limit długości pola pydantic: `max_length` z metadanych pola i z typu; None, gdy go nie ma."""
+    z_pola = _limity_z_metadanych(pole.metadata)
+    z_typu = _limit_typu(pole.annotation)    # typ nieoceniany to BladNarzedzia, bez zastepstwa
+    limity = [*z_pola, *([z_typu] if z_typu is not None else [])]
     return min(limity) if limity else None
 
 

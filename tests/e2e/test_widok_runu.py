@@ -368,7 +368,7 @@ def test_powod_pominietego_kroku_pochodzi_ze_zdarzenia_pominiecia_a_nie_z_innego
     page = zalogowana_strona
     run_id = _utworz_run_w_toku()
     _zdarzenie(adres_kokpitu, token_runnera, run_id, "s2", "step_skipped", tekst="powod-alfa")
-    _zdarzenie(adres_kokpitu, token_runnera, run_id, "s2", "uwaga_agenta", tekst="uwaga-agenta")
+    _zdarzenie(adres_kokpitu, token_runnera, run_id, "s2", "output", tekst="uwaga-agenta")
 
     _otworz_run(page, adres_kokpitu, run_id)
 
