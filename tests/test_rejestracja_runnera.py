@@ -470,3 +470,189 @@ def test_odmowa_tokenu_przy_otwieraniu_strumienia_tez_konczy_sie_czytelnym_kodem
     assert e.value.code == 2
     assert "COCKPIT_RUNNER_TOKEN" in err and "credentials.json" in err
     assert "Traceback" not in err and TOKEN_RUNNERA[:8] not in err
+
+
+# --- HAR-210: odpowiedz kokpitu lamiaca kontrakt to blad dziedziny, nie traceback ---------
+
+TRESC_ODPOWIEDZI = "TRESC-ODPOWIEDZI-KOKPITU-9137"
+HEARTBEAT_OK = '"heartbeat_co_s": 15'
+
+NIE_JSON = "odpowiedz rejestracji nie jest poprawnym JSON"
+NIE_OBIEKT = "odpowiedz rejestracji nie jest obiektem JSON"
+ZLY_RUNNER_ID = "odpowiedz rejestracji bez poprawnego runner_id"
+
+# (tresc odpowiedzi 200, pelny komunikat bledu dziedziny); kazdy wpis rozstrzyga inna galaz
+ZLE_ODPOWIEDZI_REJESTRACJI = {
+    "nie_json_html": (f"<html>{TRESC_ODPOWIEDZI} {TOKEN_RUNNERA}</html>".encode(), NIE_JSON),
+    "pusta_tresc": (b"", NIE_JSON),
+    "nie_utf8": (b"\x80\x81\x82", NIE_JSON),
+    "json_zagniezdzony_ponad_limit": (b"[" * 100000, NIE_JSON),
+    "lista_zamiast_slownika": (f'["{TRESC_ODPOWIEDZI}"]'.encode(), NIE_OBIEKT),
+    "napis_zamiast_slownika": (f'"{TRESC_ODPOWIEDZI}"'.encode(), NIE_OBIEKT),
+    "liczba_zamiast_slownika": (b"5", NIE_OBIEKT),
+    "null_zamiast_slownika": (b"null", NIE_OBIEKT),
+    "brak_runner_id": (
+        f'{{"tenant_id": "{TRESC_ODPOWIEDZI}", {HEARTBEAT_OK}}}'.encode(), ZLY_RUNNER_ID),
+    "runner_id_liczba": (
+        f'{{"runner_id": 7, "tenant_id": "t-1", {HEARTBEAT_OK}}}'.encode(), ZLY_RUNNER_ID),
+    "runner_id_null": (
+        f'{{"runner_id": null, "tenant_id": "t-1", {HEARTBEAT_OK}}}'.encode(), ZLY_RUNNER_ID),
+    "runner_id_pusty_napis": (
+        f'{{"runner_id": "", "tenant_id": "t-1", {HEARTBEAT_OK}}}'.encode(), ZLY_RUNNER_ID),
+    "runner_id_lista": (
+        f'{{"runner_id": ["{TRESC_ODPOWIEDZI}"], "tenant_id": "t-1", {HEARTBEAT_OK}}}'.encode(),
+        ZLY_RUNNER_ID),
+}
+PRZYPADKI_ODPOWIEDZI = [pytest.param(t, k, id=n) for n, (t, k) in ZLE_ODPOWIEDZI_REJESTRACJI.items()]
+
+
+@pytest.mark.parametrize(("tresc", "oczekiwany"), PRZYPADKI_ODPOWIEDZI)
+async def test_odpowiedz_rejestracji_o_zlym_ksztalcie_to_niezgodnosc_kokpitu_a_runner_nic_nie_zapamietuje(
+    tresc, oczekiwany,
+):
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=tresc)
+
+    with pytest.raises(runner_client.KokpitNiezgodny) as wyjatek:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            await runner.register(c)
+
+    komunikat = str(wyjatek.value)
+    assert komunikat == oczekiwany
+    assert TRESC_ODPOWIEDZI not in komunikat
+    assert TOKEN_RUNNERA not in komunikat
+    assert runner.runner_id is None
+    assert runner.heartbeat_co_s is None
+
+
+async def test_poprawna_odpowiedz_rejestracji_zapamietuje_identyfikator_runnera_nadany_przez_kokpit():
+    runner = RunnerKlient("http://kokpit.test", TOKEN_RUNNERA)
+
+    await _zarejestruj_z_odpowiedzia(runner, {"runner_id": "r-77", "heartbeat_co_s": 15})
+
+    assert runner.runner_id == "r-77"
+
+
+def _main_z_kokpitem(monkeypatch, handler) -> list[httpx.Request]:
+    """Produkcyjny `Runner` (rejestracja i strumien) z podmieniona siecia. Ponowienie
+    (odczekanie przed ponownym laczeniem) oblewa test, zamiast go zawiesic."""
+    zadania: list[httpx.Request] = []
+
+    async def zakaz_ponawiania(sekundy: float) -> None:
+        raise AssertionError("runner ponawia polaczenie zamiast zakonczyc proces")
+
+    def obsluz(request: httpx.Request) -> httpx.Response:
+        zadania.append(request)
+        return handler(request)
+
+    monkeypatch.setattr(
+        runner_main, "Runner",
+        lambda base, token: RunnerKlient(
+            base, token, transport=httpx.MockTransport(obsluz), odczekaj=zakaz_ponawiania),
+    )
+    monkeypatch.setenv("COCKPIT_RUNNER_TOKEN", TOKEN_RUNNERA)
+    monkeypatch.setenv("COCKPIT_URL", "http://kokpit.test")
+    return zadania
+
+
+def _rejestracja_ok(request: httpx.Request) -> httpx.Response | None:
+    if request.url.path == "/api/runners/register":
+        return httpx.Response(
+            200, json={"runner_id": "r-1", "tenant_id": "t-1", "heartbeat_co_s": 15})
+    return None
+
+
+def _kokpit_zla_rejestracja(tresc: bytes):
+    return lambda request: httpx.Response(200, content=tresc)
+
+
+def _kokpit_zly_strumien(odpowiedz: httpx.Response):
+    def handler(request: httpx.Request) -> httpx.Response:
+        rejestracja = _rejestracja_ok(request)
+        return odpowiedz if rejestracja is None else rejestracja
+    return handler
+
+
+def _kokpit_odmawiajacy(status: int):
+    return lambda request: httpx.Response(
+        status, json={"detail": f"{TRESC_ODPOWIEDZI} {TOKEN_RUNNERA}"})
+
+
+def _wymagaj_czytelnego_konca(monkeypatch, capsys, handler) -> str:
+    zadania = _main_z_kokpitem(monkeypatch, handler)
+
+    with pytest.raises(SystemExit) as e:
+        runner_main.main()
+
+    assert zadania, "runner nie dotarl do kokpitu - test nie przechodzi przez siec"
+    assert e.value.code == 2
+    wyjscie = capsys.readouterr()
+    assert wyjscie.err.strip()
+    assert "Traceback" not in wyjscie.err
+    for strumien in (wyjscie.err, wyjscie.out):
+        assert TOKEN_RUNNERA not in strumien
+        assert TOKEN_RUNNERA[:8] not in strumien
+        assert TRESC_ODPOWIEDZI not in strumien
+    return wyjscie.err
+
+
+PREFIKS_NIEZGODNOSCI = "kokpit odpowiedzial niezgodnie z kontraktem: "
+
+
+@pytest.mark.parametrize(("tresc", "oczekiwany"), PRZYPADKI_ODPOWIEDZI)
+def test_odpowiedz_rejestracji_o_zlym_ksztalcie_konczy_runner_komunikatem_bez_tracebacku_i_bez_tresci_odpowiedzi(
+    monkeypatch, capsys, tresc, oczekiwany,
+):
+    err = _wymagaj_czytelnego_konca(monkeypatch, capsys, _kokpit_zla_rejestracja(tresc))
+
+    assert err.splitlines() == [PREFIKS_NIEZGODNOSCI + oczekiwany]
+
+
+@pytest.mark.parametrize("status", [301, 307, 400, 403, 404, 422, 499])
+def test_odmowa_kokpitu_3xx_i_4xx_przy_rejestracji_konczy_runner_komunikatem_z_kodem_http(
+    monkeypatch, capsys, status,
+):
+    err = _wymagaj_czytelnego_konca(monkeypatch, capsys, _kokpit_odmawiajacy(status))
+
+    # to nie jest odmowa tokenu (401): inny komunikat niz "token odrzucony przez kokpit"
+    assert err.splitlines() == [
+        f"{PREFIKS_NIEZGODNOSCI}kokpit odrzucil zadanie (http={status})"]
+
+
+@pytest.mark.parametrize("status", [301, 307, 400, 403, 404, 499])
+def test_odmowa_kokpitu_3xx_i_4xx_przy_otwieraniu_strumienia_konczy_runner_komunikatem_z_kodem_http(
+    monkeypatch, capsys, status,
+):
+    handler = _kokpit_zly_strumien(httpx.Response(
+        status, json={"detail": f"{TRESC_ODPOWIEDZI} {TOKEN_RUNNERA}"}))
+
+    err = _wymagaj_czytelnego_konca(monkeypatch, capsys, handler)
+
+    assert err.splitlines() == [
+        f"{PREFIKS_NIEZGODNOSCI}kokpit odrzucil zadanie (http={status})"]
+
+
+LINIA_NIE_JSON = "linia strumienia polecen nie jest poprawnym JSON"
+LINIA_NIE_OBIEKT = "linia strumienia polecen nie jest obiektem JSON"
+ZLE_LINIE_STRUMIENIA = {
+    "json_ucieta_w_polowie": (f'data: {{"type": "{TRESC_ODPOWIEDZI}'.encode(), LINIA_NIE_JSON),
+    "json_zagniezdzony_ponad_limit": (b"data: " + b"[" * 100000, LINIA_NIE_JSON),
+    "lista_zamiast_slownika": (f'data: ["{TRESC_ODPOWIEDZI}"]'.encode(), LINIA_NIE_OBIEKT),
+    "napis_zamiast_slownika": (f'data: "{TRESC_ODPOWIEDZI}"'.encode(), LINIA_NIE_OBIEKT),
+    "liczba_zamiast_slownika": (b"data: 5", LINIA_NIE_OBIEKT),
+}
+
+
+@pytest.mark.parametrize(
+    ("linia", "oczekiwany"), ZLE_LINIE_STRUMIENIA.values(), ids=ZLE_LINIE_STRUMIENIA.keys())
+def test_zla_linia_strumienia_konczy_runner_komunikatem_bez_tracebacku_i_bez_tresci_linii(
+    monkeypatch, capsys, linia, oczekiwany,
+):
+    handler = _kokpit_zly_strumien(httpx.Response(
+        200, content=linia + b"\n\n", headers={"content-type": "text/event-stream"}))
+
+    err = _wymagaj_czytelnego_konca(monkeypatch, capsys, handler)
+
+    assert err.splitlines() == [PREFIKS_NIEZGODNOSCI + oczekiwany]
