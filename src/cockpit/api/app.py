@@ -25,7 +25,7 @@ from typing import Annotated, Any, Literal
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from fastapi import Path as SciezkaUrl
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -146,6 +146,24 @@ class RunnerRegister(BaseModel):
     backends: list[BackendIn] = []
 
 
+class TicketRunuZProjektu(BaseModel):
+    """Ticket do pobrania przez runnera od dostawcy z `project.yaml` projektu (HAR-117)."""
+    model_config = ConfigDict(extra="forbid")
+
+    # pola trafiaja do polecenia SSE dla runnera, nie do kolumn; limity jak `project_id` (36)
+    # i `ticket_id` (200), zeby polecenie nie niosło wartosci, ktorych kokpit nigdzie indziej nie przyjmie
+    projekt: str = Field(min_length=1, max_length=36)
+    id: str = Field(min_length=1, max_length=200)
+
+
+class TicketRunuWklejony(BaseModel):
+    """Ticket wklejony przez czlowieka; runner sklada z niego `ticket.json` bez sieci (HAR-117)."""
+    model_config = ConfigDict(extra="forbid")
+
+    wklejony: str = Field(min_length=1, max_length=100_000)
+    url: str | None = Field(default=None, min_length=1, max_length=2000)
+
+
 class RunCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")   # bez `command`: kokpit nie podaje argv (HAR-159)
 
@@ -154,6 +172,20 @@ class RunCreate(BaseModel):
     ticket_id: str | None = Field(default=None, min_length=1, max_length=200)  # kolumna String(200)
     potwierdz_rownolegly: bool = False
     project_id: str | None = Field(default=None, min_length=1, max_length=36)  # kolumna String(36)
+    # ticket zamrazany przez runnera w katalogu runu (HAR-117); nie ustawia `ticket_id` runu
+    ticket: TicketRunuZProjektu | TicketRunuWklejony | None = None
+
+    @model_validator(mode="after")
+    def _ticket_wymaga_projektu_runu(self) -> "RunCreate":
+        """Ticket niesie tylko polecenie `run_workflow`, a to powstaje z `project_id`; ticket
+        z projektu musi wskazywac ten sam projekt co run (inaczej runner czytalby cudza konfiguracje)."""
+        if self.ticket is None:
+            return self
+        if self.project_id is None:
+            raise ValueError("ticket wymaga project_id")
+        if isinstance(self.ticket, TicketRunuZProjektu) and self.ticket.projekt != self.project_id:
+            raise ValueError("ticket.projekt musi być projektem runu (project_id)")
+        return self
 
 
 class OdpowiedzRunneraIn(BaseModel):
@@ -287,6 +319,8 @@ async def create_run(
             "type": "run_workflow", "run_id": run.id, "workflow": body.workflow,
             "sciezka": sciezka,
         }
+        if body.ticket is not None:
+            polecenie["ticket"] = body.ticket.model_dump(exclude_none=True)
     await bus.send_to_runner(run.runner_id, polecenie)
     return RunUtworzony(run_id=run.id)
 
