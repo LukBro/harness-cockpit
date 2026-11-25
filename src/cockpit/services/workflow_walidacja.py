@@ -29,6 +29,8 @@ BRAK_ARTEFAKTU = "brak_artefaktu"
 CONSENSUS_PONAD_FANOUT = "consensus_ponad_fanout"
 FOREACH_BEZ_PRODUCENTA = "foreach_bez_producenta"
 FOREACH_ZLY_FORMAT = "foreach_zly_format"
+FOREACH_Z_FANOUT = "foreach_z_fanout"
+FOREACH_NA_KROKU_SYSTEMOWYM = "foreach_na_kroku_systemowym"
 RETRY_NIE_WSTECZ = "retry_nie_wstecz"
 NIEPRZENOSNY_SKILL = "nieprzenosny_skill"
 NIEZNANY_KLUCZ = "nieznany_klucz"
@@ -325,6 +327,28 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
                     krok.id,
                     CONSENSUS_PONAD_FANOUT,
                     f"consensus {krok.consensus} jest wiekszy niz fanout {krok.fanout}",
+                )
+            )
+
+        if krok.foreach is not None and krok.skill is None:
+            # krok systemowy nie uruchamia agenta, wiec foreach nie ma skutku (jak limity, HAR-229)
+            problemy.append(
+                Problem(
+                    krok.id,
+                    FOREACH_NA_KROKU_SYSTEMOWYM,
+                    f"pole foreach nie ma skutku na kroku bez skilla {krok.id}: "
+                    "foreach dotyczy tylko kroku agentowego",
+                )
+            )
+
+        if krok.foreach is not None and krok.fanout > 1:
+            # liczbe procesow kroku z foreach daje dlugosc listy z artefaktu (HAR-98), nie fanout
+            problemy.append(
+                Problem(
+                    krok.id,
+                    FOREACH_Z_FANOUT,
+                    f"foreach i fanout {krok.fanout} wykluczaja sie: liczbe procesow daje "
+                    "lista z artefaktu, nie fanout",
                 )
             )
 

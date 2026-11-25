@@ -161,7 +161,11 @@ CZYSTE = {
         "NAZWA_WORKFLOW.fullmatch",
         "startowane.get", "bramki.add", "deque", "type", "raport.as_posix",
         "('\\n'.join(linie) + '\\n').encode",
-        "dict.fromkeys", "tuple", "manifest.jako_listy",
+        "dict.fromkeys", "tuple", "manifest.jako_listy", "zrodlo.partition",
+        # `json.dumps` bez `ensure_ascii=False` daje sam ASCII, wiec `encode("ascii")` nie rzuca
+        "json.dumps(element).encode", "json.dumps({'liczba': liczba}).encode",
+        # slownik i zbior w pamieci petli planu (wiersze kroku foreach), bez I/O
+        "dane.get", "wiersze_foreach.pop", "wiersze_foreach.setdefault",
         "len", "range", "sorted", "zip", "sciezki.append", "zebrane.append",
         "json.dumps(manifest.jako_listy(), ensure_ascii=False).encode",
     ),
@@ -254,8 +258,64 @@ _KOPIA_ZWYCIEZCY = (
     "test_blad_kopii_wyniku_zwyciezcy_konczy_krok_porazka_i_run_zdarzeniem_koncowym); "
     "scenariusz z konsensusem nie jest czescia scenariuszy wstrzykiwania tego pliku"
 )
+_FOREACH_BRAK_SCENARIUSZA = (
+    "scenariusze wstrzykiwania tego pliku nie maja kroku z `foreach` (HAR-98); granice foreach "
+    "wstrzykuje i sprawdza tests/test_foreach.py na prawdziwym silniku, a run konczy sie "
+    "`step_failed` kroku i `run_finished`: "
+)
+_FOREACH_ZRODLO = _FOREACH_BRAK_SCENARIUSZA + (
+    "czytanie listy z artefaktu: test_bledny_artefakt_zrodlowy_konczy_krok_foreach_porazka_z_powodem_"
+    "a_run_sie_konczy (brak pliku, katalog, pusty plik, zly i zbyt gleboki JSON, nie-UTF8, brak pola, "
+    "korzen nie-obiekt, pole nie-lista), test_zrodlo_z_bledem_wartosci_przy_odczycie_konczy_krok_"
+    "porazka_z_nazwa_typu (`ValueError`), test_wyjatek_granicy_przy_czytaniu_zrodla_foreach_konczy_"
+    "krok_a_nie_walidacje_runu (OSError, ValueError, KeyError, BladDziedziny z `_zrodlo_foreach`)"
+)
+_FOREACH_ELEMENTY = _FOREACH_BRAK_SCENARIUSZA + (
+    "zapis `element.json`: test_blad_zapisu_elementu_na_dysku_konczy_krok_foreach_porazka_z_powodem; "
+    "zadanie `_odrzuc_krok` i wiersze kroku: test_foreach_ze_skillem_z_notatka_zmiany_konczy_krok_"
+    "przed_startem_procesow i test_lista_zmieniona_po_bramce_foreach_konczy_krok_porazka_i_zamyka_"
+    "wiersze_utrwalonej_liczby"
+)
+_FOREACH_LICZBA = _FOREACH_BRAK_SCENARIUSZA + (
+    "plik z liczba wierszy: test_blad_zapisu_pliku_liczby_konczy_krok_foreach_porazka_bez_startu_"
+    "agentow (zapis), test_konsument_kroku_foreach_z_zepsutym_plikiem_liczby_konczy_sie_porazka_"
+    "z_powodem (12 postaci zepsutego pliku przy starcie konsumenta)"
+)
+_FOREACH_WZNOWIENIE = _FOREACH_BRAK_SCENARIUSZA + (
+    "wiersze `a1..aN` kroku foreach przy wznowieniu: test_wznowienie_przerwanego_kroku_foreach_z_"
+    "zepsutym_plikiem_liczby_zamyka_jeden_wiersz (zepsuty plik zostaje przy `[krok]`), "
+    "test_wyjatek_granicy_przy_liczeniu_wierszy_przerwanego_foreach_konczy_wznowienie_porazka_bramki "
+    "(inny wyjatek konczy `wznow_run` przez `_porazka_wznowienia`)"
+)
+_PLIK_Z_JSON = (
+    "`_ogon_dowodu` tlumaczy kazdy blad pliku dowodu na linie `ogon niedostepny (typ)` "
+    "(test_petla_naprawcza: test_nieczytelny_plik_dowodu_daje_linie_ogon_niedostepny...); "
+    "`_liczba_wierszy` tlumaczy OSError, ValueError i RecursionError na `PorazkaKroku` "
+    "(test_konsument_kroku_foreach_z_zepsutym_plikiem_liczby_konczy_sie_porazka_z_powodem)"
+)
 # (granica, funkcja wejsciowa) -> uzasadnienie
 NIEWSTRZYKIWALNE = {
+    ("_zrodlo_foreach", "wykonaj_run"): _FOREACH_ZRODLO,
+    ("_zrodlo_foreach", "wznow_run"): _FOREACH_ZRODLO,
+    ("sciezka.read_bytes", "wykonaj_run"): _FOREACH_ZRODLO,
+    ("sciezka.read_bytes", "wznow_run"): _FOREACH_ZRODLO,
+    ("surowe.decode", "wykonaj_run"): _FOREACH_ZRODLO,
+    ("surowe.decode", "wznow_run"): _FOREACH_ZRODLO,
+    ("_producent_skilla", "wykonaj_run"): _FOREACH_ZRODLO,
+    ("_producent_skilla", "wznow_run"): _FOREACH_ZRODLO,
+    ("_zapisz_elementy", "wykonaj_run"): _FOREACH_ELEMENTY,
+    ("_zapisz_elementy", "wznow_run"): _FOREACH_ELEMENTY,
+    ("_odrzuc_krok", "wykonaj_run"): _FOREACH_ELEMENTY,
+    ("_odrzuc_krok", "wznow_run"): _FOREACH_ELEMENTY,
+    ("wiersze", "wykonaj_run"): _FOREACH_ELEMENTY,
+    ("wiersze", "wznow_run"): _FOREACH_ELEMENTY,
+    ("_plik_liczby", "wykonaj_run"): _FOREACH_LICZBA,
+    ("_plik_liczby", "wznow_run"): _FOREACH_LICZBA,
+    ("_liczba_wierszy", "wykonaj_run"): _FOREACH_LICZBA,
+    ("_liczba_wierszy", "wznow_run"): _FOREACH_LICZBA,
+    ("_zapisz_liczbe", "wykonaj_run"): _FOREACH_LICZBA,
+    ("_zapisz_liczbe", "wznow_run"): _FOREACH_LICZBA,
+    ("_wiersze_z_dysku", "wznow_run"): _FOREACH_WZNOWIENIE,
     ("_kopiuj_zwyciezce", "wykonaj_run"): _KOPIA_ZWYCIEZCY,
     ("_kopiuj_zwyciezce", "wznow_run"): _KOPIA_ZWYCIEZCY,
     ("cel.parent.mkdir", "wykonaj_run"): _KOPIA_ZWYCIEZCY,
@@ -270,10 +330,10 @@ NIEWSTRZYKIWALNE = {
     ("_powod_wyjatku", "wznow_run"): _OBSLUGA_BLEDU,
     ("_ogon_dowodu", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
     ("_ogon_dowodu", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
-    ("plik.read_text", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
-    ("plik.read_text", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
-    ("json.loads", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
-    ("json.loads", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
+    ("plik.read_text", "wykonaj_run"): _PLIK_Z_JSON,
+    ("plik.read_text", "wznow_run"): _PLIK_Z_JSON,
+    ("json.loads", "wykonaj_run"): _PLIK_Z_JSON,
+    ("json.loads", "wznow_run"): _PLIK_Z_JSON,
     ("_zapisz_atomowo", "wykonaj_run"): _ZAPIS_RAPORTU,
     ("ticket_ze_zlecenia", "wykonaj_run"): _TICKET_RUNU,
     ("zamroz", "wykonaj_run"): _TICKET_RUNU,
