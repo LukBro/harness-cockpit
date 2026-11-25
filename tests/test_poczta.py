@@ -865,9 +865,9 @@ async def test_haslo_spoza_ascii_daje_przez_trase_502_z_komunikatem_o_ascii_bez_
 # Wejscia sprawdzone w REPL: kazde przechodzi pozostale czlony walidatora (opis przy kazdej grupie).
 
 # Rozne separatory linii bez zadnej innej wady: strip() ich w srodku nie rusza, getaddresses oddaje
-# tekst bez zmian. Decyduje tylko `len(do.splitlines()) != 1`. Uwaga: bez tego czlonu adres odrzuci
-# jeszcze EmailMessage (ValueError przy `To`) z tym samym komunikatem, wiec odroznia go tylko
-# bezposrednie wolanie walidatora (test nizej); wyslij() i trasa pilnuja skutku (brak polaczenia).
+# tekst bez zmian. Decyduje tylko `len(do.splitlines()) != 1`. Bez tego czlonu `EmailMessage`
+# rzuci ValueError przy `To` (wyjatek biblioteki zamiast `BladPoczty`), wiec oblewaja go tez testy
+# `wyslij()` i trasy, a walidator wolany bezposrednio daje najkrotszy dowod.
 ADRESY_Z_SEPARATOREM_LINII = {
     "tabulacja_pionowa": "a\x0b@example.com",
     "wysuw_strony": "a\x0c@example.com",
@@ -901,11 +901,32 @@ ADRESY_ZE_SPACJA_NA_BRZEGU = {
     "spacja_na_poczatku": " u@example.test",
     "sama_spacja": " ",
 }
+# Encoded-word (RFC 2047): kazde wejscie sprawdzone w REPL przechodzi `splitlines` (1 linia), `strip`
+# i `getaddresses` (== [("", do)]), wiec decyduje tylko warunek `"=?" in do`. Bez niego parser
+# naglowka `To` rzuca IndexError (pusty encoded-word: 500 zamiast 502) albo dekoduje adres
+# (`=?utf-8?q?a?=@example.com` -> naglowek `a@example.com`, a koperta ma tekst surowy).
+ADRESY_Z_ENCODED_WORD = {
+    "pusty_encoded_word_utf8": "=?utf-8?q??=@example.com",
+    "pusty_encoded_word_us_ascii": "=?us-ascii?q??=@example.com",
+    "pusty_encoded_word_base64": "=?utf-8?b??=@example.com",
+    "pusty_encoded_word_nieznane_kodowanie": "=?x?q??=@example.com",
+    "encoded_word_rozjezdzajacy_naglowek_z_koperta": "=?utf-8?q?a?=@example.com",
+    # poza poczatkiem adresu (REPL: 1 linia, strip, getaddresses przepuszczaja; bez sprawdzenia
+    # "w dowolnym miejscu" naglowek `To` dostalby `a@a`, a koperta `a@=?utf-8?q?a?=`)
+    "encoded_word_w_domenie": "a@=?utf-8?q?a?=",
+}
+# Poprawni odbiorcy z samym `=` albo samym `?` (nie pelnym `=?`): przechodza wszystkie warunki walidatora
+# (REPL), a `To` zachowuje je bez zmian. Odrzuca je tylko zawezenie warunku do `=` albo `?`.
+ADRESY_Z_POJEDYNCZYM_ZNAKIEM_ENCODED_WORD = {
+    "rowna_sie_w_czesci_lokalnej": "a=b@example.test",
+    "znak_zapytania_w_czesci_lokalnej": "a?b@example.test",
+    "rowna_sie_na_poczatku": "=a@example.test",
+}
 # Pusty adres: zero linii wg splitlines, a pozostale czlony go przepuszczaja
 # (`"" == "".strip()`, `getaddresses([""]) == [("", "")]`). Decyduje tylko `!= 1` (nie `> 1`).
 ADRESY_PUSTE = {"pusty": ""}
 WSZYSTKIE_ODRZUCANE_ADRESY = {
-    **ADRESY_PUSTE, **ADRESY_Z_SEPARATOREM_LINII, **ADRESY_NIE_JEDEN_CZYSTY_ADRES,
+    **ADRESY_PUSTE, **ADRESY_Z_ENCODED_WORD, **ADRESY_Z_SEPARATOREM_LINII, **ADRESY_NIE_JEDEN_CZYSTY_ADRES,
     **ADRESY_Z_BIALYM_ZNAKIEM_NA_BRZEGU, **ADRESY_ZE_SPACJA_NA_BRZEGU,
 }
 
@@ -935,6 +956,37 @@ def test_adres_z_separatorem_linii_na_brzegu_nie_jest_poprawnym_adresem_odbiorcy
     assert getaddresses([adres]) == [("", adres)]          # getaddresses tez
 
     assert poczta._adres_zalogowanego_poprawny(adres) is False
+
+
+@pytest.mark.parametrize("adres", list(ADRESY_Z_ENCODED_WORD.values()), ids=list(ADRESY_Z_ENCODED_WORD))
+def test_adres_z_zakodowanym_slowem_nie_jest_poprawnym_adresem_odbiorcy(adres):
+    assert len(adres.splitlines()) == 1 and adres == adres.strip()   # splitlines i strip przepuszczaja
+    assert getaddresses([adres]) == [("", adres)]                    # getaddresses tez
+
+    assert poczta._adres_zalogowanego_poprawny(adres) is False
+
+
+@pytest.mark.parametrize("adres", list(ADRESY_Z_POJEDYNCZYM_ZNAKIEM_ENCODED_WORD.values()),
+                         ids=list(ADRESY_Z_POJEDYNCZYM_ZNAKIEM_ENCODED_WORD))
+def test_adres_z_samym_znakiem_rownosci_albo_zapytania_jest_poprawnym_adresem_odbiorcy(adres):
+    assert "=?" not in adres
+    assert len(adres.splitlines()) == 1 and adres == adres.strip()
+    assert getaddresses([adres]) == [("", adres)]
+
+    assert poczta._adres_zalogowanego_poprawny(adres) is True
+
+
+@pytest.mark.parametrize("adres", list(ADRESY_Z_POJEDYNCZYM_ZNAKIEM_ENCODED_WORD.values()),
+                         ids=list(ADRESY_Z_POJEDYNCZYM_ZNAKIEM_ENCODED_WORD))
+async def test_wyslij_na_adres_z_samym_znakiem_rownosci_albo_zapytania_wysyla_list_na_ten_adres(
+    poczta_skonfigurowana, atrapa_smtp, adres,
+):
+    await poczta.wyslij(adres, "T", "X")
+
+    (polaczenie,) = atrapa_smtp.polaczenia
+    assert polaczenie.koperty == [[adres]]
+    (wiadomosc,) = atrapa_smtp.wiadomosci
+    assert str(wiadomosc["To"]) == adres
 
 
 def test_pusty_adres_nie_jest_poprawnym_adresem_odbiorcy():
@@ -988,15 +1040,14 @@ async def test_konto_z_adresem_odrzucanym_przez_walidator_dostaje_502_bez_listu_
 
 
 # --- adres nadawcy: wlasna regula `_adres_nadawcy_poprawny`, niezalezna od parsera i wersji Pythona --
-# Warunki w kolejnosci: (1) dlugosc <= 254, (2) jedna linia, (3) brak bialych znakow na brzegach,
-# (4) pelne dopasowanie `adres` albo `Nazwa <adres>`. Wejscia sprawdzone sondą (ktore warunki odrzucaja):
-#  - dlugosc (1) sama: 250 liter + @example.test (dopasowanie, jedna linia, brak brzegow);
-#  - biale znaki na brzegu (3) same: ` Kokpit <kokpit@example.test>` (spacja jest dozwolona w nazwie,
-#    wiec regula (4) go przepuszcza); `x@example.test\x0b` i ` ` odrzucaja naraz (3) i (4);
-#  - ksztalt (4) sam: `kokpit@[example.test`, `Kokpit <kokpit@[example.test>`, `a@b.c, d@e.f`, `"K" <a@b.c>`;
-#  - jedna linia (2): NIE da sie wskazac wejscia, na ktorym decyduje sama - kazde wejscie z separatorem
-#    linii odrzuca tez (4) (zadna klasa znakow wyrazenia nie przyjmuje separatora; skan calego Unicode);
-#    `a\nb` odrzucaja (2) i (4). Warunek (2) jest wiec zbedny wzgledem (4) i zostaje chroniony skutkiem.
+# Warunki w kolejnosci: (1) dlugosc <= 254, (2) brak bialych znakow na brzegach,
+# (3) pelne dopasowanie `adres` albo `Nazwa <adres>`. Wejscia sprawdzone sondą (ktore warunki odrzucaja):
+#  - dlugosc (1) sama: 250 liter + @example.test (dopasowanie, brak brzegow);
+#  - biale znaki na brzegu (2) same: ` Kokpit <kokpit@example.test>` i ` K <a@b.c>` (spacja jest
+#    dozwolona w nazwie, wiec wzorzec (3) je przepuszcza); `x@example.test\x0b` i ` ` odrzucaja naraz (2) i (3);
+#  - ksztalt (3) sam: `kokpit@[example.test`, `Kokpit <kokpit@[example.test>`, `a@b.c, d@e.f`, `"K" <a@b.c>`;
+#  - dwie linie (`a\nb`) odrzuca wzorzec (3): zadna klasa znakow nie przyjmuje separatora linii.
+# Nadawce sprawdza `stan()` (przed haslem, po hoscie i pustym nadawcy), a nie wyjatki parsera naglowkow.
 
 NADAWCA_DLUGOSC_GRANICZNA = "a" * (254 - len("@example.test")) + "@example.test"
 NADAWCA_ZA_DLUGI = "a" * (255 - len("@example.test")) + "@example.test"
@@ -1035,18 +1086,59 @@ def test_nadawca_w_granicznej_dlugosci_jest_poprawny_a_o_jeden_znak_dluzszy_nie(
 
 def test_dlugosc_nadawcy_decyduje_sama_gdy_ksztalt_linia_i_brzegi_sa_poprawne():
     nadawca = "a" * 250 + "@example.test"
-    assert len(nadawca.splitlines()) == 1 and nadawca == nadawca.strip()
+    assert nadawca == nadawca.strip()
     assert poczta._NADAWCA.fullmatch(nadawca) is not None
 
     assert poczta._adres_nadawcy_poprawny(nadawca) is False
 
 
-def test_biale_znaki_na_brzegu_nadawcy_decyduja_same_gdy_ksztalt_pasuje_do_wzorca():
-    nadawca = " Kokpit <kokpit@example.test>"
-    assert len(nadawca.splitlines()) == 1 and len(nadawca) <= 254
+@pytest.mark.parametrize("nadawca", [" Kokpit <kokpit@example.test>", " K <a@b.c>"],
+                         ids=["dluga_nazwa", "krotka_nazwa"])
+def test_biale_znaki_na_brzegu_nadawcy_decyduja_same_gdy_ksztalt_pasuje_do_wzorca(nadawca):
+    assert len(nadawca) <= 254
     assert poczta._NADAWCA.fullmatch(nadawca) is not None
 
     assert poczta._adres_nadawcy_poprawny(nadawca) is False
+
+
+# --- stan(): nadawca sprawdzany po hoscie i pustym nadawcy, przed haslem ----------------------------
+
+
+def test_stan_z_nieprawidlowym_nadawca_nie_jest_skonfigurowany_a_powod_to_komunikat_o_nadawcy(
+    poczta_skonfigurowana, monkeypatch,
+):
+    monkeypatch.setattr(settings, "smtp_nadawca", "kokpit@[example.test")
+
+    assert poczta.stan() == poczta.StanPoczty(False, KOMUNIKAT_NADAWCA)
+
+
+def test_stan_z_prawidlowym_nadawca_jest_skonfigurowany_bez_powodu(poczta_skonfigurowana):
+    assert poczta.stan() == poczta.StanPoczty(True, None)
+
+
+def test_pusty_nadawca_ma_powod_o_braku_zmiennej_a_nie_o_nieprawidlowym_adresie(
+    poczta_skonfigurowana, monkeypatch,
+):
+    monkeypatch.setattr(settings, "smtp_nadawca", "")
+
+    stan = poczta.stan()
+
+    assert stan.powod == POWOD_BRAK_NADAWCY
+    assert stan.powod != KOMUNIKAT_NADAWCA
+
+
+def test_brak_hosta_ma_pierwszenstwo_przed_nieprawidlowym_nadawca(poczta_skonfigurowana, monkeypatch):
+    monkeypatch.setattr(settings, "smtp_host", None)
+    monkeypatch.setattr(settings, "smtp_nadawca", "kokpit@[example.test")
+
+    assert poczta.stan().powod == POWOD_BRAK_HOSTA
+
+
+def test_nieprawidlowy_nadawca_ma_pierwszenstwo_przed_brakiem_hasla(poczta_skonfigurowana, monkeypatch):
+    monkeypatch.setattr(settings, "smtp_nadawca", "kokpit@[example.test")
+    monkeypatch.setattr(settings, "smtp_haslo", None)
+
+    assert poczta.stan().powod == KOMUNIKAT_NADAWCA
 
 
 @pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI.values()), ids=list(NADAWCY_ODRZUCANI))
@@ -1080,6 +1172,45 @@ async def test_wyslij_z_nieprawidlowym_nadawca_daje_komunikat_o_nadawcy_bez_pola
     assert str(wyjatek.value) == KOMUNIKAT_NADAWCA
     assert atrapa_smtp.liczba_polaczen == 0
     assert atrapa_smtp.wiadomosci == []
+
+
+@pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI.values()), ids=list(NADAWCY_ODRZUCANI))
+async def test_stan_poczty_przez_trase_z_nieprawidlowym_nadawca_wskazuje_komunikat_o_nadawcy(
+    swiat, poczta_skonfigurowana, atrapa_smtp, monkeypatch, nadawca,
+):
+    monkeypatch.setattr(settings, "smtp_nadawca", nadawca)
+    klient = await swiat.klient_dla(swiat.wlasciciel)
+
+    odp = await klient.get(ADRES_STANU)
+
+    assert odp.status_code == 200
+    assert odp.json() == {"skonfigurowana": False, "powod": KOMUNIKAT_NADAWCA}
+    assert atrapa_smtp.liczba_polaczen == 0
+
+
+@pytest.mark.parametrize("nadawca", list(NADAWCY_POPRAWNI.values()), ids=list(NADAWCY_POPRAWNI))
+async def test_stan_poczty_przez_trase_z_prawidlowym_nadawca_jest_skonfigurowany_bez_powodu(
+    swiat, poczta_skonfigurowana, atrapa_smtp, monkeypatch, nadawca,
+):
+    monkeypatch.setattr(settings, "smtp_nadawca", nadawca)
+    klient = await swiat.klient_dla(swiat.wlasciciel)
+
+    odp = await klient.get(ADRES_STANU)
+
+    assert odp.status_code == 200
+    assert odp.json() == {"skonfigurowana": True, "powod": None}
+    assert atrapa_smtp.liczba_polaczen == 0
+
+
+async def test_stan_poczty_przez_trase_z_pustym_nadawca_wskazuje_brak_zmiennej_a_nie_zly_adres(
+    swiat, poczta_skonfigurowana, monkeypatch,
+):
+    monkeypatch.setattr(settings, "smtp_nadawca", "")
+    klient = await swiat.klient_dla(swiat.wlasciciel)
+
+    odp = await klient.get(ADRES_STANU)
+
+    assert odp.json() == {"skonfigurowana": False, "powod": POWOD_BRAK_NADAWCY}
 
 
 @pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI.values()), ids=list(NADAWCY_ODRZUCANI))

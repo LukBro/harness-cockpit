@@ -26,6 +26,12 @@ class StanPoczty:
     powod: str | None   # None tylko gdy skonfigurowana
 
 
+KOMUNIKAT_NADAWCA = "adres nadawcy jest nieprawidłowy: sprawdź COCKPIT_SMTP_NADAWCA"
+
+
+KOMUNIKAT_ODBIORCA = "adres odbiorcy listu jest nieprawidłowy"
+
+
 def _brak(zmienna: str) -> StanPoczty:
     return StanPoczty(False, f"poczta wyłączona: ustaw zmienną {zmienna}")
 
@@ -36,6 +42,8 @@ def stan() -> StanPoczty:
         return _brak("COCKPIT_SMTP_HOST")
     if not settings.smtp_nadawca:
         return _brak("COCKPIT_SMTP_NADAWCA")
+    if not _adres_nadawcy_poprawny(settings.smtp_nadawca):
+        return StanPoczty(False, KOMUNIKAT_NADAWCA)
     if settings.smtp_uzytkownik and settings.smtp_haslo is None:
         return _brak("COCKPIT_SMTP_HASLO")
     return StanPoczty(True, None)
@@ -70,6 +78,10 @@ def _adres_zalogowanego_poprawny(do: str) -> bool:
     # Separator linii na brzegu (u@x\x0b) daje jedna linie, ale trafilby do koperty SMTP.
     if do != do.strip():
         return False
+    # Encoded-word (RFC 2047): parser naglowkow go dekoduje, wiec "=?utf-8?q?a?=@x" trafilby do
+    # naglowka To jako "a@x" (rozjazd z koperta), a "=?utf-8?q??=@x" konczy sie IndexError.
+    if "=?" in do:
+        return False
     # Jedyny poprawny wynik: jeden adres bez nazwy wyswietlanej i bez dodatkow
     # ("a@b, c@d" -> 2 wpisy, "Jan <a@b>" -> nazwa niepusta, " " -> brak wpisow).
     return getaddresses([do]) == [("", do)]
@@ -86,7 +98,7 @@ def _adres_nadawcy_poprawny(nadawca: str) -> bool:
     zaleznie od wersji, a na zagniezdzonych nawiasach RecursionError): parsera nie wolamy wcale."""
     if len(nadawca) > _NADAWCA_MAX_DLUGOSC:   # odcina tez "(" * 500 przed wyrazeniem
         return False
-    if len(nadawca.splitlines()) != 1 or nadawca != nadawca.strip():
+    if nadawca != nadawca.strip():   # separator linii na brzegu ("x@y.pl\x0b") tez zdejmuje strip
         return False
     return _NADAWCA.fullmatch(nadawca) is not None
 
@@ -95,24 +107,15 @@ async def wyslij(do: str, temat: str, tresc: str) -> None:
     """Wysyla jeden list; kazda awaria SMTP/sieci konczy sie `BladPoczty` bez tresci wyjatku."""
     obecny = stan()
     if not obecny.skonfigurowana:
-        raise BladPoczty(obecny.powod or "poczta wyłączona")
+        assert obecny.powod is not None   # stan() zawsze podaje powod, gdy skonfigurowana=False
+        raise BladPoczty(obecny.powod)
     host = settings.smtp_host
     assert host is not None   # stan() sprawdzil
     if not _adres_zalogowanego_poprawny(do):
-        raise BladPoczty("adres odbiorcy listu jest nieprawidłowy")
-    if not _adres_nadawcy_poprawny(settings.smtp_nadawca or ""):
-        raise BladPoczty("adres nadawcy jest nieprawidłowy: sprawdź COCKPIT_SMTP_NADAWCA")
+        raise BladPoczty(KOMUNIKAT_ODBIORCA)
     wiadomosc = EmailMessage()
-    # Parser naglowkow biblioteki na zlej wartosci rzuca: ValueError (wiele linii),
-    # AttributeError (InvalidHeaderDefect bez 'all_defects') i IndexError (pusty token).
-    try:
-        wiadomosc["From"] = settings.smtp_nadawca
-    except (ValueError, AttributeError, IndexError):
-        raise BladPoczty("adres nadawcy jest nieprawidłowy: sprawdź COCKPIT_SMTP_NADAWCA") from None
-    try:
-        wiadomosc["To"] = do
-    except (ValueError, AttributeError, IndexError):
-        raise BladPoczty("adres odbiorcy listu jest nieprawidłowy") from None
+    wiadomosc["From"] = settings.smtp_nadawca
+    wiadomosc["To"] = do
     wiadomosc["Subject"] = temat
     wiadomosc.set_content(tresc)
     try:
