@@ -180,6 +180,7 @@ CZYSTE = {
         "_bledy", "_linia", "_sciezka_decyzji", "_sciezka_decyzji(id_kroku).as_posix",
         "_tekst_bledu", "_zdarzenie", "ma_bledy",
         "_sciezka_raportu", "_blad_identyfikatora",
+        "ostrzezenie_o_opisie",
         "(KATALOG_ARTEFAKTOW / artefakt).as_posix", "_sciezka_artefaktu_wariantu",
     ),
     **_grupa(
@@ -241,6 +242,15 @@ _ODCZYT_AGENTOW_BRAMKI = (
     "jednego wiersza `step_id` ma wlasny test w tests/test_fanout.py (brak worktree, uszkodzony "
     "checkpoint, brak i uszkodzona kopia workflow, brak kroku w checkpoincie i w workflow, "
     "OSError i ValueError z odczytu workflow, zly identyfikator runu)"
+)
+_TICKET_RUNU = (
+    "HAR-117: wywolane tylko dla polecenia z polem `ticket`, a scenariusze tej listy go nie "
+    "niosa. Na prawdziwych funkcjach tests/test_zamrozenie_ticketu.py konczy run `step_failed` + "
+    "`run_finished`: blad dostawcy (BladOperacji i BladIntegracji), odpowiedz bez ticketu albo o "
+    "zlym ksztalcie, wklejenie z samych bialych znakow i zapis do zablokowanego katalogu runu. "
+    "Galaz innego wyjatku dostawcy (tlumaczona na BladTicketu z nazwa typu) ma test "
+    "tests/test_zamrozenie_ticketu.py::test_nieoczekiwany_wyjatek_dostawcy_konczy_run_nazwa_typu_"
+    "bez_tresci_wyjatku"
 )
 _KOPIA_ZWYCIEZCY = (
     "`OSError` z kopiowania wyniku zwyciezcy konsensusu (katalog, `copyfile`) tlumaczy `_konsensus` "
@@ -325,6 +335,8 @@ NIEWSTRZYKIWALNE = {
     ("json.loads", "wykonaj_run"): _PLIK_Z_JSON,
     ("json.loads", "wznow_run"): _PLIK_Z_JSON,
     ("_zapisz_atomowo", "wykonaj_run"): _ZAPIS_RAPORTU,
+    ("ticket_ze_zlecenia", "wykonaj_run"): _TICKET_RUNU,
+    ("zamroz", "wykonaj_run"): _TICKET_RUNU,
     ("emit", "wykonaj_run"): "bledy `emit` (np. BrakMiejsca) opisuje docstring modulu: decyduje o nich wolajacy",
     ("emit", "wznow_run"): "bledy `emit` (np. BrakMiejsca) opisuje docstring modulu: decyduje o nich wolajacy",
     ("_blad_przed_startem", "wykonaj_run"): _OBSLUGA_BLEDU,

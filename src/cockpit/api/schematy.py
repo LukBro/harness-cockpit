@@ -59,6 +59,7 @@ RodzajZdarzenia = (
     Literal[
         "output", "step_started", "step_finished", "step_failed", "step_aborted",
         "step_skipped", "step_waiting", "run_finished", "resume_ignored", "context_manifest",
+        "ticket_ostrzezenie",   # ticket bez opisu (HAR-117); nie rusza statusu runu ani kroku
         # zarezerwowane dla czlowieka (services.runs.RODZAJE_CZLOWIEKA)
         "decision", "integrated", "committed", "acceptance", "run_cancelled",
     ]

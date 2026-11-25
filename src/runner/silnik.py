@@ -99,6 +99,7 @@ from runner.krok import (
 )
 from runner.kontekst import Manifest, zloz_manifest
 from runner.krok_diff import wykonaj_diff
+from runner.tickety.zamrozenie import ostrzezenie_o_opisie, ticket_ze_zlecenia, zamroz
 from runner.weryfikacja import kroki_weryfikujace
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
 from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
@@ -111,6 +112,7 @@ NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # w funkcji przezywa mutacje wielkosci liter na systemach plikow bez jej rozrozniania (macOS).
 KATALOG_WORKFLOW = Path(".cockpit") / "workflows"
 KROK_WALIDACJI = "walidacja"   # krok, na ktorym kokpit widzi blad przed startem krokow
+KROK_TICKETU = "ticket"        # krok zdarzenia `ticket_ostrzezenie` (HAR-117)
 TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"
 TEKST_PRZERWANIA = "przerwany przy śmierci runnera — nie wznawiamy"
 DECYZJE = ("approve", "reject")
@@ -950,6 +952,22 @@ async def wykonaj_run(
     except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu
         await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
         return
+
+    ostrzezenie: str | None = None
+    zlecenie_ticketu = polecenie.get("ticket")
+    if zlecenie_ticketu is not None:
+        # ticket zamrozony w katalogu runu (poza repozytorium) przed pierwszym krokiem (HAR-117)
+        try:
+            # projekt dla dostawcy to sciezka z polecenia (ta sama co worktree), nie id projektu
+            ticket = await ticket_ze_zlecenia(zlecenie_ticketu, polecenie.get("sciezka"))
+            await asyncio.to_thread(zamroz, p.worktree.katalog_runu, ticket)
+        except BLEDY_GRANICY as e:
+            await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
+            return
+        ostrzezenie = ostrzezenie_o_opisie(ticket)
+    if ostrzezenie is not None:
+        # ticket bez opisu nie blokuje runu, ale zostaje w historii
+        await emit(_zdarzenie(run_id, "ticket_ostrzezenie", KROK_TICKETU, "", ostrzezenie))
 
     try:
         await _wykonaj_plan(
