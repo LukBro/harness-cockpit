@@ -23,6 +23,10 @@ PLIK_LINII = "zmienione-linie.json"
 # `dowod-<capability>.json` w katalogu kroku.
 SYSTEM_CHECK = "check"
 SZABLON_DOWODU = "dowod-{}.json"
+# Capability `mutate_diff` (HAR-168): przezyle mutanty na zmienionych liniach. Krok czyta
+# `zmienione-linie.json` z kroku `diff` i zapisuje `mutanty.json` obok dowodu silnika.
+CAPABILITY_MUTATE_DIFF = "mutate_diff"
+PLIK_MUTANTOW = "mutanty.json"
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,10 @@ def opis_kroku(krok: Krok) -> OpisKrokuSystemowego:
     if krok.system == SYSTEM_CHECK:
         if not krok.capability:
             return NIEZNANY_OPIS
+        if krok.capability == CAPABILITY_MUTATE_DIFF:
+            return OpisKrokuSystemowego(
+                produces=(nazwa_dowodu(krok.capability), PLIK_MUTANTOW),
+                consumes=(PLIK_LINII,), needs=(krok.capability,))
         return OpisKrokuSystemowego(
             produces=(nazwa_dowodu(krok.capability),), needs=(krok.capability,))
     return opis_kroku_systemowego(krok.system)

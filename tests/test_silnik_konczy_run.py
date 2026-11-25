@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import json
 import re
 import shutil
 from pathlib import Path
@@ -35,6 +36,8 @@ from test_krok_diff import (
     swiat_z_diffem,
     zmien_drzewo,
 )
+from test_krok_check import SzpiegZmieniajacyDrzewo as SzpiegZmieniajacyDrzewoMutantow
+from test_mutanty_w_runie import raport, swiat_mutantow
 from test_petla_naprawcza import NIEUDANY, AgentNaprawczy, swiat_naprawy, swiat_z_bramka
 from test_petla_naprawcza import wznow as wznow_petli
 from test_silnik_runu import RUN_ID, K, Szpieg, jedno, rodzaje, swiat, uruchom
@@ -53,6 +56,7 @@ SCENARIUSZ_TRYB = {
     "dom": "wykonaj_run",
     "zakres": "wykonaj_run",
     "kontrola": "wykonaj_run",
+    "mutanty": "wykonaj_run",
     "petla": "wykonaj_run",
     "wznowienie": "wznow_run",
     "odrzucenie": "wznow_run",
@@ -86,6 +90,7 @@ WSTRZYKNIETE = {
     "wykonawca": ("run",),
     "wykonaj_diff": ("run",),
     "wykonaj_check": ("kontrola",),
+    "wykonaj_mutate_diff": ("mutanty",),
     "opis_kroku": ("run", "wznowienie"),
     "_krok_producenta": ("run", "wznowienie"),
     "_wejscie": ("run", "wznowienie"),
@@ -216,6 +221,7 @@ NIEWSTRZYKIWALNE = {
     ("wykonawca", "wznow_run"): _PO_WZNOWIENIU,
     ("wykonaj_diff", "wznow_run"): _PO_WZNOWIENIU,
     ("wykonaj_check", "wznow_run"): _PO_WZNOWIENIU,
+    ("wykonaj_mutate_diff", "wznow_run"): _PO_WZNOWIENIU,
 }
 
 
@@ -530,7 +536,7 @@ WYJATKI = [
 ]
 
 ASYNCHRONICZNE = {
-    "_krok", "_krok_systemowy", "wykonaj_diff", "wykonaj_check", "_zapisz", "_pauza_testowa",
+    "_krok", "_krok_systemowy", "wykonaj_diff", "wykonaj_check", "wykonaj_mutate_diff", "_zapisz", "_pauza_testowa",
     "_wykonaj_plan", "_przyjmij_decyzje", "_obsluz_porazke", "_zapis_do_konca",
 }
 
@@ -661,6 +667,10 @@ async def _przebieg(
         s = swiat(tmp_path, [K("autor")], tresc=WORKFLOW_Z_KONTROLA)
         naloz()
         return await _wykonaj(s, Szpieg())
+    if scenariusz == "mutanty":
+        s = swiat_mutantow(tmp_path, raport_json=json.dumps(raport(3)))
+        naloz()
+        return await _wykonaj(s, SzpiegZmieniajacyDrzewoMutantow())
     if scenariusz == "petla":
         s = swiat_naprawy(tmp_path)
         naloz()
@@ -804,3 +814,35 @@ async def test_porazka_wstrzyknieta_w_krok_dostaje_id_tego_kroku_a_nie_kroku_wal
     porazki = [z["step_id"] for z in zdarzenia if z["kind"] == "step_failed"]
     assert porazki == ["autor"]
     assert "walidacja" not in [z["step_id"] for z in zdarzenia]
+
+
+# --- krok mutantow: prawdziwa granica `wykonaj_mutate_diff` (komenda `python -c`, bez mutmuta) ---
+
+
+async def test_raport_mutantow_o_zlym_ksztalcie_konczy_krok_i_run_zdarzeniami_a_nie_zapisuje_mutantow(
+    tmp_path,
+):
+    s = swiat_mutantow(tmp_path, raport_json=json.dumps({**raport(3), "dodatkowy": 1}))
+
+    zdarzenia = await _wykonaj(s, SzpiegZmieniajacyDrzewoMutantow())
+
+    assert jedno(zdarzenia, "step_failed", "mutanty")["text"].startswith("check mutate_diff: ")
+    assert rodzaje(zdarzenia).count("run_finished") == 1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+    assert "step_finished" not in [z["kind"] for z in zdarzenia if z["step_id"] == "mutanty"]
+    assert not (s.katalog_runu / "mutanty" / "mutanty.json").exists()
+
+
+async def test_poprawny_raport_mutantow_konczy_krok_sukcesem_i_zapisuje_mutanty_kontrast_dla_zlego(
+    tmp_path,
+):
+    r = raport(3)
+    s = swiat_mutantow(tmp_path, raport_json=json.dumps(r))
+
+    zdarzenia = await _wykonaj(s, SzpiegZmieniajacyDrzewoMutantow())
+
+    assert "step_failed" not in rodzaje(zdarzenia)
+    jedno(zdarzenia, "step_finished", "mutanty")
+    assert zdarzenia[-1]["kind"] == "run_finished"
+    mutanty = (s.katalog_runu / "mutanty" / "mutanty.json").read_text(encoding="utf-8")
+    assert json.loads(mutanty) == r

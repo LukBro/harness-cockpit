@@ -85,6 +85,8 @@ class Krok(BaseModel):
     # allow_inf_nan=False nieskonczonosc i NaN; int z YAML-u (`budget_usd: 5`) przechodzi
     budget_usd: float | None = Field(default=None, gt=0, strict=True, allow_inf_nan=False)
     max_turns: int | None = Field(default=None, ge=1, strict=True)
+    # przezyly mutant oblewa krok `check` z capability mutate_diff (HAR-168); domyslnie tylko raport
+    fail_on_survivors: bool = Field(default=False, strict=True)
 
 
 _POLA_KROKU = [nazwa for nazwa in Krok.model_fields if nazwa != "id"]
