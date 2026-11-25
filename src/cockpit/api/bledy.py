@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from cockpit.services.errors import (
     BladDziedziny,
+    BladPoczty,
     BledyWalidacjiWorkflow,
     BlednyPlikLekcji,
     BlednySkill,
@@ -55,6 +56,7 @@ KODY_BLEDOW: Mapping[type[BladDziedziny], int] = {
     PlikPozaZakresem: 403,
     RunnerOffline: 409,
     WymagaPotwierdzenia: 409,
+    BladPoczty: 502,   # HAR-91: serwer poczty to zalezny system, nie blad wejscia
 }
 
 

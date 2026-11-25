@@ -63,6 +63,11 @@ class WymagaPotwierdzenia(StanNiemozliwy):
         )
 
 
+class BladPoczty(BladDziedziny):
+    """Poczta nieskonfigurowana albo serwer SMTP odrzucil wysylke; komunikat bez tresci
+    wyjatku biblioteki, bo ta moze niesc haslo (HAR-91)."""
+
+
 class NiespojneDane(BladDziedziny):
     """Dane wejsciowe wzajemnie sprzeczne, np. pelna dlugosc krotsza niz przyslany tekst (HAR-56)."""
 
