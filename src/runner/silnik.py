@@ -7,7 +7,7 @@ pozwala `needs`. Krok z `approval: true` zawiesza run na bramce BEZ procesu agen
 zdarzenia), kroki niezalezne od bramki dochodza do konca, potem drugi zapis, pauza testowa
 i `step_waiting` jako ostatnie zdarzenie runu. Wszystkie odczyty (rejestr skilli,
 workflow, project.yaml) ida z worktree (stan z commita), nie z repozytorium uzytkownika.
-Silnik nie sprzata worktree: zostaje do odbioru. Fan-out, konsensus i foreach to osobne tickety.
+Silnik nie sprzata worktree: zostaje do odbioru. Konsensus i foreach to osobne tickety (fan-out zrobiony).
 
 Petla naprawcza (HAR-109, D28): krok z `on_fail: {retry, max}` po porazce wraca do celu `retry`
 (wszystkie kroki na sciezce `needs` od celu do kroku nieudanego) z raportem porazki jako
@@ -41,7 +41,7 @@ import sys
 import time
 import weakref
 from collections import deque
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +54,7 @@ from cockpit.services.kroki_systemowe import (
     SYSTEM_CHECK,
     opis_kroku,
 )
+from cockpit.services.invariants import profil_roli
 from cockpit.services.projekt import Projekt, wczytaj_projekt
 from cockpit.services.skills import Rejestr, materializuj, rozstrzygnij_rejestr
 from cockpit.services.workflow import Krok, Problem, Workflow, ma_bledy, wczytaj_workflow
@@ -61,7 +62,11 @@ from cockpit.services.workflow_walidacja import waliduj_workflow
 from runner.agent import (
     ProfilBackendu,
     SpecKroku,
+    etykieta_pliku,
+    id_wariantu,
+    podkatalog_wariantu,
     polecenie_agenta,
+    sciezka_wyjscia_wariantu,
     zbuduj_prompt,
 )
 from runner.bufor import BladBufora
@@ -129,6 +134,22 @@ BLEDY_GRANICY = (BladDziedziny, OSError, KeyError, ValueError)
 def _tekst_bledu(e: Exception) -> str:
     """`str(KeyError('x'))` to samo `'x'` i nic nie mowi; reszta zostaje bez zmian."""
     return f"brak klucza {e}" if isinstance(e, KeyError) else str(e)
+
+
+def _powod_wyjatku(id_kroku: str, e: Exception) -> str:
+    """Powod porazki kroku (albo wariantu) z wyjatku zadania; `BladBufora` obsluguje wolajacy.
+
+    `PorazkaKroku` i bledy granic niosa swoj tekst. Kazdy inny wyjatek (kod runnera, biblioteka)
+    to porazka kroku, nie petli planu: inaczej run wisi w `running` bez `run_finished`. Jego powod
+    niesie sama nazwe typu, bo tresc wyjatku moze niesc sekret."""
+    if isinstance(e, PorazkaKroku):
+        return str(e)
+    if isinstance(e, BLEDY_GRANICY):
+        print(f"krok {id_kroku[:36]!r} zakonczony bledem: {type(e).__name__}", file=sys.stderr)
+        return _tekst_bledu(e)
+    nazwa_typu = type(e).__name__
+    print(f"krok {id_kroku[:36]!r} zakonczony bledem: {nazwa_typu}", file=sys.stderr)
+    return f"nieoczekiwany wyjątek kroku: {nazwa_typu}"
 
 
 @dataclass(frozen=True)
@@ -249,11 +270,8 @@ def _sciezka_raportu(cel: str, nr: int) -> Path:
     return KATALOG_ARTEFAKTOW / cel / "_naprawa" / f"proba_{nr}.md"
 
 
-def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | None:
-    """Id kroku systemowego, ktory produkuje `artefakt` i jest przodkiem `id_kroku` (albo None).
-
-    Producent skillowy nie jest tu potrzebny: jego artefakty to nazwy wzgledne, a krok
-    systemowy zapisuje pod `<katalog_runu>/<id kroku>/`."""
+def _przodkowie(p: Przygotowany, id_kroku: str) -> Iterator[Krok]:
+    """Przodkowie kroku po `needs`, wszerz: od najblizszych."""
     kroki = {k.id: k for k in p.workflow.kroki}
     stos = list(kroki[id_kroku].needs)
     odwiedzeni: set[str] = set()
@@ -263,18 +281,54 @@ def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | Non
             continue
         odwiedzeni.add(kandydat)
         krok = kroki[kandydat]
-        if krok.skill is None and artefakt in opis_kroku(krok).produces:
-            return kandydat
+        yield krok
         stos.extend(krok.needs)
+
+
+def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | None:
+    """Id kroku systemowego, ktory produkuje `artefakt` i jest przodkiem `id_kroku` (albo None).
+
+    Producent skillowy nie jest tu potrzebny: jego artefakty to nazwy wzgledne, a krok
+    systemowy zapisuje pod `<katalog_runu>/<id kroku>/`."""
+    for krok in _przodkowie(p, id_kroku):
+        if krok.skill is None and artefakt in opis_kroku(krok).produces:
+            return krok.id
     return None
 
 
-def _wejscie(p: Przygotowany, id_kroku: str, artefakt: str) -> str:
-    """Wejscie agenta: sciezka bezwzgledna dla artefaktu kroku systemowego, inaczej nazwa."""
-    producent = _krok_producenta(p, id_kroku, artefakt)
-    if producent is None:
-        return artefakt
-    return str(p.worktree.katalog_runu / producent / artefakt)
+def _agenci_kroku(krok: Krok) -> list[str]:
+    """Identyfikatory agentow kroku: id kroku (fanout 1, krok systemowy) albo `a1..aN` (HAR-83)."""
+    if krok.skill is None or krok.fanout == 1:
+        return [krok.id]
+    return [id_wariantu(i) for i in range(1, krok.fanout + 1)]
+
+
+def _wejscia_wariantow(p: Przygotowany, krok: Krok, artefakt: str) -> list[str]:
+    """Sciezki `artefakt` wszystkich wariantow producenta z fanoutem: rola z zapisem pisze
+    w worktree (sciezka wzgledna), rola bez zapisu w katalogu runu (sciezka bezwzgledna)."""
+    assert krok.skill is not None
+    zapis = profil_roli(p.rejestr.skille[krok.skill].role).zapis
+    sciezki = []
+    for agent_id in _agenci_kroku(krok):
+        if zapis:
+            sciezki.append(sciezka_wyjscia_wariantu(krok.id, agent_id, artefakt))
+        else:
+            sciezki.append(str(
+                p.worktree.katalog_runu / krok.id / podkatalog_wariantu(agent_id) / artefakt))
+    return sciezki
+
+
+def _wejscie(p: Przygotowany, id_kroku: str, artefakt: str) -> list[str]:
+    """Wejscia agenta dla artefaktu: sciezka bezwzgledna z kroku systemowego, sciezki wszystkich
+    wariantow z producenta z `fanout > 1` (najblizszy przodek wygrywa), inaczej sama nazwa."""
+    for krok in _przodkowie(p, id_kroku):
+        if krok.skill is None:
+            if artefakt in opis_kroku(krok).produces:
+                return [str(p.worktree.katalog_runu / krok.id / artefakt)]
+        elif artefakt in p.rejestr.skille[krok.skill].produces:
+            # najblizszy producent konczy szukanie; bez fanoutu wejscie to sama nazwa
+            return _wejscia_wariantow(p, krok, artefakt) if krok.fanout > 1 else [artefakt]
+    return [artefakt]
 
 
 async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
@@ -286,12 +340,18 @@ async def _krok_systemowy(krok: Krok, p: Przygotowany) -> WynikKroku:
 
 
 async def _zloz_i_zapisz_manifest(
-    p: Przygotowany, krok: Krok, sciezki_planu: Sequence[str],
+    p: Przygotowany, krok: Krok, sciezki_planu: Sequence[str], wariant: str | None = None,
 ) -> Manifest:
-    """Manifest kroku ze skillem w `<katalog_runu>/manifest-<id>.json`; blad konczy krok."""
+    """Manifest kroku ze skillem w `<katalog_runu>/manifest-<id>.json`; blad konczy krok.
+
+    Wariant kroku z fanoutem (`wariant` = agent_id) ma wlasny plik `manifest-<id>-<agent_id>.json`."""
     assert krok.skill is not None
     if (blad := _blad_identyfikatora(krok.id)) is not None:
         raise PorazkaKroku(blad)
+    try:
+        etykieta = etykieta_pliku(krok.id, wariant or krok.id, wariant is not None)
+    except ValueError as e:
+        raise PorazkaKroku(str(e)) from e
     # BladManifestu (BladDziedziny) konczy krok w petli zadan (`except BLEDY_GRANICY`) z tym samym
     # tekstem - osobny except bylby martwy
     manifest = await asyncio.to_thread(
@@ -300,7 +360,7 @@ async def _zloz_i_zapisz_manifest(
     tresc = json.dumps(manifest.jako_listy(), ensure_ascii=False).encode()  # pragma: no mutate
     try:
         await asyncio.to_thread(
-            _zapisz_atomowo, p.worktree.katalog_runu / f"manifest-{krok.id}.json", tresc)
+            _zapisz_atomowo, p.worktree.katalog_runu / f"manifest-{etykieta}.json", tresc)
     except OSError as e:
         raise PorazkaKroku(f"nie można zapisać manifestu kroku {krok.id}: {e}") from e
     return manifest
@@ -321,7 +381,11 @@ async def _krok(
     if krok.skill is None:
         return await _krok_systemowy(krok, p)
     skill = p.rejestr.skille[krok.skill]
-    wejscia = [_wejscie(p, id_kroku, artefakt) for artefakt in skill.consumes]
+    if krok.fanout > 1 and PLIK_NOTATKI in skill.produces:
+        # fail-closed: kotwice notatki sprawdza `wykonaj_krok` po nazwie artefaktu, a wariant ma
+        # sciezke w podkatalogu; bez tego krok przeszedlby bez sprawdzenia (evidence_required)
+        raise PorazkaKroku("fanout z notatką zmiany nieobsługiwany")
+    wejscia = [w for artefakt in skill.consumes for w in _wejscie(p, id_kroku, artefakt)]
     if proba > 1:
         raport = _sciezka_raportu(id_kroku, proba - 1)
         try:
@@ -334,15 +398,76 @@ async def _krok(
             wejscia.append(raport.as_posix())
     if id_kroku in zatwierdzone:
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
-    manifest = await _zloz_i_zapisz_manifest(p, krok, skill.consumes + skill.produces)
+    agenci = _agenci_kroku(krok)
+    if len(agenci) == 1:
+        return await _wariant(
+            run_id, krok, skill, krok.id, False, wejscia, p, profil, uruchom_agenta, emit,
+            proba, ogon)
+    # fanout (HAR-83): warianty biegna rownolegle i wszystkie dobiegaja konca, takze po porazce
+    # jednego; wyjatek wariantu to jego porazka, poza `BladBufora` (zepsuty zapis zdarzen)
+    wyniki = await asyncio.gather(*(
+        _wariant(run_id, krok, skill, agent_id, True, wejscia, p, profil, uruchom_agenta, emit,
+                 proba, ogon)
+        for agent_id in agenci), return_exceptions=True)
+    return _zbierz_warianty(krok.id, agenci, wyniki)
+
+
+def _zbierz_warianty(
+    id_kroku: str, agenci: Sequence[str], wyniki: Sequence[WynikKroku | BaseException],
+) -> WynikKroku:
+    """Wynik zbiorczy kroku z wynikow wariantow w kolejnosci `agenci`.
+
+    Krok zdany tylko, gdy zdane sa wszystkie warianty; inaczej niesie powod i dowody pierwszego
+    nieudanego, z jego agent_id w powodzie. Pomiar zbiorczy jest pusty: kazdy wariant ma swoj
+    pomiar w `warianty` (suma z brakami byla by zmierzona tylko z pozoru, measured_or_null)."""
+    zebrane: list[tuple[str, WynikKroku]] = []
+    for agent_id, wynik in zip(agenci, wyniki):
+        if isinstance(wynik, BladBufora) or not isinstance(wynik, Exception | WynikKroku):
+            raise wynik         # zapis zdarzen albo anulowanie: decyduje wolajacy
+        if isinstance(wynik, Exception):
+            wynik = WynikKroku(
+                status="nieudany", powod=_powod_wyjatku(id_kroku, wynik), kod_wyjscia=None)
+        zebrane.append((agent_id, wynik))
+    pierwszy = next(((a, w) for a, w in zebrane if w.status != "zakonczony"), None)
+    if pierwszy is None:
+        return WynikKroku(
+            status="zakonczony", powod=None, kod_wyjscia=zebrane[0][1].kod_wyjscia,
+            warianty=tuple(zebrane))
+    agent_id, nieudany = pierwszy
+    return WynikKroku(
+        status="nieudany", powod=f"wariant {agent_id}: {nieudany.powod}",
+        kod_wyjscia=nieudany.kod_wyjscia, werdykt=nieudany.werdykt, dowod=nieudany.dowod,
+        warianty=tuple(zebrane))
+
+
+def _wyjscia_agenta(krok: Krok, skill: Any, agent_id: str, wariant: bool) -> list[str]:
+    """`produces` skilla; wariant roli z zapisem pisze w swoim podkatalogu worktree, a rola bez
+    zapisu zostaje przy nazwie (runner zapisze ja w `<katalog_runu>/<krok>/agent_<id>/`)."""
+    if not wariant or not profil_roli(skill.role).zapis:
+        return list(skill.produces)
+    return [sciezka_wyjscia_wariantu(krok.id, agent_id, n) for n in skill.produces]
+
+
+async def _wariant(
+    run_id: str, krok: Krok, skill: Any, agent_id: str, wariant: bool, wejscia: list[str],
+    p: Przygotowany, profil: ProfilBackendu, uruchom_agenta: UruchomAgenta, emit: Emit,
+    proba: int, ogon: deque[str] | None,
+) -> WynikKroku:
+    """Jeden agent kroku (caly krok bez fanoutu albo jeden wariant): manifest, spec, prompt,
+    polecenie i uruchomienie. Wyjatek wariantu zostaje wyjatkiem, tlumaczy go `_zbierz_warianty`."""
+    assert krok.skill is not None
+    manifest = await _zloz_i_zapisz_manifest(
+        p, krok, skill.consumes + skill.produces, agent_id if wariant else None)
     spec = SpecKroku(
-        run_id=run_id, step_id=krok.id, agent_id=krok.id, skill_id=krok.skill,
-        rola=skill.role, wejscia=wejscia, wyjscia=list(skill.produces),
+        run_id=run_id, step_id=krok.id, agent_id=agent_id, skill_id=krok.skill,
+        rola=skill.role, wejscia=wejscia, wyjscia=_wyjscia_agenta(krok, skill, agent_id, wariant),
         komendy={n: p.projekt.capabilities[n] for n in skill.needs if n in p.projekt.capabilities},
         budget_usd=krok.budget_usd, max_turns=krok.max_turns,
         # lekcje wchodza do manifestu raz na wpis, a do promptu raz jako plik
         kontekst=tuple(dict.fromkeys(w.sciezka for w in manifest.wpisy if w.sciezka is not None)),
+        wariant=wariant,
     )
+    id_kroku = krok.id
     # zly prompt (ValueError), brak modelu tieru (BrakModelu), zly budzet albo limit tur konczy
     # krok w petli zadan (`except BLEDY_GRANICY`) z tym samym tekstem - osobny except bylby martwy
     prompt = zbuduj_prompt(spec)
@@ -356,7 +481,7 @@ async def _krok(
         dodatkowe["werdykt"] = skill.verdict
 
     await emit(_zdarzenie(
-        run_id, "context_manifest", krok.id, krok.id, "", attempt=proba,
+        run_id, "context_manifest", krok.id, agent_id, "", attempt=proba,
         manifest=manifest.jako_listy()))
 
     async def emit_proby(zdarzenie: dict) -> None:
@@ -377,6 +502,32 @@ def _artefakty_kroku(p: Przygotowany, id_kroku: str) -> list[str]:
     if krok.skill is None:
         return list(opis_kroku(krok).produces)
     return list(p.rejestr.skille[krok.skill].produces)
+
+
+def _dodatkowe_wyniku(
+    p: Przygotowany, id_kroku: str, wynik: WynikKroku, udany: bool,
+) -> dict[str, object]:
+    """Pola zdarzenia konca kroku (albo wariantu) z jego wyniku: kotwice, dowod, werdykt, artefakty."""
+    dodatkowe: dict[str, object] = {}
+    if udany and _produkuje_notatke(p, id_kroku):
+        dodatkowe["kotwice"] = list(wynik.kotwice)
+    if wynik.dowod is not None:
+        dodatkowe["dowod"] = dict(wynik.dowod)
+    if wynik.werdykt is not None:
+        dodatkowe["verdict"] = wynik.werdykt
+    artefakty = _artefakty_kroku(p, id_kroku)
+    if udany and artefakty:
+        dodatkowe["artefakty"] = artefakty
+    return dodatkowe
+
+
+def _agent_zdarzenia(id_kroku: str, wynik: WynikKroku | None, udany: bool) -> str:
+    """agent_id zdarzenia konca kroku: pierwszy nieudany wariant fanoutu, inaczej id kroku."""
+    if wynik is not None and not udany:
+        for agent_id, wynik_wariantu in wynik.warianty:
+            if wynik_wariantu.status != "zakonczony":
+                return agent_id
+    return id_kroku
 
 
 def _produkuje_notatke(p: Przygotowany, id_kroku: str) -> bool:
@@ -628,8 +779,10 @@ async def _wykonaj_plan(
                 # mutant None jest rownowazny dla `nastepne` (planuje tylko OCZEKUJE, a `needs`
                 # spelnia tylko ZAKONCZONY/POMINIETY); chroni go reczny mutant W_TOKU -> OCZEKUJE
                 stany[id_kroku] = StanKroku.W_TOKU  # pragma: no mutate
-                await emit(_zdarzenie(
-                    run_id, "step_started", id_kroku, id_kroku, "", attempt=startowane[id_kroku]))
+                for agent_id in _agenci_kroku(krok_po_id[id_kroku]):
+                    await emit(_zdarzenie(
+                        run_id, "step_started", id_kroku, agent_id, "",
+                        attempt=startowane[id_kroku]))
                 zadanie = asyncio.create_task(
                     _krok(
                         run_id, id_kroku, p, profil, uruchom_agenta, emit, zatwierdzone,
@@ -644,38 +797,20 @@ async def _wykonaj_plan(
                 wynik: WynikKroku | None = None
                 try:
                     wynik = zadanie.result()
-                except PorazkaKroku as e:
-                    udany, powod, pomiar = False, str(e), PomiarKroku()
                 except BladBufora:
                     # zapis zdarzenia sie nie udal: o tym decyduje wolajacy (przerwanie poza
                     # buforem); `step_failed` tez poszlo by przez zepsuty bufor.
                     # `CancelledError` jest `BaseException`, wiec ponizszy `except Exception` go nie lapie
                     raise
-                except BLEDY_GRANICY as e:      # wyjatek zadania kroku to koniec kroku, nie runu
-                    udany, powod, pomiar = False, _tekst_bledu(e), PomiarKroku()
-                    print(f"krok {id_kroku[:36]!r} zakonczony bledem: {type(e).__name__}",
-                          file=sys.stderr)      # sama nazwa typu: tresc moze niesc sekret
                 except Exception as e:  # noqa: BLE001
-                    # WHY szeroki: granica zadania asynchronicznego - kazdy inny wyjatek agenta
-                    # (kod runnera, biblioteka) konczy krok, a nie petle planu; inaczej run wisi
-                    # w `running` bez `step_failed` i `run_finished` (evidence_required).
-                    # Powod niesie sama nazwe typu: tresc wyjatku moze niesc sekret.
-                    nazwa_typu = type(e).__name__
-                    udany, powod, pomiar = (
-                        False, f"nieoczekiwany wyjątek kroku: {nazwa_typu}", PomiarKroku())
-                    print(f"krok {id_kroku[:36]!r} zakonczony bledem: {nazwa_typu}",
-                          file=sys.stderr)
+                    # WHY szeroki: granica zadania asynchronicznego - kazdy wyjatek zadania kroku
+                    # (PorazkaKroku, blad granicy, kod runnera, biblioteka) konczy krok, a nie petle
+                    # planu; inaczej run wisi w `running` bez `step_failed` i `run_finished`
+                    # (evidence_required). Powod sklada `_powod_wyjatku`.
+                    udany, powod, pomiar = False, _powod_wyjatku(id_kroku, e), PomiarKroku()
                 else:
                     udany, powod, pomiar = wynik.status == "zakonczony", wynik.powod, wynik.pomiar
-                    if udany and _produkuje_notatke(p, id_kroku):
-                        dodatkowe["kotwice"] = list(wynik.kotwice)
-                    if wynik.dowod is not None:
-                        dodatkowe["dowod"] = dict(wynik.dowod)
-                    if wynik.werdykt is not None:
-                        dodatkowe["verdict"] = wynik.werdykt
-                    artefakty = _artefakty_kroku(p, id_kroku)
-                    if udany and artefakty:
-                        dodatkowe["artefakty"] = artefakty
+                    dodatkowe = _dodatkowe_wyniku(p, id_kroku, wynik, udany)
                 czas_ms = int((time.monotonic() - start) * 1000)
                 stany[id_kroku] = StanKroku.ZAKONCZONY if udany else StanKroku.NIEUDANY
                 ostatni = id_kroku
@@ -686,10 +821,33 @@ async def _wykonaj_plan(
                     powod, powtarzane = await _obsluz_porazke(
                         p, krok_po_id[id_kroku], startowane, wynik, powod, list(ogony[id_kroku]))
                 # nieudany krok ma powod (krok.py); text zakonczonego to pusty napis
-                await emit(_zdarzenie(
-                    run_id, "step_finished" if udany else "step_failed", id_kroku, id_kroku,
-                    "" if udany else powod, attempt=startowane[id_kroku],
-                    duration_ms=czas_ms, **_pola_pomiaru(pomiar), **dodatkowe))
+                if wynik is not None and wynik.warianty:
+                    # fanout: zdarzenie konca osobno dla kazdego wariantu (kokpit sklada kroki po
+                    # (step_id, agent_id)), z jego pomiarem; udane przed nieudanymi, a powod kroku
+                    # niesie pierwszy nieudany wariant
+                    pierwszy = _agent_zdarzenia(id_kroku, wynik, udany)
+                    kolejnosc = sorted(wynik.warianty, key=lambda a: a[1].status != "zakonczony")
+                    for agent_id, wynik_wariantu in kolejnosc:
+                        zdany = wynik_wariantu.status == "zakonczony"
+                        tekst = "" if zdany else (
+                            powod if agent_id == pierwszy
+                            else f"wariant {agent_id}: {wynik_wariantu.powod}")
+                        await emit(_zdarzenie(
+                            run_id, "step_finished" if zdany else "step_failed", id_kroku,
+                            agent_id, tekst, attempt=startowane[id_kroku], duration_ms=czas_ms,
+                            **_pola_pomiaru(wynik_wariantu.pomiar),
+                            **_dodatkowe_wyniku(p, id_kroku, wynik_wariantu, zdany)))
+                else:
+                    # wyjatek zadania (wynik None) konczy kazdy wiersz (step_id, agent_id), ktory
+                    # dostal `step_started`; wynik bez wariantow ma jednego agenta
+                    agenci_konca = (
+                        _agenci_kroku(krok_po_id[id_kroku]) if wynik is None
+                        else [_agent_zdarzenia(id_kroku, wynik, udany)])
+                    for agent_id in agenci_konca:
+                        await emit(_zdarzenie(
+                            run_id, "step_finished" if udany else "step_failed", id_kroku,
+                            agent_id, "" if udany else powod, attempt=startowane[id_kroku],
+                            duration_ms=czas_ms, **_pola_pomiaru(pomiar), **dodatkowe))
                 for powtarzany in powtarzane:
                     stany[powtarzany] = StanKroku.OCZEKUJE
                     if krok_po_id[powtarzany].approval:
@@ -710,14 +868,16 @@ async def _wykonaj_plan(
         if blad_zapisu is None:
             # run czeka na czlowieka: `step_waiting` jest ostatnim zdarzeniem, bez `run_finished`
             await _pauza_testowa()
-            await emit(_zdarzenie(
-                run_id, "step_waiting", oczekiwanie.step_id, oczekiwanie.step_id, TEKST_CZEKANIA,
-                attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
+            for agent_id in _agenci_kroku(krok_po_id[oczekiwanie.step_id]):
+                await emit(_zdarzenie(
+                    run_id, "step_waiting", oczekiwanie.step_id, agent_id, TEKST_CZEKANIA,
+                    attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
             return
-        await emit(_zdarzenie(
-            run_id, "step_failed", oczekiwanie.step_id, oczekiwanie.step_id,
-            f"zapis checkpointu nieudany: {blad_zapisu}",
-            attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
+        for agent_id in _agenci_kroku(krok_po_id[oczekiwanie.step_id]):
+            await emit(_zdarzenie(
+                run_id, "step_failed", oczekiwanie.step_id, agent_id,
+                f"zapis checkpointu nieudany: {blad_zapisu}",
+                attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
     await emit(_zdarzenie(
         run_id, "run_finished", ostatni, "", "", cost_usd=None, cost_source="unavailable",
         kroki_weryfikujace=kroki_weryfikujace(p.workflow, p.rejestr)))
@@ -803,10 +963,52 @@ async def zamknij_checkpoint(run_id: str, root: Path | None = None) -> bool:
     return True
 
 
-async def _porazka_wznowienia(emit: Emit, run_id: str, step_id: str, tekst: str) -> None:
+def _agenci_bramki(katalog: Path, step_id: str) -> tuple[list[str], int | None]:
+    """(agenci, numer proby) wierszy otwartych `step_waiting` bramki, z dysku runu.
+
+    Agenci z kopii `workflow.yaml`, proba z checkpointu (`proby` + 1, jak w `step_waiting`).
+    Czego nie da sie odczytac (brak checkpointu, kopii workflow, kroku), zostaje przy `step_id`
+    i bez proby: tak jak przed fanoutem."""
+    try:
+        cp = wczytaj_checkpoint(katalog)
+        workflow, _ = wczytaj_workflow(katalog / "workflow.yaml")
+    except BLEDY_GRANICY:       # to samo wejscie moglo juz zawiesc w `_przyjmij_decyzje`
+        return [step_id], None
+    krok = next((k for k in workflow.kroki if k.id == step_id), None) if workflow else None
+    if krok is None or step_id not in cp.kroki:
+        return [step_id], None
+    try:
+        return _agenci_kroku(krok), cp.kroki[step_id].proby + 1
+    except BLEDY_GRANICY:
+        return [step_id], None
+
+
+async def _agenci_bramki_z_dysku(
+    run_id: str, step_id: str, root: Path | None,
+) -> tuple[list[str], int | None]:
+    """`_agenci_bramki` dla bledu wznowienia przed zbudowaniem `Przygotowany`."""
+    try:
+        katalog = katalog_runu(run_id, root)
+    except BLEDY_GRANICY:       # zly identyfikator runu albo katalog: nie ma czego odczytac
+        return [step_id], None
+    return await asyncio.to_thread(_agenci_bramki, katalog, step_id)
+
+
+async def _porazka_wznowienia(
+    emit: Emit, run_id: str, step_id: str, tekst: str,
+    agenci: Sequence[str] | None = None, proba: int | None = None,
+) -> None:
     """`step_failed` kroku z polecenia i `run_finished`: bez pierwszego kokpit wyliczylby
-    z samego `run_finished` falszywe "do odbioru" (evidence_required)."""
-    await emit(_zdarzenie(run_id, "step_failed", step_id, step_id, tekst))
+    z samego `run_finished` falszywe "do odbioru" (evidence_required).
+
+    `step_failed` idzie do kazdego wiersza otwartego przez `step_waiting` (agenci bramki z
+    fanoutem) z ta sama proba; bez `agenci` jest jeden wiersz `step_id`. Krok bez fanoutu
+    (agenci == [step_id]) dostaje zdarzenie jak dotad, bez `attempt`."""
+    agenci = [step_id] if agenci is None else list(agenci)
+    proba_zdarzenia = proba if agenci != [step_id] else None
+    for agent_id in agenci:
+        await emit(_zdarzenie(
+            run_id, "step_failed", step_id, agent_id, tekst, attempt=proba_zdarzenia))
     await emit(_zdarzenie(
         run_id, "run_finished", step_id, "", tekst, cost_usd=None, cost_source="unavailable"))
 
@@ -864,18 +1066,33 @@ async def wznow_run(
         async with _BLOKADY.setdefault(run_id, asyncio.Lock()):
             start = await _przyjmij_decyzje(run_id, step_id, decyzja, powod, dom, root, emit)
     except BLEDY_GRANICY as e:      # BladCheckpointu, BladWznowienia, katalog runu, struktura
-        await _porazka_wznowienia(emit, run_id, step_id, _tekst_bledu(e))
+        agenci, proba = await _agenci_bramki_z_dysku(run_id, step_id, root)
+        await _porazka_wznowienia(emit, run_id, step_id, _tekst_bledu(e), agenci, proba)
         return
     if start is None:
         return
     nazwa, p, stany, startowane, przerwane = start
+    krok_po_id = {k.id: k for k in p.workflow.kroki}
+    # wiersze bramki otwarte przez `step_waiting` (numer proby sprzed startu kroku po decyzji)
+    try:
+        agenci_bramki = _agenci_kroku(krok_po_id[step_id]) if step_id in krok_po_id else [step_id]
+        agenci_przerwanych = {i: _agenci_kroku(krok_po_id[i]) for i in przerwane}
+    except BLEDY_GRANICY as e:
+        # blad liczenia agentow konczy run (`step_failed` + `run_finished`), nie idzie dalej;
+        # `[step_id]` to tylko zestaw wierszy dla zdarzen zamykajacych, gdy agentow nie da sie wyliczyc
+        agenci, proba = await _agenci_bramki_z_dysku(run_id, step_id, root)
+        await _porazka_wznowienia(emit, run_id, step_id, _tekst_bledu(e), agenci, proba)
+        return
+    proba_bramki = startowane.get(step_id, 0) + 1
     for id_kroku in przerwane:
-        await emit(_zdarzenie(
-            run_id, "step_failed", id_kroku, id_kroku, TEKST_PRZERWANIA,
-            attempt=startowane[id_kroku]))
+        for agent_id in agenci_przerwanych[id_kroku]:
+            await emit(_zdarzenie(
+                run_id, "step_failed", id_kroku, agent_id, TEKST_PRZERWANIA,
+                attempt=startowane[id_kroku]))
     try:
         await _wykonaj_plan(
             run_id, nazwa, p, stany, startowane, frozenset({step_id}), profil, uruchom_agenta,
             emit)
     except BLEDY_GRANICY as e:
-        await _porazka_wznowienia(emit, run_id, step_id, _tekst_bledu(e))
+        await _porazka_wznowienia(
+            emit, run_id, step_id, _tekst_bledu(e), agenci_bramki, proba_bramki)

@@ -12,7 +12,7 @@ import os
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 
 from cockpit.services.errors import BladDziedziny
@@ -90,6 +90,54 @@ class SpecKroku:
     budget_usd: float | None = None
     max_turns: int | None = None
     kontekst: tuple[str, ...] = ()     # sciezki warstw instrukcji w kolejnosci pierwszenstwa (HAR-169)
+    # wariant kroku z `fanout > 1` (HAR-83): artefakty i pliki runu maja podkatalog/nazwe z agent_id;
+    # fanout 1 zostaje `False`, wiec agent_id == step_id i sciezki bez zmian
+    wariant: bool = False
+
+
+PREFIKS_PODKATALOGU_WARIANTU = "agent_"
+KATALOG_ARTEFAKTOW_WARIANTOW = KATALOG_SKILLI_RUNU.parent / "artifacts"
+
+
+def id_wariantu(numer: int) -> str:
+    """Identyfikator wariantu: `a1`, `a2`, ... (numeracja od 1); numer < 1 to `ValueError`."""
+    if isinstance(numer, bool) or not isinstance(numer, int) or numer < 1:
+        raise ValueError(f"numer wariantu musi być liczbą całkowitą >= 1, jest {numer!r}")
+    return f"a{numer}"
+
+
+def _segment_sciezki(pole: str, wartosc: str) -> None:
+    """Skladnik sciezki to jeden niepusty segment: bez separatorow, `.` i `..`."""
+    if wartosc in ("", ".", "..") or "/" in wartosc or "\\" in wartosc or "\x00" in wartosc:
+        raise ValueError(f"niedozwolony {pole}: {wartosc!r}")
+
+
+def podkatalog_wariantu(agent_id: str) -> str:
+    """Nazwa podkatalogu wariantu (`agent_a2`) w katalogu artefaktow kroku."""
+    _segment_sciezki("identyfikator wariantu", agent_id)
+    return f"{PREFIKS_PODKATALOGU_WARIANTU}{agent_id}"
+
+
+def sciezka_wyjscia_wariantu(step_id: str, agent_id: str, nazwa: str) -> str:
+    """Sciezka artefaktu wariantu wzgledem worktree (rola z zapisem), z `/` jako separatorem.
+
+    Skladniki z danych: `step_id` i `agent_id` to jeden segment, `nazwa` jest wzgledna i bez `..`;
+    inaczej `ValueError`."""
+    _segment_sciezki("identyfikator kroku", step_id)
+    wzgledna = PurePosixPath(nazwa)
+    if wzgledna.is_absolute() or ".." in wzgledna.parts or not wzgledna.parts or "\x00" in nazwa:
+        raise ValueError(f"niedozwolona ścieżka artefaktu: {nazwa!r}")
+    return (
+        KATALOG_ARTEFAKTOW_WARIANTOW / step_id / podkatalog_wariantu(agent_id) / wzgledna
+    ).as_posix()
+
+
+def etykieta_pliku(step_id: str, agent_id: str, wariant: bool) -> str:
+    """Nazwa (bez rozszerzenia) pliku promptu i manifestu: `<krok>` albo `<krok>-<agent_id>`."""
+    if not wariant:
+        return step_id
+    _segment_sciezki("identyfikator wariantu", agent_id)
+    return f"{step_id}-{agent_id}"
 
 
 def sciezka_profilu(env: Mapping[str, str] | None = None) -> Path:
