@@ -12,6 +12,7 @@ Nazwy testow w jezyku dziedziny, nie technologii (CLAUDE.md).
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import sys
@@ -21,13 +22,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from cockpit.services.errors import BladDziedziny
 from cockpit.services.invariants import Rola, Tier
 from cockpit.services.skills import rozstrzygnij_rejestr
 from cockpit.services.workflow import ma_bledy, wczytaj_workflow
 from cockpit.services.workflow_walidacja import waliduj_workflow
 from procesy import czekaj_na_warunek, czy_zyje, zabij_proces, uruchom_i_zbierz
 from runner.agent import ProfilBackendu
-from runner.bufor import BrakMiejsca
+from runner.bufor import BladBufora, BrakMiejsca
 from runner.krok import WynikKroku, wykonaj_krok
 from runner.zakres import Zakres
 
@@ -1118,3 +1120,136 @@ async def test_blad_zapisu_przy_koncu_jednego_kroku_konczy_procesy_pozostalych_i
     finally:
         if plik_pid_b.exists():
             zabij_proces(int(plik_pid_b.read_text()))
+
+
+# --- HAR-222: nieoczekiwany wyjatek kroku konczy krok, nie wiesza runu -----------------------------------
+
+SEKRET = "sk-ant-tajny-7731"        # tresc wyjatku moze niesc sekret: do zdarzen i logu idzie sama nazwa typu
+
+
+class SzpiegRzucajacyDlaKroku(Szpieg):
+    """Agent bez procesu: dla kroku `rzuca` rzuca wyjatek, pozostale kroki konczy sukcesem."""
+
+    def __init__(self, rzuca: str, wyjatek: BaseException, **opcje) -> None:
+        super().__init__(**opcje)
+        self.rzuca, self.wyjatek = rzuca, wyjatek
+
+    async def __call__(self, spec, polecenie, katalog, emit, **reszta):
+        if spec.step_id == self.rzuca:
+            self.wywolania.append(SimpleNamespace(spec=spec))     # ksztalt jak w `Szpieg`
+            raise self.wyjatek
+        return await super().__call__(spec, polecenie, katalog, emit, **reszta)
+
+
+class SzpiegPiszacyZdarzenieOutput(Szpieg):
+    """Agent bez procesu: w trakcie kroku wysyla `output` przez `emit` (zapis moze sie nie udac)."""
+
+    async def __call__(self, spec, polecenie, katalog, emit, **reszta):
+        self.wywolania.append(SimpleNamespace(spec=spec))     # ksztalt jak w `Szpieg`
+        await emit({"kind": "output", "run_id": RUN_ID, "step_id": spec.step_id,
+                    "agent_id": spec.step_id, "text": "linia"})
+        return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
+
+
+@pytest.mark.parametrize("wyjatek", [RuntimeError, TypeError])
+async def test_nieoczekiwany_wyjatek_agenta_konczy_krok_z_nazwa_typu_a_niezalezny_krok_i_run_sie_koncza(
+    tmp_path, wyjatek,
+):
+    s = swiat(tmp_path, [K("a"), K("b")])
+    agent = SzpiegRzucajacyDlaKroku("a", wyjatek(SEKRET), opoznienia={"b": 0.2})
+
+    zdarzenia = await uruchom(s, agent)
+
+    tekst = jedno(zdarzenia, "step_failed", "a")["text"]
+    assert tekst == f"nieoczekiwany wyjątek kroku: {wyjatek.__name__}"   # bez tresci wyjatku
+    assert jedno(zdarzenia, "step_finished", "b")["text"] == ""
+    assert [z["step_id"] for z in zdarzenia if z["kind"] == "step_failed"] == ["a"]
+    assert "step_finished" not in [z["kind"] for z in zdarzenia if z["step_id"] == "a"]
+    assert rodzaje(zdarzenia).count("run_finished") == 1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_krok_zalezny_od_kroku_z_nieoczekiwanym_wyjatkiem_jest_pominiety_a_run_sie_konczy(
+    tmp_path,
+):
+    s = swiat(tmp_path, [K("a"), K("b", ("a",))])
+    agent = SzpiegRzucajacyDlaKroku("a", RuntimeError(SEKRET))
+
+    zdarzenia = await uruchom(s, agent)
+
+    jedno(zdarzenia, "step_failed", "a")
+    assert jedno(zdarzenia, "step_skipped", "b")["text"].startswith("zaleznosc_nieudana: ")
+    assert agent.kroki == ["a"]
+    assert rodzaje(zdarzenia).count("run_finished") == 1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+@pytest.mark.parametrize(
+    "wyjatek", [RuntimeError, TypeError, OSError, KeyError, ValueError, BladDziedziny])
+@pytest.mark.parametrize("id_kroku", ["a", "krok_" + "d" * 35])     # drugi: 40 znakow, ponad obciecie 36
+async def test_wyjatek_agenta_zostawia_na_stderr_cala_linie_z_nazwa_typu_bez_tresci_wyjatku(
+    tmp_path, capsys, wyjatek, id_kroku,
+):
+    s = swiat(tmp_path, [K(id_kroku), K("b")])
+    agent = SzpiegRzucajacyDlaKroku(id_kroku, wyjatek(SEKRET), opoznienia={"b": 0.1})
+
+    zdarzenia = await uruchom(s, agent)
+
+    jedno(zdarzenia, "step_failed", id_kroku)
+    blad = capsys.readouterr().err
+    assert blad == f"krok {id_kroku[:36]!r} zakonczony bledem: {wyjatek.__name__}\n"
+
+
+async def test_oserror_agenta_konczy_krok_z_powodem_a_niezalezny_krok_i_run_sie_koncza(
+    tmp_path, capsys,
+):
+    s = swiat(tmp_path, [K("a"), K("b")])
+    agent = SzpiegRzucajacyDlaKroku(
+        "a", OSError(errno.EMFILE, "Too many open files"), opoznienia={"b": 0.2})
+
+    zdarzenia = await uruchom(s, agent)
+
+    # powod granicy to tresc bledu systemu (str(OSError)), w odroznieniu od nazwy typu innych wyjatkow
+    assert jedno(zdarzenia, "step_failed", "a")["text"] == "[Errno 24] Too many open files"
+    assert jedno(zdarzenia, "step_finished", "b")["text"] == ""
+    assert rodzaje(zdarzenia).count("run_finished") == 1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+    assert capsys.readouterr().err == "krok 'a' zakonczony bledem: OSError\n"
+
+
+async def test_anulowanie_zadania_kroku_nie_jest_zamieniane_na_porazke_kroku(tmp_path):
+    s = swiat(tmp_path, [K("a"), K("b")])
+    agent = SzpiegRzucajacyDlaKroku("a", asyncio.CancelledError(), opoznienia={"b": 0.3})
+    zdarzenia: list[dict] = []
+
+    async def emit(zdarzenie: dict) -> None:
+        zdarzenia.append(zdarzenie)
+
+    with pytest.raises(asyncio.CancelledError):
+        await uruchom(s, agent, emit=emit)
+
+    assert "step_failed" not in rodzaje(zdarzenia)
+    assert "run_finished" not in rodzaje(zdarzenia)
+
+
+@pytest.mark.parametrize("blad", [
+    BrakMiejsca("zapis bufora: brak miejsca"), BladBufora("zapis bufora: brak uprawnien")])
+async def test_blad_bufora_przy_zapisie_zdarzenia_w_trakcie_kroku_wraca_do_wolajacego_a_nie_konczy_kroku(
+    tmp_path, blad,
+):
+    s = swiat(tmp_path, [K("a")])
+    agent = SzpiegPiszacyZdarzenieOutput()
+    zdarzenia: list[dict] = []
+
+    async def emit(zdarzenie: dict) -> None:
+        zdarzenia.append(zdarzenie)
+        if zdarzenie["kind"] == "output":
+            raise blad
+
+    with pytest.raises(BladBufora) as info:
+        await uruchom(s, agent, emit=emit)
+
+    assert info.value is blad                       # ten wyjatek, bez zamiany na step_failed
+    assert type(info.value) is type(blad)
+    assert "step_failed" not in rodzaje(zdarzenia)
+    assert "run_finished" not in rodzaje(zdarzenia)

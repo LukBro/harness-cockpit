@@ -64,6 +64,7 @@ from runner.agent import (
     polecenie_agenta,
     zbuduj_prompt,
 )
+from runner.bufor import BladBufora
 from runner.checkpoint import (
     BladCheckpointu,
     ZMIENNA_PAUZY,
@@ -645,8 +646,25 @@ async def _wykonaj_plan(
                     wynik = zadanie.result()
                 except PorazkaKroku as e:
                     udany, powod, pomiar = False, str(e), PomiarKroku()
+                except BladBufora:
+                    # zapis zdarzenia sie nie udal: o tym decyduje wolajacy (przerwanie poza
+                    # buforem); `step_failed` tez poszlo by przez zepsuty bufor.
+                    # `CancelledError` jest `BaseException`, wiec ponizszy `except Exception` go nie lapie
+                    raise
                 except BLEDY_GRANICY as e:      # wyjatek zadania kroku to koniec kroku, nie runu
                     udany, powod, pomiar = False, _tekst_bledu(e), PomiarKroku()
+                    print(f"krok {id_kroku[:36]!r} zakonczony bledem: {type(e).__name__}",
+                          file=sys.stderr)      # sama nazwa typu: tresc moze niesc sekret
+                except Exception as e:  # noqa: BLE001
+                    # WHY szeroki: granica zadania asynchronicznego - kazdy inny wyjatek agenta
+                    # (kod runnera, biblioteka) konczy krok, a nie petle planu; inaczej run wisi
+                    # w `running` bez `step_failed` i `run_finished` (evidence_required).
+                    # Powod niesie sama nazwe typu: tresc wyjatku moze niesc sekret.
+                    nazwa_typu = type(e).__name__
+                    udany, powod, pomiar = (
+                        False, f"nieoczekiwany wyjątek kroku: {nazwa_typu}", PomiarKroku())
+                    print(f"krok {id_kroku[:36]!r} zakonczony bledem: {nazwa_typu}",
+                          file=sys.stderr)
                 else:
                     udany, powod, pomiar = wynik.status == "zakonczony", wynik.powod, wynik.pomiar
                     if udany and _produkuje_notatke(p, id_kroku):
