@@ -1371,6 +1371,19 @@
         "title": "PlikZapisany",
         "type": "object"
       },
+      "PocztaTestowaWyslana": {
+        "properties": {
+          "do": {
+            "title": "Do",
+            "type": "string"
+          }
+        },
+        "required": [
+          "do"
+        ],
+        "title": "PocztaTestowaWyslana",
+        "type": "object"
+      },
       "PokrycieRunu": {
         "properties": {
           "pominiete": {
@@ -2233,6 +2246,31 @@
           "artefakt"
         ],
         "title": "TwierdzenieRunu",
+        "type": "object"
+      },
+      "UstawieniaPoczty": {
+        "properties": {
+          "powod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Powod"
+          },
+          "skonfigurowana": {
+            "title": "Skonfigurowana",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skonfigurowana",
+          "powod"
+        ],
+        "title": "UstawieniaPoczty",
         "type": "object"
       },
       "WerdyktKroku": {
@@ -5655,6 +5693,102 @@
           }
         },
         "summary": "Pobierz Ticket"
+      }
+    },
+    "/api/ustawienia/poczta": {
+      "get": {
+        "operationId": "stan_poczty_api_ustawienia_poczta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UstawieniaPoczty"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Stan Poczty"
+      }
+    },
+    "/api/ustawienia/poczta/test": {
+      "post": {
+        "operationId": "wyslij_poczte_testowa_api_ustawienia_poczta_test_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PocztaTestowaWyslana"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Serwer poczty niedostępny albo poczta nieskonfigurowana"
+          }
+        },
+        "summary": "Wyslij Poczte Testowa"
       }
     },
     "/api/workflows": {
