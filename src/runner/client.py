@@ -231,14 +231,31 @@ class Runner:
         )
         if r.status_code == 401:
             raise TokenOdrzucony()
-        r.raise_for_status()
-        tresc = r.json()
+        self._sprawdz_status(r)
+        try:
+            tresc = r.json()
+        except (ValueError, RecursionError):    # JSONDecodeError, UnicodeDecodeError, zbyt gleboki JSON
+            raise KokpitNiezgodny("odpowiedz rejestracji nie jest poprawnym JSON") from None
+        if not isinstance(tresc, dict):
+            raise KokpitNiezgodny("odpowiedz rejestracji nie jest obiektem JSON")
         co_s = tresc.get("heartbeat_co_s")
         # bool jest podklasa int; czestotliwosc dyktuje kokpit, runner nie ma wlasnej
         if isinstance(co_s, bool) or not isinstance(co_s, int) or co_s <= 0:
             raise KokpitNiezgodny("odpowiedz rejestracji bez poprawnego heartbeat_co_s")
-        self.runner_id = tresc["runner_id"]
+        runner_id = tresc.get("runner_id")
+        if not isinstance(runner_id, str) or not runner_id:
+            raise KokpitNiezgodny("odpowiedz rejestracji bez poprawnego runner_id")
+        self.runner_id = runner_id
         self.heartbeat_co_s = co_s
+
+    @staticmethod
+    def _sprawdz_status(r: httpx.Response) -> None:
+        """Kod 4xx (poza 401, ktory obsluguje wolajacy) i 3xx to niezgodnosc z kokpitem: ponowienie
+        nic nie da. 5xx zostaje `HTTPStatusError` i jest ponawiane w `listen`. Komunikat niesie
+        sam kod: tresc odpowiedzi i naglowki moga niesc sekret."""
+        if r.status_code < 500 and not r.is_success:
+            raise KokpitNiezgodny(f"kokpit odrzucil zadanie (http={r.status_code})")
+        r.raise_for_status()
 
     async def _czekaj(self, sekundy: float) -> None:
         """Domyslne odczekanie: przerywane przez `stop()`."""
@@ -911,11 +928,18 @@ class Runner:
                 ) as resp:
                     if resp.status_code == 401:
                         raise TokenOdrzucony()
-                    resp.raise_for_status()
+                    self._sprawdz_status(resp)
                     async for line in resp.aiter_lines():
                         if not line.startswith("data:"):
                             continue
-                        cmd = json.loads(line.removeprefix("data:").strip())
+                        try:
+                            cmd = json.loads(line.removeprefix("data:").strip())
+                        except (ValueError, RecursionError):
+                            raise KokpitNiezgodny(
+                                "linia strumienia polecen nie jest poprawnym JSON") from None
+                        if not isinstance(cmd, dict):
+                            raise KokpitNiezgodny(
+                                "linia strumienia polecen nie jest obiektem JSON")
                         if cmd.get("type") == "polaczono":
                             print("strumien otwarty", file=sys.stderr)
                             self._proba_laczenia = 0

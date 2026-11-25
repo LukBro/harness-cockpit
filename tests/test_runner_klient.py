@@ -30,7 +30,7 @@ from procesy import (
     zapamietaj_proces,
 )
 from runner.bufor import BladBufora, BrakMiejsca, Bufor
-from runner.client import NiewaznePoleZdarzenia, Runner, TokenOdrzucony
+from runner.client import KokpitNiezgodny, NiewaznePoleZdarzenia, Runner, TokenOdrzucony
 
 RUN_ID = "run-1"
 STEP_ID = "krok-1"
@@ -516,23 +516,98 @@ async def test_blad_serwera_kokpitu_przy_zameldowaniu_albo_strumieniu_jest_ponaw
 
 @pytest.mark.parametrize(
     ("rejestracja", "strumien"),
-    [(403, 200), (404, 200), (200, 403)],
-    ids=["rejestracja_403", "rejestracja_404", "strumien_403"],
+    [(301, 200), (307, 200), (400, 200), (403, 200), (404, 200), (422, 200), (499, 200),
+     (200, 301), (200, 307), (200, 400), (200, 403), (200, 404), (200, 499)],
+    ids=["rejestracja_301", "rejestracja_307", "rejestracja_400", "rejestracja_403",
+         "rejestracja_404", "rejestracja_422", "rejestracja_499",
+         "strumien_301", "strumien_307", "strumien_400", "strumien_403", "strumien_404",
+         "strumien_499"],
 )
-async def test_odpowiedz_4xx_inna_niz_401_przy_zameldowaniu_albo_strumieniu_nie_jest_ponawiana_ani_mylona_z_tokenem(
+async def test_odpowiedz_3xx_albo_4xx_inna_niz_401_przy_zameldowaniu_albo_strumieniu_to_niezgodnosc_kokpitu_bez_ponawiania(
     rejestracja, strumien,
 ):
+    """HAR-210: blad dziedziny zamiast wyjatku biblioteki (wolajacy `main` mial go nieobsluzonego)."""
     transport, odwiedzone = _kokpit(
         stream_status=strumien, stream_body=POLACZONO, register_status=rejestracja)
     runner, odczekania = _runner(transport=transport)
 
-    with pytest.raises(httpx.HTTPStatusError) as wyjatek:
+    with pytest.raises(KokpitNiezgodny) as wyjatek:
         await asyncio.wait_for(runner.listen(), 10)
 
     assert not isinstance(wyjatek.value, TokenOdrzucony)
-    assert wyjatek.value.response.status_code == (rejestracja if rejestracja != 200 else strumien)
+    kod = rejestracja if rejestracja != 200 else strumien
+    assert str(wyjatek.value) == f"kokpit odrzucil zadanie (http={kod})"
     assert odczekania.argumenty == []
     assert odwiedzone.count("/api/runners/register") == 1
+
+
+TRESC_ODPOWIEDZI = "TRESC-ODPOWIEDZI-KOKPITU-7714"
+
+
+@pytest.mark.parametrize("etap", ["rejestracja", "strumien"])
+async def test_komunikat_o_odpowiedzi_4xx_nie_niesie_ani_tokenu_ani_tresci_odpowiedzi(etap):
+    def handler(request: httpx.Request) -> httpx.Response:
+        tresc = {"detail": f"{TRESC_ODPOWIEDZI} {TOKEN}"}
+        if request.url.path == "/api/runners/register":
+            if etap == "rejestracja":
+                return httpx.Response(403, json=tresc)
+            return httpx.Response(
+                200, json={"runner_id": "r1", "tenant_id": "t1", "heartbeat_co_s": 15})
+        return httpx.Response(403, json=tresc)
+
+    runner, _ = _runner(transport=httpx.MockTransport(handler))
+
+    with pytest.raises(KokpitNiezgodny) as wyjatek:
+        await asyncio.wait_for(runner.listen(), 10)
+
+    komunikat = str(wyjatek.value)
+    assert komunikat == "kokpit odrzucil zadanie (http=403)"
+    assert TRESC_ODPOWIEDZI not in komunikat
+    assert TOKEN not in komunikat
+
+
+TRESC_LINII = "TRESC-LINII-STRUMIENIA-5521"
+LINIA_NIE_JSON = "linia strumienia polecen nie jest poprawnym JSON"
+LINIA_NIE_OBIEKT = "linia strumienia polecen nie jest obiektem JSON"
+ZLE_LINIE_STRUMIENIA = {
+    "json_ucieta_w_polowie": (f'data: {{"type": "{TRESC_LINII}'.encode(), LINIA_NIE_JSON),
+    "json_bez_cudzyslowow": (f"data: {{type: {TRESC_LINII}}}".encode(), LINIA_NIE_JSON),
+    "json_zagniezdzony_ponad_limit": (b"data: " + b"[" * 100000, LINIA_NIE_JSON),
+    "lista_zamiast_slownika": (f'data: ["{TRESC_LINII}"]'.encode(), LINIA_NIE_OBIEKT),
+    "napis_zamiast_slownika": (f'data: "{TRESC_LINII}"'.encode(), LINIA_NIE_OBIEKT),
+    "liczba_zamiast_slownika": (b"data: 5", LINIA_NIE_OBIEKT),
+    "null_zamiast_slownika": (b"data: null", LINIA_NIE_OBIEKT),
+}
+
+
+@pytest.mark.parametrize(
+    ("linia", "oczekiwany"), ZLE_LINIE_STRUMIENIA.values(), ids=ZLE_LINIE_STRUMIENIA.keys())
+async def test_linia_strumienia_ktora_nie_jest_slownikiem_json_to_niezgodnosc_kokpitu_bez_ponawiania(
+    linia, oczekiwany,
+):
+    transport, odwiedzone = _kokpit(stream_body=linia + b"\n\n")
+    runner, odczekania = _runner(transport=transport)
+
+    with pytest.raises(KokpitNiezgodny) as wyjatek:
+        await asyncio.wait_for(runner.listen(), 10)
+
+    assert str(wyjatek.value) == oczekiwany
+    assert TRESC_LINII not in str(wyjatek.value)
+    assert odczekania.argumenty == []                      # nie traktowane jak zerwane polaczenie
+    assert odwiedzone.count("/api/runners/register") == 1
+
+
+async def test_zla_linia_po_poprawnym_poleceniu_tez_konczy_nasluchiwanie_niezgodnoscia_kokpitu(
+    capsys,
+):
+    transport, _ = _kokpit(stream_body=POLACZONO + b'data: ["zle"]\n\n')
+    runner, odczekania = _runner(transport=transport)
+
+    with pytest.raises(KokpitNiezgodny):
+        await asyncio.wait_for(runner.listen(), 10)
+
+    assert "strumien otwarty" in capsys.readouterr().err   # poprawna linia zostala przetworzona
+    assert odczekania.argumenty == []
 
 
 async def test_przerwanie_strumienia_przez_kokpit_ma_w_logu_dokladna_przyczyne(capsys):
