@@ -1,5 +1,5 @@
 """Konfiguracja: zmienna srodowiskowa ma pierwszenstwo nad plikiem (BRO-98)."""
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     # 4096 KB (HAR-55): json.dumps rozdyma znak sterujacy do 6 bajtow (\u0001), a runner oddaje
     # plik do 512 KB; 6 x 512 = 3072 KB tresci plus opakowanie odpowiedzi - 4096 daje zapas.
     runner_odpowiedz_max_kb: int = Field(default=4096, ge=1)
+    # Poczta SMTP (HAR-91; env COCKPIT_SMTP_*, COCKPIT_ADRES_PUBLICZNY). Bez hosta poczta jest
+    # wylaczona i kokpit mowi, ktorej zmiennej brakuje. Haslo to sekret: nie trafia do repr ani logow.
+    # ge/le: port poza 1-65535 i limit czasu 0 (czekanie bez konca) to bledy konfiguracji.
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_uzytkownik: str | None = None
+    smtp_haslo: SecretStr | None = None
+    smtp_nadawca: str | None = None
+    smtp_starttls: bool = True
+    smtp_timeout_s: int = Field(default=10, ge=1, le=3600)   # HAR-91: COCKPIT_SMTP_TIMEOUT_S, gorna granica chroni socket.settimeout
+    adres_publiczny: str | None = None   # adres kokpitu w linkach z listow
     # None = ustal z progu; po konstrukcji zawsze int (walidator nizej)
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)
