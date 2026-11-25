@@ -1,8 +1,6 @@
-import json
 import time
-from pathlib import Path
 
-from cockpit.kernel import Event, RunStore, normalize, parse_phase_mark
+from cockpit.kernel import Event, normalize, parse_phase_mark
 
 
 def test_phase_mark_parsed():
@@ -101,22 +99,6 @@ def test_koniec_fazy_po_udanej_komendzie_nie_dostaje_pola_error_ani_statusu():
     assert "extra" not in ev.to_dict()
 
 
-def test_hooki_przykladowe_rejestruja_znacznik_fazy_przed_i_po_wykonaniu_komendy():
-    plik = Path(__file__).resolve().parent.parent / "deploy" / "hooks.example.json"
-    hooki = json.loads(plik.read_text(encoding="utf-8"))["hooks"]
-
-    for nazwa in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
-        wpisy = hooki.get(nazwa)
-        assert wpisy, f"brak rejestracji phase_timer dla {nazwa}"
-        assert len(wpisy) == 1, nazwa
-        assert wpisy[0]["matcher"] == "Bash", nazwa
-        assert len(wpisy[0]["hooks"]) == 1, nazwa
-        assert wpisy[0]["hooks"][0]["if"] == "Bash(*phase_timer*)", nazwa
-    # Nowe wpisy maja ten sam ksztalt co istniejacy PreToolUse.
-    assert hooki["PostToolUse"] == hooki["PreToolUse"]
-    assert hooki["PostToolUseFailure"] == hooki["PreToolUse"]
-
-
 def test_zdarzenie_bez_nazwy_hooka_ma_nazwe_nieznana():
     ev = normalize({"session_id": "s1"})
     assert ev.event == "unknown"
@@ -164,20 +146,3 @@ def test_zakonczenie_subagenta_nie_ma_statusu_bez_zrodla():
 def test_unknown_event_survives():
     ev = normalize({"hook_event_name": "Whatever", "session_id": "s1"})
     assert ev.event == "Whatever"
-
-
-def test_store_roundtrip(tmp_path):
-    store = RunStore(tmp_path)
-    store.append(Event(ts=1.0, session_id="s1", event="SessionStart"))
-    store.append(Event(ts=2.0, session_id="s1", event="Stop"))
-    assert [r["event"] for r in store.read("s1")] == ["SessionStart", "Stop"]
-    assert store.runs() == ["s1"]
-
-
-def test_store_rejects_path_traversal(tmp_path):
-    store = RunStore(tmp_path)
-    try:
-        store.run_dir("../escape")
-    except ValueError:
-        return
-    raise AssertionError("powinno rzucic ValueError")

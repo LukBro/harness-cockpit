@@ -329,7 +329,7 @@ async def test_runner_tracacy_lacznosc_miedzy_odczytem_pliku_a_katalogiem_defini
         return len(wywolania) == 1
 
     monkeypatch.setattr(
-        "cockpit.services.zapytania_runnera.runner_online", runner_online_raz)
+        "cockpit.services.runs.runner_online", runner_online_raz)
 
     odp = await _start(klient, "ok", swiat.projekt_a)
 
