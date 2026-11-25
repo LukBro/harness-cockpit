@@ -17,6 +17,7 @@ SKILL.md przechodzi przez waliduj_definicje w cockpit/services/skills.py.
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import os
 from collections.abc import Callable, Mapping, Sequence
@@ -36,6 +37,9 @@ KLUCZE_DEFINICJI = frozenset({KLUCZ_ROLI, KLUCZ_TIERU, KLUCZ_MODELU, *KLUCZE_ZAP
 
 # Domyslny prefiks linii werdyktu w artefakcie skilla (HAR-177).
 PREFIKS_WERDYKTU = "WERDYKT:"
+# Jedyny wyjatek migawki recenzenta (HAR-209): skille skopiowane przez runner (HAR-5).
+# Uzywaja go skills.py (materializacja), agent.py (sciezka w prompcie) i krok.py (migawka).
+KATALOG_SKILLI_RUNU = Path(".cockpit") / "_run" / "skills"
 
 _PRAWDA = frozenset({"true", "yes", "tak", "on", "1"})
 # opcje globalne gita, ktore biora argument w osobnym tokenie
@@ -183,7 +187,18 @@ Migawka = Mapping[str, str]
 
 
 def _wyjatek(rel: Path, wyjatki: Sequence[Path]) -> bool:
-    return any(rel.parts[: len(w.parts)] == w.parts for w in wyjatki if w.parts)
+    """Sciezka lezy pod wyjatkiem bez wzorca (przedrostek segmentow) albo pasuje do wyjatku
+    z wzorcem fnmatch (`*`, `?`, `[` w segmencie) co do liczby segmentow: wyjatek z wzorcem
+    opisuje plik, wiec nie obejmuje tego, co lezy pod sciezka o takiej nazwie."""
+    for w in wyjatki:
+        if not w.parts:
+            continue
+        wzorzec = any(set("*?[") & set(s) for s in w.parts)
+        if len(rel.parts) < len(w.parts) or (wzorzec and len(rel.parts) != len(w.parts)):
+            continue
+        if all(fnmatch.fnmatchcase(r, s) for r, s in zip(rel.parts, w.parts)):
+            return True
+    return False
 
 
 def migawka(katalog: Path, wyjatki: Sequence[Path] = ()) -> Migawka:
@@ -191,9 +206,15 @@ def migawka(katalog: Path, wyjatki: Sequence[Path] = ()) -> Migawka:
 
     git status przepisuje .git/index, wiec .git/ nie jest zmiana pracy recenzenta.
     Dowiazania symboliczne: hash tekstu celu, nie sledzimy ich.
+    Katalog nieczytelny albo nieistniejacy to `OSError`, nie pusta migawka: pusty wynik
+    wygladalby jak "nic sie nie zmienilo" (evidence_required).
     """
     wynik: dict[str, str] = {}
-    for korzen, katalogi, pliki in os.walk(katalog, followlinks=False):
+
+    def przy_bledzie(blad: OSError) -> None:
+        raise blad
+
+    for korzen, katalogi, pliki in os.walk(katalog, onerror=przy_bledzie, followlinks=False):
         katalogi[:] = [d for d in katalogi if d != ".git"]
         dowiazane = [d for d in katalogi if os.path.islink(os.path.join(korzen, d))]
         katalogi[:] = [d for d in katalogi if d not in dowiazane]
@@ -243,7 +264,7 @@ def sprawdz_decyzje(krok_ma_approval: bool, decyzja: str | None) -> Naruszenie |
 def sprawdz_katalog_runu(run_dir: Path, repo: Path) -> Naruszenie | None:
     """run_dir (logi, wyniki, werdykty runu) nie lezy w repozytorium uzytkownika.
 
-    To nie dotyczy `.cockpit/_run/skills/` - materializacja skilli z HAR-5 jest
+    To nie dotyczy `KATALOG_SKILLI_RUNU` - materializacja skilli z HAR-5 jest
     swiadomym wyjatkiem i nie jest run_dir.
     """
     r, k = run_dir.resolve(), repo.resolve()
@@ -343,4 +364,5 @@ EGZEKWOWANE: Mapping[Niezmiennik, tuple[str, ...]] = MappingProxyType({
     Niezmiennik.measured_or_null: ("cockpit.services.runs:zapisz_zdarzenie",),
     Niezmiennik.no_git_write: ("runner.straz_roli:decyzja",),
     Niezmiennik.reviewer_readonly: ("runner.krok:wykonaj_krok",),
+    Niezmiennik.evidence_required: ("runner.krok:wykonaj_krok", "runner.dowody:_wykonaj_komende"),
 })

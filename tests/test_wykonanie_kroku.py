@@ -23,7 +23,12 @@ from procesy import (
     zabij_proces,
 )
 from runner.agent import SpecKroku
-from runner.krok import WynikKroku, wykonaj_krok
+from cockpit.services.walidacja import KATALOG_SKILLI_RUNU, migawka
+from runner import krok as modul_kroku
+from runner.krok import RAPORTY_NAPRAWY_SILNIKA, WYJATKI_MIGAWKI, WynikKroku, wykonaj_krok
+from runner.silnik import _sciezka_raportu
+from test_pomiar_kroku import _agent_z_atrapa, result
+from test_silnik_runu import K, jedno, rodzaje, swiat as swiat_silnika, uruchom as uruchom_run
 
 # Kolejnosc: wnuk (zeby pidfile istnial zanim cokolwiek zostanie wyemitowane),
 # linie, pliki, spanie, kod. Kazda linia jest flushowana, zeby kolejnosc stdout/stderr
@@ -258,53 +263,166 @@ async def test_recenzent_usuwajacy_istniejacy_plik_jest_nieudany(run):
     assert not (run / "istniejacy.txt").exists()
 
 
-async def test_recenzent_piszacy_tylko_do_katalogu_runu_jest_zakonczony(run):
+async def test_recenzent_piszacy_tylko_do_katalogu_skilli_runu_jest_zakonczony(run):
     (run / "istniejacy.txt").write_text("stare")
 
     wynik, _ = await uruchom(
         spec(Rola.reviewer),
-        atrapa(zapisz={".cockpit/_run/x.md": "werdykt: ok"}),
+        atrapa(zapisz={".cockpit/_run/skills/x.md": "werdykt: ok"}),
         run,
     )
 
     assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
-    assert (run / ".cockpit" / "_run" / "x.md").read_text() == "werdykt: ok"
+    assert (run / ".cockpit" / "_run" / "skills" / "x.md").read_text() == "werdykt: ok"
 
 
-async def test_pliki_runu_obecne_przed_krokiem_recenzenta_nie_sa_naruszeniem(run):
+async def test_recenzent_piszacy_do_katalogu_runu_poza_skillami_jest_nieudany(run):
+    wynik, _ = await uruchom(
+        spec(Rola.reviewer),
+        atrapa(zapisz={".cockpit/_run/x": "samowola"}),
+        run,
+    )
+
+    assert wynik == WynikKroku(
+        status="nieudany", powod=NARUSZENIE + "nowe: .cockpit/_run/x", kod_wyjscia=0)
+    assert (run / ".cockpit" / "_run" / "x").read_text() == "samowola"
+
+
+async def test_zbieracz_piszacy_do_katalogu_runu_poza_skillami_jest_nieudany(run):
+    wynik, _ = await uruchom(
+        spec(Rola.gatherer),
+        atrapa(zapisz={".cockpit/_run/x": "samowola"}),
+        run,
+    )
+
+    assert wynik == WynikKroku(
+        status="nieudany", powod=NARUSZENIE + "nowe: .cockpit/_run/x", kod_wyjscia=0)
+
+
+async def test_recenzent_zmieniajacy_istniejacy_plik_w_katalogu_runu_poza_skillami_jest_nieudany(run):
+    ruch = run / ".cockpit" / "_run" / "x"
+    ruch.parent.mkdir(parents=True)
+    ruch.write_text("stare")
+
+    wynik, _ = await uruchom(
+        spec(Rola.reviewer), atrapa(zapisz={".cockpit/_run/x": "nowe"}), run)
+
+    assert wynik == WynikKroku(
+        status="nieudany", powod=NARUSZENIE + "zmienione: .cockpit/_run/x", kod_wyjscia=0)
+
+
+async def test_pliki_skilli_runu_obecne_przed_krokiem_recenzenta_nie_sa_naruszeniem(run):
     skill = run / ".cockpit" / "_run" / "skills" / "recenzja" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("skill skopiowany przez runner przed krokiem")
 
     wynik, _ = await uruchom(
         spec(Rola.reviewer),
-        atrapa(zapisz={".cockpit/_run/x.md": "werdykt: ok"}),
+        atrapa(zapisz={".cockpit/_run/skills/x.md": "werdykt: ok"}),
         run,
     )
 
     assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert skill.read_text() == "skill skopiowany przez runner przed krokiem"
-    assert (run / ".cockpit" / "_run" / "x.md").read_text() == "werdykt: ok"
+    assert (run / ".cockpit" / "_run" / "skills" / "x.md").read_text() == "werdykt: ok"
 
 
-async def test_wyjatek_katalogu_runu_nie_chroni_zapisu_poza_nim(run):
+async def test_artefakty_silnika_zapisane_przed_krokiem_recenzenta_nie_sa_naruszeniem(run):
+    """Decyzje czlowieka z `.cockpit/_run/artifacts` istnieja przed krokiem i sa w migawce `przed`;
+    raport naprawy nie zawsze (silnik zapisuje go tez w trakcie rownoleglego kroku, zob. test silnika)."""
+    decyzja = run / ".cockpit" / "_run" / "artifacts" / "decyzja_a.json"
+    decyzja.parent.mkdir(parents=True)
+    decyzja.write_text('{"decyzja": "zatwierdz"}')
+
+    wynik, _ = await uruchom(spec(Rola.reviewer), atrapa(), run)
+
+    assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
+    assert decyzja.read_text() == '{"decyzja": "zatwierdz"}'
+
+
+async def test_wyjatek_katalogu_skilli_runu_nie_chroni_zapisu_poza_nim(run):
     wynik, _ = await uruchom(
         spec(Rola.reviewer),
-        atrapa(zapisz={".cockpit/_run/x.md": "werdykt", "nowy.txt": "poza"}),
+        atrapa(zapisz={".cockpit/_run/skills/x.md": "werdykt", "nowy.txt": "poza"}),
         run,
     )
 
     assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "nowe: nowy.txt", kod_wyjscia=0)
 
 
-async def test_zapis_obok_katalogu_runu_w_cockpit_jest_naruszeniem(run):
+async def test_zapis_obok_katalogu_skilli_runu_w_cockpit_jest_naruszeniem(run):
     wynik, _ = await uruchom(
         spec(Rola.reviewer),
-        atrapa(zapisz={".cockpit/_run/x.md": "werdykt", ".cockpit/inny.md": "poza"}),
+        atrapa(zapisz={".cockpit/_run/skills/x.md": "werdykt", ".cockpit/inny.md": "poza"}),
         run,
     )
 
     assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + "nowe: .cockpit/inny.md", kod_wyjscia=0)
+
+
+async def test_recenzent_przy_nieczytelnym_katalogu_repozytorium_nie_startuje_agenta(
+    run, tmp_path, monkeypatch
+):
+    """Root ignoruje prawa do katalogow, wiec nieczytelny podkatalog symuluje `os.walk` z `onerror`."""
+    (run / "a.txt").write_text("tresc")
+    znacznik = tmp_path / "agent-wystartowal"
+
+    def walk_z_nieczytelnym_podkatalogiem(top, topdown=True, onerror=None, followlinks=False):
+        yield (str(top), ["zamkniety"], ["a.txt"])
+        if onerror is not None:
+            onerror(PermissionError(13, "Brak dostępu", str(Path(top) / "zamkniety")))
+
+    monkeypatch.setattr("cockpit.services.walidacja.os.walk", walk_z_nieczytelnym_podkatalogiem)
+
+    wynik, _ = await uruchom(
+        spec(Rola.reviewer), atrapa(zapisz={str(znacznik): "x"}), run)
+
+    assert wynik.status == "nieudany"
+    assert wynik.powod is not None
+    assert wynik.powod.startswith("nie można wykonać migawki katalogu: ")
+    assert wynik.kod_wyjscia is None
+    assert not znacznik.exists()
+
+
+# --- evidence_required: agent z kodem 0 i bez wyniku nie jest zielony -------------------------
+
+KOD_AGENTA_PUSTY_WYNIK = r"""
+import json
+print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": ""}))
+"""
+
+
+async def test_autor_z_kodem_zero_i_pustym_wynikiem_nie_oddajacy_artefaktu_jest_nieudany(run, tmp_path):
+    katalog_runu = tmp_path / "katalog-runu"
+    katalog_runu.mkdir()
+    zdarzenia: list[dict] = []
+
+    async def emit(zdarzenie: dict) -> None:
+        zdarzenia.append(zdarzenie)
+
+    wynik = await asyncio.wait_for(
+        wykonaj_krok(
+            spec(Rola.author, wyjscia=["plan.md"]),
+            [sys.executable, "-I", "-c", KOD_AGENTA_PUSTY_WYNIK],
+            run, emit, katalog_runu=katalog_runu, prompt="prompt kroku"),
+        30)
+
+    assert wynik.status == "nieudany"
+    assert wynik.kod_wyjscia == 0
+    assert wynik.powod == "brak artefaktu plan.md"
+    assert not (run / "plan.md").exists()
+
+
+async def test_krok_agenta_z_kodem_zero_i_pustym_wynikiem_konczy_sie_zdarzeniem_step_failed(tmp_path):
+    s = swiat_silnika(
+        tmp_path, [K("a")], opcje_skilli={"a": {"role": "reviewer", "produces": ["plan.md"]}})
+    agent = _agent_z_atrapa(tmp_path, a=[result(result="")])
+
+    zdarzenia = await uruchom_run(s, agent)
+
+    assert jedno(zdarzenia, "step_failed", "a")["text"] == (
+        "niezmiennik evidence_required: pusty wynik agenta, brak artefaktu plan.md")
+    assert "step_finished" not in rodzaje(zdarzenia)
 
 
 async def test_zbieracz_piszacy_poza_katalogiem_runu_jest_nieudany(run):
@@ -560,3 +678,123 @@ def test_wynik_kroku_nie_przyjmuje_pol_pozycyjnie():
     # wpasc w zla pozycje - konstruktor wymaga argumentow nazwanych.
     with pytest.raises(TypeError):
         WynikKroku("zakonczony", None, 0)  # type: ignore[misc]
+
+
+# --- HAR-209: raport naprawy silnika to jedyny wyjatek migawki poza skillami ---------------
+
+SCIEZKA_RAPORTU_W_MIGAWCE = [
+    ("implementuj", 1),
+    ("implementuj", 12),
+    ("cel-z-myslnikiem_2", 3),
+]
+
+
+@pytest.mark.parametrize(("cel", "nr"), SCIEZKA_RAPORTU_W_MIGAWCE)
+def test_raport_naprawy_zapisany_przez_silnik_nie_jest_widoczny_w_migawce_recenzenta(
+    tmp_path, cel, nr
+):
+    """Wzorzec `RAPORTY_NAPRAWY_SILNIKA` musi obejmowac sciezke, ktora silnik naprawde produkuje."""
+    raport = tmp_path / _sciezka_raportu(cel, nr)
+    raport.parent.mkdir(parents=True)
+    raport.write_text("raport porazki")
+
+    assert migawka(tmp_path, WYJATKI_MIGAWKI) == {}
+
+
+@pytest.mark.parametrize(("cel", "nr"), SCIEZKA_RAPORTU_W_MIGAWCE)
+def test_wzorzec_raportu_naprawy_sam_obejmuje_sciezke_produkowana_przez_silnik(tmp_path, cel, nr):
+    raport = tmp_path / _sciezka_raportu(cel, nr)
+    raport.parent.mkdir(parents=True)
+    raport.write_text("raport porazki")
+
+    assert migawka(tmp_path, [RAPORTY_NAPRAWY_SILNIKA]) == {}
+
+
+@pytest.mark.parametrize("sciezka", [
+    ".cockpit/_run/artifacts/implementuj/_naprawa/inny.md",       # inna nazwa pliku
+    ".cockpit/_run/artifacts/implementuj/_naprawa/proba_1.txt",   # inne rozszerzenie
+    ".cockpit/_run/artifacts/implementuj/proba_1.md",             # bez katalogu _naprawa
+    ".cockpit/_run/artifacts/implementuj/inny/proba_1.md",        # inny katalog zamiast _naprawa
+    ".cockpit/_run/artifacts/a/b/_naprawa/proba_1.md",            # o jeden poziom za gleboko
+    ".cockpit/_run/artifacts/decyzja_implementuj.json",           # decyzja czlowieka
+    ".cockpit/_run/inny/implementuj/_naprawa/proba_1.md",         # nie katalog artifacts
+    ".cockpit/_run/artifacts/implementuj/_naprawa/proba_1.md/x",  # katalog zamiast pliku raportu
+])
+async def test_recenzent_zapisujacy_inny_plik_w_artefaktach_runu_jest_nieudany(run, sciezka):
+    wynik, _ = await uruchom(spec(Rola.reviewer), atrapa(zapisz={sciezka: "samowola"}), run)
+
+    assert wynik == WynikKroku(status="nieudany", powod=NARUSZENIE + f"nowe: {sciezka}", kod_wyjscia=0)
+
+
+# Recenzent czeka (w prawdziwym `wykonaj_krok`, z prawdziwa migawka), az silnik zapisze raport
+# porazki rownoleglego kroku; dopiero wtedy konczy sie z kodem 0.
+KOD_RECENZENTA_CZEKAJACEGO_NA_RAPORT = r"""
+import glob, sys, time
+open(sys.argv[1], "w").close()
+koniec = time.monotonic() + 25
+while time.monotonic() < koniec:
+    if glob.glob(".cockpit/_run/artifacts/*/_naprawa/proba_*.md"):
+        sys.exit(0)
+    time.sleep(0.05)
+sys.exit(3)
+"""
+
+
+async def _run_z_rownoleglym_recenzentem(tmp_path) -> tuple[list[dict], object]:
+    s = swiat_silnika(
+        tmp_path,
+        [K("implementuj"),
+         K("testuj", ("implementuj",), extra=", on_fail: {retry: implementuj, max: 1}"),
+         K("recenzja")],
+        opcje_skilli={"recenzja": {"role": "reviewer"}})
+    wystartowal = tmp_path / "recenzent-wystartowal"
+    proby_testuj: list[int] = []
+
+    async def agent(spec_kroku, polecenie, katalog, emit, *, katalog_runu=None, prompt=None, **reszta):
+        if spec_kroku.step_id == "recenzja":
+            return await wykonaj_krok(
+                spec_kroku,
+                [sys.executable, "-I", "-c", KOD_RECENZENTA_CZEKAJACEGO_NA_RAPORT, str(wystartowal)],
+                katalog, emit, katalog_runu=katalog_runu)
+        if spec_kroku.step_id == "testuj":
+            proby_testuj.append(1)
+            if len(proby_testuj) == 1:
+                # porazka dopiero, gdy recenzent ma juz migawke `przed` (proces wystartowal po niej)
+                for _ in range(400):
+                    if wystartowal.exists():
+                        break
+                    await asyncio.sleep(0.05)
+                return WynikKroku(status="nieudany", powod="testy padly", kod_wyjscia=1)
+        return WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
+
+    zdarzenia = await uruchom_run(s, agent, limit=60)
+    assert wystartowal.exists()
+    return zdarzenia, s
+
+
+def _kroki_o_rodzaju(zdarzenia: list[dict], rodzaj: str, krok: str) -> list[dict]:
+    return [z for z in zdarzenia if z["kind"] == rodzaj and z["step_id"] == krok]
+
+
+async def test_recenzent_trwajacy_gdy_rownolegly_krok_zapisuje_raport_naprawy_konczy_sie_sukcesem(
+    tmp_path
+):
+    zdarzenia, s = await _run_z_rownoleglym_recenzentem(tmp_path)
+
+    assert len(_kroki_o_rodzaju(zdarzenia, "step_finished", "recenzja")) == 1
+    assert _kroki_o_rodzaju(zdarzenia, "step_failed", "recenzja") == []
+    assert (s.worktree / _sciezka_raportu("implementuj", 1)).is_file()
+
+
+async def test_bez_wyjatku_dla_raportu_naprawy_recenzent_rownoleglego_kroku_bylby_nieudany(
+    tmp_path, monkeypatch
+):
+    """Dowod, ze test powyzej rozstrzyga o wyjatku, a nie o czasie: ten sam run bez wyjatku oblewa recenzenta."""
+    monkeypatch.setattr(modul_kroku, "WYJATKI_MIGAWKI", [KATALOG_SKILLI_RUNU])
+
+    zdarzenia, _ = await _run_z_rownoleglym_recenzentem(tmp_path)
+
+    (porazka,) = _kroki_o_rodzaju(zdarzenia, "step_failed", "recenzja")
+    assert porazka["text"] == (
+        NARUSZENIE + "nowe: " + _sciezka_raportu("implementuj", 1).as_posix())
+    assert _kroki_o_rodzaju(zdarzenia, "step_finished", "recenzja") == []

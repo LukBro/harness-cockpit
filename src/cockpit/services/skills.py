@@ -21,6 +21,7 @@ from ruamel.yaml.comments import CommentedMap
 from cockpit.services.errors import BlednySkill, NieZnaleziono
 from cockpit.services.invariants import Rola, profil_roli
 from cockpit.services.walidacja import (
+    KATALOG_SKILLI_RUNU,
     PREFIKS_WERDYKTU,
     KontraktWerdyktu,
     waliduj_definicje,
@@ -36,7 +37,6 @@ ZRODLA: tuple[tuple[str, str, bool], ...] = (
 )
 
 NAZWA_PLIKU = "SKILL.md"
-KATALOG_RUNU = Path(".cockpit") / "_run" / "skills"
 _GRANICA = re.compile(r"^-{3,}\s*$")
 _POLA_LISTOWE = ("consumes", "produces", "needs")
 _POLA = ("id", "name", "role", *_POLA_LISTOWE)
@@ -364,7 +364,7 @@ def materializuj(ids: Iterable[str], rejestr: Rejestr, katalog: Path) -> Path:
     for id in wybrane:
         if id not in rejestr.skille:
             raise NieZnaleziono(f"skill '{id}' nie istnieje w rejestrze")
-    cel = katalog / KATALOG_RUNU
+    cel = katalog / KATALOG_SKILLI_RUNU
     if cel.exists():
         shutil.rmtree(cel)
     cel.mkdir(parents=True)

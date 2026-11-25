@@ -17,10 +17,10 @@ from types import MappingProxyType
 
 from cockpit.services.errors import BladDziedziny
 from cockpit.services.invariants import Rola, Tier, profil_roli
+from cockpit.services.walidacja import KATALOG_SKILLI_RUNU
 
-# Stala wlasna: services.skills ciagnie frontmatter/ruamel/pydantic, a runner ma byc lekki.
-# MUSI byc zgodna z KATALOG_RUNU w cockpit/services/skills.py - inaczej agent nie znajdzie skilla.
-SKILLE_RUNU = ".cockpit/_run/skills"
+# Ta sama stala co materializacja skilli i wyjatek migawki (walidacja.py, lekki modul).
+SKILLE_RUNU = KATALOG_SKILLI_RUNU.as_posix()
 
 # Zl/Zp (separatory linii i akapitu) tez lamia linie promptu, a str.isprintable()
 # odrzucilaby takze NBSP i znaki formatowania (Cf), ktore sa poprawne w nazwach.

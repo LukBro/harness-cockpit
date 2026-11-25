@@ -260,6 +260,34 @@ def test_tylko_odczyt_recenzenta_jest_egzekwowany_przez_wykonanie_kroku():
     assert EGZEKWOWANE[Niezmiennik.reviewer_readonly] == ("runner.krok:wykonaj_krok",)
 
 
+# --- HAR-209: evidence_required jest egzekwowany na sciezce wykonania
+
+def test_brak_dowodu_jest_egzekwowany_przez_wykonanie_kroku_agenta_i_krok_check():
+    assert Niezmiennik.evidence_required in EGZEKWOWANE
+    assert {"runner.krok:wykonaj_krok", "runner.dowody:_wykonaj_komende"} <= set(
+        EGZEKWOWANE[Niezmiennik.evidence_required])
+
+
+def test_wykonanie_kroku_wola_sprawdzenie_dowodu_z_pliku_i_werdyktu_w_swoim_ciele():
+    zrodlo, funkcja = _zrodlo_punktu("runner.krok:wykonaj_krok")
+
+    wolane = _wolane_nazwy(zrodlo, funkcja)
+
+    assert "dowod_z_pliku" in wolane
+    assert "sprawdz_werdykt" in wolane
+
+
+def test_krok_check_wola_sprawdzenie_dowodu_z_komendy_w_swoim_ciele():
+    zrodlo, funkcja = _zrodlo_punktu("runner.dowody:_wykonaj_komende")
+
+    assert "dowod_z_komendy" in _wolane_nazwy(zrodlo, funkcja)
+
+
+def test_punkty_wywolania_brak_dowodu_wolaja_sprawdzenia_swojego_niezmiennika():
+    assert _wola_sprawdzenie("runner.krok:wykonaj_krok", Niezmiennik.evidence_required)
+    assert _wola_sprawdzenie("runner.dowody:_wykonaj_komende", Niezmiennik.evidence_required)
+
+
 def test_decyzja_straz_roli_wola_walidator_definicji_po_nazwie_w_swoim_ciele():
     zrodlo, funkcja = _zrodlo_punktu("runner.straz_roli:decyzja")
 
