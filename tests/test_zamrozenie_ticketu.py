@@ -27,6 +27,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -167,6 +168,43 @@ def test_zamrozenie_przy_pelnym_dysku_to_blad_dziedziny(tmp_path, monkeypatch):
 
     assert isinstance(blad.value, BladDziedziny)
     assert str(blad.value) == "nie zapisano ticket.json w katalogu runu: OSError"
+
+
+def test_zamrozenie_nie_nadpisuje_cudzego_pliku_tymczasowego_o_tej_samej_nazwie(
+    tmp_path, monkeypatch,
+):
+    """Plik tymczasowy powstaje wylacznie przez O_EXCL: istniejacy plik o tej nazwie to blad,
+    a jego tresc zostaje (bez O_EXCL zapis nadpisalby go i ticket.json dostalby cudza tresc)."""
+    stale_uuid = SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="stala"))
+    monkeypatch.setattr("runner.tickety.zamrozenie.uuid", stale_uuid)
+    cudzy = tmp_path / f".ticket.json.{os.getpid()}.stala.tmp"
+    cudzy.write_bytes(b"cudza tresc, ktorej nie wolno ruszyc" * 200)
+    przed = cudzy.read_bytes()
+
+    with pytest.raises(BladTicketu) as blad:
+        zamroz_ticket(tmp_path, ticket("opis"))
+
+    assert str(blad.value) == "nie zapisano ticket.json w katalogu runu: FileExistsError"
+    assert cudzy.read_bytes() == przed
+    assert not (tmp_path / "ticket.json").exists()
+
+
+def test_zamrozenie_znosi_znikniecie_pliku_tymczasowego_przed_sprzataniem(tmp_path, monkeypatch):
+    """Ktos usunal plik tymczasowy po zapisie `ticket.json`: zamrozenie nadal sie udaje."""
+    prawdziwe_link = os.link
+
+    def link_i_zniknij(zrodlo, cel):
+        prawdziwe_link(zrodlo, cel)
+        os.unlink(zrodlo)
+
+    monkeypatch.setattr(os, "link", link_i_zniknij)
+    t = ticket("opis")
+
+    sciezka = zamroz_ticket(tmp_path, t)
+
+    assert sciezka == tmp_path / "ticket.json"
+    assert sciezka.read_bytes() == do_pliku(t)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["ticket.json"]
 
 
 # --- silnik: zamrozenie na starcie runu -----------------------------------------------------------
@@ -467,11 +505,20 @@ async def test_nieoczekiwany_wyjatek_dostawcy_konczy_run_nazwa_typu_bez_tresci_w
 
 
 async def test_sciezka_projektu_poza_zakresem_runnera_przy_pobraniu_ticketu_konczy_run_bez_wyjatku(
-    tmp_path,
+    tmp_path, monkeypatch,
 ):
     """Prawdziwe `ticket_pobierz` (bez atrapy): zakres runnera z konfiguracji nie obejmuje
     repozytorium swiata testowego, wiec odmawia przed odczytem `project.yaml`; blad dziedziny
-    przechodzi przez silnik bez zmian i run konczy sie `step_failed` + `run_finished`."""
+    przechodzi przez silnik bez zmian i run konczy sie `step_failed` + `run_finished`.
+    Konfiguracja runnera i HOME sa w katalogu testu, nie na maszynie, na ktorej biegnie test."""
+    inny_projekt = tmp_path / "inny_projekt"
+    dom_runnera = tmp_path / "dom_runnera"
+    inny_projekt.mkdir()
+    dom_runnera.mkdir()
+    konfiguracja = tmp_path / "runner.json"
+    konfiguracja.write_text(json.dumps({"projekty": [str(inny_projekt)]}), encoding="utf-8")
+    monkeypatch.setenv("HOME", str(dom_runnera))
+    monkeypatch.setenv("COCKPIT_RUNNER_CONFIG", str(konfiguracja))
     s = swiat_silnika(tmp_path, [K("a")])
     agent = Szpieg()
 

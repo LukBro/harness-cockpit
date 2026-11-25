@@ -234,10 +234,11 @@ _ODCZYT_AGENTOW_BRAMKI = (
 _TICKET_RUNU = (
     "HAR-117: wywolane tylko dla polecenia z polem `ticket`, a scenariusze tej listy go nie "
     "niosa. Na prawdziwych funkcjach tests/test_zamrozenie_ticketu.py konczy run `step_failed` + "
-    "`run_finished`: blad dostawcy (BladIntegracji), odpowiedz bez ticketu albo o zlym ksztalcie, "
-    "wklejenie z samych bialych znakow i zapis do zablokowanego katalogu runu. Gałąź innego "
-    "wyjatku dostawcy (tlumaczona na BladTicketu z nazwa typu) nie ma tam jeszcze testu - do "
-    "dopisania w tym pliku przez wlasciciela testu"
+    "`run_finished`: blad dostawcy (BladOperacji i BladIntegracji), odpowiedz bez ticketu albo o "
+    "zlym ksztalcie, wklejenie z samych bialych znakow i zapis do zablokowanego katalogu runu. "
+    "Galaz innego wyjatku dostawcy (tlumaczona na BladTicketu z nazwa typu) ma test "
+    "tests/test_zamrozenie_ticketu.py::test_nieoczekiwany_wyjatek_dostawcy_konczy_run_nazwa_typu_"
+    "bez_tresci_wyjatku"
 )
 # (granica, funkcja wejsciowa) -> uzasadnienie
 NIEWSTRZYKIWALNE = {
