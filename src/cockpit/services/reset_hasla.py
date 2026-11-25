@@ -66,6 +66,10 @@ async def popros(s: AsyncSession, email: str, wyslij: Wysylka = poczta.wyslij) -
         raise StanNiemozliwy(powod)
     adres_publiczny = _adres_publiczny()
     adres = konta._normalizuj(email)
+    try:
+        adres.encode("utf-8")   # samotny surogat nie da sie zapisac w parametrze zapytania
+    except UnicodeEncodeError:
+        return   # taki adres nie ma konta: wynik jak dla nieznanego adresu
     user = (await s.execute(select(User).where(User.email == adres))).scalar_one_or_none()
     if user is None:
         return
@@ -89,7 +93,10 @@ async def popros(s: AsyncSession, email: str, wyslij: Wysylka = poczta.wyslij) -
 
 async def uzyj(s: AsyncSession, token: str, nowe_haslo: str) -> None:
     teraz = sesje.teraz()
-    skrot = sesje.skrot(token)
+    try:
+        skrot = sesje.skrot(token)
+    except UnicodeEncodeError:   # samotny surogat: taki token nie mogl wyjsc z kokpitu
+        raise BrakDostepu(KOMUNIKAT_TOKENU) from None
     user_id = (
         await s.execute(select(TokenResetu.user_id).where(TokenResetu.skrot == skrot))
     ).scalar_one_or_none()

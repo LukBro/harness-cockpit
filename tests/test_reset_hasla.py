@@ -19,8 +19,9 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import event, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from cockpit.api.app import app
+from cockpit.api.bledy import zarejestruj_obsluge_bledow
 from cockpit.db.models import Base, Sesja, TokenResetu, User
 from cockpit.db.session import get_session
 from cockpit.services import konta, poczta, reset_hasla, sesje
@@ -1074,6 +1076,146 @@ async def test_prosba_przy_wylaczonym_resecie_daje_409_z_powodem_i_nic_nie_wysyl
         assert odp.json() == {"detail": komunikat}
     assert listy_smtp == []
     assert await _tokeny(maker) == []
+
+
+# --- znaki, ktorych nie da sie zapisac, w tokenie i adresie ---------------------------------------
+
+TOKEN_Z_NIEZAPISYWALNYM_ZNAKIEM = "\ud800" + "t" * 42
+ADRES_Z_NIEZAPISYWALNYM_ZNAKIEM = "\ud800@x.pl"
+
+
+async def test_token_ze_znakiem_ktorego_nie_da_sie_zapisac_jest_odrzucony_jak_nieznany(
+    maker, skrzynka
+):
+    user = await _rejestruj(maker)
+    await _nowa_sesja(maker, user)
+    await _popros_i_odbierz(maker, skrzynka)
+
+    async with maker() as s:
+        with pytest.raises(BrakDostepu) as e:
+            await reset_hasla.uzyj(s, TOKEN_Z_NIEZAPISYWALNYM_ZNAKIEM, NOWE_HASLO)
+
+    assert str(e.value) == KOMUNIKAT_TOKENU
+    assert (await _tokeny(maker))[0].uzyty_at is None
+    assert [x.uniewazniona_at for x in await _sesje_uzytkownika(maker, user.id)] == [None]
+    assert await _haslo_dziala(maker, JAN, HASLO)
+
+
+async def test_prosba_z_adresem_ze_znakiem_ktorego_nie_da_sie_zapisac_daje_wynik_jak_dla_nieznanego_adresu(
+    maker, skrzynka
+):
+    await _rejestruj(maker)
+
+    nieznany = await _popros(maker, skrzynka, NIKT)
+    z_nieprawidlowym_znakiem = await _popros(maker, skrzynka, ADRES_Z_NIEZAPISYWALNYM_ZNAKIEM)
+
+    assert z_nieprawidlowym_znakiem == nieznany
+    assert skrzynka.listy == []
+    assert await _tokeny(maker) == []
+
+
+# Pole `str` z samotnym surogatem odrzuca juz walidacja ciala (422): do uslugi taka wartosc
+# nie dochodzi, wiec to granica API musi odpowiedziec bledem walidacji, a nie awaria 500.
+async def test_potwierdzenie_tokenem_ze_znakiem_ktorego_nie_da_sie_zapisac_daje_422_i_nie_zuzywa_tokenu(
+    maker, http, listy_smtp
+):
+    await _rejestruj(maker)
+    async with http() as klient:
+        await _api_prosba(klient, JAN)
+
+        odp = await klient.post(
+            "/api/konto/reset/potwierdz",
+            content=('{"token": "\\ud800%s", "nowe_haslo": "%s"}' % ("t" * 42, NOWE_HASLO)).encode(),
+            headers={"content-type": "application/json"},
+        )
+
+    assert odp.status_code == 422
+    assert isinstance(odp.json()["detail"], list)
+    wiersze = await _tokeny(maker)
+    assert wiersze  # token z prosby istnieje, wiec asercja nizej cos sprawdza
+    assert all(w.uzyty_at is None for w in wiersze)
+    assert await _haslo_dziala(maker, JAN, HASLO)
+
+
+async def test_prosba_z_adresem_ze_znakiem_ktorego_nie_da_sie_zapisac_daje_422_bez_listu_i_tokenu(
+    maker, http, listy_smtp
+):
+    await _rejestruj(maker)
+    async with http() as klient:
+        odp = await klient.post(
+            "/api/konto/reset",
+            content=b'{"email": "\\ud800@x.pl"}',
+            headers={"content-type": "application/json"},
+        )
+
+    assert odp.status_code == 422
+    assert isinstance(odp.json()["detail"], list)
+    assert listy_smtp == []
+    assert await _tokeny(maker) == []
+
+
+class DanePrzyklad(BaseModel):   # na poziomie modulu: FastAPI rozwiazuje adnotacje po nazwie
+    pole: str = Field(max_length=3)
+
+
+async def _trasa_probna(dane: DanePrzyklad) -> dict:
+    return {}
+
+
+KLUCZ_NIEZAPISYWALNY = b'{"\\ud800": 1}'
+CIALA_Z_KLUCZEM_NIEZAPISYWALNYM = [
+    ("/api/konto/reset", KLUCZ_NIEZAPISYWALNY),
+    ("/api/konto/reset", b'{"email": {"\\ud800": 1}}'),
+    ("/api/konto/reset/potwierdz", KLUCZ_NIEZAPISYWALNY),
+    ("/api/konto/reset/potwierdz", b'{"token": {"\\ud800": 1}, "nowe_haslo": "Nowe-Hasl0-Delta"}'),
+]
+
+
+@pytest.mark.parametrize(
+    ("sciezka", "cialo"),
+    CIALA_Z_KLUCZEM_NIEZAPISYWALNYM,
+    ids=["reset-klucz-glowny", "reset-klucz-zagniezdzony", "potwierdz-klucz-glowny",
+         "potwierdz-klucz-zagniezdzony"],
+)
+async def test_klucz_ze_znakiem_ktorego_nie_da_sie_zapisac_w_ciele_daje_422_bez_listu_i_zmian_w_tokenach(
+    maker, http, listy_smtp, caplog, sciezka, cialo
+):
+    await _rejestruj(maker)
+    async with http() as klient:
+        await _api_prosba(klient, JAN)
+        tokeny_przed = sorted(w.skrot for w in await _tokeny(maker))
+        listow_przed = len(listy_smtp)
+        caplog.clear()
+
+        odp = await klient.post(
+            sciezka, content=cialo, headers={"content-type": "application/json"}
+        )
+
+    assert odp.status_code == 422
+    assert isinstance(odp.json()["detail"], list)
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert len(listy_smtp) == listow_przed
+    wiersze = await _tokeny(maker)
+    assert tokeny_przed  # token z prosby istnieje, wiec porownanie cos znaczy
+    assert sorted(w.skrot for w in wiersze) == tokeny_przed
+    assert all(w.uzyty_at is None for w in wiersze)
+
+
+async def test_napis_ze_znakiem_ktorego_nie_da_sie_zapisac_daje_w_bledzie_walidacji_zapis_ze_znakami_ucieczki_a_zwykly_tekst_bez_zmian():
+    probna = FastAPI()
+    zarejestruj_obsluge_bledow(probna)
+    probna.post("/x")(_trasa_probna)
+
+    async with httpx.AsyncClient(transport=ASGITransport(app=probna), base_url="https://test") as k:
+        z_surogatem = await k.post(
+            "/x", content=b'{"pole": "\\ud800abc"}', headers={"content-type": "application/json"}
+        )
+        zwykly = await k.post("/x", json={"pole": "zażółć"})
+
+    assert z_surogatem.status_code == 422
+    assert z_surogatem.json()["detail"][0]["input"] == "\\ud800abc"   # zapis ze znakami ucieczki
+    assert zwykly.status_code == 422
+    assert zwykly.json()["detail"][0]["input"] == "zażółć"
 
 
 # --- granice dlugosci pol ------------------------------------------------------------------------
