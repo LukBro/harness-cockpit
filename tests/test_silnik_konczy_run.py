@@ -169,7 +169,7 @@ CZYSTE = {
         "konstruktor albo wyjatek dziedziny z samych pol, bez walidacji i bez I/O",
         "BladStartu", "BladWznowienia", "Checkpoint", "Oczekiwanie", "Path", "PomiarKroku",
         "PorazkaKroku", "Przygotowany", "SpecKroku", "StanKroku", "StanKrokuCheckpointu",
-        "WorktreeRunu", "WynikKroku",
+        "WorktreeRunu", "WynikKroku", "WynikWariantu",
     ),
     **_grupa(
         "czysta funkcja pomocnicza silnika: formatowanie napisu, sciezki albo zdarzenia z danych",
@@ -177,6 +177,14 @@ CZYSTE = {
         "_tekst_bledu", "_zdarzenie", "ma_bledy",
         "_sciezka_raportu", "_blad_identyfikatora",
         "ostrzezenie_o_opisie",
+        "(KATALOG_ARTEFAKTOW / artefakt).as_posix", "_sciezka_artefaktu_wariantu",
+    ),
+    **_grupa(
+        "konsensus wariantow (HAR-95): `_konsensus` sklada wynik z danych w pamieci, jego jedyna "
+        "granica dysku to `_kopiuj_zwyciezce` (wpisana nizej); `rozstrzygnij` czyta werdykty, ale "
+        "`werdykt` tlumaczy OSError i UnicodeDecodeError na brak glosu (tests/test_konsensus.py), "
+        "a niepoprawny prog to ValueError z danych modelu, nie z dysku",
+        "_konsensus", "rozstrzygnij",
     ),
     **_grupa(
         "czysta funkcja grafu na danych w pamieci; `ValueError` (cel poza sciezka) tlumaczy "
@@ -240,8 +248,19 @@ _TICKET_RUNU = (
     "tests/test_zamrozenie_ticketu.py::test_nieoczekiwany_wyjatek_dostawcy_konczy_run_nazwa_typu_"
     "bez_tresci_wyjatku"
 )
+_KOPIA_ZWYCIEZCY = (
+    "`OSError` z kopiowania wyniku zwyciezcy konsensusu (katalog, `copyfile`) tlumaczy `_konsensus` "
+    "na `PorazkaKroku` (tests/test_konsensus.py: "
+    "test_blad_kopii_wyniku_zwyciezcy_konczy_krok_porazka_i_run_zdarzeniem_koncowym); "
+    "scenariusz z konsensusem nie jest czescia scenariuszy wstrzykiwania tego pliku"
+)
 # (granica, funkcja wejsciowa) -> uzasadnienie
 NIEWSTRZYKIWALNE = {
+    ("_kopiuj_zwyciezce", "wykonaj_run"): _KOPIA_ZWYCIEZCY,
+    ("_kopiuj_zwyciezce", "wznow_run"): _KOPIA_ZWYCIEZCY,
+    ("cel.parent.mkdir", "wykonaj_run"): _KOPIA_ZWYCIEZCY,
+    ("cel.parent.mkdir", "wznow_run"): _KOPIA_ZWYCIEZCY,
+    ("shutil.copyfile", "wznow_run"): _KOPIA_ZWYCIEZCY,   # w `wykonaj_run` wstrzykiwana (scenariusz run)
     ("(p.worktree.sciezka / raport).stat", "wykonaj_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
     ("(p.worktree.sciezka / raport).stat", "wznow_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
     ("_krok_producenta", "wznow_run"): _PO_WZNOWIENIU,
