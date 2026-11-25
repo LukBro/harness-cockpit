@@ -40,7 +40,7 @@ from cockpit.services.dostep import Kontekst, Uprawnienie
 from cockpit.services.errors import BrakDostepu, NieZnaleziono
 from cockpit.settings import settings
 
-from . import bus, konta, ustawienia
+from . import bus, konta, runnery, ustawienia
 from .bledy import zarejestruj_obsluge_bledow
 from .schematy import (
     Artefakt,
@@ -898,6 +898,7 @@ def zamontuj_front(aplikacja: FastAPI, katalog: Path) -> bool:
 
 app.include_router(konta.router)
 app.include_router(ustawienia.router)
+app.include_router(runnery.router)
 
 # Na samym koncu: mount "/" po wszystkich trasach, wiec /api/* ma pierwszenstwo.
 zamontuj_front(app, STATIC)

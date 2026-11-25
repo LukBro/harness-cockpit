@@ -192,6 +192,8 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
         ("POST", "/api/runs/{run_id}/cancel"),
         ("GET", "/api/ustawienia/poczta"), ("POST", "/api/ustawienia/poczta/test"),   # HAR-91
+        ("POST", "/api/runnery"), ("GET", "/api/runnery"),                            # HAR-119
+        ("DELETE", "/api/runnery/{runner_id}"),                                       # HAR-119
     })
     assert znane <= set(TRASY), f"brakuje tras: {sorted(znane - set(TRASY))}"
 
@@ -362,6 +364,9 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("GET", "/api/konto/konfiguracja"), {"500"}),                                # HAR-105
     (("GET", "/api/ustawienia/poczta"), {"401", "500"}),                        # HAR-91
     (("POST", "/api/ustawienia/poczta/test"), {"401", "403", "500", "502"}),      # HAR-91
+    (("POST", "/api/runnery"), {"401", "403", "422", "500"}),                     # HAR-119
+    (("GET", "/api/runnery"), {"401", "500"}),                                    # HAR-119
+    (("DELETE", "/api/runnery/{runner_id}"), {"401", "403", "404", "422", "500"}),   # HAR-119
 ], ids=lambda v: f"{v[0]} {v[1]}" if isinstance(v, tuple) else "kody")
 def test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic(schemat, klucz, oczekiwane):
     assert oczekiwane <= _kody_bledow(schemat, klucz)
