@@ -36,7 +36,7 @@ pytestmark = [
 ]
 
 TABELE_MODELU = {"tenant", "runner", "run", "event", "user", "membership", "sesja", "blokada_logowania",
-                 "definicja", "step_run", "project"}
+                 "definicja", "step_run", "project", "token_resetu"}
 TYPY_ENUM = {"runstatus", "runnerkind", "rolawzespole", "stepstatus"}
 
 
@@ -450,8 +450,8 @@ def test_cofniecie_do_migracji_0007_usuwa_tylko_tabele_katalogu_definicji(cfg):
 
     tabele, _ = _tabele_i_typy_w_public()
     # znikaja tabele z migracji powyzej 0007 (katalog definicji, stan krokow) i nic wiecej
-    assert not ({"definicja", "step_run", "project"} & tabele)
-    assert (TABELE_MODELU - {"definicja", "step_run", "project"}) <= tabele
+    assert not ({"definicja", "step_run", "project", "token_resetu"} & tabele)
+    assert (TABELE_MODELU - {"definicja", "step_run", "project", "token_resetu"}) <= tabele
 
 
 def test_ta_sama_definicja_tego_samego_runnera_i_projektu_nie_moze_wystapic_dwa_razy(cfg):
@@ -640,7 +640,8 @@ def test_cofniecie_stanu_krokow_do_0008_usuwa_tabele_kolumne_i_typ(cfg):
     assert "stepstatus" not in typy
     assert "attempt" not in _kolumny_tabeli("event")
     # cofniecie tylko jednej migracji: reszta schematu zostaje
-    assert (TABELE_MODELU - {"step_run", "project"}) <= tabele  # project powstaje w 0010
+    # project powstaje w 0010, token_resetu w 0016 (HAR-105)
+    assert (TABELE_MODELU - {"step_run", "project", "token_resetu"}) <= tabele
     assert (TYPY_ENUM - {"stepstatus"}) <= typy
 
 

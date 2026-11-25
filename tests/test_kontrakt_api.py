@@ -56,6 +56,7 @@ BEZ_TRESCI_204 = {
     ("POST", "/api/konto/wyloguj"),
     ("POST", "/api/konto/wyloguj-wszedzie"),
     ("POST", "/api/konto/haslo"),
+    ("POST", "/api/konto/reset/potwierdz"),   # HAR-105: zmiana hasla tokenem z listu
     ("DELETE", "/api/skills/{skill_id}"),   # HAR-181: usuniecie skilla
 }
 STRUMIENIE_SSE = {
@@ -66,6 +67,9 @@ TRASY_PUBLICZNE = {
     ("GET", "/api/health"),
     ("POST", "/api/konto/rejestracja"),
     ("POST", "/api/konto/logowanie"),
+    ("POST", "/api/konto/reset"),             # HAR-105
+    ("POST", "/api/konto/reset/potwierdz"),   # HAR-105
+    ("GET", "/api/konto/konfiguracja"),       # HAR-105
 }
 KODY_BLEDOW = {"401", "403", "404", "409", "422", "429", "500", "502"}   # 502: poczta (HAR-91)
 
@@ -269,6 +273,8 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("POST", "/api/konto/rejestracja"): ("TokenCsrf", False),
         ("POST", "/api/konto/logowanie"): ("TokenCsrf", False),
         ("GET", "/api/konto/ja"): ("Profil", False),
+        ("POST", "/api/konto/reset"): ("ResetPrzyjety", False),                     # HAR-105
+        ("GET", "/api/konto/konfiguracja"): ("KonfiguracjaKonta", False),           # HAR-105
         ("GET", "/api/ustawienia/poczta"): ("UstawieniaPoczty", False),             # HAR-91
         ("POST", "/api/ustawienia/poczta/test"): ("PocztaTestowaWyslana", False),   # HAR-91
     }
@@ -351,7 +357,10 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("POST", "/api/runners/odpowiedzi"), {"401", "404", "422"}),
     (("POST", "/api/konto/logowanie"), {"401", "422", "429", "500"}),
     (("POST", "/api/konto/rejestracja"), {"409", "422", "500"}),
-    (("GET", "/api/ustawienia/poczta"), {"401", "500"}),                          # HAR-91
+    (("POST", "/api/konto/reset"), {"409", "422", "500"}),                        # HAR-105
+    (("POST", "/api/konto/reset/potwierdz"), {"401", "409", "422", "500"}),       # HAR-105
+    (("GET", "/api/konto/konfiguracja"), {"500"}),                                # HAR-105
+    (("GET", "/api/ustawienia/poczta"), {"401", "500"}),                        # HAR-91
     (("POST", "/api/ustawienia/poczta/test"), {"401", "403", "500", "502"}),      # HAR-91
 ], ids=lambda v: f"{v[0]} {v[1]}" if isinstance(v, tuple) else "kody")
 def test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic(schemat, klucz, oczekiwane):

@@ -32,6 +32,7 @@ KOMUNIKAT_LOGOWANIA = "nieprawidłowy adres lub hasło"
 KOMUNIKAT_BLOKADY = "zbyt wiele nieudanych prób, spróbuj za {minuty} min"
 MIN_DLUGOSC_HASLA = 8
 _ZA_KROTKIE = "hasło musi mieć co najmniej 8 znaków"
+_NIEKODOWALNE = "hasło zawiera znaki, których nie da się zapisać"
 _ZAJETY_ADRES = "adres jest już zajęty"
 
 _HASHER = PasswordHasher()
@@ -179,6 +180,18 @@ async def zaloguj(s: AsyncSession, email: str, haslo: str, ip: str) -> User:
     return user
 
 
+async def ustaw_haslo(s: AsyncSession, user: User, nowe: str) -> None:
+    """Ustawia haslo bez commitu: o transakcji decyduje wolajacy (zmiana i reset hasla)."""
+    if len(nowe) < MIN_DLUGOSC_HASLA:
+        raise StanNiemozliwy(_ZA_KROTKIE)
+    try:
+        nowe.encode("utf-8")   # argon2 koduje UTF-8; samotny surogat ("\ud800") rzucilby UnicodeEncodeError
+    except UnicodeEncodeError:
+        raise StanNiemozliwy(_NIEKODOWALNE) from None
+    user.haslo_skrot = _HASHER.hash(nowe)
+    user.haslo_zmienione_at = sesje.teraz()
+
+
 async def zmien_haslo(
     s: AsyncSession, user: User, stare: str, nowe: str, biezaca_sesja_id: str
 ) -> None:
@@ -186,11 +199,8 @@ async def zmien_haslo(
     zapisany = await s.get(User, user.id)
     if not _zgodne(zapisany.haslo_skrot, stare):
         raise NieprawidloweObecneHaslo("nieprawidłowe hasło")
-    if len(nowe) < MIN_DLUGOSC_HASLA:
-        raise StanNiemozliwy(_ZA_KROTKIE)
-    teraz = sesje.teraz()
-    zapisany.haslo_skrot = _HASHER.hash(nowe)
-    zapisany.haslo_zmienione_at = teraz
+    await ustaw_haslo(s, zapisany, nowe)
+    teraz = zapisany.haslo_zmienione_at
     await s.execute(
         update(Sesja)
         .where(
