@@ -417,6 +417,15 @@ class Profil(BaseModel):
     csrf: str
 
 
+class UstawieniaPoczty(BaseModel):
+    skonfigurowana: bool
+    powod: str | None   # brak powodu to null (poczta skonfigurowana), nigdy pusty napis
+
+
+class PocztaTestowaWyslana(BaseModel):
+    do: str
+
+
 class Blad(BaseModel):
     """Ciało każdej odpowiedzi błędu. `detail` to napis albo — przy 422 z walidacji — lista."""
 
@@ -433,6 +442,7 @@ _OPISY_BLEDOW: dict[int, str] = {
     422: "Niepoprawne dane wejściowe",
     429: "Zbyt wiele prób",
     500: "Błąd wewnętrzny kokpitu",
+    502: "Serwer poczty niedostępny albo poczta nieskonfigurowana",
 }
 
 

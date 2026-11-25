@@ -67,7 +67,7 @@ TRASY_PUBLICZNE = {
     ("POST", "/api/konto/rejestracja"),
     ("POST", "/api/konto/logowanie"),
 }
-KODY_BLEDOW = {"401", "403", "404", "409", "422", "429", "500"}
+KODY_BLEDOW = {"401", "403", "404", "409", "422", "429", "500", "502"}   # 502: poczta (HAR-91)
 
 
 # --- wyliczenie tras (jak w test_dostep_http.py, z trasami routera `konta`) ---------------------
@@ -187,6 +187,7 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
         ("POST", "/api/runs/{run_id}/cancel"),
+        ("GET", "/api/ustawienia/poczta"), ("POST", "/api/ustawienia/poczta/test"),   # HAR-91
     })
     assert znane <= set(TRASY), f"brakuje tras: {sorted(znane - set(TRASY))}"
 
@@ -268,6 +269,8 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("POST", "/api/konto/rejestracja"): ("TokenCsrf", False),
         ("POST", "/api/konto/logowanie"): ("TokenCsrf", False),
         ("GET", "/api/konto/ja"): ("Profil", False),
+        ("GET", "/api/ustawienia/poczta"): ("UstawieniaPoczty", False),             # HAR-91
+        ("POST", "/api/ustawienia/poczta/test"): ("PocztaTestowaWyslana", False),   # HAR-91
     }
     rzeczywiste = {k: _model_odpowiedzi(schemat, k) for k in oczekiwane}
     assert rzeczywiste == oczekiwane
@@ -348,6 +351,8 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("POST", "/api/runners/odpowiedzi"), {"401", "404", "422"}),
     (("POST", "/api/konto/logowanie"), {"401", "422", "429", "500"}),
     (("POST", "/api/konto/rejestracja"), {"409", "422", "500"}),
+    (("GET", "/api/ustawienia/poczta"), {"401", "500"}),                          # HAR-91
+    (("POST", "/api/ustawienia/poczta/test"), {"401", "403", "500", "502"}),      # HAR-91
 ], ids=lambda v: f"{v[0]} {v[1]}" if isinstance(v, tuple) else "kody")
 def test_trasa_opisuje_kody_bledow_ktore_faktycznie_moze_zwrocic(schemat, klucz, oczekiwane):
     assert oczekiwane <= _kody_bledow(schemat, klucz)
@@ -499,6 +504,9 @@ POLA_MODELI = {
                    "pomiary": {"array"}, "decyzja": {"object", N}},
     # HAR-182: podglad artefaktu; full_len to rozmiar calego pliku, wymagany takze bez obciecia
     "Artefakt": {"path": {S}, "text": {S}, "truncated": {B}, "full_len": {INT}},
+    # HAR-91: poczta; brak powodu to null (poczta skonfigurowana), nigdy pusty napis
+    "UstawieniaPoczty": {"skonfigurowana": {B}, "powod": {S, N}},
+    "PocztaTestowaWyslana": {"do": {S}},
 }
 
 
