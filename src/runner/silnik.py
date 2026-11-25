@@ -13,7 +13,11 @@ Foreach (HAR-98): krok z `foreach: <artefakt>#<pole>` ma tyle wariantow `a1..aN`
 z artefaktu. N liczymy z dysku przy starcie kroku (albo przy bramce) i utrwalamy w katalogu runu
 (`<katalog_runu>/<krok>/foreach.json`, poza repozytorium i checkpointem); wiersze otwarte przez
 `step_waiting`/`step_started`, krok po decyzji i konsument uzywaja utrwalonego N, nie liczba od nowa
-ze zmiennego pliku. Ponowienie kroku liczy liste od nowa i nadpisuje utrwalone N.
+ze zmiennego pliku. Ponowienie kroku liczy liste od nowa i nadpisuje utrwalone N, gdy lista nie jest
+pusta; pusta lista pomija krok (`pusty_foreach`) i zostawia plik z N z poprzedniej proby. `_wejscie` czyta
+ten plik dla kazdego konsumenta artefaktu producenta z foreach, takze takiego, ktorego graf nie
+pomija (np. krok z `foreach` na tym artefakcie bez `consumes`). Znane ograniczenie: taki konsument
+dostaje wtedy sciezki wynikow wariantow z poprzedniej proby (ostatnie utrwalone N).
 
 Petla naprawcza (HAR-109, D28): krok z `on_fail: {retry, max}` po porazce wraca do celu `retry`
 (wszystkie kroki na sciezce `needs` od celu do kroku nieudanego) z raportem porazki jako

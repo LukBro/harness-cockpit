@@ -1252,3 +1252,53 @@ def test_niedozwolony_identyfikator_kroku_foreach_nie_zapisuje_pliku_liczby_nigd
     assert str(wyjatek.value) == f"niedozwolony identyfikator kroku: {zly_id!r}"
     assert list(katalog_runu.iterdir()) == []
     assert list(tmp_path.iterdir()) == [katalog_runu]
+
+
+# --- najblizszy przodek foreach nie jest producentem skillowym artefaktu --------------------------
+
+
+async def test_foreach_za_krokiem_systemowym_czyta_zrodlo_od_producenta_skillowego_dalej_w_grafie(
+    tmp_path,
+):
+    # `_producent_skilla` mija krok systemowy (`diff`, skill None) bez zagladania do rejestru skilli
+    tresc = (
+        "name: w\nsteps:\n"
+        "  plan: {skill: s_plan}\n"
+        "  diff: {system: diff, needs: [plan]}\n"
+        f'  rozdziel: {{skill: s_rozdziel, needs: [diff], foreach: "{SPEC}"}}\n')
+    s = swiat(
+        tmp_path, [K("plan"), K("rozdziel")], tresc=tresc,
+        opcje_skilli={"plan": {"produces": [SCIEZKA_PLANU]}, "rozdziel": {"produces": ["wynik.md"]}})
+    agent = AtrapaForeach(plany={"plan": [plan(ELEMENTY_3)]})
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert agent.agenci("rozdziel") == ["a1", "a2", "a3"]
+    assert [agent.element("rozdziel", a) for a in ("a1", "a2", "a3")] == ELEMENTY_3
+    assert "step_failed" not in rodzaje(zdarzenia)
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_foreach_za_posrednikiem_bez_zapisu_ktory_nie_produkuje_zrodla_czyta_je_z_worktree(
+    tmp_path,
+):
+    # `_producent_skilla` mija `posrednik` (skill bez `plan.json` w produces), wiec producentem jest
+    # autor `plan` z zapisem; gdyby wzial posrednika, zrodlo lezaloby w katalogu runu i krok by padl
+    s = swiat(
+        tmp_path,
+        [K("plan"), K("posrednik", ("plan",)),
+         K("rozdziel", ("posrednik",), extra=f', foreach: "{SPEC}"')],
+        opcje_skilli={
+            "plan": {"produces": [SCIEZKA_PLANU]},
+            "posrednik": {"produces": ["notatki.md"], "role": "gatherer"},
+            "rozdziel": {"produces": ["wynik.md"]}})
+    agent = AtrapaForeach(plany={"plan": [plan(ELEMENTY_3)]})
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert (s.worktree / SCIEZKA_PLANU).is_file()
+    assert not (s.katalog_runu / "posrednik" / SCIEZKA_PLANU).exists()
+    assert agent.agenci("rozdziel") == ["a1", "a2", "a3"]
+    assert [agent.element("rozdziel", a) for a in ("a1", "a2", "a3")] == ELEMENTY_3
+    assert "step_failed" not in rodzaje(zdarzenia)
+    assert zdarzenia[-1]["kind"] == "run_finished"
