@@ -40,7 +40,7 @@ from cockpit.services.walidacja import (
     sprawdz_werdykt,
 )
 from cockpit.services.kroki_systemowe import PLIK_LINII
-from runner.agent import SpecKroku
+from runner.agent import SpecKroku, etykieta_pliku, podkatalog_wariantu
 from runner.kotwice import KODOWANIE, PLIK_NOTATKI, sprawdz_kotwice, wczytaj_zmienione_linie, wyciagnij_kotwice
 from runner.straznik import (
     CZAS_NA_ZAKONCZENIE_S,
@@ -130,6 +130,9 @@ class WynikKroku:
     werdykt: str | None = None
     # metadane dowodu silnika kroku `check` (HAR-177), bez wyjscia komendy i argv
     dowod: Mapping[str, object] | None = None
+    # wyniki wariantow kroku z `fanout > 1` (agent_id, wynik), w kolejnosci wariantow (HAR-83);
+    # puste dla kroku z jednym agentem. Wynik zbiorczy niesie porazke pierwszego nieudanego.
+    warianty: tuple[tuple[str, WynikKroku], ...] = ()
 
 
 @dataclass
@@ -392,6 +395,11 @@ def _katalog_artefaktu(
     if (powod := _blad_identyfikatora(spec.step_id)) is not None:
         return None, powod
     katalog_kroku = katalog_runu / spec.step_id
+    if spec.wariant:
+        try:
+            katalog_kroku = katalog_kroku / podkatalog_wariantu(spec.agent_id)
+        except ValueError as blad:
+            return None, str(blad)
     naruszenie = sprawdz_katalog_runu(katalog_kroku, katalog)
     if naruszenie is not None:
         return None, str(naruszenie)
@@ -446,7 +454,11 @@ async def _zapisz_prompt(
     naruszenie = sprawdz_katalog_runu(katalog_promptow, katalog)
     if naruszenie is not None:
         return None, str(naruszenie)
-    plik = katalog_promptow / f"{spec.step_id}.txt"
+    try:
+        etykieta = etykieta_pliku(spec.step_id, spec.agent_id, spec.wariant)
+    except ValueError as blad:
+        return None, str(blad)
+    plik = katalog_promptow / f"{etykieta}.txt"
     try:
         await asyncio.to_thread(_zapisz_atomowo, plik, prompt.encode())
     except OSError as blad:

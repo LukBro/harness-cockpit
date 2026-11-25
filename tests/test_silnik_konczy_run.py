@@ -64,6 +64,8 @@ SCENARIUSZ_TRYB = {
     "wznowienie_dom": "wznow_run",
     "wznowienie_druga_bramka": "wznow_run",
     "wznowienie_petla": "wznow_run",
+    "fanout": "wykonaj_run",
+    "wznowienie_fanout": "wznow_run",
 }
 
 # granica -> scenariusze, w ktorych ja wstrzykujemy (kazdy tryb, w ktorym jest osiagalna)
@@ -92,8 +94,26 @@ WSTRZYKNIETE = {
     "wykonaj_check": ("kontrola",),
     "wykonaj_mutate_diff": ("mutanty",),
     "opis_kroku": ("run", "wznowienie"),
-    "_krok_producenta": ("run", "wznowienie"),
+    "_przodkowie": ("run", "wznowienie"),
+    # HAR-83: `_wejscie` nie wola juz `_krok_producenta`; zostaly dwa wywolania: `_wykonaj_check`
+    # dla `mutate_diff` (scenariusz `mutanty`) i `_wariant` dla skilla z notatka zmiany
+    "_krok_producenta": ("mutanty",),
     "_wejscie": ("run", "wznowienie"),
+    # HAR-83: warianty kroku (fanout). Funkcje wolane dla kazdego kroku ze skillem - scenariusze
+    # `run` i `wznowienie`; wolane tylko dla kroku z `fanout > 1` - scenariusze `fanout` i
+    # `wznowienie_fanout` (producent z dwoma wariantami i krok zalezny, ktory ich konsumuje).
+    "_agenci_kroku": ("run", "wznowienie"),
+    "_wariant": ("run", "wznowienie"),
+    "_wyjscia_agenta": ("run", "wznowienie"),
+    "_dodatkowe_wyniku": ("run", "wznowienie"),
+    "_agent_zdarzenia": ("run", "wznowienie"),
+    "etykieta_pliku": ("run", "wznowienie"),
+    "_wejscia_wariantow": ("fanout", "wznowienie_fanout"),
+    "_zbierz_warianty": ("fanout", "wznowienie_fanout"),
+    "id_wariantu": ("fanout", "wznowienie_fanout"),
+    "podkatalog_wariantu": ("fanout", "wznowienie_fanout"),
+    "sciezka_wyjscia_wariantu": ("fanout", "wznowienie_fanout"),
+    "profil_roli": ("fanout", "wznowienie_fanout"),
     "_artefakty_kroku": ("run", "wznowienie"),
     "_produkuje_notatke": ("run", "wznowienie"),
     "_pola_pomiaru": ("run", "wznowienie"),
@@ -142,13 +162,14 @@ CZYSTE = {
         "startowane.get", "bramki.add", "deque", "type", "raport.as_posix",
         "('\\n'.join(linie) + '\\n').encode",
         "dict.fromkeys", "tuple", "manifest.jako_listy",
+        "len", "range", "sorted", "zip", "sciezki.append", "zebrane.append",
         "json.dumps(manifest.jako_listy(), ensure_ascii=False).encode",
     ),
     **_grupa(
         "konstruktor albo wyjatek dziedziny z samych pol, bez walidacji i bez I/O",
         "BladStartu", "BladWznowienia", "Checkpoint", "Oczekiwanie", "Path", "PomiarKroku",
         "PorazkaKroku", "Przygotowany", "SpecKroku", "StanKroku", "StanKrokuCheckpointu",
-        "WorktreeRunu",
+        "WorktreeRunu", "WynikKroku",
     ),
     **_grupa(
         "czysta funkcja pomocnicza silnika: formatowanie napisu, sciezki albo zdarzenia z danych",
@@ -202,10 +223,22 @@ _ZAPIS_RAPORTU = (
     "test_blad_zapisu_raportu_porazki...); inny wyjatek leci ta sama sciezka co wstrzykniety "
     "`_zapisz_raport_porazki`"
 )
+_ODCZYT_AGENTOW_BRAMKI = (
+    "sciezka obslugi bledu wznowienia (HAR-83): odczyt checkpointu i kopii workflow, zeby zamknac "
+    "wiersze a1..aN bramki z fanoutem. Kazdy typ z krotki `except` i kazda galez powrotu do "
+    "jednego wiersza `step_id` ma wlasny test w tests/test_fanout.py (brak worktree, uszkodzony "
+    "checkpoint, brak i uszkodzona kopia workflow, brak kroku w checkpoincie i w workflow, "
+    "OSError i ValueError z odczytu workflow, zly identyfikator runu)"
+)
 # (granica, funkcja wejsciowa) -> uzasadnienie
 NIEWSTRZYKIWALNE = {
     ("(p.worktree.sciezka / raport).stat", "wykonaj_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
     ("(p.worktree.sciezka / raport).stat", "wznow_run"): _TLUMACZONA_NA_PORAZKE_KROKU,
+    ("_krok_producenta", "wznow_run"): _PO_WZNOWIENIU,
+    ("_agenci_bramki", "wznow_run"): _ODCZYT_AGENTOW_BRAMKI,
+    ("_agenci_bramki_z_dysku", "wznow_run"): _ODCZYT_AGENTOW_BRAMKI,
+    ("_powod_wyjatku", "wykonaj_run"): _OBSLUGA_BLEDU,
+    ("_powod_wyjatku", "wznow_run"): _OBSLUGA_BLEDU,
     ("_ogon_dowodu", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
     ("_ogon_dowodu", "wznow_run"): _TLUMACZONA_NA_LINIE_OGONA,
     ("plik.read_text", "wykonaj_run"): _TLUMACZONA_NA_LINIE_OGONA,
@@ -537,7 +570,7 @@ WYJATKI = [
 
 ASYNCHRONICZNE = {
     "_krok", "_krok_systemowy", "wykonaj_diff", "wykonaj_check", "wykonaj_mutate_diff", "_zapisz", "_pauza_testowa",
-    "_wykonaj_plan", "_przyjmij_decyzje", "_obsluz_porazke", "_zapis_do_konca",
+    "_wykonaj_plan", "_przyjmij_decyzje", "_obsluz_porazke", "_zapis_do_konca", "_wariant",
 }
 
 
@@ -616,6 +649,32 @@ def _swiat_z_bramka(tmp_path: Path, tresc: str = WORKFLOW_Z_BRAMKA):
     return swiat(tmp_path, kroki, tresc=tresc, opcje_skilli=SKILLE_Z_DIFFEM)
 
 
+WORKFLOW_Z_FANOUTEM = WORKFLOW_Z_DIFFEM + (
+    "  analiza: {skill: s_analiza, needs: [rec], fanout: 2}\n"
+    "  przeglad: {skill: s_przeglad, needs: [rec], fanout: 2}\n"
+    "  synteza: {skill: s_synteza, needs: [analiza, przeglad]}\n"
+)
+SKILLE_Z_FANOUTEM = {
+    **SKILLE_Z_DIFFEM,
+    "analiza": {"produces": ["plan.md"]},
+    "przeglad": {"role": "reviewer", "produces": ["uwagi.md"]},
+    "synteza": {"consumes": ["plan.md", "uwagi.md"]},
+}
+
+
+def _swiat_z_fanoutem(tmp_path: Path, *, bramka: bool):
+    """Kroki `analiza` (rola z zapisem) i `przeglad` (rola bez zapisu) z dwoma wariantami po `rec`
+    oraz krok `synteza`, ktory konsumuje ich artefakty; z `bramka` krok `rec` czeka na decyzje,
+    wiec warianty startuja dopiero po wznowieniu."""
+    tresc = WORKFLOW_Z_FANOUTEM
+    if bramka:
+        tresc = tresc.replace(
+            "rec: {skill: s_rec, needs: [diff]}", "rec: {skill: s_rec, needs: [diff], approval: true}")
+        assert "approval: true" in tresc
+    kroki = [K("autor"), K("rec"), K("analiza"), K("przeglad"), K("synteza")]
+    return swiat(tmp_path, kroki, tresc=tresc, opcje_skilli=SKILLE_Z_FANOUTEM)
+
+
 async def _wykonaj(s, agent, **opcje) -> list[dict]:
     zdarzenia: list[dict] = []
 
@@ -659,6 +718,10 @@ async def _przebieg(
         opcje = {"run": {}, "profil": {"profil": None}, "dom": {"dom": None},
                  "zakres": {"zakres": None}}[scenariusz]
         return await _wykonaj(s, agent or _agent_autora(), **opcje)
+    if scenariusz == "fanout":
+        s = _swiat_z_fanoutem(tmp_path, bramka=False)
+        naloz()
+        return await _wykonaj(s, _agent_autora())
     if scenariusz == "bramka":
         s = _swiat_z_bramka(tmp_path)
         naloz()
@@ -681,6 +744,11 @@ async def _przebieg(
         assert (await uruchom(s, petla))[-1]["kind"] == "step_waiting"
         naloz()
         return await wznow_petli(s, petla)
+    if scenariusz == "wznowienie_fanout":
+        s = _swiat_z_fanoutem(tmp_path, bramka=True)
+        assert (await uruchom(s, _agent_autora()))[-1]["kind"] == "step_waiting"
+        naloz()
+        return await _wznow(s, Szpieg())
     # wznowienie: pierwszy przebieg bez atrap, atrapa dopiero przed `wznow_run`
     tresc = WORKFLOW_DWIE_BRAMKI if scenariusz == "wznowienie_druga_bramka" else WORKFLOW_Z_BRAMKA
     s = _swiat_z_bramka(tmp_path, tresc)
@@ -700,6 +768,21 @@ PRZYPADKI = [
 ]
 
 
+# (granica, scenariusz) -> liczba `step_failed` z przyczyna z granicy; domyslnie 1. Kroki z fanoutem
+# (HAR-83) maja jedno zdarzenie konca na wariant, wiec granica wolana w kazdym wariancie daje
+# tyle porazek, ile wariantow ma krok, na ktorym padla.
+LICZBA_PORAZEK: dict[tuple[str, str], int] = {
+    # `analiza` i `przeglad`, po dwa warianty, kazdy ze swoim `step_failed`
+    ("_zbierz_warianty", "fanout"): 4,
+    ("_zbierz_warianty", "wznowienie_fanout"): 4,
+    ("profil_roli", "fanout"): 4,
+    ("profil_roli", "wznowienie_fanout"): 4,
+    # tylko `analiza` (rola z zapisem) liczy sciezke wyjscia wariantu w worktree
+    ("sciezka_wyjscia_wariantu", "fanout"): 2,
+    ("sciezka_wyjscia_wariantu", "wznowienie_fanout"): 2,
+}
+
+
 @pytest.mark.parametrize("wyjatek", WYJATKI)
 @pytest.mark.parametrize(("klucz", "scenariusz"), PRZYPADKI)
 async def test_wyjatek_z_granicy_silnika_konczy_run_porazka_kroku_i_run_finished(
@@ -715,8 +798,18 @@ async def test_wyjatek_z_granicy_silnika_konczy_run_porazka_kroku_i_run_finished
     assert rodzaje_zdarzen[-1] == "run_finished"
     assert "step_waiting" not in rodzaje_zdarzen
     porazki = [z for z in zdarzenia if z["kind"] == "step_failed" and rz.znacznik in z["text"]]
-    assert len(porazki) == 1, f"porazka z przyczyna {rz.znacznik} w {rodzaje_zdarzen}"
+    oczekiwane = LICZBA_PORAZEK.get((klucz, scenariusz), 1)
+    assert len(porazki) == oczekiwane, (
+        f"LICZBA {(klucz, scenariusz)}: {len(porazki)} zamiast {oczekiwane}")
     assert zdarzenia.index(porazki[0]) < len(zdarzenia) - 1
+    if scenariusz.endswith("fanout"):
+        # kazdy wiersz (krok, agent_id, proba) z `step_started` ma zdarzenie konca: inaczej kokpit
+        # zostawilby wariant w `running` na zawsze
+        starty = {(z["step_id"], z["agent_id"], z.get("attempt")) for z in zdarzenia
+                  if z["kind"] == "step_started"}
+        konce = {(z["step_id"], z["agent_id"], z.get("attempt")) for z in zdarzenia
+                 if z["kind"] in ("step_finished", "step_failed")}
+        assert starty - konce == set(), "wiersz kroku z `step_started` bez zdarzenia konca"
     assert zdarzenia[-1]["run_id"] == RUN_ID
 
 
