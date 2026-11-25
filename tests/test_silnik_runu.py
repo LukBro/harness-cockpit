@@ -12,6 +12,7 @@ Nazwy testow w jezyku dziedziny, nie technologii (CLAUDE.md).
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import sys
@@ -1197,6 +1198,23 @@ async def test_wyjatek_agenta_zostawia_na_stderr_cala_linie_z_nazwa_typu_bez_tre
     jedno(zdarzenia, "step_failed", id_kroku)
     blad = capsys.readouterr().err
     assert blad == f"krok {id_kroku[:36]!r} zakonczony bledem: {wyjatek.__name__}\n"
+
+
+async def test_oserror_agenta_konczy_krok_z_powodem_a_niezalezny_krok_i_run_sie_koncza(
+    tmp_path, capsys,
+):
+    s = swiat(tmp_path, [K("a"), K("b")])
+    agent = SzpiegRzucajacyDlaKroku(
+        "a", OSError(errno.EMFILE, "Too many open files"), opoznienia={"b": 0.2})
+
+    zdarzenia = await uruchom(s, agent)
+
+    # powod granicy to tresc bledu systemu (str(OSError)), w odroznieniu od nazwy typu innych wyjatkow
+    assert jedno(zdarzenia, "step_failed", "a")["text"] == "[Errno 24] Too many open files"
+    assert jedno(zdarzenia, "step_finished", "b")["text"] == ""
+    assert rodzaje(zdarzenia).count("run_finished") == 1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+    assert capsys.readouterr().err == "krok 'a' zakonczony bledem: OSError\n"
 
 
 async def test_anulowanie_zadania_kroku_nie_jest_zamieniane_na_porazke_kroku(tmp_path):
