@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -74,6 +75,22 @@ def _adres_zalogowanego_poprawny(do: str) -> bool:
     return getaddresses([do]) == [("", do)]
 
 
+_ADRES = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
+# `adres` albo `Nazwa <adres>`; nazwa bez znakow specjalnych RFC (nawiasy, cudzyslow, przecinek...).
+_NADAWCA = re.compile(rf"(?:{_ADRES}|[\w .'-]+ <{_ADRES}>)")
+_NADAWCA_MAX_DLUGOSC = 254
+
+
+def _adres_nadawcy_poprawny(nadawca: str) -> bool:
+    """Wlasna regula, niezalezna od wersji Pythona i od parsera naglowkow (ten rzuca roznie
+    zaleznie od wersji, a na zagniezdzonych nawiasach RecursionError): parsera nie wolamy wcale."""
+    if len(nadawca) > _NADAWCA_MAX_DLUGOSC:   # odcina tez "(" * 500 przed wyrazeniem
+        return False
+    if len(nadawca.splitlines()) != 1 or nadawca != nadawca.strip():
+        return False
+    return _NADAWCA.fullmatch(nadawca) is not None
+
+
 async def wyslij(do: str, temat: str, tresc: str) -> None:
     """Wysyla jeden list; kazda awaria SMTP/sieci konczy sie `BladPoczty` bez tresci wyjatku."""
     obecny = stan()
@@ -83,6 +100,8 @@ async def wyslij(do: str, temat: str, tresc: str) -> None:
     assert host is not None   # stan() sprawdzil
     if not _adres_zalogowanego_poprawny(do):
         raise BladPoczty("adres odbiorcy listu jest nieprawidłowy")
+    if not _adres_nadawcy_poprawny(settings.smtp_nadawca or ""):
+        raise BladPoczty("adres nadawcy jest nieprawidłowy: sprawdź COCKPIT_SMTP_NADAWCA")
     wiadomosc = EmailMessage()
     # Parser naglowkow biblioteki na zlej wartosci rzuca: ValueError (wiele linii),
     # AttributeError (InvalidHeaderDefect bez 'all_defects') i IndexError (pusty token).

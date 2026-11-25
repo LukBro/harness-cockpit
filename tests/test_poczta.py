@@ -11,7 +11,7 @@ import logging
 import smtplib
 import socket
 import ssl
-from email.utils import getaddresses
+from email.utils import getaddresses, parseaddr
 from types import SimpleNamespace
 
 import pytest
@@ -435,6 +435,32 @@ async def test_starttls_wymaga_zweryfikowanego_certyfikatu_i_nazwy_hosta(
 # --- adresy i dane, ktore biblioteka odrzuca: osobny komunikat, bez listu ---------------------------
 
 KOMUNIKAT_ODBIORCA = "adres odbiorcy listu jest nieprawidłowy"
+NADAWCA_PRAWIDLOWY_Z_NAZWA = "Kokpit <kokpit@example.test>"
+# Poprawni nadawcy: kazdy jest wejsciem, ktore przepuszcza tylko jeden element wzorca `_NADAWCA`
+# (sprawdzone na kopii wzorca bez tego elementu: bez niego wejscie jest odrzucane).
+NADAWCY_POPRAWNI = {
+    "sam_adres": "kokpit@example.test",                                  # wzorzec bazowy
+    "nazwa_i_adres": NADAWCA_PRAWIDLOWY_Z_NAZWA,                         # alternatywa `Nazwa <adres>`
+    "kropka_w_czesci_lokalnej": "jan.kowalski@example.test",             # lokalna: .
+    "podkreslnik_w_czesci_lokalnej": "kokpit_x@example.test",            # lokalna: _
+    "procent_w_czesci_lokalnej": "a%b@example.test",                     # lokalna: %
+    "plus_w_czesci_lokalnej": "kokpit+alerty@example.test",              # lokalna: +
+    "myslnik_w_czesci_lokalnej": "no-reply@example.test",                # lokalna: -
+    "wielka_litera_w_czesci_lokalnej": "Kokpit@example.test",            # lokalna: A-Z
+    "cyfra_w_czesci_lokalnej": "kokpit1@example.test",                   # lokalna: 0-9
+    "myslnik_w_pierwszej_etykiecie": "kokpit@harness-cockpit.test",      # pierwsza etykieta: -
+    "wielka_litera_w_pierwszej_etykiecie": "kokpit@Example.test",        # pierwsza etykieta: A-Z
+    "cyfra_w_pierwszej_etykiecie": "kokpit@firma24.test",                # pierwsza etykieta: 0-9
+    "myslnik_w_kolejnej_etykiecie": "kokpit@example.harness-cockpit",    # kolejne: -
+    "wielka_litera_w_kolejnej_etykiecie": "kokpit@example.TEST",         # kolejne: A-Z
+    "cyfra_w_kolejnej_etykiecie": "kokpit@example.t3st",                 # kolejne: 0-9
+    "dwie_kolejne_etykiety": "kokpit@mail.example.test",                 # grupa kolejnych: `*` a nie `?`
+    "domena_bez_kropki": "kokpit@localhost",                             # grupa kolejnych: `*` a nie `+`
+    "nazwa_z_kropkami_i_spacjami": "Sp. z o.o. <kokpit@example.test>",   # nazwa: . i spacja
+    "nazwa_z_apostrofem": "O'Brien <kokpit@example.test>",               # nazwa: '
+    "nazwa_z_myslnikiem": "Jan-Maria <kokpit@example.test>",             # nazwa: -
+    "nazwa_z_polskimi_literami": "Zażółć <kokpit@example.test>",         # nazwa: \w poza ASCII
+}
 KOMUNIKAT_NADAWCA = "adres nadawcy jest nieprawidłowy: sprawdź COCKPIT_SMTP_NADAWCA"
 KOMUNIKAT_HOST = "adres serwera poczty jest nieprawidłowy: sprawdź COCKPIT_SMTP_HOST"
 KOMUNIKAT_ASCII = (
@@ -456,16 +482,46 @@ async def test_wyslij_na_nieprawidlowy_adres_odbiorcy_jest_odrzucone_przed_polac
     assert atrapa_smtp.wiadomosci == []
 
 
-async def test_wyslij_z_nadawca_z_nowa_linia_jest_odrzucone_przed_polaczeniem(
+def test_pusty_nadawca_to_poczta_niedzialajaca_z_powodem_o_nadawcy(poczta_skonfigurowana, monkeypatch):
+    monkeypatch.setattr(settings, "smtp_nadawca", "")
+
+    stan = poczta.stan()
+
+    assert stan.skonfigurowana is False
+    assert stan.powod == POWOD_BRAK_NADAWCY
+
+
+async def test_wyslij_z_pustym_nadawca_rzuca_powod_o_nadawcy_i_nie_laczy_sie_z_serwerem(
     poczta_skonfigurowana, atrapa_smtp, monkeypatch,
 ):
-    monkeypatch.setattr(settings, "smtp_nadawca", "kokpit@example.test\nBcc: x@example.test")
+    monkeypatch.setattr(settings, "smtp_nadawca", "")
 
     with pytest.raises(BladPoczty) as wyjatek:
         await poczta.wyslij("odbiorca@example.com", "T", "X")
 
-    assert str(wyjatek.value) == KOMUNIKAT_NADAWCA
+    assert str(wyjatek.value) == POWOD_BRAK_NADAWCY
     assert atrapa_smtp.liczba_polaczen == 0
+
+
+def test_pusty_uzytkownik_smtp_bez_hasla_to_poczta_skonfigurowana(poczta_skonfigurowana, monkeypatch):
+    monkeypatch.setattr(settings, "smtp_uzytkownik", "")
+    monkeypatch.setattr(settings, "smtp_haslo", None)
+
+    assert poczta.stan() == poczta.StanPoczty(True, None)
+
+
+async def test_pusty_uzytkownik_smtp_z_haslem_to_poczta_bez_logowania_a_list_wychodzi(
+    poczta_skonfigurowana, atrapa_smtp, monkeypatch,
+):
+    monkeypatch.setattr(settings, "smtp_uzytkownik", "")
+
+    assert poczta.stan() == poczta.StanPoczty(True, None)
+    await poczta.wyslij("odbiorca@example.com", "T", "X")
+
+    (polaczenie,) = atrapa_smtp.polaczenia
+    assert polaczenie.login is None
+    assert _zdarzenia_kluczowe(polaczenie) == ["polaczenie", "starttls", "wysylka"]
+    assert len(atrapa_smtp.wiadomosci) == 1
 
 
 async def test_wyslij_na_host_z_pusta_etykieta_daje_komunikat_o_hoscie_i_nie_wysyla_listu(
@@ -747,16 +803,32 @@ async def test_konto_z_nieprawidlowym_adresem_dostaje_502_a_list_nie_wychodzi(
     assert _ostrzezenia_poczty(caplog) == []
 
 
-async def test_nadawca_z_nowa_linia_daje_przez_trase_502_bez_polaczenia(
-    swiat, poczta_skonfigurowana, atrapa_smtp, monkeypatch,
+@pytest.mark.parametrize("nadawca", list(NADAWCY_POPRAWNI.values()), ids=list(NADAWCY_POPRAWNI))
+async def test_prawidlowy_nadawca_daje_przez_trase_200_i_list_wychodzi(
+    swiat, poczta_skonfigurowana, atrapa_smtp, monkeypatch, nadawca,
 ):
-    monkeypatch.setattr(settings, "smtp_nadawca", "kokpit@example.test\nBcc: x@example.test")
+    monkeypatch.setattr(settings, "smtp_nadawca", nadawca)
+    klient = await swiat.klient_dla(swiat.wlasciciel)
+
+    odp = await klient.post(ADRES_TESTOWEJ)
+
+    assert odp.status_code == 200
+    (wiadomosc,) = atrapa_smtp.wiadomosci
+    assert parseaddr(str(wiadomosc["From"])) == parseaddr(nadawca)   # biblioteka moze ujac nazwe w cudzyslow
+
+
+@pytest.mark.parametrize("zmiana", [("smtp_nadawca", ""), ("smtp_nadawca", None)],
+                         ids=["pusty_nadawca", "brak_nadawcy"])
+async def test_pusty_nadawca_daje_przez_trase_502_z_powodem_wylaczonej_poczty_bez_polaczenia(
+    swiat, poczta_skonfigurowana, atrapa_smtp, monkeypatch, zmiana,
+):
+    monkeypatch.setattr(settings, *zmiana)
     klient = await swiat.klient_dla(swiat.wlasciciel)
 
     odp = await klient.post(ADRES_TESTOWEJ)
 
     assert odp.status_code == 502
-    assert odp.json() == {"detail": KOMUNIKAT_NADAWCA}
+    assert odp.json() == {"detail": POWOD_BRAK_NADAWCY}
     assert atrapa_smtp.liczba_polaczen == 0
 
 
@@ -915,20 +987,89 @@ async def test_konto_z_adresem_odrzucanym_przez_walidator_dostaje_502_bez_listu_
     assert _ostrzezenia_poczty(caplog) == []
 
 
-# --- adres nadawcy, ktory biblioteka odrzuca innym wyjatkiem niz ValueError -------------------------
-# `kokpit@[example.test` i `Kokpit <kokpit@[example.test>` daja AttributeError (InvalidHeaderDefect
-# bez 'all_defects'), ` :^+(`{` daje IndexError (pusty token). Test z nowa linia (ValueError) jest wyzej.
+# --- adres nadawcy: wlasna regula `_adres_nadawcy_poprawny`, niezalezna od parsera i wersji Pythona --
+# Warunki w kolejnosci: (1) dlugosc <= 254, (2) jedna linia, (3) brak bialych znakow na brzegach,
+# (4) pelne dopasowanie `adres` albo `Nazwa <adres>`. Wejscia sprawdzone sondą (ktore warunki odrzucaja):
+#  - dlugosc (1) sama: 250 liter + @example.test (dopasowanie, jedna linia, brak brzegow);
+#  - biale znaki na brzegu (3) same: ` Kokpit <kokpit@example.test>` (spacja jest dozwolona w nazwie,
+#    wiec regula (4) go przepuszcza); `x@example.test\x0b` i ` ` odrzucaja naraz (3) i (4);
+#  - ksztalt (4) sam: `kokpit@[example.test`, `Kokpit <kokpit@[example.test>`, `a@b.c, d@e.f`, `"K" <a@b.c>`;
+#  - jedna linia (2): NIE da sie wskazac wejscia, na ktorym decyduje sama - kazde wejscie z separatorem
+#    linii odrzuca tez (4) (zadna klasa znakow wyrazenia nie przyjmuje separatora; skan calego Unicode);
+#    `a\nb` odrzucaja (2) i (4). Warunek (2) jest wiec zbedny wzgledem (4) i zostaje chroniony skutkiem.
 
-NADAWCY_ODRZUCANI_BIBLIOTEKA = {
+NADAWCA_DLUGOSC_GRANICZNA = "a" * (254 - len("@example.test")) + "@example.test"
+NADAWCA_ZA_DLUGI = "a" * (255 - len("@example.test")) + "@example.test"
+NADAWCY_ODRZUCANI = {
+    "za_dlugi_adres_o_poprawnym_ksztalcie": "a" * 250 + "@example.test",
+    "za_dlugi_adres_o_jeden_znak": NADAWCA_ZA_DLUGI,
+    "pol_tysiaca_nawiasow": "(" * 500,
+    "dwie_linie": "a\nb",
+    "dwie_linie_z_naglowkiem": "kokpit@example.test\nBcc: x@example.test",
+    "biale_znaki_na_poczatku_nazwy": " Kokpit <kokpit@example.test>",
+    "tabulacja_pionowa_na_koncu": "x@example.test\x0b",
+    "sama_spacja": " ",
+    "pusta_nazwa_i_znaki_specjalne": " :^+(`{",
     "nieszczelny_nawias_w_domenie": "kokpit@[example.test",
     "nazwa_i_nieszczelny_nawias": "Kokpit <kokpit@[example.test>",
-    "same_znaki_specjalne": " :^+(`{",
+    "dwa_adresy": "a@b.c, d@e.f",
+    "nazwa_w_cudzyslowie": '"K" <a@b.c>',
+    "pusta_czesc_lokalna": "@example.test",                # lokalna: `+`, nie `*`
+    "pusta_domena": "kokpit@",                             # pierwsza etykieta: `+`, nie `*`
+    "kropka_na_koncu_domeny": "kokpit@example.",           # kolejna etykieta: `+`, nie `*`
+    "pusta_etykieta_w_srodku_domeny": "kokpit@example..test",   # kolejna etykieta: `+`, nie `*`
+    "podkreslnik_zamiast_kropki_w_domenie": "kokpit@example_test",   # kropka: `\.`, nie `.`
+    "brak_zamykajacego_nawiasu_katowego": "Kokpit <kokpit@example.test",   # `>` obowiazkowe
+    "polskie_litery_w_czesci_lokalnej": "żółw@example.test",   # lokalna: ASCII, nie `\w`
+    "domena_spoza_ascii": "kokpit@żółw.test",           # klasy domeny to ASCII, nie `\w`
+    "brak_spacji_przed_nawiasem": "Kokpit<kokpit@example.test>",   # wzorzec wymaga spacji przed `<`
 }
 
 
-@pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI_BIBLIOTEKA.values()),
-                         ids=list(NADAWCY_ODRZUCANI_BIBLIOTEKA))
-async def test_wyslij_z_nadawca_odrzucanym_przez_biblioteke_daje_komunikat_o_nadawcy_bez_polaczenia(
+def test_nadawca_w_granicznej_dlugosci_jest_poprawny_a_o_jeden_znak_dluzszy_nie():
+    assert len(NADAWCA_DLUGOSC_GRANICZNA) == 254 and len(NADAWCA_ZA_DLUGI) == 255
+
+    assert poczta._adres_nadawcy_poprawny(NADAWCA_DLUGOSC_GRANICZNA) is True
+    assert poczta._adres_nadawcy_poprawny(NADAWCA_ZA_DLUGI) is False
+
+
+def test_dlugosc_nadawcy_decyduje_sama_gdy_ksztalt_linia_i_brzegi_sa_poprawne():
+    nadawca = "a" * 250 + "@example.test"
+    assert len(nadawca.splitlines()) == 1 and nadawca == nadawca.strip()
+    assert poczta._NADAWCA.fullmatch(nadawca) is not None
+
+    assert poczta._adres_nadawcy_poprawny(nadawca) is False
+
+
+def test_biale_znaki_na_brzegu_nadawcy_decyduja_same_gdy_ksztalt_pasuje_do_wzorca():
+    nadawca = " Kokpit <kokpit@example.test>"
+    assert len(nadawca.splitlines()) == 1 and len(nadawca) <= 254
+    assert poczta._NADAWCA.fullmatch(nadawca) is not None
+
+    assert poczta._adres_nadawcy_poprawny(nadawca) is False
+
+
+@pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI.values()), ids=list(NADAWCY_ODRZUCANI))
+def test_nadawca_z_listy_odrzucanych_nie_jest_poprawnym_adresem_nadawcy(nadawca):
+    assert poczta._adres_nadawcy_poprawny(nadawca) is False
+
+
+@pytest.mark.parametrize("nadawca", list(NADAWCY_POPRAWNI.values()), ids=list(NADAWCY_POPRAWNI))
+async def test_wyslij_z_prawidlowym_nadawca_przechodzi_regule_i_list_wychodzi(
+    poczta_skonfigurowana, atrapa_smtp, monkeypatch, nadawca,
+):
+    monkeypatch.setattr(settings, "smtp_nadawca", nadawca)
+    assert poczta._adres_nadawcy_poprawny(nadawca) is True
+
+    await poczta.wyslij("odbiorca@example.com", "T", "X")
+
+    (wiadomosc,) = atrapa_smtp.wiadomosci
+    assert parseaddr(str(wiadomosc["From"])) == parseaddr(nadawca)   # biblioteka moze ujac nazwe w cudzyslow
+    assert atrapa_smtp.liczba_polaczen == 1
+
+
+@pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI.values()), ids=list(NADAWCY_ODRZUCANI))
+async def test_wyslij_z_nieprawidlowym_nadawca_daje_komunikat_o_nadawcy_bez_polaczenia(
     poczta_skonfigurowana, atrapa_smtp, monkeypatch, nadawca,
 ):
     monkeypatch.setattr(settings, "smtp_nadawca", nadawca)
@@ -941,9 +1082,8 @@ async def test_wyslij_z_nadawca_odrzucanym_przez_biblioteke_daje_komunikat_o_nad
     assert atrapa_smtp.wiadomosci == []
 
 
-@pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI_BIBLIOTEKA.values()),
-                         ids=list(NADAWCY_ODRZUCANI_BIBLIOTEKA))
-async def test_nadawca_odrzucany_przez_biblioteke_daje_przez_trase_502_bez_listu_i_bez_ostrzezenia(
+@pytest.mark.parametrize("nadawca", list(NADAWCY_ODRZUCANI.values()), ids=list(NADAWCY_ODRZUCANI))
+async def test_nieprawidlowy_nadawca_daje_przez_trase_502_bez_listu_i_bez_ostrzezenia(
     swiat, poczta_skonfigurowana, atrapa_smtp, monkeypatch, caplog, nadawca,
 ):
     monkeypatch.setattr(settings, "smtp_nadawca", nadawca)
