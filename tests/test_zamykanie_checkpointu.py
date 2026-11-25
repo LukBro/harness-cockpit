@@ -183,7 +183,7 @@ async def test_cancel_run_runu_na_bramce_zamyka_checkpoint_a_resume_nowego_runne
     agent = Szpieg()
     prawdziwe_wznowienie = silnik.wznow_run
 
-    async def wznowienie_z_atrapa_agenta(run_id, step_id, decyzja, emit, powod=None):
+    async def wznowienie_z_atrapa_agenta(run_id, step_id, decyzja, emit, powod=None, **kw):
         await prawdziwe_wznowienie(
             run_id, step_id, decyzja, emit, agent, powod=powod,
             profil=s.profil, dom=s.dom, root=s.root)
@@ -277,7 +277,7 @@ async def test_zamkniecie_checkpointu_czeka_na_koniec_anulowanego_zadania_zeby_j
     katalog.mkdir(parents=True)
     monkeypatch.setenv("COCKPIT_RUNS_DIR", str(tmp_path / "runy"))
 
-    async def wykonaj(cmd, emit):
+    async def wykonaj(cmd, emit, **kw):
         try:
             await asyncio.sleep(300)
         except asyncio.CancelledError:

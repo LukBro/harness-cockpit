@@ -71,9 +71,13 @@ async def test_polecenie_resume_trafia_do_silnika_z_run_krokiem_decyzja_i_powode
         kokpit.wyslij(POLECENIE)
         await asyncio.wait_for(wznowienie.wystartowalo.wait(), LIMIT_S)
 
-        assert wznowienie.wywolania == [{
+        (wywolanie,) = wznowienie.wywolania
+        # HAR-94: runner dokłada agenta z hookami; poza nim silnik nie dostaje innych argumentów
+        assert set(wywolanie["kwargs"]) == {"uruchom_agenta"}
+        assert callable(wywolanie["kwargs"]["uruchom_agenta"])
+        assert {**wywolanie, "kwargs": {}} == {
             "run_id": RUN_ID, "step_id": "b", "decyzja": "approve", "powod": "sprawdzone",
-            "args": (), "kwargs": {}}]
+            "args": (), "kwargs": {}}
         wznowienie.zwolnij.set()
         await asyncio.wait_for(wznowienie.zakonczone.wait(), LIMIT_S)
 
