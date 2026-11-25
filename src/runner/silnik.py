@@ -403,9 +403,13 @@ async def _krok(
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
     agenci = _agenci_kroku(krok)
     if len(agenci) == 1:
-        return await _wariant(
+        wynik = await _wariant(
             run_id, krok, skill, krok.id, False, wejscia, p, profil, uruchom_agenta, emit,
             proba, ogon)
+        if krok.consensus is None or wynik.status != "zakonczony":
+            return wynik
+        # jeden wariant tez glosuje: pusty werdykt to brak dowodu (evidence_required)
+        return await _konsensus(p, krok, skill, ((krok.id, wynik),), jeden=True)
     # fanout (HAR-83): warianty biegna rownolegle i wszystkie dobiegaja konca, takze po porazce
     # jednego; wyjatek wariantu to jego porazka, poza `BladBufora` (zepsuty zapis zdarzen)
     wyniki = await asyncio.gather(*(
@@ -419,9 +423,15 @@ async def _krok(
 
 
 def _sciezka_artefaktu_wariantu(
-    p: Przygotowany, krok: Krok, skill: Any, agent_id: str, nazwa: str,
+    p: Przygotowany, krok: Krok, skill: Any, agent_id: str, nazwa: str, jeden: bool = False,
 ) -> Path:
-    """Gdzie lezy artefakt wariantu: rola z zapisem w worktree, bez zapisu w katalogu runu."""
+    """Gdzie lezy artefakt wariantu: rola z zapisem w worktree, bez zapisu w katalogu runu.
+
+    `jeden` (fanout 1): artefakt pod zwykla nazwa, bez podkatalogu wariantu."""
+    if jeden:
+        if profil_roli(skill.role).zapis:
+            return p.worktree.sciezka / nazwa
+        return p.worktree.katalog_runu / krok.id / nazwa
     wzgledna = sciezka_wyjscia_wariantu(krok.id, agent_id, nazwa)   # tez waliduje `nazwa`
     if profil_roli(skill.role).zapis:
         return p.worktree.sciezka / wzgledna
@@ -436,6 +446,7 @@ def _kopiuj_zwyciezce(zrodla_i_cele: Sequence[tuple[Path, Path]]) -> None:
 
 async def _konsensus(
     p: Przygotowany, krok: Krok, skill: Any, warianty: tuple[tuple[str, WynikKroku], ...],
+    *, jeden: bool = False,
 ) -> WynikKroku:
     """Wynik kroku z `consensus` (HAR-95): glosuja zdane warianty z werdyktem w artefakcie.
 
@@ -444,10 +455,14 @@ async def _konsensus(
     dostaja `step_failed` (kazdy wiersz (krok, agent) musi sie zakonczyc)."""
     assert krok.consensus is not None
     sciezki = {
-        a: tuple(_sciezka_artefaktu_wariantu(p, krok, skill, a, n) for n in skill.produces)
+        a: tuple(_sciezka_artefaktu_wariantu(p, krok, skill, a, n, jeden) for n in skill.produces)
         for a, _ in warianty}
     r = rozstrzygnij(
         {a: WynikWariantu(w.status, sciezki[a]) for a, w in warianty}, krok.consensus)
+    if jeden:   # artefakty leza juz pod zwykla nazwa: bez kopii i bez wierszy wariantow
+        if r.zwyciezca is None:
+            return WynikKroku(status="nieudany", powod=r.opis, kod_wyjscia=None)
+        return dict(warianty)[r.zwyciezca]
     if r.zwyciezca is None:
         return WynikKroku(
             status="nieudany", powod=r.opis, kod_wyjscia=None, warianty=tuple(

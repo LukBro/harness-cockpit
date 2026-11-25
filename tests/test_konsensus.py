@@ -135,6 +135,21 @@ def test_dwa_z_trzech_zgodne_przy_progu_dwa_zdaja_krok_a_zwyciezca_jest_pierwszy
     assert wynik.zwyciezca == "a2"                 # a1 nie jest w wiekszosci, mimo ze pierwszy
 
 
+def test_przy_progu_jeden_wygrywa_pierwszy_z_najwiekszej_grupy_a_nie_pierwszy_glosujacy(tmp_path):
+    from runner.konsensus import rozstrzygnij
+
+    warianty = {
+        "a1": wariant(tmp_path, "a1", "nie"),
+        "a2": wariant(tmp_path, "a2", "tak"),
+        "a3": wariant(tmp_path, "a3", "tak"),
+    }
+
+    r = rozstrzygnij(warianty, 1)
+
+    assert r.zdany is True
+    assert r.zwyciezca == "a2"      # a1 ma werdykt z grupy po jednym glosie, a2 i a3 maja grupe dwoch
+
+
 def test_dokladnie_k_zgodnych_wystarcza_prog_jest_wlacznie(tmp_path):
     from runner.konsensus import rozstrzygnij
 
@@ -486,7 +501,8 @@ for sciezka in p["zapisz"]:
     if p["bajty"]:
         Path(sciezka).write_bytes(bytes(p["bajty"]))
     else:
-        Path(sciezka).write_text(p["werdykt"] + "\n\n" + agent + "\n")
+        nazwa = Path(sciezka).name + "\n" if p["z_nazwa"] else ""
+        Path(sciezka).write_text(p["werdykt"] + "\n\n" + agent + "\n" + nazwa)
 tekst = "wariant " + agent
 print(json.dumps({"type": "assistant", "message": {
     "content": [{"type": "text", "text": tekst}]}}), flush=True)
@@ -502,6 +518,7 @@ class AtrapaZWerdyktami:
     kody: dict[str, int] = field(default_factory=dict)        # per agent_id
     bajty: dict[str, list[int]] = field(default_factory=dict)  # per agent_id: surowa tresc artefaktu
     wywolania: list = field(default_factory=list)             # (step_id, agent_id, wejscia)
+    z_nazwa: bool = False                                     # tresc kazdego pliku konczy sie jego nazwa
 
     async def __call__(
         self, spec, polecenie, katalog, emit, *, katalog_runu=None, prompt=None, **dodatkowe
@@ -512,6 +529,7 @@ class AtrapaZWerdyktami:
             "werdykt": self.werdykty.get(spec.agent_id, ""),
             "kod": self.kody.get(spec.agent_id, 0),
             "bajty": self.bajty.get(spec.agent_id, []),
+            "z_nazwa": self.z_nazwa,
             "zapisz": list(spec.wyjscia) if profil_roli(spec.rola).zapis else [],
         }
         argv = [sys.executable, "-I", "-c", KOD_WARIANTU, json.dumps(opis)]
@@ -795,9 +813,103 @@ async def test_konsument_producenta_z_jednym_wariantem_i_consensus_1_dostaje_zwy
             "analiza": {"role": "author", "produces": ["plan.md"]},
             "synteza": {"consumes": ["plan.md"]},
         })
-    agent = AtrapaZWerdyktami({})
+    agent = AtrapaZWerdyktami({"analiza": "TAK"})
 
     await uruchom(s, agent, limit=LIMIT_S)
 
     (wejscia,) = [w for krok, _, w in agent.wywolania if krok == "synteza"]
     assert wejscia == ["plan.md"]      # jeden wariant: bez kopii zwyciezcy w artifacts/
+
+
+async def test_przy_consensus_1_z_trzech_wariantow_wynik_kroku_jest_z_pierwszego_z_wiekszej_grupy(
+    tmp_path,
+):
+    s = swiat_konsensusu(tmp_path, consensus=1)
+    agent = AtrapaZWerdyktami({"a1": "NIE", "a2": "TAK", "a3": "TAK"})
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert zdarzenia_kroku(zdarzenia, "step_failed") == []
+    assert wynik_kroku(s.worktree).read_text() == "TAK\n\na2\n"     # a2, nie pierwszy glosujacy a1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_wynik_kroku_z_dwoma_artefaktami_kopiuje_oba_pliki_zwyciezcy_kazdy_z_wlasna_trescia(
+    tmp_path,
+):
+    s = swiat(
+        tmp_path,
+        [K("analiza", extra=", fanout: 3, consensus: 2")],
+        opcje_skilli={"analiza": {"role": "author", "produces": ["plan.md", "uwagi.md"]}})
+    agent = AtrapaZWerdyktami({"a1": "NIE", "a2": "TAK", "a3": "TAK"}, z_nazwa=True)
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert zdarzenia_kroku(zdarzenia, "step_failed") == []
+    assert (artefakty(s.worktree) / "plan.md").read_text() == "TAK\n\na2\nplan.md\n"
+    assert (artefakty(s.worktree) / "uwagi.md").read_text() == "TAK\n\na2\nuwagi.md\n"
+
+
+def swiat_jednego_wariantu(tmp_path, rola: str):
+    kroki = [K("analiza", extra=", fanout: 1, consensus: 1")]
+    return swiat(tmp_path, kroki, opcje_skilli={"analiza": {"role": rola, "produces": ["plan.md"]}})
+
+
+async def test_jeden_wariant_roli_z_zapisem_z_werdyktem_zdaje_krok_bez_kopii_i_bez_podkatalogu(
+    tmp_path,
+):
+    s = swiat_jednego_wariantu(tmp_path, "author")
+    agent = AtrapaZWerdyktami({"analiza": "TAK"})
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert zdarzenia_kroku(zdarzenia, "step_failed") == []
+    assert [z["agent_id"] for z in zdarzenia_kroku(zdarzenia, "step_finished")] == ["analiza"]
+    assert (s.worktree / "plan.md").read_text() == "TAK\n\nanaliza\n"
+    assert not wynik_kroku(s.worktree).exists()
+    assert podkatalogi(s.worktree) == []
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_jeden_wariant_roli_bez_zapisu_z_werdyktem_zdaje_krok_wedlug_artefaktu_z_katalogu_runu(
+    tmp_path,
+):
+    s = swiat_jednego_wariantu(tmp_path, "reviewer")
+    agent = AtrapaZWerdyktami({})     # rola bez zapisu: artefakt to stdout agenta ("wariant analiza")
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert zdarzenia_kroku(zdarzenia, "step_failed") == []
+    assert [z["agent_id"] for z in zdarzenia_kroku(zdarzenia, "step_finished")] == ["analiza"]
+    assert "wariant analiza" in (s.katalog_runu / "analiza" / "plan.md").read_text()
+    assert not wynik_kroku(s.worktree).exists()
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_jeden_wariant_roli_z_zapisem_z_artefaktem_spoza_utf8_konczy_krok_porazka_brak_werdyktu(
+    tmp_path,
+):
+    s = swiat_jednego_wariantu(tmp_path, "author")
+    # dowod z pliku czyta z zamiana znakow (niepusty), werdykt czyta scisle: wariant nie glosuje
+    agent = AtrapaZWerdyktami({}, bajty={"analiza": [0xFF, 0xFE, 0x0A]})
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert [z["text"] for z in zdarzenia_kroku(zdarzenia, "step_failed")] == [
+        "konsensus 1 niespełniony: analiza: brak werdyktu"]
+    assert zdarzenia_kroku(zdarzenia, "step_finished") == []
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_jeden_wariant_roli_z_zapisem_z_pustym_artefaktem_konczy_krok_porazka_brak_dowodu(
+    tmp_path,
+):
+    s = swiat_jednego_wariantu(tmp_path, "author")
+    agent = AtrapaZWerdyktami({}, bajty={"analiza": [0x0A]})     # plik z samym znakiem nowej linii
+
+    zdarzenia = await uruchom(s, agent, limit=LIMIT_S)
+
+    assert [z["text"] for z in zdarzenia_kroku(zdarzenia, "step_failed")] == [
+        f"niezmiennik evidence_required: plik dowodu jest pusty: {s.worktree / 'plan.md'}"]
+    assert zdarzenia_kroku(zdarzenia, "step_finished") == []
+    assert zdarzenia[-1]["kind"] == "run_finished"
