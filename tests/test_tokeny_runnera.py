@@ -33,6 +33,14 @@ POLA_LISTY = {
     "runner_id", "nazwa", "token_prefiks", "token_utworzony_at", "token_uzyty_at",
     "token_wazny_do", "odwolany_at",
 }
+# trasy, ktorymi runner przedstawia sie tokenem: (adres, poprawne cialo zadania)
+TRASY_RUNNERA = [
+    pytest.param("/api/runners/heartbeat", None, id="znak_zycia"),
+    pytest.param("/api/runners/register",
+                 {"name": "nazwa z rejestracji", "version": "9.9.9",
+                  "backends": [{"nazwa": "claude", "auth": "api_key"}]},
+                 id="rejestracja"),
+]
 
 
 class Swiat:
@@ -325,16 +333,19 @@ async def test_odrzucony_token_nie_zapisuje_ostatniego_uzycia(swiat):
     assert (await swiat.runner(odwolany.id)).token_uzyty_at is None
 
 
-async def test_heartbeat_z_odwolanym_tokenem_daje_401_z_komunikatem_i_nie_odnotowuje_zycia(swiat):
+@pytest.mark.parametrize("trasa, cialo", TRASY_RUNNERA)
+async def test_odwolany_token_runnera_daje_401_z_komunikatem_i_nic_nie_zapisuje_o_runnerze(
+        swiat, trasa, cialo):
     runner, token = await swiat.wydaj()
     await swiat.klient.delete(f"/api/runnery/{runner.id}")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post("/api/runners/heartbeat", headers={"Authorization": f"Bearer {token}"})
+        r = await c.post(trasa, json=cialo, headers={"Authorization": f"Bearer {token}"})
 
     assert r.status_code == 401
     assert r.json()["detail"] == KOMUNIKAT_ODWOLANY
     zapisany = await swiat.runner(runner.id)
+    assert zapisany.name == "macbook"
     assert zapisany.last_seen_at is None
     assert zapisany.token_uzyty_at is None
 
@@ -533,15 +544,18 @@ async def test_zapytanie_o_liste_tokenow_wymaga_od_bazy_runnerow_bez_daty_na_kon
     assert "token_utworzony_at DESC NULLS LAST" in zapytanie
 
 
-async def test_wygasly_token_przez_http_daje_401_z_komunikatem_o_wygasnieciu(swiat):
+@pytest.mark.parametrize("trasa, cialo", TRASY_RUNNERA)
+async def test_wygasly_token_runnera_daje_401_z_komunikatem_o_wygasnieciu_i_nic_nie_zapisuje(
+        swiat, trasa, cialo):
     runner, token = await swiat.wydaj(wazny_do=datetime.now(timezone.utc) - timedelta(hours=1))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post("/api/runners/heartbeat", headers={"Authorization": f"Bearer {token}"})
+        r = await c.post(trasa, json=cialo, headers={"Authorization": f"Bearer {token}"})
 
     assert r.status_code == 401
     assert r.json()["detail"] == KOMUNIKAT_WYGASL
     zapisany = await swiat.runner(runner.id)
+    assert zapisany.name == "macbook"
     assert zapisany.token_uzyty_at is None
     assert zapisany.last_seen_at is None
 
