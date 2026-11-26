@@ -1140,6 +1140,8 @@ steps:
 
 # --- pola kroku bez konsumenta i rola w kroku (HAR-16) ---------------------
 
+KONSENSUS = "konsensus_pozorny"     # HAR-99; literal, zeby wartosc kodu byla przypieta
+
 
 def _ostrzezenia_pola(problemy: list[Problem], krok: str) -> list[Problem]:
     return [p for p in problemy if p.krok == krok and p.kod == POLE_BEZ_KONSUMENTA]
@@ -1180,8 +1182,9 @@ steps:
     assert POLE_BEZ_KONSUMENTA not in kody(problemy)
 
 
-def test_krok_z_require_distinct_vendors_true_dostaje_ostrzezenie_ze_pole_nie_ma_jeszcze_skutku(
-    tmp_path, repo, dom, skille_repo
+@pytest.mark.parametrize("backendy", [None, ["gemini"], ["gemini", "codex"]])
+def test_require_distinct_vendors_ma_skutek_w_walidatorze_wiec_nie_jest_polem_bez_konsumenta(
+    tmp_path, repo, dom, skille_repo, backendy
 ):
     napisz_skill(skille_repo, "s")
     wf = workflow_z(
@@ -1192,11 +1195,8 @@ steps:
   a: {skill: s, require_distinct_vendors: true}
 """,
     )
-    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
-    p = problem(problemy, POLE_BEZ_KONSUMENTA, "a")
-    assert p.poziom == Poziom.ostrzezenie
-    assert "require_distinct_vendors" in p.komunikat
-    assert len(_ostrzezenia_pola(problemy, "a")) == 1
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom, backendy=backendy)
+    assert POLE_BEZ_KONSUMENTA not in kody(problemy)
 
 
 def test_krok_z_require_distinct_vendors_false_nie_dostaje_ostrzezenia_o_polu_bez_skutku(
@@ -1215,7 +1215,7 @@ steps:
     assert POLE_BEZ_KONSUMENTA not in kody(problemy)
 
 
-def test_oba_pola_bez_skutku_w_jednym_kroku_daja_po_jednym_ostrzezeniu_na_pole(
+def test_optional_i_require_distinct_vendors_w_jednym_kroku_daja_dwa_rozne_ostrzezenia(
     tmp_path, repo, dom, skille_repo
 ):
     napisz_skill(skille_repo, "s")
@@ -1227,12 +1227,11 @@ steps:
   a: {skill: s, optional: true, require_distinct_vendors: true}
 """,
     )
-    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
-    ostrzezenia = _ostrzezenia_pola(problemy, "a")
-    assert len(ostrzezenia) == 2
-    assert all(p.poziom == Poziom.ostrzezenie for p in ostrzezenia)
-    assert sum("optional" in p.komunikat for p in ostrzezenia) == 1
-    assert sum("require_distinct_vendors" in p.komunikat for p in ostrzezenia) == 1
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom, backendy=["gemini"])
+    [pole] = _ostrzezenia_pola(problemy, "a")
+    assert "optional" in pole.komunikat
+    assert sorted(kody(problemy, "a")) == sorted([POLE_BEZ_KONSUMENTA, KONSENSUS])
+    assert all(p.poziom == Poziom.ostrzezenie for p in problemy)
 
 
 def test_ostrzezenie_dotyczy_tylko_tego_pola_ktore_jest_wlaczone_w_danym_kroku(
@@ -1248,11 +1247,10 @@ steps:
   b: {skill: s, optional: true, require_distinct_vendors: false}
 """,
     )
-    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
-    [pa] = _ostrzezenia_pola(problemy, "a")
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom, backendy=["gemini"])
+    assert kody(problemy, "a") == [KONSENSUS]
+    assert kody(problemy, "b") == [POLE_BEZ_KONSUMENTA]
     [pb] = _ostrzezenia_pola(problemy, "b")
-    assert "require_distinct_vendors" in pa.komunikat
-    assert "optional" not in pa.komunikat
     assert "optional" in pb.komunikat
     assert "require_distinct_vendors" not in pb.komunikat
 
@@ -1377,9 +1375,9 @@ steps:
   a: {skill: pisarz, role: reviewer, optional: true, require_distinct_vendors: true}
 """,
     )
-    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom, backendy=["gemini"])
     assert sorted(kody(problemy, "a")) == sorted(
-        [POLE_BEZ_KONSUMENTA, POLE_BEZ_KONSUMENTA, ROLA_W_KROKU_IGNOROWANA]
+        [POLE_BEZ_KONSUMENTA, KONSENSUS, ROLA_W_KROKU_IGNOROWANA]
     )
     assert all(p.poziom == Poziom.ostrzezenie for p in problemy)
     assert not ma_bledy(problemy)
@@ -1398,11 +1396,164 @@ steps:
   b: {skill: pisarz, needs: [nikt]}
 """,
     )
-    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom, backendy=["gemini"])
     assert problem(problemy, NIEZNANA_ZALEZNOSC, "b").poziom == Poziom.blad
     assert ROLA_W_KROKU_IGNOROWANA in kody(problemy, "a")
     assert POLE_BEZ_KONSUMENTA in kody(problemy, "a")
+    assert KONSENSUS in kody(problemy, "a")
     assert ma_bledy(problemy)
+
+
+# --- pozorny konsensus: require_distinct_vendors a backendy runnera (HAR-99) ---------------------
+# Kod przypiety literalem (nie stala modulu): zmiana wartosci kodu psuje kanwe.
+
+WYMAGA_DWOCH_DOSTAWCOW = "name: w\nsteps:\n  a: {skill: s, require_distinct_vendors: true}\n"
+NIEOCENIONY = "konsensus_nieoceniony"
+# pelne napisy przepisane z ustalen, nie z modulu: asercja `==` lapie kazda zmiane tresci
+JEDEN_BACKEND = (
+    "require_distinct_vendors: runner ma tylko jeden backend ({}), konsensus bedzie pozorny")
+ZERO_BACKENDOW = (
+    "require_distinct_vendors: runner nie ma zadnego backendu, "
+    "roznych dostawcow nie da sie zapewnic")
+NIEZNANA_LISTA = (
+    "require_distinct_vendors: lista backendow runnera jest nieznana, "
+    "konsensus nie zostal oceniony")
+
+
+def problemy_przy_backendach(
+    tmp_path: Path, repo: Path, dom: Path, tresc: str, backendy
+) -> list[Problem]:
+    napisz_skill(repo / ".cockpit" / "skills", "s")
+    wf = workflow_z(tmp_path, tresc)
+    return waliduj_workflow(wf, rejestr_z(repo, dom), dom, backendy=backendy)
+
+
+def test_kod_ostrzezenia_o_pozornym_konsensusie_to_konsensus_pozorny():
+    from cockpit.services import workflow_walidacja
+
+    assert workflow_walidacja.KONSENSUS_POZORNY == "konsensus_pozorny"
+
+
+@pytest.mark.parametrize("backend", ["gemini", "codex"])
+def test_wymog_roznych_dostawcow_przy_jednym_backendzie_daje_ostrzezenie_z_jego_nazwa(
+    tmp_path, repo, dom, backend
+):
+    problemy = problemy_przy_backendach(tmp_path, repo, dom, WYMAGA_DWOCH_DOSTAWCOW, [backend])
+
+    [p] = problemy
+    assert (p.krok, p.kod, p.poziom) == ("a", KONSENSUS, Poziom.ostrzezenie)
+    assert p.komunikat == JEDEN_BACKEND.format(backend)
+
+
+def test_wymog_roznych_dostawcow_przy_dwoch_roznych_backendach_nie_daje_ostrzezenia(
+    tmp_path, repo, dom
+):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom, WYMAGA_DWOCH_DOSTAWCOW, ["gemini", "codex"])
+
+    assert problemy == []
+
+
+def test_ten_sam_backend_zgloszony_dwa_razy_to_nadal_jeden_dostawca(tmp_path, repo, dom):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom, WYMAGA_DWOCH_DOSTAWCOW, ["gemini", "gemini"])
+
+    [p] = problemy
+    assert (p.krok, p.kod, p.poziom) == ("a", KONSENSUS, Poziom.ostrzezenie)
+    assert p.komunikat == JEDEN_BACKEND.format("gemini")
+
+
+def test_runner_bez_zadnego_backendu_dostaje_ostrzezenie_z_osobnym_komunikatem_bez_nazwy(
+    tmp_path, repo, dom
+):
+    [zaden] = problemy_przy_backendach(tmp_path, repo, dom, WYMAGA_DWOCH_DOSTAWCOW, [])
+
+    assert (zaden.krok, zaden.kod, zaden.poziom) == ("a", KONSENSUS, Poziom.ostrzezenie)
+    assert zaden.komunikat == ZERO_BACKENDOW
+
+
+def test_kod_ostrzezenia_o_nieocenionym_konsensusie_to_konsensus_nieoceniony():
+    from cockpit.services import workflow_walidacja
+
+    assert workflow_walidacja.KONSENSUS_NIEOCENIONY == "konsensus_nieoceniony"
+
+
+@pytest.mark.parametrize(
+    "lista", [{}, {"backendy": None}], ids=["argument_pominiety", "jawny_brak"])
+def test_bez_znanej_listy_backendow_walidator_ostrzega_ze_konsensus_nie_zostal_oceniony(
+    tmp_path, repo, dom, lista
+):
+    napisz_skill(repo / ".cockpit" / "skills", "s")
+    wf = workflow_z(tmp_path, WYMAGA_DWOCH_DOSTAWCOW)
+
+    [p] = waliduj_workflow(wf, rejestr_z(repo, dom), dom, **lista)
+
+    assert (p.krok, p.kod, p.poziom) == ("a", NIEOCENIONY, Poziom.ostrzezenie)
+    assert p.komunikat == NIEZNANA_LISTA
+
+
+def test_bez_znanej_listy_backendow_kroki_bez_wymogu_roznych_dostawcow_nie_maja_ostrzezen(
+    tmp_path, repo, dom
+):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom,
+        "name: w\nsteps:\n  a: {skill: s, require_distinct_vendors: false}\n  b: {skill: s}\n",
+        None,
+    )
+
+    assert problemy == []
+
+
+def test_samo_ostrzezenie_o_nieocenionym_konsensusie_nie_czyni_workflow_blednym(
+    tmp_path, repo, dom
+):
+    problemy = problemy_przy_backendach(tmp_path, repo, dom, WYMAGA_DWOCH_DOSTAWCOW, None)
+
+    assert kody(problemy) == [NIEOCENIONY]
+    assert not ma_bledy(problemy)
+
+
+def test_krok_bez_wymogu_roznych_dostawcow_nie_dostaje_ostrzezenia_przy_jednym_backendzie(
+    tmp_path, repo, dom
+):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom,
+        "name: w\nsteps:\n  a: {skill: s, require_distinct_vendors: false}\n  b: {skill: s}\n",
+        ["gemini"],
+    )
+
+    assert problemy == []
+
+
+def test_ostrzezenie_o_pozornym_konsensusie_dostaje_kazdy_krok_z_wymogiem_takze_bez_fanoutu(
+    tmp_path, repo, dom
+):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom,
+        "name: w\nsteps:\n"
+        "  zwykly: {skill: s, require_distinct_vendors: true}\n"
+        "  bez_wymogu: {skill: s}\n"
+        "  glosowanie: {skill: s, fanout: 3, consensus: 2, require_distinct_vendors: true}\n",
+        ["gemini"],
+    )
+
+    assert [(p.krok, p.kod) for p in problemy] == [
+        ("zwykly", KONSENSUS), ("glosowanie", KONSENSUS)]
+
+
+def test_pole_optional_nadal_jest_polem_bez_konsumenta_gdy_backendy_sa_znane(tmp_path, repo, dom):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom, "name: w\nsteps:\n  a: {skill: s, optional: true}\n", ["gemini"])
+
+    assert kody(problemy) == [POLE_BEZ_KONSUMENTA]
+
+
+def test_samo_ostrzezenie_o_pozornym_konsensusie_nie_czyni_workflow_blednym(tmp_path, repo, dom):
+    problemy = problemy_przy_backendach(
+        tmp_path, repo, dom, WYMAGA_DWOCH_DOSTAWCOW, ["gemini"])
+
+    assert kody(problemy) == [KONSENSUS]
+    assert not ma_bledy(problemy)
 
 
 # --- krok systemowy (HAR-176): `system: diff` jest producentem swoich artefaktow -----------------
