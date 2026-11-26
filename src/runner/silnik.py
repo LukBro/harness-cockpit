@@ -51,7 +51,7 @@ import sys
 import time
 import weakref
 from collections import deque
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -115,7 +115,7 @@ NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # Katalog workflow w repozytorium: odczyt idzie z worktree (stan z commita). Stala, bo literal
 # w funkcji przezywa mutacje wielkosci liter na systemach plikow bez jej rozrozniania (macOS).
 KATALOG_WORKFLOW = Path(".cockpit") / "workflows"
-KROK_WALIDACJI = "walidacja"   # krok, na ktorym kokpit widzi blad przed startem krokow
+KROK_WALIDACJI = "walidacja"   # krok bledu i ostrzezen walidatora przed startem krokow
 KROK_TICKETU = "ticket"        # krok zdarzenia `ticket_ostrzezenie` (HAR-117)
 TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"
 TEKST_PRZERWANIA = "przerwany przy śmierci runnera — nie wznawiamy"
@@ -174,6 +174,8 @@ class Przygotowany:
     rejestr: Rejestr
     projekt: Projekt
     repozytorium: Path
+    # ostrzezenia walidatora przy starcie runu (HAR-99); wznowienie ich nie niesie
+    ostrzezenia: tuple[Problem, ...] = ()
 
 
 # Wykonawca kroku systemowego: (krok, przygotowany run) -> wynik. Kazdy krok systemowy ma
@@ -224,12 +226,13 @@ def _bledy(problemy: list[Problem]) -> str:
 
 def _przygotuj(
     polecenie: Mapping[str, Any], dom: Path, root: Path | None, zakres: Zakres | None,
-    run_id: str,
+    run_id: str, backendy: Collection[str] | None = None,
 ) -> Przygotowany:
     """Walidacja polecenia, worktree, rejestr, workflow, project.yaml, kopia, materializacja.
 
-    Blad wejscia (dysk, git, zakres, skill) konczy run bledem startu; nic nie powstaje na
-    dysku przed sprawdzeniem nazwy workflow i zakresu."""
+    Ostrzezenia wczytania i walidatora (z `backendy` runnera) wracaja w
+    `Przygotowany.ostrzezenia`. Blad wejscia (dysk, git, zakres, skill) konczy run bledem
+    startu; nic nie powstaje na dysku przed sprawdzeniem nazwy workflow i zakresu."""
     nazwa = polecenie.get("workflow")
     if (
         not isinstance(nazwa, str)
@@ -246,7 +249,7 @@ def _przygotuj(
         plik = wt.sciezka / KATALOG_WORKFLOW / f"{nazwa}.yaml"
         workflow, problemy = wczytaj_workflow(plik)
         if workflow is not None:
-            problemy += waliduj_workflow(workflow, rejestr, dom)
+            problemy += waliduj_workflow(workflow, rejestr, dom, backendy=backendy)
         if workflow is None or ma_bledy(problemy):
             raise BladStartu(_bledy([p for p in problemy if ma_bledy([p])]))
         projekt, problemy_projektu = wczytaj_projekt(wt.sciezka)
@@ -258,7 +261,10 @@ def _przygotuj(
     # tekstem - tu tylko ZlaKonfiguracjaZakresu, ktora nie jest bledem granicy
     except ZlaKonfiguracjaZakresu as e:
         raise BladStartu(str(e)) from e
-    return Przygotowany(wt, workflow, rejestr, projekt, repo)
+    return Przygotowany(
+        worktree=wt, workflow=workflow, rejestr=rejestr, projekt=projekt, repozytorium=repo,
+        # po sprawdzeniu `ma_bledy` wyzej w `problemy` zostaly same ostrzezenia
+        ostrzezenia=tuple(problemy))
 
 
 def _sciezka_decyzji(step_id: str) -> Path:
@@ -936,8 +942,12 @@ async def wykonaj_run(
     dom: Path | None = None,
     root: Path | None = None,
     zakres: Zakres | None = None,
+    backendy: Collection[str] | None = None,
 ) -> None:
-    """Wykonuje workflow z polecenia `run_workflow`; zdarzenia idzie przez `emit`."""
+    """Wykonuje workflow z polecenia `run_workflow`; zdarzenia idzie przez `emit`.
+
+    `backendy` to nazwy backendow tego runnera (None = nieznane). Ostrzezenia walidatora ida
+    zdarzeniami `warning` przed pierwszym krokiem i nie blokuja runu (HAR-99)."""
     run_id = polecenie.get("run_id")
     if not isinstance(run_id, str) or not run_id:
         print("polecenie run_workflow bez poprawnego run_id odrzucone", file=sys.stderr)
@@ -949,7 +959,8 @@ async def wykonaj_run(
         await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
         return
     try:
-        p = await asyncio.to_thread(_przygotuj, polecenie, dom, root, zakres, run_id)
+        p = await asyncio.to_thread(
+            _przygotuj, polecenie, dom, root, zakres, run_id, backendy)
     except BladStartu as e:
         await _blad_przed_startem(emit, run_id, str(e))
         return
@@ -972,6 +983,9 @@ async def wykonaj_run(
     if ostrzezenie is not None:
         # ticket bez opisu nie blokuje runu, ale zostaje w historii
         await emit(_zdarzenie(run_id, "ticket_ostrzezenie", KROK_TICKETU, "", ostrzezenie))
+    for problem in p.ostrzezenia:
+        # literal rodzaju wprost w wywolaniu: czyta go skaner rodzajow zdarzen w testach
+        await emit(_zdarzenie(run_id, "warning", KROK_WALIDACJI, "", _linia(problem)))
 
     try:
         await _wykonaj_plan(
@@ -1225,8 +1239,8 @@ def _przygotuj_wznowienie(cp: Checkpoint, katalog: Path, dom: Path) -> Przygotow
     if projekt is None:
         raise BladWznowienia(_bledy(problemy_projektu))
     return Przygotowany(
-        WorktreeRunu(worktree, cp.base_commit, katalog), workflow, rejestr, projekt,
-        Path(cp.repozytorium))
+        worktree=WorktreeRunu(worktree, cp.base_commit, katalog), workflow=workflow,
+        rejestr=rejestr, projekt=projekt, repozytorium=Path(cp.repozytorium))
 
 
 def _stany_z_checkpointu(cp: Checkpoint) -> dict[str, StanKroku]:

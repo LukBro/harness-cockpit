@@ -43,6 +43,7 @@ INT4_MAX = 2_147_483_647
 RODZAJE_SILNIKA = [
     "output", "step_started", "step_finished", "step_failed", "step_aborted", "step_skipped",
     "step_waiting", "run_finished", "resume_ignored", "context_manifest", "ticket_ostrzezenie",
+    "warning",
 ]
 RODZAJE_Z_LISTY_CZLOWIEKA = ["decision", "integrated", "committed", "acceptance", "run_cancelled"]
 
