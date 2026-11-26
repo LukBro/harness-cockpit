@@ -31,6 +31,7 @@ from procesy import (
 )
 from runner.bufor import BladBufora, BrakMiejsca, Bufor
 from runner.client import KokpitNiezgodny, NiewaznePoleZdarzenia, Runner, TokenOdrzucony
+from test_silnik_runu import K, Szpieg, swiat
 
 RUN_ID = "run-1"
 STEP_ID = "krok-1"
@@ -3208,3 +3209,62 @@ async def test_krok_konczacy_sie_po_nowszym_zadaniu_tego_samego_runu_konczy_sie_
 
     assert zakonczone == ["s_b", "s_a"]
     assert "zakonczone bledem" not in capsys.readouterr().err
+
+
+# --- HAR-99: backendy runnera przy starcie runu workflow --------------------------------------
+
+@pytest.mark.parametrize(
+    "nazwy", [[], ["gemini"], ["gemini", "codex"]], ids=["zaden", "jeden", "dwa"])
+async def test_start_runu_przekazuje_silnikowi_nazwy_backendow_tego_runnera(monkeypatch, nazwy):
+    monkeypatch.setattr(
+        runner_client, "wykryj_backendy",
+        lambda: [{"nazwa": nazwa, "auth": "subscription"} for nazwa in nazwy])
+    przekazane: list[object] = []
+
+    async def wykonaj(cmd, emit, **kw):
+        przekazane.append(kw.get("backendy"))
+
+    monkeypatch.setattr(runner_client.silnik, "wykonaj_run", wykonaj)
+    runner, _ = _runner(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    polecenie = {"type": "run_workflow", "run_id": RUN_ID, "workflow": "w", "sciezka": "/repo"}
+
+    await czekaj(runner._run_workflow(polecenie), LIMIT_ANULOWANIA_S, "run workflow")
+
+    (backendy,) = przekazane
+    assert backendy is not None        # pusta lista to znany brak backendow, nie brak wiedzy
+    assert list(backendy) == nazwy
+
+
+async def test_kokpit_dostaje_od_runnera_ostrzezenie_o_pozornym_konsensusie_przed_startem_kroku(
+    monkeypatch, tmp_path,
+):
+    s = swiat(tmp_path, [K("a", extra=", require_distinct_vendors: true")])
+    monkeypatch.setattr(
+        runner_client, "wykryj_backendy", lambda: [{"nazwa": "gemini", "auth": "subscription"}])
+    monkeypatch.setattr(Runner, "_agent_z_hookami", lambda self, client: Szpieg())
+    prawdziwy = runner_client.silnik.wykonaj_run
+
+    async def ze_swiatem(polecenie, emit, *args, **kw):
+        # produkcyjny silnik; swiat testu tylko podaje profil, katalogi i zakres
+        return await prawdziwy(
+            polecenie, emit, *args, profil=s.profil, dom=s.dom, root=s.root, zakres=s.zakres, **kw)
+
+    monkeypatch.setattr(runner_client.silnik, "wykonaj_run", ze_swiatem)
+    zdarzenia: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        zdarzenia.append(json.loads(request.content))
+        return httpx.Response(200)
+
+    runner = Runner(
+        "http://kokpit.test", TOKEN, transport=httpx.MockTransport(handler),
+        bufor=Bufor(tmp_path / "bufor"))
+
+    await czekaj(runner._run_workflow(s.polecenie), LIMIT_STRUMIENIA_S, "run workflow")
+
+    rodzaje = [z["kind"] for z in zdarzenia]
+    assert rodzaje[:2] == ["warning", "step_started"]
+    assert rodzaje[-1] == "run_finished"
+    assert zdarzenia[0]["text"] == (
+        "a: konsensus_pozorny: require_distinct_vendors: runner ma tylko jeden backend (gemini), "
+        "konsensus bedzie pozorny")

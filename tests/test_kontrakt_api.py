@@ -935,6 +935,23 @@ async def test_ostrzezenie_o_tickecie_bez_opisu_od_runnera_trafia_do_historii_ru
     assert [(e.step_id, e.text) for e in zapisane] == [("ticket", "ticket HAR-1 nie ma opisu")]
 
 
+async def test_ostrzezenie_walidacji_od_runnera_trafia_do_historii_i_nie_zmienia_stanu_runu(swiat):
+    run_id = (await swiat.klient.post("/api/runs", json={})).json()["run_id"]
+    tekst = "a: konsensus_pozorny: jeden backend"
+
+    odp = await _zdarzenie(
+        swiat.klient, run_id, kind="warning", step_id="walidacja", text=tekst)
+
+    assert odp.status_code == 200
+    async with swiat.maker() as s:
+        zapisane = (await s.execute(
+            select(Event).where(Event.run_id == run_id, Event.kind == "warning")
+        )).scalars().all()
+        run = (await s.execute(select(Run).where(Run.id == run_id))).scalar_one()
+    assert [(e.step_id, e.text) for e in zapisane] == [("walidacja", tekst)]
+    assert (run.status, run.reason) == (RunStatus.running, None)
+
+
 async def test_profil_i_logowanie_zwracaja_ksztalt_z_tokenem_csrf(swiat):
     profil = await swiat.klient.get("/api/konto/ja")
     assert profil.status_code == 200

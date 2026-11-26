@@ -737,6 +737,7 @@
                   "resume_ignored",
                   "context_manifest",
                   "ticket_ostrzezenie",
+                  "warning",
                   "decision",
                   "integrated",
                   "committed",
