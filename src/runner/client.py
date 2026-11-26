@@ -889,7 +889,8 @@ class Runner:
 
             try:
                 await silnik.wykonaj_run(
-                    cmd, emit, uruchom_agenta=self._agent_z_hookami(client))
+                    cmd, emit, uruchom_agenta=self._agent_z_hookami(client),
+                    backendy=[b["nazwa"] for b in wykryj_backendy()])
             except NiewaznePoleZdarzenia as e:
                 await self._zglos_niewazne_pole(client, cmd.get("run_id"), e)
             except BrakMiejsca:

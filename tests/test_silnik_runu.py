@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from cockpit.api.schematy import EventIn
 from cockpit.services.errors import BladDziedziny
 from cockpit.services.invariants import Rola, Tier
 from cockpit.services.skills import rozstrzygnij_rejestr
@@ -230,7 +231,9 @@ class Atrapa:
         return float((self.znaczniki / f"{rodzaj}_{krok}").read_text())
 
 
-async def uruchom(s, agent, *, polecenie=None, emit=None, limit: float = LIMIT_S) -> list[dict]:
+async def uruchom(
+    s, agent, *, polecenie=None, emit=None, limit: float = LIMIT_S, **opcje_silnika,
+) -> list[dict]:
     from runner import silnik   # import leniwy: brak modulu czerwieni kazdy test osobno
 
     zdarzenia: list[dict] = []
@@ -242,7 +245,7 @@ async def uruchom(s, agent, *, polecenie=None, emit=None, limit: float = LIMIT_S
         silnik.wykonaj_run(
             polecenie if polecenie is not None else s.polecenie,
             emit or zapisz, agent,
-            profil=s.profil, dom=s.dom, root=s.root, zakres=s.zakres,
+            profil=s.profil, dom=s.dom, root=s.root, zakres=s.zakres, **opcje_silnika,
         ),
         limit,
     )
@@ -444,6 +447,177 @@ async def test_ostrzezenie_walidacji_nie_przerywa_runu(tmp_path):
     assert "step_failed" not in rodzaje(zdarzenia)
     jedno(zdarzenia, "step_finished", "a")
     assert agent.kroki == ["a"]
+
+
+# --- HAR-99: ostrzezenia walidatora w zdarzeniach runu ----------------------------------
+
+WYMOG_DOSTAWCOW = ", require_distinct_vendors: true"
+# pelne teksty zdarzen (bez id kroku), przepisane z ustalen, nie z modulu
+POZORNY_GEMINI = (
+    "konsensus_pozorny: require_distinct_vendors: runner ma tylko jeden backend (gemini), "
+    "konsensus bedzie pozorny")
+POZORNY_BEZ_BACKENDU = (
+    "konsensus_pozorny: require_distinct_vendors: runner nie ma zadnego backendu, "
+    "roznych dostawcow nie da sie zapewnic")
+NIEOCENIONY = (
+    "konsensus_nieoceniony: require_distinct_vendors: lista backendow runnera jest nieznana, "
+    "konsensus nie zostal oceniony")
+
+
+def ostrzezenia_runu(zdarzenia: list[dict]) -> list[dict]:
+    return [z for z in zdarzenia if z["kind"] == "warning"]
+
+
+def linie_ostrzezen_walidatora(s, backendy: list[str] | None) -> list[str]:
+    """Ostrzezenia produkcyjnego walidatora dla workflow swiata, w jego kolejnosci."""
+    workflow, wczytania = wczytaj_workflow(s.repo / ".cockpit" / "workflows" / "w.yaml")
+    problemy = wczytania + waliduj_workflow(
+        workflow, rozstrzygnij_rejestr(s.repo, s.dom), s.dom, backendy=backendy)
+    assert not ma_bledy(problemy)
+    return [f"{p.krok}: {p.kod}: {p.komunikat}" for p in problemy]
+
+
+async def test_pozorny_konsensus_jest_w_zdarzeniach_runu_przed_startem_pierwszego_kroku(tmp_path):
+    # wymog ma dopiero drugi krok: ostrzezenie nie czeka na jego start
+    s = swiat(tmp_path, [K("a"), K("b", ("a",), extra=WYMOG_DOSTAWCOW)])
+
+    zdarzenia = await uruchom(s, Szpieg(), backendy=["gemini"])
+
+    (ostrzezenie,) = ostrzezenia_runu(zdarzenia)
+    assert zdarzenia.index(ostrzezenie) < indeks(zdarzenia, "step_started", "a")
+    assert ostrzezenie["run_id"] == RUN_ID
+    assert ostrzezenie["step_id"] == "walidacja"
+    assert ostrzezenie["agent_id"] == ""
+    assert ostrzezenie["text"] == f"b: {POZORNY_GEMINI}"
+
+
+async def test_kazde_ostrzezenie_walidatora_to_osobne_zdarzenie_przed_pierwszym_krokiem(tmp_path):
+    s = swiat(tmp_path, [
+        K("a", extra=", optional: true" + WYMOG_DOSTAWCOW),
+        K("b", ("a",), extra=WYMOG_DOSTAWCOW),
+    ])
+    oczekiwane = linie_ostrzezen_walidatora(s, ["gemini"])
+    assert [linia.split(": ")[:2] for linia in oczekiwane].count(["a", "pole_bez_konsumenta"]) == 1
+    assert len(oczekiwane) == 3
+
+    zdarzenia = await uruchom(s, Szpieg(), backendy=["gemini"])
+
+    assert [z["text"] for z in ostrzezenia_runu(zdarzenia)] == oczekiwane
+    assert rodzaje(zdarzenia)[:4] == ["warning", "warning", "warning", "step_started"]
+
+
+async def test_run_z_pozornym_konsensusem_wykonuje_wszystkie_kroki_i_konczy_sie_normalnie(tmp_path):
+    s = swiat(tmp_path, [K("a", extra=WYMOG_DOSTAWCOW), K("b", ("a",))])
+    agent = Szpieg()
+
+    zdarzenia = await uruchom(s, agent, backendy=["gemini"])
+
+    assert len(ostrzezenia_runu(zdarzenia)) == 1
+    assert agent.kroki == ["a", "b"]
+    jedno(zdarzenia, "step_finished", "a")
+    jedno(zdarzenia, "step_finished", "b")
+    assert "step_failed" not in rodzaje(zdarzenia)
+    assert rodzaje(zdarzenia).count("run_finished") == 1
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_zdarzenia_runu_z_ostrzezeniem_przechodza_walidacje_wejscia_kokpitu(tmp_path):
+    s = swiat(tmp_path, [K("a", extra=WYMOG_DOSTAWCOW)])
+    przyjete: list[str] = []
+
+    async def emit(zdarzenie: dict) -> None:
+        # ten sam model, ktorym runner sprawdza zdarzenie przed buforem; `event_id` nadaje runner
+        EventIn.model_validate({"event_id": "e-1", **zdarzenie})
+        przyjete.append(zdarzenie["kind"])
+
+    await uruchom(s, Szpieg(), emit=emit, backendy=["gemini"])
+
+    assert przyjete[0] == "warning"
+    assert przyjete[-1] == "run_finished"
+
+
+async def test_runner_bez_zadnego_backendu_ostrzega_o_pozornym_konsensusie(tmp_path):
+    s = swiat(tmp_path, [K("a", extra=WYMOG_DOSTAWCOW)])
+
+    zdarzenia = await uruchom(s, Szpieg(), backendy=[])
+
+    (ostrzezenie,) = ostrzezenia_runu(zdarzenia)
+    assert ostrzezenie["text"] == f"a: {POZORNY_BEZ_BACKENDU}"
+    jedno(zdarzenia, "step_finished", "a")
+
+
+async def test_run_przy_dwoch_roznych_backendach_nie_ma_ostrzezenia_o_konsensusie(tmp_path):
+    s = swiat(tmp_path, [K("a", extra=WYMOG_DOSTAWCOW)])
+
+    zdarzenia = await uruchom(s, Szpieg(), backendy=["gemini", "codex"])
+
+    assert ostrzezenia_runu(zdarzenia) == []
+    jedno(zdarzenia, "step_finished", "a")
+
+
+async def test_run_bez_podanej_listy_backendow_ostrzega_ze_konsensus_nie_zostal_oceniony(
+    tmp_path,
+):
+    s = swiat(tmp_path, [K("a", extra=", optional: true" + WYMOG_DOSTAWCOW)])
+    agent = Szpieg()
+
+    zdarzenia = await uruchom(s, agent)
+
+    assert [z["text"] for z in ostrzezenia_runu(zdarzenia)] == [
+        "a: pole_bez_konsumenta: pole optional nie ma jeszcze skutku: silnik go nie odczytuje",
+        f"a: {NIEOCENIONY}",
+    ]
+    assert rodzaje(zdarzenia)[:3] == ["warning", "warning", "step_started"]
+    assert agent.kroki == ["a"]
+    jedno(zdarzenia, "step_finished", "a")
+    assert "step_failed" not in rodzaje(zdarzenia)
+    assert zdarzenia[-1]["kind"] == "run_finished"
+
+
+async def test_workflow_z_bledem_i_ostrzezeniem_konczy_run_sama_porazka_walidacji(tmp_path):
+    s = swiat(tmp_path, [K("a", ("nie_ma_takiego",), extra=WYMOG_DOSTAWCOW)])
+
+    tekst = sprawdz_blad_przed_startem(await uruchom(s, Szpieg(), backendy=["gemini"]))
+
+    assert tekst.startswith("a: nieznana_zaleznosc: ")
+    assert "konsensus_pozorny" not in tekst
+
+
+async def test_run_z_niepoprawnym_ticketem_konczy_sie_bez_wyslanych_ostrzezen(tmp_path):
+    s = swiat(tmp_path, [K("a", extra=WYMOG_DOSTAWCOW)])
+    polecenie = {**s.polecenie, "ticket": {"wklejony": "   \n  "}}
+
+    zdarzenia = await uruchom(s, Szpieg(), polecenie=polecenie, backendy=["gemini"])
+
+    assert rodzaje(zdarzenia) == ["step_failed", "run_finished"]
+
+
+async def test_ostrzezenie_jest_przed_czekaniem_na_bramce_a_wznowienie_go_nie_powtarza(tmp_path):
+    from runner import silnik
+
+    # `optional` daje ostrzezenie niezalezne od backendow: wznowienie mogloby je wyslac ponownie
+    s = swiat(tmp_path, [
+        K("a", extra=", approval: true, optional: true" + WYMOG_DOSTAWCOW)])
+    agent = Szpieg()
+
+    przed = await uruchom(s, agent, backendy=["gemini"])
+
+    assert rodzaje(przed) == ["warning", "warning", "step_waiting"]
+
+    po: list[dict] = []
+
+    async def emit(zdarzenie: dict) -> None:
+        po.append(zdarzenie)
+
+    await asyncio.wait_for(
+        silnik.wznow_run(
+            RUN_ID, "a", "approve", emit, agent, profil=s.profil, dom=s.dom, root=s.root),
+        LIMIT_S,
+    )
+
+    assert ostrzezenia_runu(po) == []
+    jedno(po, "step_finished", "a")
+    assert po[-1]["kind"] == "run_finished"
 
 
 # --- kryterium 5: repozytorium uzytkownika nietkniete ------------------------------------
