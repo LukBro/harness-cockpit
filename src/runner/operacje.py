@@ -37,6 +37,9 @@ from runner.zakres import PozaZakresem, Zakres, ZlaKonfiguracjaZakresu, _jest_se
 # Pola ramki zapytania, nie argumenty operacji (HAR-201: `nadano_o`, `wazne_s`).
 POLA_PROTOKOLU = ("type", "req_id", "nadano_o", "wazne_s")
 LIMIT_WYNIKOW = 2000
+# Kandydaci zebrani przed filtrami zakresu/sekretow/znikniec; po ich osiagnieciu przechodzenie
+# drzewa sie konczy (HAR-204). Margines 2x: odfiltrowane wpisy nie zjadaja limitu wynikow.
+LIMIT_KANDYDATOW = 2 * LIMIT_WYNIKOW + 1
 LIMIT_DEFINICJI = 2000   # skille i workflow ze wszystkich projektow lacznie (HAR-67)
 DOMYSLNY_LIMIT_ODCZYTU_KB = 512
 # Podglad artefaktu (HAR-182): bajty. Najgorszy rozrost w JSON to 6x (znak sterujacy C0, np.
@@ -208,12 +211,13 @@ def _sprawdz_wzorzec(wzorzec: str) -> None:
         raise BladOperacji("zly_wzorzec", "wzorzec jest pusty, bezwzgledny albo niedozwolony")
 
 
-def _podkatalogi_w_glab(korzen: Path, widziane: set[Path]) -> list[Path]:
+def _podkatalogi_w_glab(korzen: Path, widziane: set[Path], limit: int) -> list[Path]:
     """Korzen i podkatalogi, bez dowiazan do katalogow; blad dowolnego katalogu to wyjatek.
-    `widziane` wspolne dla calego skladnika: poddrzewo przejrzane raz nie jest przegladane drugi."""
+    `widziane` wspolne dla calego skladnika: poddrzewo przejrzane raz nie jest przegladane drugi.
+    Po `limit` katalogach przerywa i nie schodzi dalej w drzewo."""
     wynik: list[Path] = []
     do_przejrzenia = [korzen]
-    while do_przejrzenia:
+    while do_przejrzenia and len(wynik) < limit:
         katalog = do_przejrzenia.pop()
         if katalog not in widziane:
             widziane.add(katalog)
@@ -236,10 +240,12 @@ def _w_zakresie(zakres: Zakres, sciezka: Path) -> bool:
     return True
 
 
-def _dopasuj(zakres: Zakres, baza: Path, wzorzec: str) -> list[Path]:
+def _dopasuj(zakres: Zakres, baza: Path, wzorzec: str) -> tuple[list[Path], bool]:
     """Wlasny glob: `Path.glob` polyka OSError w podkatalogach, a brak praw to nie pusta lista.
     Zakres sprawdzamy przed wejsciem do katalogu, a koszt wzorca ograniczamy: kolejne `**`
-    to jedno, a duplikaty znikaja po kazdym skladniku."""
+    to jedno, a duplikaty znikaja po kazdym skladniku. Po `LIMIT_KANDYDATOW` kandydatach w
+    skladniku przerywa; drugi element wyniku mowi, czy przerwano."""
+    przerwano = False
     skladniki: list[str] = []
     for s in wzorzec.split("/"):
         if s in ("", ".") or (s == "**" and skladniki[-1:] == ["**"]):
@@ -252,11 +258,16 @@ def _dopasuj(zakres: Zakres, baza: Path, wzorzec: str) -> list[Path]:
         widziane: set[Path] = set()
         try:
             for katalog in biezace:
+                if len(nastepne) >= LIMIT_KANDYDATOW:
+                    break
                 if skladnik == "**":
-                    nastepne.extend(_podkatalogi_w_glab(katalog, widziane))
+                    nastepne.extend(_podkatalogi_w_glab(
+                        katalog, widziane, LIMIT_KANDYDATOW - len(nastepne)))
                     continue
                 with os.scandir(katalog) as wpisy:
                     for wpis in wpisy:
+                        if len(nastepne) >= LIMIT_KANDYDATOW:
+                            break
                         if not fnmatch.fnmatchcase(wpis.name, skladnik):
                             continue
                         sciezka = katalog / wpis.name
@@ -266,7 +277,8 @@ def _dopasuj(zakres: Zakres, baza: Path, wzorzec: str) -> list[Path]:
         except OSError as e:
             raise _blad_dysku(e) from None
         biezace = list(dict.fromkeys(nastepne))
-    return biezace
+        przerwano = przerwano or len(nastepne) >= LIMIT_KANDYDATOW
+    return biezace, przerwano
 
 
 def _listuj_pliki(sciezka: str, wzorzec: str) -> dict:
@@ -277,7 +289,7 @@ def _listuj_pliki(sciezka: str, wzorzec: str) -> dict:
             raise BladOperacji("nie_katalog", "sciezka nie jest katalogiem")
     except OSError as e:
         raise _blad_dysku(e) from None
-    wpisy = _dopasuj(zakres, baza, wzorzec)
+    wpisy, przerwano = _dopasuj(zakres, baza, wzorzec)
     pliki: dict[str, bool] = {}
     for wpis in wpisy:
         try:
@@ -293,7 +305,7 @@ def _listuj_pliki(sciezka: str, wzorzec: str) -> dict:
     posortowane = sorted(pliki)
     return {
         "pliki": [{"sciezka": p, "katalog": pliki[p]} for p in posortowane[:LIMIT_WYNIKOW]],
-        "obcieto": len(posortowane) > LIMIT_WYNIKOW,
+        "obcieto": przerwano or len(posortowane) > LIMIT_WYNIKOW,
     }
 
 

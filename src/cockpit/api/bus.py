@@ -16,6 +16,12 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+# Gorny limit kolejki jednego subskrybenta strumienia runu (HAR-204); wolny odbiorca nie rosnie w pamieci.
+MAKS_ZDARZEN_W_KOLEJCE_SUBSKRYBENTA = 1000
+# Wartownik w kolejce subskrybenta: odlaczono go po przepelnieniu, strumien ma sie zakonczyc.
+KONIEC_STRUMIENIA: dict[str, Any] = {"type": "koniec_strumienia"}
+
+
 class StrumienRunnera:
     """Jedno otwarte polaczenie SSE runnera (HAR-200).
 
@@ -169,19 +175,31 @@ async def send_to_runner(runner_id: str, command: dict[str, Any]) -> None:
 
 
 def subscribe_run(run_id: str) -> asyncio.Queue[dict[str, Any]]:
-    q: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=MAKS_ZDARZEN_W_KOLEJCE_SUBSKRYBENTA)
     _run_subscribers[run_id].append(q)
     return q
 
 
 def unsubscribe_run(run_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
-    if q in _run_subscribers.get(run_id, []):
-        _run_subscribers[run_id].remove(q)
+    lista = _run_subscribers.get(run_id)
+    if lista is None:
+        return
+    if q in lista:
+        lista.remove(q)
+    if not lista:
+        del _run_subscribers[run_id]
 
 
 async def publish_event(run_id: str, event: dict[str, Any]) -> None:
+    """Wydawca nigdy nie czeka na odbiorce: pelna kolejka to odlaczenie subskrybenta."""
     for q in list(_run_subscribers.get(run_id, [])):
-        await q.put(event)
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            unsubscribe_run(run_id, q)
+            while not q.empty():
+                q.get_nowait()
+            q.put_nowait(KONIEC_STRUMIENIA)   # klient dociagnie historie przez Last-Event-ID
 
 
 # req_id -> (runner_id, future). Odpowiedz rozwiazuje tylko zapytanie wyslane do tego runnera (HAR-49).

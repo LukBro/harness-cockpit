@@ -891,6 +891,9 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("POST", "/api/konto/haslo"): {"kontekst_sesji"},
         ("GET", "/api/ustawienia/poczta"): {"kontekst_sesji"},         # HAR-91
         ("POST", "/api/ustawienia/poczta/test"): {"kontekst_sesji"},   # HAR-91
+        ("POST", "/api/runnery"): {"kontekst_sesji"},                  # HAR-119
+        ("GET", "/api/runnery"): {"kontekst_sesji"},                   # HAR-119
+        ("DELETE", "/api/runnery/{runner_id}"): {"kontekst_sesji"},    # HAR-119
     }
     assert {k: trasy.get(k) for k in oczekiwane} == oczekiwane
 
@@ -946,6 +949,9 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("POST", "/api/konto/haslo"),
         ("GET", "/api/ustawienia/poczta"),
         ("POST", "/api/ustawienia/poczta/test"),
+        ("POST", "/api/runnery"),                 # HAR-119
+        ("GET", "/api/runnery"),                  # HAR-119
+        ("DELETE", "/api/runnery/{runner_id}"),   # HAR-119
     }
 
 

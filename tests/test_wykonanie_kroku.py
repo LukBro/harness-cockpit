@@ -22,6 +22,7 @@ from procesy import (
     zabij_grupe,
     zabij_proces,
 )
+from cockpit.settings import settings
 from runner.agent import SpecKroku
 from cockpit.services.walidacja import KATALOG_SKILLI_RUNU, migawka
 from runner import krok as modul_kroku
@@ -512,14 +513,17 @@ async def test_wyjscie_nieudanego_kroku_tez_trafia_do_zdarzen(run):
     assert zdarzenia == [zdarzenie_wyjscia("przed bledem")]
 
 
-async def test_linia_dluzsza_niz_64_kib_nie_wywraca_kroku_i_jest_wyemitowana_w_calosci(run):
+async def test_linia_dluzsza_niz_limit_zdarzenia_nie_wywraca_kroku_i_jest_wyemitowana_obcieta_z_pelna_dlugoscia(run):
     dlugosc = 70_000
+    limit = settings.limit_tekstu_zdarzenia
 
     wynik, zdarzenia = await uruchom(spec(), atrapa(dluga=dlugosc), run)
 
     assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert all(z["kind"] == "output" for z in zdarzenia)
-    assert "".join(z["text"] for z in zdarzenia) == "x" * dlugosc
+    assert dlugosc > limit
+    assert all(len(z["text"]) <= limit for z in zdarzenia)
+    assert [(len(z["text"]), z["text_full_len"]) for z in zdarzenia] == [(limit, dlugosc)]
 
 
 # --- blad startu -------------------------------------------------------------

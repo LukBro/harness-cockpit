@@ -47,6 +47,15 @@ LIMIT_NA_KROKU_SYSTEMOWYM = "limit_na_kroku_systemowym"
 FAIL_ON_SURVIVORS_BEZ_MUTATE_DIFF = "fail_on_survivors_bez_mutate_diff"
 KONSENSUS_POZORNY = "konsensus_pozorny"
 KONSENSUS_NIEOCENIONY = "konsensus_nieoceniony"
+TICKET_NIEPRZENOSNY = "ticket_nieprzenosny"
+
+# Pola ticketu zalezne od trackera, w kolejnosci ostrzezen (HAR-100).
+_NIEPRZENOSNE_POLA_TICKETU = ("raw", "status", "priority")
+_ALTERNATYWA_POL = "|".join(_NIEPRZENOSNE_POLA_TICKETU)
+_POLE_PO_KROPCE = re.compile(rf"\bticket\.({_ALTERNATYWA_POL})\b")
+# `["pole"]` albo `['pole']`: liczy sie tylko w linii mowiacej o tickecie.
+_POLE_W_NAWIASIE = re.compile(rf"""\[(["'])({_ALTERNATYWA_POL})\1\]""")
+_LINIA_O_TICKECIE = re.compile(r"ticket\.json|ticket\[")
 
 # Nazwa capability trafia do nazwy pliku dowodu (`dowod-<capability>.json`).
 WZORZEC_CAPABILITY = r"[A-Za-z0-9_-]{1,64}"
@@ -196,6 +205,28 @@ def _ostrzezenie_o_konsensusie(krok: Krok, backendy: Collection[str] | None) -> 
     return [Problem(krok.id, KONSENSUS_POZORNY, komunikat, Poziom.ostrzezenie)]
 
 
+def _ostrzezenia_o_polach_ticketu(krok: Krok, skill: Skill | None) -> list[Problem]:
+    """Brief skilla siega do `raw`, `status` albo `priority` ticketu (HAR-100): te pola zaleza
+    od trackera. Jedno ostrzezenie na pole; bez skilla (`None`) nie ma czego sprawdzic."""
+    if skill is None:
+        return []
+    znalezione = set(_POLE_PO_KROPCE.findall(skill.brief))
+    for linia in skill.brief.splitlines():
+        if _LINIA_O_TICKECIE.search(linia):
+            znalezione.update(pole for _, pole in _POLE_W_NAWIASIE.findall(linia))
+    return [
+        Problem(
+            krok.id,
+            TICKET_NIEPRZENOSNY,
+            f"nieprzenośny ticket: skill {skill.id} sięga do pola {pole}, "
+            "które zależy od trackera",
+            Poziom.ostrzezenie,
+        )
+        for pole in _NIEPRZENOSNE_POLA_TICKETU
+        if pole in znalezione
+    ]
+
+
 def _problemy_capability(krok: Krok) -> list[Problem]:
     """Pole `capability` kroku: wymagane przy `system: check`, zabronione przy kazdym innym."""
     if krok.system == SYSTEM_CHECK and krok.skill is None:
@@ -286,6 +317,11 @@ def waliduj_workflow(
     Ograniczenie: czesci `<pole>` z `foreach: <artefakt>#<pole>` nie da sie sprawdzic
     statycznie, bo artefakty nie maja schematu. Sprawdzamy tylko, ze `<artefakt>`
     produkuje ktorys przodek kroku.
+
+    Luka w API: `ticket_nieprzenosny` (HAR-100) czyta `Skill.brief`, a przez API brief jest
+    pusty, bo tresc briefu nie opuszcza maszyny uzytkownika (BRO-86). Ostrzezenie pojawia sie
+    wiec tylko przy starcie runu u runnera, a jego brak w odpowiedzi API NIE oznacza, ze
+    workflow jest przenosny.
     """
     problemy: list[Problem] = []
     istniejace = {k.id for k in workflow.kroki} | set(workflow.niepoprawne)
@@ -428,6 +464,7 @@ def waliduj_workflow(
                 )
             )
 
+        problemy.extend(_ostrzezenia_o_polach_ticketu(krok, skill))
         problemy.extend(_ostrzezenia_kroku(krok, skill, workflow))
         problemy.extend(_ostrzezenie_o_konsensusie(krok, backendy))
 
