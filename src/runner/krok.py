@@ -58,6 +58,9 @@ KATALOG_RUNU = Path(".cockpit") / "_run"
 RAPORTY_NAPRAWY_SILNIKA = KATALOG_RUNU / "artifacts" / "*" / "_naprawa" / "proba_*.md"
 WYJATKI_MIGAWKI = [KATALOG_SKILLI_RUNU, RAPORTY_NAPRAWY_SILNIKA]
 ROZMIAR_KAWALKA = 64 * 1024
+# Najdluzszy tekst zdarzenia `output`, w znakach: rowny domyslnemu limitowi kokpitu (pilnuje test).
+# Bez importu `cockpit.settings`: budowa Settings() czyta `.env` z cwd i wypisuje z niego sekrety.
+LIMIT_TEKSTU_ZDARZENIA = 64_000
 # Najwiekszy wynik agenta (stdout), jaki runner zapisze jako artefakt roli bez zapisu.
 LIMIT_ARTEFAKTU = 8 * 1024 * 1024
 # Najdluzsza linia NDJSON agenta (w bajtach, bez znaku nowej linii); dluzsza to blad kroku.
@@ -143,6 +146,59 @@ class _StanStrumienia:
     wynik: dict[str, Any] | None = None
 
 
+# Bajtow na znak UTF-8 w najgorszym razie: bufor linii mieści limit znakow zdarzenia z zapasem.
+BAJTOW_NA_ZNAK = 4
+# bajty 0x80-0xBF to kontynuacje: po ich usunieciu zostaje po jednym bajcie na znak UTF-8
+_KONTYNUACJE_UTF8 = bytes(range(0x80, 0xC0))
+
+
+class DzielnikLinii:
+    """Dzieli strumien bajtow na linie, trzymajac niedokonczona linie w pamieci do
+    `limit_znakow * BAJTOW_NA_ZNAK` bajtow. Dluzsza linia oddaje poczatek, a reszte do `\\n`
+    odrzuca (liczy tylko jej dlugosc). `dodaj` i `koniec` zwracaja pary `(bajty, pelna_dlugosc)`;
+    `pelna_dlugosc` to liczba znakow calej linii, a None, gdy nic nie odcieto."""
+
+    def __init__(self, limit_znakow: int) -> None:
+        self._maks = limit_znakow * BAJTOW_NA_ZNAK
+        self._linia = bytearray()
+        self._bajty = 0
+        self._znaki = 0
+
+    def _domknij(self) -> tuple[bytes, int | None]:
+        obcieta = self._bajty > len(self._linia)
+        if self._linia.endswith(b"\r"):
+            del self._linia[-1]
+        wynik = (bytes(self._linia), self._znaki if obcieta else None)
+        self._linia.clear()
+        self._bajty = self._znaki = 0
+        return wynik
+
+    def dodaj(self, kawalek: bytes) -> list[tuple[bytes, int | None]]:
+        gotowe = []
+        poczatek = 0
+        while True:
+            koniec = kawalek.find(b"\n", poczatek)
+            czesc = kawalek[poczatek:] if koniec < 0 else kawalek[poczatek:koniec]
+            self._bajty += len(czesc)
+            self._znaki += len(czesc.translate(None, _KONTYNUACJE_UTF8))
+            self._linia += czesc[: self._maks - len(self._linia)]
+            if koniec < 0:
+                return gotowe
+            gotowe.append(self._domknij())
+            poczatek = koniec + 1
+
+    def koniec(self) -> list[tuple[bytes, int | None]]:
+        return [self._domknij()] if self._bajty else []
+
+
+def tekst_zdarzenia(surowa: bytes, pelna: int | None, limit_znakow: int) -> tuple[str, int | None]:
+    """Tekst linii ograniczony do `limit_znakow` i `text_full_len` (None, gdy nic nie obcieto)."""
+    tekst = surowa.decode(errors="replace")
+    pelna = max(len(tekst), pelna or 0)
+    tekst = tekst[:limit_znakow]
+    return tekst, (pelna if pelna > len(tekst) else None)
+
+
 async def _emituj_strumien(
     strumien: asyncio.StreamReader,
     spec: SpecKroku,
@@ -154,29 +210,33 @@ async def _emituj_strumien(
     `limit` czyta tylko zbieranie, wiec bez bufora zostaje nieustawiony).
 
     Wlasne dzielenie na linie zamiast readline(): readline rzuca na linii dluzszej
-    niz limit StreamReadera, a agent moze taka wypisac.
+    niz limit StreamReadera, a agent moze taka wypisac. Niedokonczona linia jest
+    ograniczona do limitu zdarzenia (`DzielnikLinii`): 10 MB bez `\n` nie rosnie w pamieci.
     """
+    limit_znakow = LIMIT_TEKSTU_ZDARZENIA
+    dzielnik = DzielnikLinii(limit_znakow)
 
-    async def wyslij(surowa: bytes) -> None:
-        await emit({
+    async def wyslij(surowa: bytes, pelna: int | None) -> None:
+        tekst, pelna_dlugosc = tekst_zdarzenia(surowa, pelna, limit_znakow)
+        zdarzenie = {
             "kind": "output",
             "run_id": spec.run_id,
             "step_id": spec.step_id,
             "agent_id": spec.agent_id,
-            "text": surowa.decode(errors="replace"),
-        })
+            "text": tekst,
+        }
+        if pelna_dlugosc is not None:
+            zdarzenie["text_full_len"] = pelna_dlugosc
+        await emit(zdarzenie)
 
-    reszta = b""
     while kawalek := await strumien.read(ROZMIAR_KAWALKA):
         if bufor is not None:
             # limit + 1 bajtow wystarcza, by poznac przekroczenie; pamiec zostaje ograniczona
             bufor += kawalek[: limit + 1 - len(bufor)]
-        reszta += kawalek
-        *linie, reszta = reszta.split(b"\n")
-        for linia in linie:
-            await wyslij(linia.removesuffix(b"\r"))
-    if reszta:
-        await wyslij(reszta)
+        for surowa, pelna in dzielnik.dodaj(kawalek):
+            await wyslij(surowa, pelna)
+    for surowa, pelna in dzielnik.koniec():
+        await wyslij(surowa, pelna)
 
 
 async def _emituj_wyjscie(
