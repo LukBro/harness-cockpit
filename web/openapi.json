@@ -1249,6 +1249,33 @@
         "title": "NowySkill",
         "type": "object"
       },
+      "NowyTokenRunnera": {
+        "properties": {
+          "nazwa": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Nazwa",
+            "type": "string"
+          },
+          "wazny_do": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wazny Do"
+          }
+        },
+        "required": [
+          "nazwa"
+        ],
+        "title": "NowyTokenRunnera",
+        "type": "object"
+      },
       "OdpowiedzRunneraIn": {
         "properties": {
           "blad": {
@@ -2360,6 +2387,103 @@
           "csrf"
         ],
         "title": "TokenCsrf",
+        "type": "object"
+      },
+      "TokenRunnera": {
+        "description": "Wiersz listy tokenow: nigdy sam token ani jego skrot.",
+        "properties": {
+          "nazwa": {
+            "title": "Nazwa",
+            "type": "string"
+          },
+          "odwolany_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Odwolany At"
+          },
+          "runner_id": {
+            "title": "Runner Id",
+            "type": "string"
+          },
+          "token_prefiks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Prefiks"
+          },
+          "token_utworzony_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Utworzony At"
+          },
+          "token_uzyty_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Uzyty At"
+          },
+          "token_wazny_do": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Wazny Do"
+          }
+        },
+        "required": [
+          "runner_id",
+          "nazwa",
+          "token_prefiks",
+          "token_utworzony_at",
+          "token_uzyty_at",
+          "token_wazny_do",
+          "odwolany_at"
+        ],
+        "title": "TokenRunnera",
+        "type": "object"
+      },
+      "TokenRunneraWydany": {
+        "properties": {
+          "runner_id": {
+            "title": "Runner Id",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runner_id",
+          "token"
+        ],
+        "title": "TokenRunneraWydany",
         "type": "object"
       },
       "TwierdzenieRunu": {
@@ -4264,6 +4388,203 @@
           }
         },
         "summary": "Runner Stream"
+      }
+    },
+    "/api/runnery": {
+      "get": {
+        "operationId": "lista_tokenow_api_runnery_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TokenRunnera"
+                  },
+                  "title": "Response Lista Tokenow Api Runnery Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Lista Tokenow"
+      },
+      "post": {
+        "operationId": "wydaj_token_api_runnery_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NowyTokenRunnera"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRunneraWydany"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Wydaj Token"
+      }
+    },
+    "/api/runnery/{runner_id}": {
+      "delete": {
+        "operationId": "odwolaj_token_api_runnery__runner_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runner_id",
+            "required": true,
+            "schema": {
+              "title": "Runner Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRunnera"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Odwolaj Token"
       }
     },
     "/api/runs": {
