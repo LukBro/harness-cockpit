@@ -18,13 +18,21 @@ niepustym diffie .py (`git diff --name-only HEAD`) to blad (kod 2, "brak dowodu"
 OGRANICZENIE: testmon sledzi tylko kod importowany w procesie pytesta; `tools/*.py` wywolywane
 podprocesem (testy narzedzi) sa dla niego niewidoczne - zmiana skryptu nie wybierze jego testow.
 
+ODBIERANIE SIEROT (HAR-262): na Linuksie skrypt uruchomiony jako program staje sie subreaperem
+(`prctl PR_SET_CHILD_SUBREAPER`) i w trakcie przebiegu odbiera obce zakonczone procesy - w kontenerze,
+w ktorym PID 1 ich nie odbiera, zombie nadal odpowiadalyby na `kill(pid, 0)`. Wlasnego pytesta nigdy nie
+odbiera (bez `waitpid(-1)`), bo `Popen` zgubilby jego kod. Funkcje wolane z innego programu (`main`,
+`uruchom`) niczego nie wlaczaja; poza Linuksem odbierania nie ma.
+
 Kody wyjscia: kod pytesta, gdy przebieg sie zakonczyl sam; 2 przy zawieszeniu (stdout:
-`zawieszenie: <node id>`, po jednej linii na test w toku) albo bledzie narzedzia (stderr);
+`zawieszenie: <node id>`, po jednej linii na test w toku) albo bledzie narzedzia (stderr), w tym gdy
+nie mozna wlaczyc odbierania sierot (pytest wtedy nie startuje) albo ich odebrac;
 143 po SIGTERM do skryptu. Pytest zabity sygnalem (brak kodu) to blad narzedzia, nie zielony wynik.
 """
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import importlib.metadata
 import json
@@ -37,7 +45,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 
 KORZEN = Path(__file__).resolve().parents[1]
@@ -48,10 +56,52 @@ KOD_ZAWIESZENIA = 2
 KOD_BLEDU = 2
 WTYCZKA = "_testy_zdarzenia"
 ZMIENNA_ZDARZEN = "COCKPIT_TESTY_ZDARZENIA"
+PR_SET_CHILD_SUBREAPER = 36  # <linux/prctl.h>
+
+# ustawia tylko uruchomienie jako program: proces, ktory importuje te funkcje, nie moze tracic swoich dzieci
+_ODBIERANIE_SIEROT = False
 
 
 class BladNarzedzia(Exception):
     """Blad dziedziny skryptu (kod wyjscia 2)."""
+
+
+def _libc() -> ctypes.CDLL:
+    return ctypes.CDLL(None, use_errno=True)
+
+
+def wlacz_odbieranie_sierot() -> bool:
+    """Robi z procesu subreapera swoich potomkow; False poza Linuksem, blad narzedzia, gdy system odmawia."""
+    if sys.platform != "linux":
+        return False
+    try:
+        libc = _libc()
+    except OSError as blad:
+        raise BladNarzedzia(f"nie mozna wlaczyc odbierania sierot: nie udalo sie zaladowac libc: {blad}") from blad
+    if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        numer = ctypes.get_errno()
+        raise BladNarzedzia(
+            "nie mozna wlaczyc odbierania sierot: prctl PR_SET_CHILD_SUBREAPER, "
+            f"errno {numer} ({os.strerror(numer)})"
+        )
+    return True
+
+
+def odbierz_sieroty(wlasne: Collection[int]) -> None:
+    """Odbiera zakonczone obce procesy potomne bez czekania na dzialajace; PID-ow z `wlasne` nie rusza."""
+    try:
+        while True:
+            try:
+                # WNOWAIT: tylko podglad - kod wyjscia wlasnego dziecka musi zostac dla `Popen`
+                zakonczony = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            except ChildProcessError:
+                return
+            # wlasne dziecko wracaloby w kolko, wiec konczymy; obce za nim odbierze nastepne wywolanie
+            if zakonczony is None or zakonczony.si_pid in wlasne:
+                return
+            os.waitpid(zakonczony.si_pid, 0)
+    except OSError as blad:
+        raise BladNarzedzia(f"nie mozna odebrac osieroconych procesow: {blad}") from blad
 
 
 def _limit(tekst: str) -> float:
@@ -188,6 +238,8 @@ def uruchom(
                     czytnik.join(CZEKANIE_PO_TERM)
                     _wypisz_zawieszenie(w_toku, limit)
                     return KOD_ZAWIESZENIA
+                if _ODBIERANIE_SIEROT:
+                    odbierz_sieroty({proc.pid})
                 time.sleep(KROK_SPRAWDZANIA)
         except BaseException:
             _zakoncz_grupe(proc)
@@ -577,4 +629,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    try:
+        _ODBIERANIE_SIEROT = wlacz_odbieranie_sierot()
+    except BladNarzedzia as blad:
+        print(f"BLAD: {blad}", file=sys.stderr)
+        sys.exit(KOD_BLEDU)
     sys.exit(main())
