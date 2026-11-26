@@ -8,6 +8,7 @@ Modul nie dotyka bazy.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from pathlib import Path
 
 from cockpit.services.invariants import profil_roli
@@ -29,6 +30,8 @@ BRAK_ARTEFAKTU = "brak_artefaktu"
 CONSENSUS_PONAD_FANOUT = "consensus_ponad_fanout"
 FOREACH_BEZ_PRODUCENTA = "foreach_bez_producenta"
 FOREACH_ZLY_FORMAT = "foreach_zly_format"
+FOREACH_Z_FANOUT = "foreach_z_fanout"
+FOREACH_NA_KROKU_SYSTEMOWYM = "foreach_na_kroku_systemowym"
 RETRY_NIE_WSTECZ = "retry_nie_wstecz"
 NIEPRZENOSNY_SKILL = "nieprzenosny_skill"
 NIEZNANY_KLUCZ = "nieznany_klucz"
@@ -42,11 +45,13 @@ CAPABILITY_BEZ_CHECK = "capability_bez_check"
 CAPABILITY_BEZ_UPRAWNIEN_ROLI = "capability_bez_uprawnien_roli"
 LIMIT_NA_KROKU_SYSTEMOWYM = "limit_na_kroku_systemowym"
 FAIL_ON_SURVIVORS_BEZ_MUTATE_DIFF = "fail_on_survivors_bez_mutate_diff"
+KONSENSUS_POZORNY = "konsensus_pozorny"
+KONSENSUS_NIEOCENIONY = "konsensus_nieoceniony"
 
 # Nazwa capability trafia do nazwy pliku dowodu (`dowod-<capability>.json`).
 WZORZEC_CAPABILITY = r"[A-Za-z0-9_-]{1,64}"
 
-_POLA_BEZ_KONSUMENTA = ("optional", "require_distinct_vendors")
+_POLA_BEZ_KONSUMENTA = ("optional",)
 
 _POLA_KROKU = frozenset(Krok.model_fields) - {"id"}
 
@@ -139,9 +144,8 @@ def _niezmienniki_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> 
 def _ostrzezenia_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> list[Problem]:
     """Ostrzezenia o polach kroku bez skutku (HAR-16); nie zmieniaja `ma_bledy()`.
 
-    Pole bez konsumenta: wlaczone `optional` / `require_distinct_vendors` (po jednym
-    ostrzezeniu na pole). `role` w surowym kroku jest zawsze ignorowana - rola pochodzi
-    z rejestru - wiec ostrzegamy za kazdym razem, gdy klucz jest w pliku.
+    Pole bez konsumenta: wlaczone `optional`. `role` w surowym kroku jest zawsze ignorowana -
+    rola pochodzi z rejestru - wiec ostrzegamy za kazdym razem, gdy klucz jest w pliku.
     """
     problemy = [
         Problem(
@@ -161,6 +165,35 @@ def _ostrzezenia_kroku(krok: Krok, skill: Skill | None, workflow: Workflow) -> l
         )
         problemy.append(Problem(krok.id, ROLA_W_KROKU_IGNOROWANA, komunikat, Poziom.ostrzezenie))
     return problemy
+
+
+def _ostrzezenie_o_konsensusie(krok: Krok, backendy: Collection[str] | None) -> list[Problem]:
+    """`require_distinct_vendors` przy mniej niz dwoch roznych backendach runnera (HAR-99):
+    konsensus bylby pozorny. `backendy=None` to nieznana lista - osobne ostrzezenie, ze
+    konsensus nie zostal oceniony; pusta lista to znany brak backendow. Ostrzezenie, nie blad."""
+    if not krok.require_distinct_vendors:
+        return []
+    if backendy is None:
+        return [Problem(
+            krok.id,
+            KONSENSUS_NIEOCENIONY,
+            "require_distinct_vendors: lista backendow runnera jest nieznana, "
+            "konsensus nie zostal oceniony",
+            Poziom.ostrzezenie,
+        )]
+    if len(set(backendy)) >= 2:
+        return []
+    if backendy:
+        komunikat = (
+            f"require_distinct_vendors: runner ma tylko jeden backend ({next(iter(backendy))}), "
+            "konsensus bedzie pozorny"
+        )
+    else:
+        komunikat = (
+            "require_distinct_vendors: runner nie ma zadnego backendu, "
+            "roznych dostawcow nie da sie zapewnic"
+        )
+    return [Problem(krok.id, KONSENSUS_POZORNY, komunikat, Poziom.ostrzezenie)]
 
 
 def _problemy_capability(krok: Krok) -> list[Problem]:
@@ -236,8 +269,13 @@ def _w_katalogu(sciezka: Path, katalog: Path) -> bool:
     return True
 
 
-def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Problem]:
+def waliduj_workflow(
+    workflow: Workflow, rejestr: Rejestr, dom: Path, *, backendy: Collection[str] | None = None,
+) -> list[Problem]:
     """Zwraca wszystkie problemy workflow; kolejnosc: kroki z pliku, potem kolejnosc sprawdzen.
+
+    `backendy` to nazwy backendow runnera, na ktorym ruszy run; przy `None` (nieznane) krok
+    z `require_distinct_vendors` dostaje ostrzezenie `konsensus_nieoceniony`.
 
     Po sprawdzeniu skilla krok przechodzi przez niezmienniki i nieznane klucze
     (`_niezmienniki_kroku`).
@@ -328,6 +366,28 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
                 )
             )
 
+        if krok.foreach is not None and krok.skill is None:
+            # krok systemowy nie uruchamia agenta, wiec foreach nie ma skutku (jak limity, HAR-229)
+            problemy.append(
+                Problem(
+                    krok.id,
+                    FOREACH_NA_KROKU_SYSTEMOWYM,
+                    f"pole foreach nie ma skutku na kroku bez skilla {krok.id}: "
+                    "foreach dotyczy tylko kroku agentowego",
+                )
+            )
+
+        if krok.foreach is not None and krok.fanout > 1:
+            # liczbe procesow kroku z foreach daje dlugosc listy z artefaktu (HAR-98), nie fanout
+            problemy.append(
+                Problem(
+                    krok.id,
+                    FOREACH_Z_FANOUT,
+                    f"foreach i fanout {krok.fanout} wykluczaja sie: liczbe procesow daje "
+                    "lista z artefaktu, nie fanout",
+                )
+            )
+
         if krok.foreach is not None:
             artefakt, separator, pole = krok.foreach.partition("#")
             if not separator or not artefakt or not pole:
@@ -369,5 +429,6 @@ def waliduj_workflow(workflow: Workflow, rejestr: Rejestr, dom: Path) -> list[Pr
             )
 
         problemy.extend(_ostrzezenia_kroku(krok, skill, workflow))
+        problemy.extend(_ostrzezenie_o_konsensusie(krok, backendy))
 
     return problemy

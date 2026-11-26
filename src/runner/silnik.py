@@ -7,7 +7,17 @@ pozwala `needs`. Krok z `approval: true` zawiesza run na bramce BEZ procesu agen
 zdarzenia), kroki niezalezne od bramki dochodza do konca, potem drugi zapis, pauza testowa
 i `step_waiting` jako ostatnie zdarzenie runu. Wszystkie odczyty (rejestr skilli,
 workflow, project.yaml) ida z worktree (stan z commita), nie z repozytorium uzytkownika.
-Silnik nie sprzata worktree: zostaje do odbioru. Konsensus i foreach to osobne tickety (fan-out zrobiony).
+Silnik nie sprzata worktree: zostaje do odbioru. Fan-out i konsensus (HAR-83, HAR-95) oraz foreach (HAR-98).
+
+Foreach (HAR-98): krok z `foreach: <artefakt>#<pole>` ma tyle wariantow `a1..aN`, ile pozycji ma lista
+z artefaktu. N liczymy z dysku przy starcie kroku (albo przy bramce) i utrwalamy w katalogu runu
+(`<katalog_runu>/<krok>/foreach.json`, poza repozytorium i checkpointem); wiersze otwarte przez
+`step_waiting`/`step_started`, krok po decyzji i konsument uzywaja utrwalonego N, nie liczba od nowa
+ze zmiennego pliku. Ponowienie kroku liczy liste od nowa i nadpisuje utrwalone N, gdy lista nie jest
+pusta; pusta lista pomija krok (`pusty_foreach`) i zostawia plik z N z poprzedniej proby. `_wejscie` czyta
+ten plik dla kazdego konsumenta artefaktu producenta z foreach, takze takiego, ktorego graf nie
+pomija (np. krok z `foreach` na tym artefakcie bez `consumes`). Znane ograniczenie: taki konsument
+dostaje wtedy sciezki wynikow wariantow z poprzedniej proby (ostatnie utrwalone N).
 
 Petla naprawcza (HAR-109, D28): krok z `on_fail: {retry, max}` po porazce wraca do celu `retry`
 (wszystkie kroki na sciezce `needs` od celu do kroku nieudanego) z raportem porazki jako
@@ -41,7 +51,7 @@ import sys
 import time
 import weakref
 from collections import deque
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,7 +90,7 @@ from runner.checkpoint import (
     zapisz_checkpoint,
 )
 from runner.dowody import wykonaj_check, wykonaj_mutate_diff
-from runner.graf import StanKroku, kroki_do_powtorzenia, nastepne
+from runner.graf import PowodPominiecia, StanKroku, kroki_do_powtorzenia, nastepne
 from runner.konsensus import WynikWariantu, rozstrzygnij
 from runner.kotwice import PLIK_NOTATKI
 from runner.krok import (
@@ -93,6 +103,7 @@ from runner.krok import (
 )
 from runner.kontekst import Manifest, zloz_manifest
 from runner.krok_diff import wykonaj_diff
+from runner.tickety.zamrozenie import ostrzezenie_o_opisie, ticket_ze_zlecenia, zamroz
 from runner.weryfikacja import kroki_weryfikujace
 from runner.worktree import WorktreeRunu, katalog_runu, utworz_worktree
 from runner.zakres import Zakres, ZlaKonfiguracjaZakresu
@@ -104,12 +115,15 @@ NAZWA_WORKFLOW = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 # Katalog workflow w repozytorium: odczyt idzie z worktree (stan z commita). Stala, bo literal
 # w funkcji przezywa mutacje wielkosci liter na systemach plikow bez jej rozrozniania (macOS).
 KATALOG_WORKFLOW = Path(".cockpit") / "workflows"
-KROK_WALIDACJI = "walidacja"   # krok, na ktorym kokpit widzi blad przed startem krokow
+KROK_WALIDACJI = "walidacja"   # krok bledu i ostrzezen walidatora przed startem krokow
+KROK_TICKETU = "ticket"        # krok zdarzenia `ticket_ostrzezenie` (HAR-117)
 TEKST_CZEKANIA = "czeka na decyzję człowieka (approval)"
 TEKST_PRZERWANIA = "przerwany przy śmierci runnera — nie wznawiamy"
 DECYZJE = ("approve", "reject")
 LINIE_OGONA = 20   # ostatnie linie `output` kroku nieudanego w raporcie porazki (HAR-109)
 KATALOG_ARTEFAKTOW = KATALOG_RUNU / "artifacts"   # decyzje czlowieka jako wejscia krokow
+PLIK_LICZBY_FOREACH = "foreach.json"   # utrwalone N kroku foreach w katalogu runu (HAR-98)
+PLIK_ELEMENTU = "element.json"   # pozycja listy `foreach` w katalogu wariantu (HAR-98)
 # blokada per run: sprawdzenie oczekiwania i zapis checkpointu bez `waiting_on` sa atomowe
 # wzgledem drugiego polecenia `resume`; slaba mapa nie trzyma blokad zakonczonych runow
 _BLOKADY: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
@@ -160,6 +174,8 @@ class Przygotowany:
     rejestr: Rejestr
     projekt: Projekt
     repozytorium: Path
+    # ostrzezenia walidatora przy starcie runu (HAR-99); wznowienie ich nie niesie
+    ostrzezenia: tuple[Problem, ...] = ()
 
 
 # Wykonawca kroku systemowego: (krok, przygotowany run) -> wynik. Kazdy krok systemowy ma
@@ -210,12 +226,13 @@ def _bledy(problemy: list[Problem]) -> str:
 
 def _przygotuj(
     polecenie: Mapping[str, Any], dom: Path, root: Path | None, zakres: Zakres | None,
-    run_id: str,
+    run_id: str, backendy: Collection[str] | None = None,
 ) -> Przygotowany:
     """Walidacja polecenia, worktree, rejestr, workflow, project.yaml, kopia, materializacja.
 
-    Blad wejscia (dysk, git, zakres, skill) konczy run bledem startu; nic nie powstaje na
-    dysku przed sprawdzeniem nazwy workflow i zakresu."""
+    Ostrzezenia wczytania i walidatora (z `backendy` runnera) wracaja w
+    `Przygotowany.ostrzezenia`. Blad wejscia (dysk, git, zakres, skill) konczy run bledem
+    startu; nic nie powstaje na dysku przed sprawdzeniem nazwy workflow i zakresu."""
     nazwa = polecenie.get("workflow")
     if (
         not isinstance(nazwa, str)
@@ -232,7 +249,7 @@ def _przygotuj(
         plik = wt.sciezka / KATALOG_WORKFLOW / f"{nazwa}.yaml"
         workflow, problemy = wczytaj_workflow(plik)
         if workflow is not None:
-            problemy += waliduj_workflow(workflow, rejestr, dom)
+            problemy += waliduj_workflow(workflow, rejestr, dom, backendy=backendy)
         if workflow is None or ma_bledy(problemy):
             raise BladStartu(_bledy([p for p in problemy if ma_bledy([p])]))
         projekt, problemy_projektu = wczytaj_projekt(wt.sciezka)
@@ -244,7 +261,10 @@ def _przygotuj(
     # tekstem - tu tylko ZlaKonfiguracjaZakresu, ktora nie jest bledem granicy
     except ZlaKonfiguracjaZakresu as e:
         raise BladStartu(str(e)) from e
-    return Przygotowany(wt, workflow, rejestr, projekt, repo)
+    return Przygotowany(
+        worktree=wt, workflow=workflow, rejestr=rejestr, projekt=projekt, repozytorium=repo,
+        # po sprawdzeniu `ma_bledy` wyzej w `problemy` zostaly same ostrzezenia
+        ostrzezenia=tuple(problemy))
 
 
 def _sciezka_decyzji(step_id: str) -> Path:
@@ -297,20 +317,131 @@ def _krok_producenta(p: Przygotowany, id_kroku: str, artefakt: str) -> str | Non
     return None
 
 
-def _agenci_kroku(krok: Krok) -> list[str]:
-    """Identyfikatory agentow kroku: id kroku (fanout 1, krok systemowy) albo `a1..aN` (HAR-83)."""
-    if krok.skill is None or krok.fanout == 1:
+def _agenci_kroku(krok: Krok, liczba: int | None = None) -> list[str]:
+    """Identyfikatory agentow kroku: id kroku (fanout 1, krok systemowy) albo `a1..aN` (HAR-83).
+
+    `liczba` to dlugosc listy kroku z `foreach` (HAR-98): wtedy zawsze `a1..aN`, takze dla N = 1."""
+    if krok.skill is None:
+        return [krok.id]
+    if liczba is not None:
+        return [id_wariantu(i) for i in range(1, liczba + 1)]
+    if krok.fanout == 1:
         return [krok.id]
     return [id_wariantu(i) for i in range(1, krok.fanout + 1)]
 
 
-def _wejscia_wariantow(p: Przygotowany, krok: Krok, artefakt: str) -> list[str]:
-    """Sciezki `artefakt` wszystkich wariantow producenta z fanoutem: rola z zapisem pisze
-    w worktree (sciezka wzgledna), rola bez zapisu w katalogu runu (sciezka bezwzgledna)."""
+def _producent_skilla(p: Przygotowany, id_kroku: str, artefakt: str) -> Krok:
+    """Najblizszy przodek ze skillem, ktory produkuje `artefakt`. Wolac tylko, gdy `_wejscie` zwrocilo
+    sama nazwe artefaktu: wtedy producent jest skillowy (krok systemowy dalby sciezke bezwzgledna,
+    a brak producenta odrzuca walidator `foreach_bez_producenta`)."""
+    return next(
+        k for k in _przodkowie(p, id_kroku)
+        if k.skill is not None and artefakt in p.rejestr.skille[k.skill].produces)
+
+
+def _plik_liczby(katalog_runu: Path, krok: Krok) -> Path:
+    """Plik z utrwalonym N kroku `foreach` w katalogu runu (nie w repozytorium i nie w checkpoincie)."""
+    if (blad := _blad_identyfikatora(krok.id)) is not None:
+        raise PorazkaKroku(blad)
+    return katalog_runu / krok.id / PLIK_LICZBY_FOREACH
+
+
+def _zapisz_liczbe(katalog_runu: Path, krok: Krok, liczba: int) -> None:
+    """Utrwala N w chwili rozstrzygniecia foreach (start albo bramka); nadpisuje N poprzedniej proby."""
+    try:
+        _zapisz_atomowo(
+            _plik_liczby(katalog_runu, krok), json.dumps({"liczba": liczba}).encode("ascii"))
+    except OSError as e:
+        raise PorazkaKroku(
+            f"foreach {krok.foreach}: nie można zapisać liczby wierszy kroku {krok.id} "
+            f"({type(e).__name__})") from e
+
+
+def _liczba_wierszy(katalog_runu: Path, krok: Krok) -> int:
+    """Utrwalone N kroku `foreach`; brak, nieczytelny albo zly plik to `PorazkaKroku` (nigdy zgadywanie)."""
+    plik = _plik_liczby(katalog_runu, krok)
+    try:
+        dane = json.loads(plik.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError) as e:
+        raise PorazkaKroku(
+            f"foreach {krok.foreach}: nie można odczytać liczby wierszy kroku {krok.id} "
+            f"({type(e).__name__})") from e
+    liczba = dane.get("liczba") if isinstance(dane, dict) else None
+    if isinstance(liczba, bool) or not isinstance(liczba, int) or liczba < 1:
+        raise PorazkaKroku(
+            f"foreach {krok.foreach}: niepoprawna liczba wierszy kroku {krok.id} w {PLIK_LICZBY_FOREACH}")
+    return liczba
+
+
+def _zrodlo_foreach(p: Przygotowany, krok: Krok) -> list[Any]:
+    """Lista z artefaktu `<artefakt>#<pole>` kroku z `foreach`, czytana z dysku (HAR-98).
+
+    Sciezka jak wejscie agenta (`_wejscie`); artefakt producenta bez prawa zapisu lezy w katalogu
+    runu (`<katalog_runu>/<krok>/<artefakt>`), reszta wzgledem worktree. Kazdy blad wejscia to
+    `PorazkaKroku` z `foreach <zrodlo>` w tekscie; pusta lista wraca jako `[]` (decyduje wolajacy)."""
+    assert krok.foreach is not None
+    zrodlo = krok.foreach
+    artefakt, _, pole = zrodlo.partition("#")
+    sciezki = _wejscie(p, krok.id, artefakt)
+    if len(sciezki) != 1:
+        raise PorazkaKroku(
+            f"foreach {zrodlo}: niejednoznaczne źródło ({len(sciezki)} wersji artefaktu "
+            f"{artefakt} bez consensus)")
+    sciezka = p.worktree.sciezka / sciezki[0]
+    if sciezki[0] == artefakt:
+        producent = _producent_skilla(p, krok.id, artefakt)
+        assert producent.skill is not None
+        if not profil_roli(p.rejestr.skille[producent.skill].role).zapis:
+            sciezka = p.worktree.katalog_runu / producent.id / artefakt
+    nazwa = str(sciezka)
+    try:
+        surowe = sciezka.read_bytes()
+    except (OSError, ValueError) as e:
+        raise PorazkaKroku(
+            f"foreach {zrodlo}: nie można odczytać {nazwa} ({type(e).__name__})") from e
+    try:
+        tekst = surowe.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise PorazkaKroku(f"foreach {zrodlo}: {nazwa} nie jest poprawnym UTF-8") from e
+    try:
+        dane = json.loads(tekst)
+    except (ValueError, RecursionError) as e:
+        raise PorazkaKroku(
+            f"foreach {zrodlo}: niepoprawny JSON w {nazwa} ({type(e).__name__})") from e
+    if not isinstance(dane, dict):
+        raise PorazkaKroku(f"foreach {zrodlo}: {nazwa} nie jest obiektem JSON")
+    if pole not in dane:
+        raise PorazkaKroku(f"foreach {zrodlo}: brak pola {pole} w {nazwa}")
+    lista = dane[pole]
+    if not isinstance(lista, list):
+        raise PorazkaKroku(f"foreach {zrodlo}: pole {pole} nie jest listą")
+    return lista
+
+
+def _wiersze_z_dysku(p: Przygotowany, krok: Krok) -> list[str]:
+    """Agenci kroku przy wznowieniu: dla `foreach` z utrwalonego N (best effort), inaczej jak zawsze.
+
+    Brak albo zepsuty plik N zostaje przy `[krok.id]`: wiersze `a1..aN` otwarte przez
+    `step_waiting` zna wtedy tylko kokpit (checkpoint nie niesie N)."""
+    if krok.foreach is None:
+        return _agenci_kroku(krok)
+    try:
+        liczba = _liczba_wierszy(p.worktree.katalog_runu, krok)
+    except PorazkaKroku:
+        return [krok.id]
+    return _agenci_kroku(krok, liczba)
+
+
+def _wejscia_wariantow(
+    p: Przygotowany, krok: Krok, artefakt: str, liczba: int | None = None,
+) -> list[str]:
+    """Sciezki `artefakt` wszystkich wariantow producenta z fanoutem albo `foreach` (`liczba`):
+    rola z zapisem pisze w worktree (sciezka wzgledna), rola bez zapisu w katalogu runu
+    (sciezka bezwzgledna)."""
     assert krok.skill is not None
     zapis = profil_roli(p.rejestr.skille[krok.skill].role).zapis
     sciezki = []
-    for agent_id in _agenci_kroku(krok):
+    for agent_id in _agenci_kroku(krok, liczba):
         if zapis:
             sciezki.append(sciezka_wyjscia_wariantu(krok.id, agent_id, artefakt))
         else:
@@ -321,13 +452,19 @@ def _wejscia_wariantow(p: Przygotowany, krok: Krok, artefakt: str) -> list[str]:
 
 def _wejscie(p: Przygotowany, id_kroku: str, artefakt: str) -> list[str]:
     """Wejscia agenta dla artefaktu: sciezka bezwzgledna z kroku systemowego, sciezki wszystkich
-    wariantow z producenta z `fanout > 1` (najblizszy przodek wygrywa), inaczej sama nazwa."""
+    wariantow z producenta z `fanout > 1` albo `foreach` (N utrwalone, HAR-98; najblizszy przodek
+    wygrywa), kopia zwyciezcy przy consensus, inaczej sama nazwa."""
     for krok in _przodkowie(p, id_kroku):
         if krok.skill is None:
             if artefakt in opis_kroku(krok).produces:
                 return [str(p.worktree.katalog_runu / krok.id / artefakt)]
         elif artefakt in p.rejestr.skille[krok.skill].produces:
             # najblizszy producent konczy szukanie; bez fanoutu wejscie to sama nazwa
+            if krok.foreach is not None:
+                # producent z foreach (HAR-98): jeden wariant na pozycje listy; N utrwalone przy
+                # starcie producenta (nie z listy, ktora agent mogl zmienic)
+                return _wejscia_wariantow(
+                    p, krok, artefakt, _liczba_wierszy(p.worktree.katalog_runu, krok))
             if krok.fanout > 1 and krok.consensus is not None:
                 return [(KATALOG_ARTEFAKTOW / artefakt).as_posix()]   # kopia zwyciezcy (HAR-95)
             return _wejscia_wariantow(p, krok, artefakt) if krok.fanout > 1 else [artefakt]
@@ -369,12 +506,21 @@ async def _zloz_i_zapisz_manifest(
     return manifest
 
 
+async def _odrzuc_krok(powod: str) -> WynikKroku:
+    """Zadanie kroku, ktory nie moze ruszyc (zle wejscie `foreach`): wyjatek zadania to porazka kroku."""
+    raise PorazkaKroku(powod)
+
+
 async def _krok(
     run_id: str, id_kroku: str, p: Przygotowany, profil: ProfilBackendu,
     uruchom_agenta: UruchomAgenta, emit: Emit, zatwierdzone: frozenset[str] = frozenset(),
-    *, proba: int, ogon: deque[str] | None = None,
+    *, proba: int, ogon: deque[str] | None = None, elementy: Sequence[Any] | None = None,
 ) -> WynikKroku:
     """Jeden krok: specyfikacja agenta, prompt, polecenie; blad budowy to `PorazkaKroku`.
+
+    Krok z `foreach` (`elementy` = lista z artefaktu, HAR-98) zawsze idzie sciezka wariantow:
+    jeden wariant `aI` na pozycje, a jego element lezy w `element.json` w katalogu wariantu
+    (zapisany atomowo przed startem pierwszego agenta, sciezka wsrod wejsc wariantu).
 
     Krok systemowy idzie do wykonawcy z rejestru, bez agenta. Krok zatwierdzony na bramce
     dostaje artefakt decyzji jako ostatnie wejscie. Cel petli naprawczej w probie > 1 dostaje
@@ -388,6 +534,8 @@ async def _krok(
         # fail-closed: kotwice notatki sprawdza `wykonaj_krok` po nazwie artefaktu, a wariant ma
         # sciezke w podkatalogu; bez tego krok przeszedlby bez sprawdzenia (evidence_required)
         raise PorazkaKroku("fanout z notatką zmiany nieobsługiwany")
+    if elementy is not None and PLIK_NOTATKI in skill.produces:
+        raise PorazkaKroku("foreach z notatką zmiany nieobsługiwany")   # jak fanout, przed procesami
     wejscia = [w for artefakt in skill.consumes for w in _wejscie(p, id_kroku, artefakt)]
     if proba > 1:
         raport = _sciezka_raportu(id_kroku, proba - 1)
@@ -401,8 +549,23 @@ async def _krok(
             wejscia.append(raport.as_posix())
     if id_kroku in zatwierdzone:
         wejscia.append(_sciezka_decyzji(id_kroku).as_posix())
-    agenci = _agenci_kroku(krok)
-    if len(agenci) == 1:
+    agenci = _agenci_kroku(krok, None if elementy is None else len(elementy))
+    wejscia_agentow = [wejscia for _ in agenci]
+    if elementy is not None:
+        # rola bez zapisu nie dostaje pliku w worktree (migawka recenzenta): element lezy w katalogu
+        # runu, jak artefakty wariantu (`_sciezka_artefaktu_wariantu`)
+        if profil_roli(skill.role).zapis:
+            sciezki_elementow = [sciezka_wyjscia_wariantu(krok.id, a, PLIK_ELEMENTU) for a in agenci]
+        else:
+            sciezki_elementow = [
+                str(_sciezka_artefaktu_wariantu(p, krok, skill, a, PLIK_ELEMENTU)) for a in agenci]
+        try:
+            await asyncio.to_thread(_zapisz_elementy, p.worktree.sciezka, sciezki_elementow, elementy)
+        except OSError as e:
+            raise PorazkaKroku(
+                f"foreach {krok.foreach}: nie można zapisać elementu ({type(e).__name__})") from e
+        wejscia_agentow = [wejscia + [sciezka] for sciezka in sciezki_elementow]
+    if len(agenci) == 1 and elementy is None:
         wynik = await _wariant(
             run_id, krok, skill, krok.id, False, wejscia, p, profil, uruchom_agenta, emit,
             proba, ogon)
@@ -413,13 +576,24 @@ async def _krok(
     # fanout (HAR-83): warianty biegna rownolegle i wszystkie dobiegaja konca, takze po porazce
     # jednego; wyjatek wariantu to jego porazka, poza `BladBufora` (zepsuty zapis zdarzen)
     wyniki = await asyncio.gather(*(
-        _wariant(run_id, krok, skill, agent_id, True, wejscia, p, profil, uruchom_agenta, emit,
-                 proba, ogon)
-        for agent_id in agenci), return_exceptions=True)
+        _wariant(run_id, krok, skill, agent_id, True, wejscia_agenta, p, profil, uruchom_agenta,
+                 emit, proba, ogon)
+        for agent_id, wejscia_agenta in zip(agenci, wejscia_agentow)), return_exceptions=True)
     wynik = _zbierz_warianty(krok.id, agenci, wyniki)
     if krok.consensus is None:
         return wynik
     return await _konsensus(p, krok, skill, wynik.warianty)
+
+
+def _zapisz_elementy(
+    korzen: Path, sciezki: Sequence[str], elementy: Sequence[Any],
+) -> None:
+    """`element.json` kazdego wariantu `foreach` w worktree, atomowo; `OSError` leci do wolajacego.
+
+    `ensure_ascii` zostaje domyslne: samotny surrogat z JSON (`\\ud800`) nie da sie zakodowac
+    do UTF-8, a po zapisie ASCII czytelnik dostaje ten sam element."""
+    for sciezka, element in zip(sciezki, elementy):
+        _zapisz_atomowo(korzen / sciezka, json.dumps(element).encode("ascii"))
 
 
 def _sciezka_artefaktu_wariantu(
@@ -768,8 +942,12 @@ async def wykonaj_run(
     dom: Path | None = None,
     root: Path | None = None,
     zakres: Zakres | None = None,
+    backendy: Collection[str] | None = None,
 ) -> None:
-    """Wykonuje workflow z polecenia `run_workflow`; zdarzenia idzie przez `emit`."""
+    """Wykonuje workflow z polecenia `run_workflow`; zdarzenia idzie przez `emit`.
+
+    `backendy` to nazwy backendow tego runnera (None = nieznane). Ostrzezenia walidatora ida
+    zdarzeniami `warning` przed pierwszym krokiem i nie blokuja runu (HAR-99)."""
     run_id = polecenie.get("run_id")
     if not isinstance(run_id, str) or not run_id:
         print("polecenie run_workflow bez poprawnego run_id odrzucone", file=sys.stderr)
@@ -781,13 +959,33 @@ async def wykonaj_run(
         await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
         return
     try:
-        p = await asyncio.to_thread(_przygotuj, polecenie, dom, root, zakres, run_id)
+        p = await asyncio.to_thread(
+            _przygotuj, polecenie, dom, root, zakres, run_id, backendy)
     except BladStartu as e:
         await _blad_przed_startem(emit, run_id, str(e))
         return
     except BLEDY_GRANICY as e:      # wyjatek spoza `BladStartu` nie ucieka bez konca runu
         await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
         return
+
+    ostrzezenie: str | None = None
+    zlecenie_ticketu = polecenie.get("ticket")
+    if zlecenie_ticketu is not None:
+        # ticket zamrozony w katalogu runu (poza repozytorium) przed pierwszym krokiem (HAR-117)
+        try:
+            # projekt dla dostawcy to sciezka z polecenia (ta sama co worktree), nie id projektu
+            ticket = await ticket_ze_zlecenia(zlecenie_ticketu, polecenie.get("sciezka"))
+            await asyncio.to_thread(zamroz, p.worktree.katalog_runu, ticket)
+        except BLEDY_GRANICY as e:
+            await _blad_przed_startem(emit, run_id, _tekst_bledu(e))
+            return
+        ostrzezenie = ostrzezenie_o_opisie(ticket)
+    if ostrzezenie is not None:
+        # ticket bez opisu nie blokuje runu, ale zostaje w historii
+        await emit(_zdarzenie(run_id, "ticket_ostrzezenie", KROK_TICKETU, "", ostrzezenie))
+    for problem in p.ostrzezenia:
+        # literal rodzaju wprost w wywolaniu: czyta go skaner rodzajow zdarzen w testach
+        await emit(_zdarzenie(run_id, "warning", KROK_WALIDACJI, "", _linia(problem)))
 
     try:
         await _wykonaj_plan(
@@ -817,8 +1015,16 @@ async def _wykonaj_plan(
     ogony: dict[str, deque[str]] = {}
     oczekiwanie: Oczekiwanie | None = None     # najwyzej jedna zawieszona bramka naraz
     blad_zapisu: BladCheckpointu | None = None
+    # wiersze `a1..aN` kroku z `foreach`, policzone z dysku przy ostatnim jego starcie albo bramce
+    # (HAR-98); kroki bez `foreach` nie maja wpisu i uzywaja `_agenci_kroku`
+    wiersze_foreach: dict[str, list[str]] = {}
+
+    def wiersze(id_kroku: str) -> list[str]:
+        return wiersze_foreach.get(id_kroku) or _agenci_kroku(krok_po_id[id_kroku])
+
     try:
         while True:
+            zmiana_bez_zadania = False     # krok pominiety przez foreach: plan liczymy od nowa
             plan = nastepne(p.workflow, p.rejestr, capabilities, stany)
             for id_kroku, powod in plan.do_pominiecia.items():
                 stany[id_kroku] = StanKroku.POMINIETY
@@ -829,7 +1035,49 @@ async def _wykonaj_plan(
             for id_kroku in plan.do_startu:
                 if blad_zapisu is not None:
                     break      # bez dalszych startow; kroki w toku dobiegaja konca
-                if id_kroku in bramki:
+                krok = krok_po_id[id_kroku]
+                elementy: list[Any] | None = None
+                blad_foreach: str | None = None
+                if krok.foreach is not None:
+                    if id_kroku in bramki and oczekiwanie is not None:
+                        # krok trzyma oczekiwanie (albo czeka za inna bramka): jego wiersze sa juz
+                        # otwarte i N nie jest rozstrzygane od nowa w kazdym obiegu petli
+                        continue
+                    # liczbe procesow rozstrzyga lista z dysku przy starcie kroku albo przy bramce
+                    # (takze po ponowieniu), PRZED `step_started`, i utrwala N w katalogu runu.
+                    # Krok po decyzji bramki trzyma sie utrwalonego N (HAR-98)
+                    po_decyzji = id_kroku in zatwierdzone and id_kroku not in bramki
+                    wiersze_foreach.pop(id_kroku, None)
+                    try:
+                        if po_decyzji:
+                            # wiersze otwarte przez `step_waiting` zamyka kazda porazka tego kroku,
+                            # takze blad czytania zrodla: najpierw utrwalone N
+                            liczba = await asyncio.to_thread(
+                                _liczba_wierszy, p.worktree.katalog_runu, krok)
+                            wiersze_foreach[id_kroku] = _agenci_kroku(krok, liczba)
+                        elementy = await asyncio.to_thread(_zrodlo_foreach, p, krok)
+                        if po_decyzji:
+                            if len(elementy) != liczba:
+                                raise PorazkaKroku(
+                                    f"foreach {krok.foreach}: lista zmieniła się po bramce: "
+                                    f"było {liczba} pozycji, jest {len(elementy)}")
+                        elif elementy:
+                            await asyncio.to_thread(
+                                _zapisz_liczbe, p.worktree.katalog_runu, krok, len(elementy))
+                    except (PorazkaKroku, *BLEDY_GRANICY) as e:
+                        blad_foreach = _tekst_bledu(e)
+                        wiersze_foreach.setdefault(id_kroku, [id_kroku])
+                    else:
+                        if not elementy:
+                            stany[id_kroku] = StanKroku.POMINIETY
+                            zmiana_bez_zadania = True
+                            await emit(_zdarzenie(
+                                run_id, "step_skipped", id_kroku, id_kroku,
+                                f"{PowodPominiecia.PUSTY_FOREACH.value}: pusta lista {krok.foreach}",
+                                attempt=startowane.get(id_kroku, 0) + 1))
+                            continue
+                        wiersze_foreach[id_kroku] = _agenci_kroku(krok, len(elementy))
+                if id_kroku in bramki and blad_foreach is None:
                     # bramka stoi PRZED krokiem: bez step_started, zadania i procesu agenta;
                     # krok zostaje OCZEKUJE, wiec `nastepne` zwraca go w kazdej iteracji.
                     # Zapis nr 1 (bezpieczenstwo przy smierci procesu), bez zdarzenia: gdyby
@@ -846,16 +1094,23 @@ async def _wykonaj_plan(
                 # mutant None jest rownowazny dla `nastepne` (planuje tylko OCZEKUJE, a `needs`
                 # spelnia tylko ZAKONCZONY/POMINIETY); chroni go reczny mutant W_TOKU -> OCZEKUJE
                 stany[id_kroku] = StanKroku.W_TOKU  # pragma: no mutate
-                for agent_id in _agenci_kroku(krok_po_id[id_kroku]):
-                    await emit(_zdarzenie(
-                        run_id, "step_started", id_kroku, agent_id, "",
-                        attempt=startowane[id_kroku]))
-                zadanie = asyncio.create_task(
-                    _krok(
-                        run_id, id_kroku, p, profil, uruchom_agenta, emit, zatwierdzone,
-                        proba=startowane[id_kroku], ogon=ogony[id_kroku]))
+                if blad_foreach is not None:
+                    # zle wejscie foreach: bez `step_started` i bez procesow; porazka idzie ta sama
+                    # droga co kazdy wyjatek zadania (`step_failed`, `on_fail`, propagacja)
+                    zadanie = asyncio.create_task(_odrzuc_krok(blad_foreach))
+                else:
+                    for agent_id in wiersze(id_kroku):
+                        await emit(_zdarzenie(
+                            run_id, "step_started", id_kroku, agent_id, "",
+                            attempt=startowane[id_kroku]))
+                    zadanie = asyncio.create_task(
+                        _krok(
+                            run_id, id_kroku, p, profil, uruchom_agenta, emit, zatwierdzone,
+                            proba=startowane[id_kroku], ogon=ogony[id_kroku], elementy=elementy))
                 w_toku[zadanie] = (id_kroku, time.monotonic())
             if not w_toku:
+                if zmiana_bez_zadania:
+                    continue
                 break
             gotowe, _ = await asyncio.wait(w_toku, return_when=asyncio.FIRST_COMPLETED)
             for zadanie in [z for z in w_toku if z in gotowe]:
@@ -908,7 +1163,7 @@ async def _wykonaj_plan(
                     # wyjatek zadania (wynik None) konczy kazdy wiersz (step_id, agent_id), ktory
                     # dostal `step_started`; wynik bez wariantow ma jednego agenta
                     agenci_konca = (
-                        _agenci_kroku(krok_po_id[id_kroku]) if wynik is None
+                        wiersze(id_kroku) if wynik is None
                         else [_agent_zdarzenia(id_kroku, wynik, udany)])
                     for agent_id in agenci_konca:
                         await emit(_zdarzenie(
@@ -935,12 +1190,12 @@ async def _wykonaj_plan(
         if blad_zapisu is None:
             # run czeka na czlowieka: `step_waiting` jest ostatnim zdarzeniem, bez `run_finished`
             await _pauza_testowa()
-            for agent_id in _agenci_kroku(krok_po_id[oczekiwanie.step_id]):
+            for agent_id in wiersze(oczekiwanie.step_id):
                 await emit(_zdarzenie(
                     run_id, "step_waiting", oczekiwanie.step_id, agent_id, TEKST_CZEKANIA,
                     attempt=startowane.get(oczekiwanie.step_id, 0) + 1))
             return
-        for agent_id in _agenci_kroku(krok_po_id[oczekiwanie.step_id]):
+        for agent_id in wiersze(oczekiwanie.step_id):
             await emit(_zdarzenie(
                 run_id, "step_failed", oczekiwanie.step_id, agent_id,
                 f"zapis checkpointu nieudany: {blad_zapisu}",
@@ -984,8 +1239,8 @@ def _przygotuj_wznowienie(cp: Checkpoint, katalog: Path, dom: Path) -> Przygotow
     if projekt is None:
         raise BladWznowienia(_bledy(problemy_projektu))
     return Przygotowany(
-        WorktreeRunu(worktree, cp.base_commit, katalog), workflow, rejestr, projekt,
-        Path(cp.repozytorium))
+        worktree=WorktreeRunu(worktree, cp.base_commit, katalog), workflow=workflow,
+        rejestr=rejestr, projekt=projekt, repozytorium=Path(cp.repozytorium))
 
 
 def _stany_z_checkpointu(cp: Checkpoint) -> dict[str, StanKroku]:
@@ -1045,8 +1300,10 @@ def _agenci_bramki(katalog: Path, step_id: str) -> tuple[list[str], int | None]:
     if krok is None or step_id not in cp.kroki:
         return [step_id], None
     try:
-        return _agenci_kroku(krok), cp.kroki[step_id].proby + 1
-    except BLEDY_GRANICY:
+        # krok z foreach: wiersze `a1..aN` z N utrwalonego przy bramce (katalog runu)
+        liczba = _liczba_wierszy(katalog, krok) if krok.foreach is not None else None
+        return _agenci_kroku(krok, liczba), cp.kroki[step_id].proby + 1
+    except (PorazkaKroku, *BLEDY_GRANICY):
         return [step_id], None
 
 
@@ -1142,8 +1399,11 @@ async def wznow_run(
     krok_po_id = {k.id: k for k in p.workflow.kroki}
     # wiersze bramki otwarte przez `step_waiting` (numer proby sprzed startu kroku po decyzji)
     try:
-        agenci_bramki = _agenci_kroku(krok_po_id[step_id]) if step_id in krok_po_id else [step_id]
-        agenci_przerwanych = {i: _agenci_kroku(krok_po_id[i]) for i in przerwane}
+        agenci_bramki = (
+            await asyncio.to_thread(_wiersze_z_dysku, p, krok_po_id[step_id])
+            if step_id in krok_po_id else [step_id])
+        agenci_przerwanych = {
+            i: await asyncio.to_thread(_wiersze_z_dysku, p, krok_po_id[i]) for i in przerwane}
     except BLEDY_GRANICY as e:
         # blad liczenia agentow konczy run (`step_failed` + `run_finished`), nie idzie dalej;
         # `[step_id]` to tylko zestaw wierszy dla zdarzen zamykajacych, gdy agentow nie da sie wyliczyc
