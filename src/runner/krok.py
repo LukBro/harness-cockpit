@@ -173,19 +173,21 @@ class DzielnikLinii:
         self._bajty = self._znaki = 0
         return wynik
 
+    def _dopisz(self, czesc: bytes) -> None:
+        self._bajty += len(czesc)
+        self._znaki += len(czesc.translate(None, _KONTYNUACJE_UTF8))
+        self._linia += czesc[: self._maks - len(self._linia)]
+
     def dodaj(self, kawalek: bytes) -> list[tuple[bytes, int | None]]:
+        # petla po skonczonej liscie: reczne przesuwanie indeksu pod mutantem krecilo sie
+        # bez konca i zjadalo pamiec runnera CI. Dzielimy tylko biezacy kawalek (liniowo).
+        *pelne, reszta = kawalek.split(b"\n")
         gotowe = []
-        poczatek = 0
-        while True:
-            koniec = kawalek.find(b"\n", poczatek)
-            czesc = kawalek[poczatek:] if koniec < 0 else kawalek[poczatek:koniec]
-            self._bajty += len(czesc)
-            self._znaki += len(czesc.translate(None, _KONTYNUACJE_UTF8))
-            self._linia += czesc[: self._maks - len(self._linia)]
-            if koniec < 0:
-                return gotowe
+        for czesc in pelne:
+            self._dopisz(czesc)
             gotowe.append(self._domknij())
-            poczatek = koniec + 1
+        self._dopisz(reszta)
+        return gotowe
 
     def koniec(self) -> list[tuple[bytes, int | None]]:
         return [self._domknij()] if self._bajty else []
