@@ -797,6 +797,7 @@ ADRES_PG = "postgresql+asyncpg://u:tajne@127.0.0.1:1/db"
         ADRES_PG + "?sslmode=require",
         ADRES_PG + "?command_timeout=abc",
         "postgresql+asyncpg://u:tajne@127.0.0.1:99999/db",
+        "sqlite+aiosqlite://u:tajne@127.0.0.1/{katalog}/konsola.db",
     ],
     ids=[
         "to_nie_jest_adres",
@@ -814,6 +815,7 @@ ADRES_PG = "postgresql+asyncpg://u:tajne@127.0.0.1:1/db"
         "nieznany_parametr",
         "limit_czasu_nie_jest_liczba",
         "port_poza_zakresem",
+        "sqlite_z_uzytkownikiem_i_hostem",
     ],
 )
 def test_zly_adres_bazy_to_komunikat_o_adresie_i_haslo_uzytkownika_bez_zmian(
