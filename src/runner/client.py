@@ -31,7 +31,14 @@ from cockpit.services.errors import BladDziedziny
 from runner import bufor, hooks, operacje, silnik
 from runner.bufor import BladBufora, BrakMiejsca, Bufor, min_wolne_mb, odczekanie, wolne_mb
 from runner.heartbeat import Heartbeat
-from runner.krok import WynikKroku, wykonaj_krok
+from runner.krok import (
+    LIMIT_TEKSTU_ZDARZENIA,
+    ROZMIAR_KAWALKA,
+    DzielnikLinii,
+    WynikKroku,
+    tekst_zdarzenia,
+    wykonaj_krok,
+)
 
 LIMIT_ANULOWANYCH = 1000      # pamietane runy anulowane (ignorowanie spoznionego resume)
 CZAS_NA_ZAKONCZENIE_S = 5     # tyle krok ma na SIGTERM, potem SIGKILL
@@ -467,25 +474,30 @@ class Runner:
                 f"nie mozna uruchomic operacji: {type(e).__name__}")
             return
         self._procesy.add(proc)
+        wyslane_output = 0
+        limit_znakow = LIMIT_TEKSTU_ZDARZENIA
+        dzielnik = DzielnikLinii(limit_znakow)
         try:
             if self._zatrzymany.is_set():
                 # stop() mogl juz skonczyc sprzatanie: bez tego krok ignorujacy SIGTERM zostalby sierota
                 await self._zakoncz_krok(proc)
-            out, _ = await proc.communicate()
-        except asyncio.CancelledError:
-            await self._zakoncz_krok(proc)
-            raise
-        finally:
-            self._procesy.discard(proc)
-            self._sprzatanie.pop(proc, None)
+            assert proc.stdout is not None
 
-        ms = int((time.monotonic() - started) * 1000)
-        wyslane_output = 0
-        try:
-            for line in out.decode(errors="replace").splitlines():
-                wyslane_output += 1              # proba, takze nieudana
-                await self.send_event(client, run_id=run_id, step_id=step_id,
-                                      kind="output", text=line)
+            async def wyslij_linie(linie: list[tuple[bytes, int | None]]) -> None:
+                nonlocal wyslane_output
+                for surowa, pelna in linie:
+                    tekst, pelna_dlugosc = tekst_zdarzenia(surowa, pelna, limit_znakow)
+                    wyslane_output += 1          # proba, takze nieudana
+                    await self.send_event(
+                        client, run_id=run_id, step_id=step_id, kind="output", text=tekst,
+                        **({} if pelna_dlugosc is None else {"text_full_len": pelna_dlugosc}))
+
+            # output idzie na biezaco, nie po koncu procesu (potok nie moze tez zapchac komendy)
+            while kawalek := await proc.stdout.read(ROZMIAR_KAWALKA):
+                await wyslij_linie(dzielnik.dodaj(kawalek))
+            await wyslij_linie(dzielnik.koniec())
+            await proc.wait()
+            ms = int((time.monotonic() - started) * 1000)
             ok = proc.returncode == 0
             kind_kroku = "step_finished" if ok else "step_failed"
             krok_przyjety = await self.send_event(
@@ -512,6 +524,13 @@ class Runner:
                 client, run_id=run_id, step_id=step_id, kind="step_aborted",
                 text=POWOD_BUFOR_NIEDOSTEPNY,
             )
+        except BaseException:
+            # anulowanie albo inny wyjatek w trakcie czytania: proces dziala, wiec go konczymy
+            await self._zakoncz_krok(proc)
+            raise
+        finally:
+            self._procesy.discard(proc)
+            self._sprzatanie.pop(proc, None)
 
     async def _zglos_porazke_kroku(
         self, client: httpx.AsyncClient, run_id: str, step_id: str, tekst: str,
@@ -971,10 +990,11 @@ class Runner:
         await self._anuluj_runy()
         if self._heartbeat is not None:
             await self._heartbeat.stop()
-        # petla, bo krok moze zostac przyjety w trakcie sprzatania innego; _procesy oprozniaja
-        # run_command w finally, wiec krotka przerwa oddaje im sterowanie zamiast kreci petle
-        while self._procesy:
-            await asyncio.gather(*(self._zakoncz_krok(p) for p in list(self._procesy)))
+        # petla, bo krok moze zostac przyjety w trakcie sprzatania innego; czekamy tylko na zywe
+        # procesy: zakonczony proces nie jest sierota, a jego run_command moze wolac stop()
+        # z wnetrza wysylki zdarzenia (proces zostaje w _procesy do konca run_command)
+        while zywe := [p for p in self._procesy if p.returncode is None]:
+            await asyncio.gather(*(self._zakoncz_krok(p) for p in zywe))
             await asyncio.sleep(0.01)
 
     async def listen(self) -> None:

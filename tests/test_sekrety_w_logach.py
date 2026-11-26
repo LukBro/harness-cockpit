@@ -452,7 +452,7 @@ def test_start_runnera_instaluje_maskowanie_logow_klienta_http(monkeypatch):
 
 def test_start_kokpitu_instaluje_maskowanie_logow_serwera(monkeypatch):
     monkeypatch.setattr(kokpit_main.uvicorn, "run", lambda *a, **k: None)
-    kokpit_main.main()
+    kokpit_main.main([])
     assert _FILTR in logging.getLogger("uvicorn").filters
 
 

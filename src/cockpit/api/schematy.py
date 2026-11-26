@@ -11,7 +11,7 @@ wyliczenia stanu runu i rodzaju runnera (dozwolone w `api/` przez tools/check_la
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -386,6 +386,39 @@ class RunnerZespolu(BaseModel):
     backends: list[BackendRunnera]
     online: bool
     last_seen_at: str | None
+
+
+class NowyTokenRunnera(BaseModel):
+    nazwa: str = Field(min_length=1, max_length=200)   # kolumna runner.name: String(200)
+    wazny_do: datetime | None = None
+
+    @field_validator("wazny_do")
+    @classmethod
+    def _wazny_do_w_utc(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        try:
+            return v.astimezone(timezone.utc)
+        except OverflowError as e:
+            raise ValueError("wazny_do poza zakresem") from e
+
+
+class TokenRunnera(BaseModel):
+    """Wiersz listy tokenow: nigdy sam token ani jego skrot."""
+    runner_id: str
+    nazwa: str
+    token_prefiks: str | None
+    token_utworzony_at: str | None
+    token_uzyty_at: str | None
+    token_wazny_do: str | None
+    odwolany_at: str | None
+
+
+class TokenRunneraWydany(BaseModel):
+    runner_id: str
+    token: str   # jedyny moment, w ktorym kokpit zna jawny token
 
 
 class DefinicjaKatalogu(BaseModel):
