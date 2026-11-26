@@ -971,3 +971,58 @@ def test_definicja_zapisana_przez_model_zachowuje_listy_zakres_i_dlugi_problem(c
 
     assert _pola_skilla_definicji("d1") == (["a.md", "b.md"], [], "nadpisany", None)
     assert _pola_skilla_definicji("d2") == (None, None, "lokalny", problem)
+
+
+# --- HAR-119: metadane tokenu runnera (migracja 0017) ---
+
+KOLUMNY_TOKENU_RUNNERA = ("token_prefiks", "token_utworzony_at", "token_uzyty_at",
+                          "token_wazny_do", "odwolany_at")
+
+
+def test_migracja_tokenow_dodaje_do_runnera_piec_kolumn_dopuszczajacych_brak_wartosci(cfg):
+    command.upgrade(cfg, "0016")
+    assert not set(KOLUMNY_TOKENU_RUNNERA) & set(_kolumny_tabeli("runner"))   # kontrast
+
+    command.upgrade(cfg, "0017")
+
+    kolumny = _kolumny_tabeli("runner")
+    assert {k: kolumny.get(k) for k in KOLUMNY_TOKENU_RUNNERA} == {
+        k: "YES" for k in KOLUMNY_TOKENU_RUNNERA}
+
+
+def test_runner_sprzed_migracji_tokenow_ma_po_niej_brak_metadanych_a_nie_zera(cfg):
+    command.upgrade(cfg, "0016")
+
+    def wstaw(c):
+        _wstaw_runnera(c)
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+
+    command.upgrade(cfg, "0017")
+
+    def zapytaj(c):
+        return tuple(c.execute(text(
+            f"SELECT {', '.join(KOLUMNY_TOKENU_RUNNERA)} FROM runner WHERE id = 'rn1'")).one())
+
+    assert _z_polaczeniem(zapytaj) == (None, None, None, None, None)
+
+
+def test_cofniecie_migracji_tokenow_usuwa_piec_kolumn_i_zostawia_runnera(cfg):
+    command.upgrade(cfg, "0017")
+
+    def wstaw(c):
+        _wstaw_runnera(c)
+        c.commit()
+
+    _z_polaczeniem(wstaw)
+    assert set(KOLUMNY_TOKENU_RUNNERA) <= set(_kolumny_tabeli("runner"))     # kontrast
+
+    command.downgrade(cfg, "0016")
+
+    assert not set(KOLUMNY_TOKENU_RUNNERA) & set(_kolumny_tabeli("runner"))
+
+    def zapytaj(c):
+        return c.execute(text("SELECT name, token_hash FROM runner WHERE id = 'rn1'")).one()
+
+    assert tuple(_z_polaczeniem(zapytaj)) == ("runner", "h")
