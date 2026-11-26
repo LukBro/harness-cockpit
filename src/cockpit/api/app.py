@@ -573,6 +573,8 @@ async def run_stream(
                     ostatnia = time.monotonic()
                 if ev is None:
                     continue
+                if ev is bus.KONIEC_STRUMIENIA:
+                    break   # kolejka przepelniona: klient wznawia z Last-Event-ID
                 # seq <= ostatni_seq pomija koncowy warunek (duplikat lub zdarzenie z historii)
                 if ev["seq"] > ostatni_seq + 1:
                     # Dziura (np. 5 przed 4 przy rownoleglych ingest): dociagamy z bazy
