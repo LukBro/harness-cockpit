@@ -77,6 +77,16 @@ class Runner(Base):
         JSON, default=list, server_default=text("'[]'")
     )
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Metadane tokenu (HAR-119). Stare wiersze maja je puste: brak pomiaru to NULL, nie zero.
+    token_prefiks: Mapped[str | None] = mapped_column(String(16), default=None)
+    token_utworzony_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=_now)
+    token_uzyty_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None)
+    token_wazny_do: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None)
+    odwolany_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None)
 
 
 class Project(Base):

@@ -135,7 +135,11 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-async def runner_po_tokenie(s: AsyncSession, authorization: str | None) -> Runner:
+async def runner_po_tokenie(
+    s: AsyncSession, authorization: str | None, teraz: datetime | None = None,
+) -> Runner:
+    """Runner z tokenu. Odwolany i wygasly token jest odrzucany (odwolanie wazniejsze od
+    wygasniecia); dopiero przyjety token zapisuje chwile ostatniego uzycia (HAR-119)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise BrakDostepu("brak tokenu runnera")
     token = authorization.removeprefix("Bearer ")
@@ -144,6 +148,33 @@ async def runner_po_tokenie(s: AsyncSession, authorization: str | None) -> Runne
     ).scalar_one_or_none()
     if r is None:
         raise BrakDostepu("token nieznany - wygeneruj nowy w Ustawieniach")
+    teraz = teraz or datetime.now(timezone.utc)
+    runner_id, tenant_id = r.id, r.tenant_id
+    # Warunek w samym zapisie: odwolanie miedzy odczytem a zapisem nie przepusci tokenu.
+    zmienione = (
+        await s.execute(
+            update(Runner)
+            .where(
+                Runner.id == runner_id, Runner.tenant_id == tenant_id,
+                Runner.odwolany_at.is_(None),
+                (Runner.token_wazny_do.is_(None)) | (Runner.token_wazny_do > teraz),
+            )
+            .values(token_uzyty_at=teraz)
+            .execution_options(synchronize_session=False)
+        )
+    ).rowcount
+    # Ponowny odczyt: po zapisie (swieze wartosci) albo po odrzuceniu (wybor komunikatu).
+    r = (
+        await s.execute(
+            select(Runner).where(Runner.id == runner_id, Runner.tenant_id == tenant_id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if zmienione == 0:
+        if r is not None and r.odwolany_at is not None:
+            raise BrakDostepu("token odwołany - wygeneruj nowy w Ustawieniach")
+        raise BrakDostepu("token wygasł - wygeneruj nowy w Ustawieniach")
+    await s.commit()
     return r
 
 

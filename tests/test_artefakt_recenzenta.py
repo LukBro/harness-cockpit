@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from cockpit.services.invariants import Rola
+from cockpit.settings import settings
 from runner.agent import SpecKroku
 from runner import krok as modul_kroku
 from runner.krok import WynikKroku, wykonaj_krok
@@ -690,7 +691,7 @@ async def test_wyjatek_z_odbiorcy_zdarzen_zatrzymuje_tez_czytnik_stderr_recenzen
     assert pliki_pod(katalog_runu) == []
 
 
-async def test_pelny_stderr_agenta_nie_blokuje_kroku_recenzenta_a_artefakt_ma_tylko_stdout(
+async def test_pelny_stderr_agenta_nie_blokuje_kroku_recenzenta_a_artefakt_ma_tylko_stdout_a_stderr_idzie_obciety(
     katalog, katalog_runu
 ):
     kod_agenta = (
@@ -713,7 +714,11 @@ async def test_pelny_stderr_agenta_nie_blokuje_kroku_recenzenta_a_artefakt_ma_ty
 
     assert wynik == WynikKroku(status="zakonczony", powod=None, kod_wyjscia=0)
     assert (katalog_runu / KROK / "plan.md").read_text() == "tresc planu\n"
-    assert any(z["text"] == "e" * 300000 for z in zdarzenia)
+    limit = settings.limit_tekstu_zdarzenia
+    assert all(len(z["text"]) <= limit for z in zdarzenia)
+    assert any(
+        z["text"] == "e" * limit and z["text_full_len"] == 300000 for z in zdarzenia
+    )
 
 
 # --- domyslny limit 8 MiB (bez podmiany stalej) -------------------------------------
