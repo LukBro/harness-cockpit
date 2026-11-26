@@ -52,6 +52,7 @@ def napisz_skill(
     produces: list[str] | None = None,
     needs: list[str] | None = None,
     role: str | None = "author",
+    brief: str = "Brief.",
 ) -> Path:
     """Tworzy <zrodlo>/<id>/SKILL.md w formacie kokpitu."""
     katalog = zrodlo / id
@@ -63,7 +64,7 @@ def napisz_skill(
         if wartosci:
             linie.append(f"{pole}: [{', '.join(wartosci)}]")
     plik = katalog / "SKILL.md"
-    plik.write_text("---\n" + "\n".join(linie) + "\n---\nBrief.\n", encoding="utf-8")
+    plik.write_text("---\n" + "\n".join(linie) + f"\n---\n{brief}\n", encoding="utf-8")
     return plik
 
 
@@ -2254,3 +2255,338 @@ def test_krok_systemowy_check_nie_dostaje_problemu_capabilities_roli(
 
     assert CAPABILITY_BEZ_UPRAWNIEN_ROLI not in kody(problemy)
     assert problemy == []
+
+
+# --- przenosnosc ticketu: skill siega do raw, status albo priority (HAR-100) ----------------------
+# Kod przypiety literalem (nie stala modulu): zmiana wartosci kodu psuje kanwe.
+# Kazdy test "bez ostrzezenia" ma obok krok kontrolny, ktory ostrzezenie dostac musi -
+# inaczej przechodzilby takze wtedy, gdy regula nie dziala wcale.
+
+BILET = "ticket_nieprzenosny"
+POLA_NIEPRZENOSNE = ("raw", "status", "priority")
+
+
+def problemy_skilla_z_briefem(
+    tmp_path: Path, repo: Path, dom: Path, brief: str
+) -> list[Problem]:
+    """Workflow z jednym krokiem `a`, ktorego skill `czytnik-jiry` ma podany brief."""
+    napisz_skill(repo / ".cockpit" / "skills", "czytnik-jiry", brief=brief)
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  a: {skill: czytnik-jiry}\n")
+    return waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+
+def problemy_obok_kroku_kontrolnego(
+    tmp_path: Path, repo: Path, dom: Path, brief: str
+) -> list[Problem]:
+    """Krok `a` z badanym briefem i krok `kontrola`, ktorego skill na pewno siega do statusu."""
+    skille = repo / ".cockpit" / "skills"
+    napisz_skill(skille, "badany", brief=brief)
+    napisz_skill(skille, "kontrolny", brief="Przeczytaj ticket.status.")
+    wf = workflow_z(
+        tmp_path, "name: w\nsteps:\n  kontrola: {skill: kontrolny}\n  a: {skill: badany}\n")
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+    assert kody(problemy, "kontrola") == [BILET]
+    return problemy
+
+
+def komunikat_o_polu(pole: str) -> str:
+    """Pelny, oczekiwany komunikat ostrzezenia dla skilla `czytnik-jiry`."""
+    return (
+        f"nieprzenośny ticket: skill czytnik-jiry sięga do pola {pole}, "
+        "które zależy od trackera"
+    )
+
+
+def komunikaty_o_bilecie(problemy: list[Problem]) -> list[str]:
+    return [p.komunikat for p in problemy if p.krok == "a" and p.kod == BILET]
+
+
+def test_skill_siegajacy_do_surowych_danych_ticketu_daje_ostrzezenie_z_polem_i_skillem(
+    tmp_path, repo, dom
+):
+    problemy = problemy_skilla_z_briefem(
+        tmp_path, repo, dom, "Wez ticket.raw.customfield z opisu zadania.")
+
+    [p] = problemy
+    assert (p.krok, p.kod, p.poziom) == ("a", BILET, Poziom.ostrzezenie)
+    assert p.komunikat == komunikat_o_polu("raw")
+
+
+def test_skill_siegajacy_do_statusu_ticketu_daje_ostrzezenie_o_statusie(tmp_path, repo, dom):
+    problemy = problemy_skilla_z_briefem(
+        tmp_path, repo, dom, "Gdy ticket.status to Done, przerwij.")
+
+    [p] = problemy
+    assert (p.krok, p.kod, p.poziom) == ("a", BILET, Poziom.ostrzezenie)
+    assert p.komunikat == komunikat_o_polu("status")
+
+
+def test_skill_siegajacy_do_priorytetu_ticketu_daje_ostrzezenie_o_priorytecie(
+    tmp_path, repo, dom
+):
+    problemy = problemy_skilla_z_briefem(
+        tmp_path, repo, dom, "Kolejnosc ustal wedlug ticket.priority")
+
+    [p] = problemy
+    assert (p.krok, p.kod, p.poziom) == ("a", BILET, Poziom.ostrzezenie)
+    assert p.komunikat == komunikat_o_polu("priority")
+
+
+def test_odwolanie_do_ticketu_w_dalszej_linii_briefu_tez_jest_wykrywane(tmp_path, repo, dom):
+    problemy = problemy_skilla_z_briefem(
+        tmp_path, repo, dom, "# Brief\n\nZaplanuj prace.\n\nSprawdz `ticket.status`.")
+
+    assert komunikaty_o_bilecie(problemy) == [komunikat_o_polu("status")]
+
+
+@pytest.mark.parametrize("pole", POLA_NIEPRZENOSNE)
+@pytest.mark.parametrize(
+    "linia",
+    [
+        """jq '.["{pole}"]' ticket.json""",
+        """jq ".['{pole}']" ticket.json""",
+        """Z pliku ticket.json wez klucz ["{pole}"].""",
+        """Uzyj ticket["{pole}"] do decyzji.""",
+        """Uzyj ticket['{pole}'] do decyzji.""",
+        """Wynik ["{pole}"] pochodzi ze zmiennej ticket[0].""",
+    ],
+    ids=[
+        "ticket_json_cudzyslow",
+        "ticket_json_apostrof",
+        "ticket_json_przed_polem",
+        "nawias_ticketu_cudzyslow",
+        "nawias_ticketu_apostrof",
+        "nawias_ticketu_w_innym_miejscu_linii",
+    ],
+)
+def test_pole_w_nawiasie_w_linii_mowiacej_o_tickecie_daje_ostrzezenie_o_tym_polu(
+    tmp_path, repo, dom, linia, pole
+):
+    problemy = problemy_skilla_z_briefem(tmp_path, repo, dom, linia.format(pole=pole))
+
+    assert kody(problemy) == [BILET]
+    assert komunikaty_o_bilecie(problemy) == [komunikat_o_polu(pole)]
+
+
+@pytest.mark.parametrize(
+    "brief",
+    [
+        """Wez response["status"] z odpowiedzi serwera.""",
+        """Wez ['priority'] z konfiguracji.""",
+        """Przeczytaj ticket.json.\nPotem wez ["status"] z odpowiedzi.""",
+        """Wez ["raw"] z odpowiedzi.\nPotem zapisz ticket.json.""",
+        """Pokaz ticket["title"].\nPotem wez ['status'] z odpowiedzi.""",
+        """Wez ticket_json["status"] z pamieci.""",
+        """Z pliku ticketXjson wez klucz ["status"].""",
+        """Przeczytaj ticket.title i wez ["status"] z odpowiedzi.""",
+        """Z pliku config.json wez klucz ["status"].""",
+        """W ticket.json jest klucz "status" i klucz 'raw'.""",
+        """W ticket.json szukaj ["status'].""",
+        """W ticket.json szukaj ['raw"].""",
+        """W ticket.json szukaj ["status" bez domkniecia.""",
+        """W ticket.json szukaj "priority"] bez otwarcia.""",
+        """W ticket.json szukaj [status] bez cudzyslowow.""",
+        """W ticket.json szukaj ["statuses"] i ["raw_x"].""",
+        """W ticket.json szukaj ["Status"].""",
+    ],
+    ids=[
+        "inny_obiekt",
+        "bez_zadnego_ticketu",
+        "ticket_json_w_linii_wczesniejszej",
+        "ticket_json_w_linii_pozniejszej",
+        "nawias_ticketu_w_innej_linii",
+        "inna_nazwa_zmiennej",
+        "nazwa_pliku_bez_kropki",
+        "pole_ticketu_po_kropce_zamiast_pliku_json",
+        "plik_json_inny_niz_ticket",
+        "cudzyslow_bez_nawiasow",
+        "cudzyslow_zamkniety_apostrofem",
+        "apostrof_zamkniety_cudzyslowem",
+        "brak_nawiasu_zamykajacego",
+        "brak_nawiasu_otwierajacego",
+        "nawiasy_bez_cudzyslowow",
+        "dluzsza_nazwa_pola",
+        "inna_wielkosc_liter_pola",
+    ],
+)
+def test_pole_w_nawiasie_bez_odwolania_do_ticketu_w_tej_samej_linii_nie_daje_ostrzezenia(
+    tmp_path, repo, dom, brief
+):
+    problemy = problemy_obok_kroku_kontrolnego(tmp_path, repo, dom, brief)
+
+    assert kody(problemy, "a") == []
+
+
+@pytest.mark.parametrize(
+    "brief",
+    [
+        "Sprawdz myticket.status.",
+        "Sprawdz old_ticket.raw.",
+        "Sprawdz Ticket.status.",
+        "Sprawdz ticket.Priority.",
+        "Sprawdz ticket.statusy.",
+        "Sprawdz ticket.raw_x.",
+        "Sprawdz ticket.priority2.",
+        "Zmienna ticket_status jest pusta.",
+        "Zmienna ticketXpriority jest pusta.",
+        "Opisz ticket raw i ticket status.",
+    ],
+    ids=[
+        "myticket",
+        "przedrostek_nazwy",
+        "Ticket_z_wielkiej_litery",
+        "pole_z_wielkiej_litery",
+        "dluzsze_slowo",
+        "dluzsza_nazwa_z_podkresleniem",
+        "dluzsza_nazwa_z_cyfra",
+        "podkreslenie_zamiast_kropki",
+        "litera_zamiast_kropki",
+        "spacja_zamiast_kropki",
+    ],
+)
+def test_napis_podobny_do_odwolania_do_pola_ticketu_nie_daje_ostrzezenia(
+    tmp_path, repo, dom, brief
+):
+    problemy = problemy_obok_kroku_kontrolnego(tmp_path, repo, dom, brief)
+
+    assert kody(problemy, "a") == []
+
+
+def test_skill_czytajacy_tylko_przenosne_pola_ticketu_nie_dostaje_ostrzezenia(
+    tmp_path, repo, dom
+):
+    brief = (
+        "Przeczytaj ticket.title, ticket.description i ticket.acceptance_criteria.\n"
+        """jq '.["title"], .["description"], .["acceptance_criteria"]' ticket.json\n"""
+        """Albo ticket["title"], ticket['description'], ticket["acceptance_criteria"]."""
+    )
+
+    problemy = problemy_obok_kroku_kontrolnego(tmp_path, repo, dom, brief)
+
+    assert kody(problemy, "a") == []
+
+
+def test_slowa_status_i_priority_bez_odwolania_do_ticketu_nie_daja_ostrzezenia(
+    tmp_path, repo, dom
+):
+    brief = "Opisz status prac, priority zadan i raw output. Sprawdz result.status."
+
+    problemy = problemy_obok_kroku_kontrolnego(tmp_path, repo, dom, brief)
+
+    assert kody(problemy, "a") == []
+
+
+@pytest.mark.parametrize(
+    "brief",
+    [
+        "Czytaj ticket.status.\nPonownie sprawdz ticket.status.",
+        "Porownaj ticket.status z ticket.status.",
+        """Czytaj ticket.status.\njq '.["status"]' ticket.json""",
+        """Czytaj ticket["status"] i ticket['status'].""",
+    ],
+    ids=["dwie_linie", "jedna_linia", "kropka_i_nawias", "oba_cudzyslowy"],
+)
+def test_wielokrotne_odwolanie_do_tego_samego_pola_daje_jedno_ostrzezenie(
+    tmp_path, repo, dom, brief
+):
+    problemy = problemy_skilla_z_briefem(tmp_path, repo, dom, brief)
+
+    assert kody(problemy) == [BILET]
+    assert komunikaty_o_bilecie(problemy) == [komunikat_o_polu("status")]
+
+
+@pytest.mark.parametrize(
+    "brief",
+    [
+        "Czytaj ticket.priority, potem ticket.status, na koncu ticket.raw.",
+        """Czytaj ticket.priority.\njq '.["status"]' ticket.json\nCzytaj ticket.raw.""",
+        """Czytaj ticket["raw"].\nCzytaj ticket.priority.\nCzytaj ticket['status'].""",
+    ],
+    ids=["jedna_linia", "obie_formy", "kolejnosc_przemieszana"],
+)
+def test_ostrzezenia_o_polach_ticketu_ida_w_kolejnosci_raw_status_priority(
+    tmp_path, repo, dom, brief
+):
+    problemy = problemy_skilla_z_briefem(tmp_path, repo, dom, brief)
+
+    assert kody(problemy) == [BILET, BILET, BILET]
+    assert komunikaty_o_bilecie(problemy) == [
+        komunikat_o_polu("raw"),
+        komunikat_o_polu("status"),
+        komunikat_o_polu("priority"),
+    ]
+
+
+def test_dwa_kroki_z_tym_samym_skillem_dostaja_kazdy_swoje_ostrzezenie_o_bilecie(
+    tmp_path, repo, dom, skille_repo
+):
+    napisz_skill(skille_repo, "czytnik-jiry", brief="Czytaj ticket.status.")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  a: {skill: czytnik-jiry}\n  b: {skill: czytnik-jiry}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert [(p.krok, p.kod) for p in problemy] == [("a", BILET), ("b", BILET)]
+
+
+def test_skill_globalny_siegajacy_do_statusu_ma_ostrzezenie_o_bilecie_po_ostrzezeniu_o_skillu(
+    tmp_path, repo, dom
+):
+    napisz_skill(dom / ".cockpit" / "skills", "globalny", brief="Czytaj ticket.status.")
+    wf = workflow_z(tmp_path, "name: w\nsteps:\n  a: {skill: globalny}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert kody(problemy, "a") == [NIEPRZENOSNY_SKILL, BILET]
+
+
+def test_krok_z_nieznanym_skillem_nie_dostaje_ostrzezenia_o_bilecie(tmp_path, repo, dom):
+    napisz_skill(repo / ".cockpit" / "skills", "kontrolny", brief="Czytaj ticket.status.")
+    wf = workflow_z(
+        tmp_path, "name: w\nsteps:\n  kontrola: {skill: kontrolny}\n  a: {skill: widmo}\n")
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert kody(problemy, "kontrola") == [BILET]
+    assert kody(problemy, "a") == [NIEZNANY_SKILL]
+
+
+def test_skill_pominiety_przy_wczytaniu_nie_daje_ostrzezenia_o_bilecie(tmp_path, repo, dom):
+    # plik bez pola role trafia do rejestr.pominiete, choc jego brief siega do statusu
+    napisz_skill(
+        repo / ".claude" / "skills", "bez-roli", role=None, brief="Czytaj ticket.status.")
+    napisz_skill(repo / ".cockpit" / "skills", "kontrolny", brief="Czytaj ticket.status.")
+    rejestr = rejestr_z(repo, dom)
+    assert [p.plik.parent.name for p in rejestr.pominiete] == ["bez-roli"]
+    wf = workflow_z(
+        tmp_path, "name: w\nsteps:\n  kontrola: {skill: kontrolny}\n  a: {skill: bez-roli}\n")
+
+    problemy = waliduj_workflow(wf, rejestr, dom)
+
+    assert kody(problemy, "kontrola") == [BILET]
+    assert kody(problemy, "a") == [NIEZNANY_SKILL]
+
+
+def test_krok_systemowy_nie_dostaje_ostrzezenia_o_bilecie(tmp_path, repo, dom):
+    napisz_skill(repo / ".cockpit" / "skills", "kontrolny", brief="Czytaj ticket.status.")
+    wf = workflow_z(
+        tmp_path,
+        "name: w\nsteps:\n  kontrola: {skill: kontrolny}\n"
+        "  diff: {system: diff, needs: [kontrola]}\n",
+    )
+
+    problemy = waliduj_workflow(wf, rejestr_z(repo, dom), dom)
+
+    assert kody(problemy, "kontrola") == [BILET]
+    assert kody(problemy, "diff") == []
+
+
+def test_same_ostrzezenia_o_polach_ticketu_nie_czynia_workflow_blednym(tmp_path, repo, dom):
+    problemy = problemy_skilla_z_briefem(
+        tmp_path, repo, dom, "Czytaj ticket.raw, ticket.status i ticket.priority.")
+
+    assert kody(problemy) == [BILET, BILET, BILET]
+    assert all(p.poziom == Poziom.ostrzezenie for p in problemy)
+    assert not ma_bledy(problemy)
