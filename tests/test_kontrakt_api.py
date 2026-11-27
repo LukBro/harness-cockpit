@@ -348,7 +348,7 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("POST", "/api/workflows/{name}/run"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/runs/{run_id}/artifacts/{p:path}"), {"401", "403", "404", "409", "422", "500"}),
     (("GET", "/api/runs"), {"401", "422", "500"}),
-    (("GET", "/api/runs/{run_id}"), {"401", "404", "500"}),
+    (("GET", "/api/runs/{run_id}"), {"401", "404", "422", "500"}),   # HAR-202: po_seq
     (("GET", "/api/runs/{run_id}/diff"), {"401", "404", "409", "422", "500"}),
     (("POST", "/api/runs/{run_id}/integrate"), {"401", "403", "404", "409", "422", "500"}),
     (("POST", "/api/runs/{run_id}/commit"), {"401", "403", "404", "409", "422", "500"}),

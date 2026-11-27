@@ -71,7 +71,7 @@ class Runner(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     version: Mapped[str] = mapped_column(String(50), default="")
-    token_hash: Mapped[str] = mapped_column(String(128))   # nigdy sekret jawnie (BRO-98)
+    token_hash: Mapped[str] = mapped_column(String(128), index=True)   # nigdy sekret jawnie (BRO-98)
     # [{"nazwa": str, "auth": "subscription" | "api_key"}] - deklaracja runnera (HAR-34)
     backends: Mapped[list[dict]] = mapped_column(
         JSON, default=list, server_default=text("'[]'")
@@ -107,7 +107,15 @@ class Project(Base):
 
 class Run(Base):
     __tablename__ = "run"
-    __table_args__ = (Index("ix_run_tenant_ticket", "tenant_id", "ticket_id"),)
+    __table_args__ = (
+        Index("ix_run_tenant_ticket", "tenant_id", "ticket_id"),
+        # czesciowy: sweeper runnerow offline czyta tylko runy w toku i oczekujace (HAR-202)
+        Index(
+            "ix_run_status_w_toku", "status",
+            postgresql_where=text("status IN ('running', 'waiting')"),
+            sqlite_where=text("status IN ('running', 'waiting')"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), index=True)
@@ -137,6 +145,8 @@ class Event(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "seq", name="uq_event_run_seq"),
         UniqueConstraint("run_id", "event_id", name="uq_event_run_event"),
+        # zliczanie output kroku i powod pominiecia (HAR-202)
+        Index("ix_event_run_step_kind", "run_id", "step_id", "kind"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
