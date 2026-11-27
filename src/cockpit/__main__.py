@@ -230,7 +230,13 @@ def main(argv: list[str] | None = None, *, maker=None) -> int:
     zainstaluj_maskowanie()
     if args.polecenie == "ustaw-haslo":
         return _ustaw_haslo(args.email, maker)
-    uvicorn.run("cockpit.api.app:app", host=settings.host, port=settings.port)
+    uvicorn.run(
+        "cockpit.api.app:app",
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=settings.proxy_headers,
+        forwarded_allow_ips=settings.forwarded_allow_ips,
+    )
     return 0
 
 

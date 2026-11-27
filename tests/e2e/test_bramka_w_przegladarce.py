@@ -520,7 +520,8 @@ def test_odpowiedz_na_decyzje_zmienia_widok_od_razu_bez_czekania_na_ponowne_pobr
     page = zalogowana_strona
     run_id = _run_czekajacy_na_bramce(adres_kokpitu, token_runnera)
     _otworz_run(page, adres_kokpitu, run_id)
-    page.route(f"**/api/runs/{run_id}", lambda r: r.abort())      # GET szczegolow runu nie dziala
+    # GET szczegolow runu nie dziala, takze z ?po_seq=
+    page.route(re.compile(rf"/api/runs/{re.escape(run_id)}(\?.*)?$"), lambda r: r.abort())
 
     _zatwierdz(page).click()
 
