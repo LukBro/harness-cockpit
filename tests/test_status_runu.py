@@ -478,9 +478,9 @@ async def test_zdarzenie_inne_niz_koniec_runu_nie_wylicza_nieudanych_krokow(
     wywolania: list[str] = []
     prawdziwa = runs.nieudane_kroki
 
-    async def spy(s, run):
+    async def spy(s, run, *args):
         wywolania.append(run.id)
-        return await prawdziwa(s, run)
+        return await prawdziwa(s, run, *args)
 
     monkeypatch.setattr(runs, "nieudane_kroki", spy)
     run_id = await _nowy_run(klient)

@@ -1026,3 +1026,67 @@ def test_cofniecie_migracji_tokenow_usuwa_piec_kolumn_i_zostawia_runnera(cfg):
         return c.execute(text("SELECT name, token_hash FROM runner WHERE id = 'rn1'")).one()
 
     assert tuple(_z_polaczeniem(zapytaj)) == ("runner", "h")
+
+
+# --- HAR-202: indeksy wydajnosci (migracja 0018) ---
+
+# tabela -> kolumny indeksu tak, jak zapisuje je pg_indexes.indexdef
+INDEKSY_WYDAJNOSCI = {
+    "runner": "(token_hash)",
+    "event": "(run_id, step_id, kind)",
+    "run": "(status)",
+}
+
+
+def _indeksy_na_kolumnach(tabela: str) -> list[str]:
+    """Definicje indeksow tabeli na dokladnie tych kolumnach; nazwa indeksu nie ma znaczenia."""
+    kolumny = INDEKSY_WYDAJNOSCI[tabela]
+    return [d for d in _definicje_indeksow(tabela).values() if f"USING btree {kolumny}" in d]
+
+
+@pytest.mark.parametrize("tabela", ["runner", "event"])
+def test_migracja_indeksuje_token_runnera_i_zdarzenia_kroku_bez_unikalnosci_i_warunku(cfg, tabela):
+    command.upgrade(cfg, "0017")
+    assert _indeksy_na_kolumnach(tabela) == []                       # kontrast: przed migracja
+
+    command.upgrade(cfg, "0018")
+
+    definicje = _indeksy_na_kolumnach(tabela)
+    assert len(definicje) == 1, _definicje_indeksow(tabela)
+    assert definicje[0].startswith("CREATE INDEX "), definicje[0]    # nie UNIQUE
+    assert " WHERE " not in definicje[0]
+
+
+def test_migracja_indeksuje_status_tylko_runow_w_toku_i_czekajacych(cfg):
+    command.upgrade(cfg, "0017")
+    assert _indeksy_na_kolumnach("run") == []                        # kontrast: przed migracja
+
+    command.upgrade(cfg, "0018")
+
+    definicje = _indeksy_na_kolumnach("run")
+    assert len(definicje) == 1, _definicje_indeksow("run")
+    assert definicje[0].startswith("CREATE INDEX "), definicje[0]
+    _, jest_warunek, warunek = definicje[0].partition(" WHERE ")
+    assert jest_warunek, f"indeks na statusie runu nie jest czesciowy: {definicje[0]}"
+
+    # warunek ocenia baza na kazdej wartosci statusu, nie porownanie napisow
+    def objete(c):
+        return set(c.execute(text(
+            "SELECT status::text FROM unnest(enum_range(NULL::runstatus)) AS s(status) "
+            f"WHERE {warunek}")).scalars())
+
+    assert _z_polaczeniem(objete) == {"running", "waiting"}
+
+
+def test_cofniecie_migracji_indeksow_usuwa_trzy_indeksy_i_zostawia_wczesniejsze(cfg):
+    command.upgrade(cfg, "0018")
+    przed = {t: _definicje_indeksow(t) for t in INDEKSY_WYDAJNOSCI}
+    assert all(_indeksy_na_kolumnach(t) for t in INDEKSY_WYDAJNOSCI)  # kontrast
+
+    command.downgrade(cfg, "0017")
+
+    for tabela in INDEKSY_WYDAJNOSCI:
+        assert _indeksy_na_kolumnach(tabela) == []
+        po = _definicje_indeksow(tabela)
+        assert len(przed[tabela]) - len(po) == 1, (przed[tabela], po)
+        assert po.items() <= przed[tabela].items()

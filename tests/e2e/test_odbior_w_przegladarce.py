@@ -22,6 +22,7 @@ import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import quote
@@ -589,8 +590,11 @@ def test_historia_odbioru_pokazuje_kto_i_kiedy_zintegrowal_i_zacommitowal_z_sha(
         f"Zintegrowano · {email} · {_czas_pl(page, at_integracji)}")
     expect(_wpisy(page).nth(1)).to_have_text(
         f"Zacommitowano · {email}, {sha} · {_czas_pl(page, at_commita)}")
-    expect(_wpisy(page).nth(0).locator("time")).to_have_attribute("datetime", at_integracji)
-    expect(_wpisy(page).nth(1).locator("time")).to_have_attribute("datetime", at_commita)
+    # ten sam moment, nie ten sam napis: strumien podaje "+00:00", pobranie runu "Z" (HAR-202)
+    for numer, at in enumerate((at_integracji, at_commita)):
+        na_ekranie = _wpisy(page).nth(numer).locator("time").get_attribute(
+            "datetime", timeout=LIMIT_WYNIKU_MS)
+        assert datetime.fromisoformat(na_ekranie) == datetime.fromisoformat(at)
 
 
 def test_historia_odbioru_przetrwa_ponowne_otwarcie_runu_a_przyciski_akcji_nie_wracaja(
