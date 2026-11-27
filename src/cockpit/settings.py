@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     heartbeat_co_s: int | None = None
     host: str = "127.0.0.1"            # faza testowa; publicznie za Caddym (BRO-76)
     port: int = 8765
+    # Naglowki X-Forwarded-* (HAR-113; env COCKPIT_PROXY_HEADERS, COCKPIT_FORWARDED_ALLOW_IPS).
+    # Zaufany tylko adres proxy: "*" pozwala sfalszowac IP i obejsc blokade logowania pary.
+    proxy_headers: bool = True
+    forwarded_allow_ips: str = "127.0.0.1"
 
     @model_validator(mode="after")
     def _domyslny_heartbeat(self) -> "Settings":
