@@ -5,6 +5,8 @@ ze stanow krokow i ze zdarzenia `run_finished`, nie z ostatniego zdarzenia kroku
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,17 +87,20 @@ async def kroki_runu(s: AsyncSession, run: Run) -> list[StepRun]:
     )
 
 
-async def _ostatnie_proby(s: AsyncSession, run: Run) -> dict[tuple[str, str], StepRun]:
-    """Ostatnia proba kazdej pary (step_id, agent_id); pozniejsza zastepuje wczesniejsza."""
-    ostatnie: dict[tuple[str, str], StepRun] = {}
-    for w in await kroki_runu(s, run):   # rosnaco po probie
-        ostatnie[(w.step_id, w.agent_id)] = w
-    return ostatnie
+def ostatnie_proby(wiersze: Sequence[StepRun]) -> dict[tuple[str, str], StepRun]:
+    """Ostatnia proba kazdej pary (step_id, agent_id); pozniejsza zastepuje wczesniejsza.
+
+    `wiersze` w porzadku `kroki_runu` (rosnaco po probie)."""
+    return {(w.step_id, w.agent_id): w for w in wiersze}
 
 
-async def nieudane_kroki(s: AsyncSession, run: Run) -> list[str]:
-    """Posortowane `step_id` krokow, ktorych ostatnia proba (ktoregos agenta) jest `failed`."""
-    ostatnie = await _ostatnie_proby(s, run)
+async def nieudane_kroki(
+    s: AsyncSession, run: Run, wiersze: Sequence[StepRun] | None = None,
+) -> list[str]:
+    """Posortowane `step_id` krokow, ktorych ostatnia proba (ktoregos agenta) jest `failed`.
+
+    `wiersze`: juz przeczytane `kroki_runu` tego runu; bez nich funkcja czyta je sama."""
+    ostatnie = ostatnie_proby(await kroki_runu(s, run) if wiersze is None else wiersze)
     return sorted({
         krok for (krok, _), w in ostatnie.items() if w.status == StepStatus.failed
     })
@@ -106,8 +111,8 @@ async def nieudane_kroki(s: AsyncSession, run: Run) -> list[str]:
 _STANY_DOWODU = frozenset({StepStatus.finished, StepStatus.skipped, StepStatus.failed})
 
 
-async def brak_dowodu_ukonczenia(s: AsyncSession, run: Run) -> bool:
+def brak_dowodu_ukonczenia(wiersze: Sequence[StepRun]) -> bool:
     """Brak dowodu ukonczenia (`evidence_required`): run bez zadnego kroku albo z ostatnia
     proba kroku inna niz `finished`/`skipped`/`failed`. Brak wierszy to brak dowodu."""
-    ostatnie = await _ostatnie_proby(s, run)
+    ostatnie = ostatnie_proby(wiersze)
     return not ostatnie or any(w.status not in _STANY_DOWODU for w in ostatnie.values())

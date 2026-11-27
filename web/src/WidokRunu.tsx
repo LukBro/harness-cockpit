@@ -121,10 +121,17 @@ export function WidokRunu({
     setWysylamDecyzje(false);
     if (!runId) return;
     let anulowano = false;
+    // Najwyzszy posiadany seq (GET i strumien). Zmienna efektu: stan Reacta bylby tu nieswiezy.
+    let najwyzszySeq = 0;
+    const przyjmij = (nowe: Zdarzenie[]) => {
+      for (const z of nowe) najwyzszySeq = Math.max(najwyzszySeq, z.seq);
+      setZdarzenia((p) => scal(p, nowe));
+    };
 
     async function dociagnij() {
       try {
-        const r = await fetch(`/api/runs/${encodeURIComponent(runId!)}`);
+        const zapytanie = najwyzszySeq > 0 ? `?po_seq=${najwyzszySeq}` : "";
+        const r = await fetch(`/api/runs/${encodeURIComponent(runId!)}${zapytanie}`);
         if (anulowano) return;
         if (r.status === 404) {
           setBlad("Nie znaleziono runu o tym identyfikatorze.");
@@ -141,7 +148,7 @@ export function WidokRunu({
         setReason(run.reason);
         setKroki(run.steps);
         setPokrycie(run.pokrycie ?? null);
-        setZdarzenia((p) => scal(p, run.events));
+        przyjmij(run.events);
       } catch {
         if (!anulowano) setBlad(KOMUNIKAT_SIEC);
       }
@@ -170,7 +177,7 @@ export function WidokRunu({
     es.addEventListener("run", (e) => {
       if (anulowano) return;
       const z: Zdarzenie = JSON.parse((e as MessageEvent).data);
-      setZdarzenia((p) => scal(p, [z]));
+      przyjmij([z]);
       if (z.kind === "step_finished" || z.kind === "step_failed" || z.kind === "run_finished" || KINDY_KROKU.has(z.kind)) void dociagnij();
     });
     return () => {
