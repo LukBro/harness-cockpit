@@ -20,7 +20,7 @@ import json
 import os
 import shlex
 import signal
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -29,6 +29,7 @@ from cockpit.services.errors import BladDziedziny
 from cockpit.services.invariants import Niezmiennik
 from cockpit.services.kroki_systemowe import CAPABILITY_MUTATE_DIFF, PLIK_MUTANTOW, nazwa_dowodu
 from cockpit.services.walidacja import Naruszenie, dowod_z_komendy, sprawdz_katalog_runu
+from runner.atrapy_bramek import ocen_bramke
 from runner.krok import ROZMIAR_KAWALKA, WynikKroku, _zapisz_atomowo
 
 LIMIT_CHECKU_S = 600.0
@@ -136,10 +137,13 @@ async def wykonaj_check(
 
     Komenda nieczytelna, katalog kroku w repozytorium i blad startu to porazka bez pliku
     dowodu; kazdy zakonczony proces (kod 0, kod != 0, pusty wynik, limit czasu) zostawia dowod.
-    Tresci komendy nie ma w komunikatach."""
-    wynik, _ = await _wykonaj_komende(
+    Tresci komendy nie ma w komunikatach. Wynik niesie `sygnaly` o atrapie bramki (HAR-246),
+    takze gdy komenda nie ruszyla; nie zmieniaja one statusu ani dowodu."""
+    wynik, wyjscie = await _wykonaj_komende(
         worktree, capability, komenda, katalog_kroku, limit_s, pelne=False)
-    return wynik
+    ogon = "" if wyjscie is None else wyjscie.ogon.decode(errors="replace")
+    sygnaly = await asyncio.to_thread(ocen_bramke, komenda, wynik.kod_wyjscia, ogon, worktree)
+    return replace(wynik, sygnaly=tuple(sygnaly))
 
 
 async def _wykonaj_komende(

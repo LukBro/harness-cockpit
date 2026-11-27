@@ -1142,6 +1142,13 @@ async def _wykonaj_plan(
                     # porazki do potomkow w `nastepne`); bez `on_fail` powod zostaje jak byl
                     powod, powtarzane = await _obsluz_porazke(
                         p, krok_po_id[id_kroku], startowane, wynik, powod, list(ogony[id_kroku]))
+                # atrapy bramki (HAR-246) przed zdarzeniem konca kroku; niczego nie blokuja
+                for sygnal in wynik.sygnaly if wynik is not None else ():
+                    await emit(_zdarzenie(
+                        run_id, "warning", id_kroku, id_kroku,
+                        f"atrapa bramki — {sygnal.nazwa}: „{sygnal.cytat}”. "
+                        f"Co poprawić: {sygnal.poprawka}",
+                        attempt=startowane[id_kroku]))
                 # nieudany krok ma powod (krok.py); text zakonczonego to pusty napis
                 if wynik is not None and wynik.warianty:
                     # fanout: zdarzenie konca osobno dla kazdego wariantu (kokpit sklada kroki po

@@ -59,9 +59,11 @@ from .schematy import (
     ListaSkilli,
     NowySkill,
     OdpowiedzWalidacji,
+    OstrzezeniePominiete,
     PlikOdczytany,
     PlikZapisany,
     PokrycieRunu,
+    PominiecieIn,
     Projekt,
     RunAnulowany,
     RunnerZameldowany,
@@ -356,6 +358,20 @@ async def anuluj_run(
     zdarzenie = uslugi.zdarzenie_na_szyne(ev)
     await bus.publish_event(run.id, zdarzenie)
     return RunAnulowany(run_id=run.id, status=run.status, reason=run.reason)
+
+
+@app.post("/api/runs/{run_id}/pominiecie-ostrzezenia", response_model=OstrzezeniePominiete,
+          responses=odpowiedzi_bledow(401, 403, 404, 409, 422))
+async def pomin_ostrzezenie(
+    run_id: str,
+    body: PominiecieIn,
+    k: Kontekst = Depends(kontekst_sesji),
+    s: AsyncSession = Depends(get_session),
+) -> OstrzezeniePominiete:
+    dostep.wymagaj(k, Uprawnienie.zatwierdzanie)
+    ev = await uslugi.pomin_ostrzezenie(s, run_id, k.tenant_id, k.user_id, body.step_id)
+    await bus.publish_event(run_id, uslugi.zdarzenie_na_szyne(ev))
+    return OstrzezeniePominiete(run_id=run_id, step_id=body.step_id)
 
 
 @app.post("/api/events", response_model=ZdarzeniePrzyjete,
