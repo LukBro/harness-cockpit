@@ -3,7 +3,7 @@
 # bez bazy i e2e rownolegle (-n 4), testy bazy sekwencyjnie, pytest -m e2e.
 # Zmienne: PYTHON (interpreter z pytest, playwright i pytest-xdist), COCKPIT_PG_PORT (port hosta, domyslnie 5432).
 #
-# Kazdy worktree ma wlasna baze testowa cockpit_test_<skrot sciezki korzenia repo> (cksum) na tym samym
+# Kazdy worktree ma wlasna baze testowa cockpit_<skrot sciezki korzenia repo>_test (cksum) na tym samym
 # serwerze; skrypt tworzy ja, jesli nie istnieje. Usuwa ja tylko reczny DROP DATABASE.
 #   COCKPIT_TEST_DATABASE_URL    jawny URL ma pierwszenstwo: pytest dostaje dokladnie ten URL,
 #                                a skrypt nie sprawdza ani nie tworzy bazy wyliczonej (CI bez zmian)
@@ -181,7 +181,7 @@ if [ -z "$JAWNY_URL_BAZY" ]; then
   case "$SKROT" in
     ''|*[!0-9]*) blad "nie udalo sie wyliczyc skrotu sciezki korzenia repo ('$SKROT')" ;;
   esac
-  BAZA_TESTOWA="cockpit_test_$SKROT"
+  BAZA_TESTOWA="cockpit_${SKROT}_test"
   if [ -z "$(psql_db "SELECT 1 FROM pg_database WHERE datname='$BAZA_TESTOWA'")" ]; then
     psql_db "CREATE DATABASE $BAZA_TESTOWA OWNER cockpit" >/dev/null
   fi
@@ -204,7 +204,7 @@ LOG_E2E="$(mktemp)"
 
 # Wszystkie przebiegi leca zawsze; kod pytest zachowujemy mimo tee.
 # Bez bazy i e2e rownolegle (-n 4). Testy bazy ida sekwencyjnie: dziela jedna baze worktree
-# (cockpit_test_<skrot>, alembic downgrade base) i port 8799 w demo (straznik w tests/conftest.py).
+# (cockpit_<skrot>_test, alembic downgrade base) i port 8799 w demo (straznik w tests/conftest.py).
 rc_pel=0
 "$PY" -m pytest -q -rs -n 4 -m "not baza and not e2e" 2>&1 | tee "$LOG_PEL" || rc_pel=$?
 rc_baza=0

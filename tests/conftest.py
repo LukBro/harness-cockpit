@@ -90,7 +90,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     if _w_workerze_xdist(item):
         pytest.fail(
             "Test bazy w workerze xdist: testy bazy dziela jedna baze "
-            "worktree (cockpit_test_<skrot> z tools/testy_pelne.sh albo jawny "
+            "worktree (cockpit_<skrot>_test z tools/testy_pelne.sh albo jawny "
             "COCKPIT_TEST_DATABASE_URL) i port 8799, wiec nie wolno ich uruchamiac rownolegle. "
             'Uruchom je bez -n: pytest -m "baza and not e2e"',
             pytrace=False,

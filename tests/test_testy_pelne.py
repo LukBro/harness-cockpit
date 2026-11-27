@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -23,7 +24,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from procesy import przerwij_sigtermem_sync, uruchom_proces_sync, zakoncz_proces_sync
+from procesy import (
+    przerwij_sigtermem_sync,
+    uruchom_i_zbierz,
+    uruchom_proces_sync,
+    zakoncz_proces_sync,
+)
+from sqlalchemy.engine import make_url
 
 KORZEN = Path(__file__).resolve().parent.parent
 SKRYPT = KORZEN / "tools" / "testy_pelne.sh"
@@ -841,6 +848,20 @@ def _skrot_sciezki(korzen: Path) -> str:
     return out.split()[0]
 
 
+def _baza_worktree(korzen: Path) -> str:
+    return f"cockpit_{_skrot_sciezki(korzen)}_test"
+
+
+# Filtry niezalezne od wzorca nazwy bazy worktree. Atrapa zglasza baze aplikacji `cockpit`
+# jako istniejaca, wiec kazde CREATE DATABASE dotyczy bazy worktree; pytanie o `cockpit` odpada.
+def _tworzenie_bazy_worktree(docker: list[str]) -> list[str]:
+    return [p for p in docker if "CREATE DATABASE" in p]
+
+
+def _pytania_o_baze_worktree(docker: list[str]) -> list[str]:
+    return [p for p in docker if "datname='" in p and "datname='cockpit'" not in p]
+
+
 def test_dwa_worktree_o_roznych_sciezkach_dostaja_rozne_bazy_testowe(tmp_path):
     a = _korzen_z_kopia_skryptu(tmp_path, "a")
     b = _korzen_z_kopia_skryptu(tmp_path, "b")
@@ -850,8 +871,8 @@ def test_dwa_worktree_o_roznych_sciezkach_dostaja_rozne_bazy_testowe(tmp_path):
     assert len(urle_a) == 3 and len(urle_b) == 3
     assert len(set(urle_a)) == 1 and len(set(urle_b)) == 1
     nazwa_a, nazwa_b = _nazwa_bazy(urle_a[0]), _nazwa_bazy(urle_b[0])
-    assert re.fullmatch(r"cockpit_test_[0-9]+", nazwa_a), nazwa_a
-    assert re.fullmatch(r"cockpit_test_[0-9]+", nazwa_b), nazwa_b
+    assert re.fullmatch(r"cockpit_[0-9]+_test", nazwa_a), nazwa_a
+    assert re.fullmatch(r"cockpit_[0-9]+_test", nazwa_b), nazwa_b
     assert nazwa_a != nazwa_b
 
 
@@ -869,9 +890,30 @@ def test_nazwa_bazy_testowej_to_skrot_cksum_sciezki_korzenia_worktree(tmp_path):
     assert wynik.kod == 0, wynik.stderr
     assert urle == [
         f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/"
-        f"cockpit_test_{_skrot_sciezki(korzen)}"
+        f"{_baza_worktree(korzen)}"
     ] * 3
-    assert f"Baza testowa tego worktree: cockpit_test_{_skrot_sciezki(korzen)}" in wynik.stderr
+    assert f"Baza testowa tego worktree: {_baza_worktree(korzen)}" in wynik.stderr
+
+
+def test_baza_testowa_wyliczona_dla_worktree_jest_przyjmowana_przez_przelot_demo(tmp_path):
+    """HAR-268: nazwa wyemitowana przez skrypt trafia do prawdziwego przelotu. Port 1 nie
+    odpowiada, wiec przyjeta nazwa konczy sie bledem polaczenia, a odrzucona - odmowa."""
+    korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
+    wynik, urle, _ = _przebieg_w_korzeniu(tmp_path, korzen, "a")
+    assert wynik.kod == 0, wynik.stderr
+    assert len(set(urle)) == 1, urle
+    adres = make_url(urle[0]).set(host="127.0.0.1", port=1).render_as_string(hide_password=False)
+    przelot = uruchom_i_zbierz(
+        [sys.executable, str(KORZEN / "tools" / "demo_szkielet.py")],
+        cwd=KORZEN,
+        env={**os.environ, "COCKPIT_DATABASE_URL": adres},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert "nie jest testowa" not in przelot.stderr, przelot.stderr
+    assert "Blad polaczenia z baza" in przelot.stderr, przelot.stderr
+    assert przelot.returncode != 0
 
 
 def test_jawny_url_bazy_ma_pierwszenstwo_przed_nazwa_wyliczona(tmp_path):
@@ -887,19 +929,19 @@ def test_jawny_url_bazy_ma_pierwszenstwo_przed_nazwa_wyliczona(tmp_path):
     assert wynik.kod == 0, wynik.stderr
     assert urle == [jawny] * 3
     assert "Baza testowa tego worktree" not in wynik.stderr
-    assert not [p for p in docker if "CREATE DATABASE cockpit_test_" in p], docker
-    assert not [p for p in docker if "datname='cockpit_test_" in p], docker
+    assert not _tworzenie_bazy_worktree(docker), docker
+    assert not _pytania_o_baze_worktree(docker), docker
 
 
 def test_brak_bazy_testowej_worktree_skrypt_ja_tworzy_na_tym_samym_serwerze(tmp_path):
     korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
-    nazwa = f"cockpit_test_{_skrot_sciezki(korzen)}"
+    nazwa = _baza_worktree(korzen)
     wynik, urle, docker = _przebieg_w_korzeniu(
         tmp_path, korzen, "a", FALSZYWY_BAZA_TESTOWA_ISTNIEJE="0"
     )
     assert wynik.kod == 0, wynik.stderr
     assert "OK: pelny zestaw testow zielony" in wynik.stdout
-    tworzenie = [p for p in docker if "CREATE DATABASE cockpit_test_" in p]
+    tworzenie = _tworzenie_bazy_worktree(docker)
     assert len(tworzenie) == 1, docker
     assert tworzenie[0].startswith("compose exec")
     assert f"CREATE DATABASE {nazwa} OWNER cockpit" in tworzenie[0]
@@ -908,13 +950,14 @@ def test_brak_bazy_testowej_worktree_skrypt_ja_tworzy_na_tym_samym_serwerze(tmp_
 
 def test_istniejaca_baza_testowa_worktree_nie_jest_tworzona_drugi_raz(tmp_path):
     korzen = _korzen_z_kopia_skryptu(tmp_path, "a")
-    nazwa = f"cockpit_test_{_skrot_sciezki(korzen)}"
+    nazwa = _baza_worktree(korzen)
     wynik, _, docker = _przebieg_w_korzeniu(
         tmp_path, korzen, "a", FALSZYWY_BAZA_TESTOWA_ISTNIEJE="1"
     )
     assert wynik.kod == 0, wynik.stderr
-    assert [p for p in docker if f"datname='{nazwa}'" in p], docker  # skrypt sprawdzil baze
-    assert not [p for p in docker if "CREATE DATABASE cockpit_test_" in p], docker
+    pytania = _pytania_o_baze_worktree(docker)  # skrypt sprawdzil baze
+    assert len(pytania) == 1 and f"datname='{nazwa}'" in pytania[0], docker
+    assert not _tworzenie_bazy_worktree(docker), docker
 
 
 def test_worktree_dostepny_przez_dowiazanie_dostaje_baze_ze_sciezki_fizycznej(tmp_path):
@@ -926,7 +969,7 @@ def test_worktree_dostepny_przez_dowiazanie_dostaje_baze_ze_sciezki_fizycznej(tm
     assert wynik.kod == 0, wynik.stderr
     assert urle == [
         f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/"
-        f"cockpit_test_{_skrot_sciezki(korzen)}"
+        f"{_baza_worktree(korzen)}"
     ] * 3
 
 
@@ -946,7 +989,7 @@ def test_skrot_sciezki_pusty_albo_nieliczbowy_to_blad_bez_tworzenia_bazy_i_testo
     assert wynik.kod == 1, wynik.stderr
     assert "nie udalo sie wyliczyc skrotu sciezki korzenia repo" in wynik.stderr
     assert urle == []
-    assert not [p for p in docker if "CREATE DATABASE cockpit_test" in p], docker
+    assert not _tworzenie_bazy_worktree(docker), docker
     assert "Traceback" not in wynik.calosc
 
 
@@ -956,5 +999,5 @@ def test_pusty_jawny_url_bazy_jest_traktowany_jak_brak_i_dostaje_nazwe_wyliczona
     assert wynik.kod == 0, wynik.stderr
     assert urle == [
         f"postgresql+asyncpg://cockpit:cockpit@localhost:{PORT}/"
-        f"cockpit_test_{_skrot_sciezki(korzen)}"
+        f"{_baza_worktree(korzen)}"
     ] * 3
