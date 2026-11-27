@@ -575,6 +575,23 @@ def test_linia_ucieta_w_srodku_polskiej_litery_nie_psuje_potwierdzen_i_daje_sie_
     assert not _dziennik().exists()
 
 
+def test_linia_ucieta_przy_pierwszym_odczycie_liczy_sie_po_dokonczeniu_do_progu_przepisania():
+    a = _bufor("e1", "e2", "e3", "e4", "e5", "e6")
+    linia = _linie_zdarzen("e7")
+    with _plik().open("ab") as f:
+        f.write(linia[:20])
+    a.potwierdz("run-1", "e1")           # pierwszy pelny odczyt widzi ucieta linie
+    with _plik().open("ab") as f:
+        f.write(linia[20:])
+    a.potwierdz("run-1", "e2")
+    Bufor().potwierdz("run-1", "e3")
+
+    a.potwierdz("run-1", "e4")           # wg `a` 3 potwierdzone z 7: ponizej progu
+
+    assert _plik().read_bytes() == _linie_zdarzen("e1", "e2", "e3", "e4", "e5", "e6", "e7")
+    assert _dziennik().read_bytes() == b'"e1"\n"e2"\n"e3"\n"e4"\n'
+
+
 # --- ten sam inode wraca po zniknieciu albo przepisaniu pliku ---------------------
 
 def test_po_zniknieciu_pliku_instancja_zapomina_dawne_potwierdzenia():
