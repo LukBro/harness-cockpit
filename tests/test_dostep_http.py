@@ -120,6 +120,7 @@ TRASY_RUNU = {
     "integracja_runu": ("POST", "/api/runs/{run}/integrate"),
     "commit_runu": ("POST", "/api/runs/{run}/commit"),
     "anulowanie_runu": ("POST", "/api/runs/{run}/cancel"),
+    "pominiecie_ostrzezenia": ("POST", "/api/runs/{run}/pominiecie-ostrzezenia"),
 }
 
 
@@ -390,6 +391,77 @@ async def test_anulowanie_runu_ze_zlym_tokenem_csrf_dostaje_403_a_run_trwa_dalej
     assert odp.status_code == 403
     assert odp.json() == {"detail": "nieprawidłowy token CSRF"}
     assert await _status_i_powod_runu(swiat, swiat.run_a) == (RunStatus.running, None)
+
+
+# --- HAR-246: pominiecie ostrzezenia o atrapie to decyzja czlowieka (`zatwierdzanie`) ----------
+
+SCIEZKA_POMINIECIA = "/api/runs/{run}/pominiecie-ostrzezenia"
+
+
+async def _ostrzezenie_atrapy(swiat, run_id: str, tenant_id: str) -> None:
+    """Bez odmowy dostepu pominiecie by sie udalo: kod 401/403/404 to nie brak ostrzezenia."""
+    async with swiat.maker() as s:
+        s.add(Event(tenant_id=tenant_id, run_id=run_id, seq=1, kind="warning", step_id="test",
+                    text="atrapa bramki — lint bez reguł: „select = []”. Co poprawić: dodaj regułę."))
+        await s.commit()
+
+
+def _pominiecie(klient, run_id: str):
+    return klient.post(SCIEZKA_POMINIECIA.format(run=run_id), json={"step_id": "test"})
+
+
+async def test_czlonek_zespolu_pomija_ostrzezenie_atrapy_na_wlasnym_runie(swiat):
+    await _ostrzezenie_atrapy(swiat, swiat.run_a, swiat.tenant_a)
+    klient = await _zalogowany(swiat, swiat.czlonek_a)
+
+    odp = await _pominiecie(klient, swiat.run_a)
+
+    assert odp.status_code == 200, odp.text
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 2
+
+
+async def test_obserwator_nie_pomija_ostrzezenia_atrapy_swojego_zespolu(swiat):
+    await _ostrzezenie_atrapy(swiat, swiat.run_a, swiat.tenant_a)
+    klient = await _zalogowany(swiat, swiat.obserwator_a)
+
+    odp = await _pominiecie(klient, swiat.run_a)
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": "rola viewer nie może zatwierdzać bramek"}
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 1
+
+
+async def test_czlonek_zespolu_nie_pomija_ostrzezenia_na_runie_cudzego_zespolu(swiat):
+    await _ostrzezenie_atrapy(swiat, swiat.run_a, swiat.tenant_a)
+    await _ostrzezenie_atrapy(swiat, swiat.run_b, swiat.tenant_b)
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    assert (await _pominiecie(klient, swiat.run_a)).status_code == 200  # nie brak trasy
+
+    odp = await _pominiecie(klient, swiat.run_b)
+
+    assert odp.status_code == 404
+    assert await _liczba_zdarzen(swiat, swiat.run_b) == 1
+
+
+@pytest.mark.parametrize(
+    ("token", "komunikat"),
+    [(None, "brak tokenu CSRF"), ("zly-token", "nieprawidłowy token CSRF")],
+    ids=["bez tokenu", "zly token"])
+async def test_pominiecie_ostrzezenia_bez_poprawnego_tokenu_csrf_dostaje_403_i_nic_nie_zapisuje(
+    swiat, token, komunikat,
+):
+    await _ostrzezenie_atrapy(swiat, swiat.run_a, swiat.tenant_a)
+    klient = await _zalogowany(swiat, swiat.wlasciciel_a)
+    if token is None:
+        del klient.headers[NAGLOWEK_CSRF]
+    else:
+        klient.headers[NAGLOWEK_CSRF] = token
+
+    odp = await _pominiecie(klient, swiat.run_a)
+
+    assert odp.status_code == 403
+    assert odp.json() == {"detail": komunikat}
+    assert await _liczba_zdarzen(swiat, swiat.run_a) == 1
 
 
 # --- HAR-180: capabilities projektu (PATCH) i skille projektu (GET) ----------------------------
@@ -867,6 +939,7 @@ def test_wyliczenie_tras_obejmuje_znane_trasy_i_odroznia_zabezpieczenia():
         ("GET", "/api/runs/{run_id}/dowody"): {"kontekst_sesji"},
         ("POST", "/api/runs/{run_id}/decyzja-odbioru"): {"kontekst_sesji"},
         ("POST", "/api/runs/{run_id}/cancel"): {"kontekst_sesji"},
+        ("POST", "/api/runs/{run_id}/pominiecie-ostrzezenia"): {"kontekst_sesji"},   # HAR-246
         ("GET", "/api/konto/ja"): {"kontekst_sesji"},
         ("GET", "/api/pliki"): {"kontekst_sesji"},
         ("GET", "/api/pliki/lista"): {"kontekst_sesji"},
@@ -918,6 +991,7 @@ def test_wyliczone_trasy_api_to_dokladnie_znany_zbior_nowa_trasa_wymusza_aktuali
         ("GET", "/api/runs/{run_id}/dowody"),
         ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
         ("POST", "/api/runs/{run_id}/cancel"),
+        ("POST", "/api/runs/{run_id}/pominiecie-ostrzezenia"),   # HAR-246
         ("GET", "/api/pliki"),
         ("GET", "/api/pliki/lista"),
         ("PUT", "/api/pliki"),

@@ -41,6 +41,7 @@ from cockpit.services.walidacja import (
 )
 from cockpit.services.kroki_systemowe import PLIK_LINII
 from runner.agent import SpecKroku, etykieta_pliku, podkatalog_wariantu
+from runner.atrapy_bramek import Sygnal
 from runner.kotwice import KODOWANIE, PLIK_NOTATKI, sprawdz_kotwice, wczytaj_zmienione_linie, wyciagnij_kotwice
 from runner.straznik import (
     CZAS_NA_ZAKONCZENIE_S,
@@ -136,6 +137,8 @@ class WynikKroku:
     # wyniki wariantow kroku z `fanout > 1` (agent_id, wynik), w kolejnosci wariantow (HAR-83);
     # puste dla kroku z jednym agentem. Wynik zbiorczy niesie porazke pierwszego nieudanego.
     warianty: tuple[tuple[str, WynikKroku], ...] = ()
+    # atrapy bramki kroku `check` (HAR-246): ostrzezenia, nie wynik i nie dowod
+    sygnaly: tuple[Sygnal, ...] = ()
 
 
 @dataclass

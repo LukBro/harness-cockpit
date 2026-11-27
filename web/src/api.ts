@@ -20,3 +20,4 @@ export type DowodyRunu = Schemat["DowodyRunu"];
 export type DecyzjaOdbioru = Schemat["DecyzjaOdbioru"];
 export type DecyzjaOdbioruIn = Schemat["DecyzjaOdbioruIn"];
 export type BrakOdbioru = Schemat["BrakOdbioru"];
+export type PominiecieIn = Schemat["PominiecieIn"];

@@ -62,7 +62,7 @@ RodzajZdarzenia = (
         "ticket_ostrzezenie",   # ticket bez opisu (HAR-117); nie rusza statusu runu ani kroku
         "warning",   # ostrzezenie walidatora przy starcie runu (HAR-99); nie rusza statusu
         # zarezerwowane dla czlowieka (services.runs.RODZAJE_CZLOWIEKA)
-        "decision", "integrated", "committed", "acceptance", "run_cancelled",
+        "decision", "integrated", "committed", "acceptance", "run_cancelled", "atrapa_pominieta",
     ]
     | Annotated[str, StringConstraints(pattern=r"^hook:[A-Za-z0-9_]{1,45}$", max_length=50)]
 )
@@ -154,6 +154,16 @@ class RunAnulowany(BaseModel):
     reason: str     # po anulowaniu powod jest zawsze ustawiony
     status: RunStatus
     run_id: str
+
+
+class PominiecieIn(BaseModel):
+    """Czlowiek pomija ostrzezenie o atrapie bramki kroku (HAR-246)."""
+    step_id: str = Field(min_length=1, max_length=100)     # kolumna Event.step_id: String(100)
+
+
+class OstrzezeniePominiete(BaseModel):
+    run_id: str
+    step_id: str
 
 
 class ZdarzenieRunu(BaseModel):
