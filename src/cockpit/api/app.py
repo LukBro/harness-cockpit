@@ -401,11 +401,12 @@ async def ingest_event(
          responses=odpowiedzi_bledow(401, 404, 422))
 async def get_run(
     run_id: str,
+    po_seq: int = Query(default=0, ge=0, le=2**31 - 1),   # tylko zdarzenia nowsze (HAR-202)
     k: Kontekst = Depends(kontekst_sesji),
     s: AsyncSession = Depends(get_session),
 ) -> RunSzczegoly:
     run = await uslugi.run_dla_najemcy(s, run_id, k.tenant_id)
-    rows = await uslugi.zdarzenia_runu(s, run)
+    rows = await uslugi.zdarzenia_runu(s, run, po_seq)
     wiersze_krokow = await kroki.kroki_runu(s, run)
     pokrycie = uslugi.pokrycie_z_kolumn(run)
     return RunSzczegoly(

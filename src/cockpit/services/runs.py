@@ -12,7 +12,7 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cockpit.db.models import Event, Project, Run, Runner, RunStatus, StepStatus
+from cockpit.db.models import Event, Project, Run, Runner, RunStatus, StepRun, StepStatus
 
 from cockpit.settings import settings
 
@@ -22,7 +22,8 @@ from .errors import (
 )
 from .invariants import Niezmiennik
 from .kroki import (
-    brak_dowodu_ukonczenia, kroki_runu, nieudane_kroki, zastosuj_zdarzenie_kroku,
+    brak_dowodu_ukonczenia, kroki_runu, nieudane_kroki, ostatnie_proby,
+    zastosuj_zdarzenie_kroku,
 )
 from .pokrycie import (
     PokrycieBramek, WynikBramki, WynikKrokuWeryfikujacego, pokrycie_bramek,
@@ -402,16 +403,17 @@ async def _powod_pominiecia(s: AsyncSession, run: Run, step_id: str) -> str | No
 
 async def pokrycie_runu(
     s: AsyncSession, run: Run, kroki_weryfikujace: Sequence[str] | None,
+    wiersze: Sequence[StepRun],
 ) -> PokrycieBramek | None:
     """Pokrycie bramkami z listy runnera i wierszy krokow (HAR-178); liczy `pokrycie_bramek`.
+
+    `wiersze`: `kroki_runu` tego runu, przeczytane raz przez wolajacego (HAR-202).
 
     Brak pomiaru (None): brak listy, pusta lista, krok bez wiersza albo wciaz w toku, powod
     pominiecia spoza listy D4. Nigdy wyjatek: nie da sie zmierzyc to nie zero bramek."""
     if not kroki_weryfikujace:
         return None
-    ostatnie: dict[tuple[str, str], StepStatus] = {}
-    for w in await kroki_runu(s, run):   # rosnaco po probie: pozniejsza podmienia wczesniejsza
-        ostatnie[(w.step_id, w.agent_id)] = w.status
+    ostatnie = {klucz: w.status for klucz, w in ostatnie_proby(wiersze).items()}
     wyniki: list[WynikKrokuWeryfikujacego] = []
     for krok in dict.fromkeys(kroki_weryfikujace):
         stany = {st for (id_kroku, _), st in ostatnie.items() if id_kroku == krok}
@@ -582,13 +584,12 @@ async def _zastosuj_zdarzenie(
             s, run, kind, step_id, agent_id, attempt, zapisany,
             cost_usd=cost_usd, tokens_in=tokens_in, tokens_out=tokens_out,
             num_turns=num_turns, session_id=session_id)
-        nieudane = await nieudane_kroki(s, run) if kind == _KONIEC_RUNU else []
-        # Trzy czlony tylko oszczedzaja zapytanie (wynik daje `nastepny_status`, ktory
-        # czyta `bez_dowodu` wylacznie dla tych statusow, `run_finished` i braku nieudanych).
+        # wiersze krokow czytamy raz na zakonczenie runu; te same ida do trzech regul (HAR-202)
+        wiersze = await kroki_runu(s, run) if kind == _KONIEC_RUNU else []
+        nieudane = await nieudane_kroki(s, run, wiersze) if kind == _KONIEC_RUNU else []
+        # `nastepny_status` czyta `bez_dowodu` tylko przy `run_finished` i braku nieudanych
         bez_dowodu = (
-            kind == _KONIEC_RUNU and not nieudane
-            and status_przed in _STATUSY_WYMAGAJACE_DOWODU_PO_RUN_FINISHED
-            and await brak_dowodu_ukonczenia(s, run)
+            kind == _KONIEC_RUNU and not nieudane and brak_dowodu_ukonczenia(wiersze)
         )
         run.status = nastepny_status(status_przed, kind, nieudane, bez_dowodu)
         if (kind == "step_aborted" and status_przed != RunStatus.aborted
@@ -600,7 +601,7 @@ async def _zastosuj_zdarzenie(
                 powod_nieudanych_krokow(nieudane) if nieudane else POWOD_BRAK_DOWODU
             )
         if kind == _KONIEC_RUNU and run.status in _STATUSY_Z_POKRYCIEM:
-            pokrycie = await pokrycie_runu(s, run, kroki_weryfikujace)
+            pokrycie = await pokrycie_runu(s, run, kroki_weryfikujace, wiersze)
             if pokrycie is not None:
                 _zapisz_pokrycie(run, pokrycie)
 

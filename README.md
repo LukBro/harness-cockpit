@@ -72,6 +72,43 @@ z tokenem poza `~/.config` (np. w katalogu tymczasowym), a `COCKPIT_RUNNER_TOKEN
 w środowisku ma pierwszeństwo przed plikiem. Uruchom `seed_dev` i `cockpit-runner`
 z tym samym `COCKPIT_CONFIG`. Ponowne `seed_dev` generuje nowy token.
 
+## Faza publiczna
+
+Wystawienie kokpitu pod publicznym adresem za reverse proxy to zmiana zmiennych
+środowiskowych, nie kodu. Samo proxy, domenę i HTTPS konfigurujesz poza tym
+repozytorium. Zmienne kokpitu można ustawić w środowisku albo w pliku `.env`
+w katalogu, z którego startuje `cockpit` (środowisko ma pierwszeństwo).
+
+Do ustawienia:
+
+- `COCKPIT_ADRES_PUBLICZNY` - publiczny adres `https://...`, z którego powstają
+  linki resetu hasła. Bez niego (albo bez poczty `COCKPIT_SMTP_*`) reset jest
+  wyłączony.
+- `COCKPIT_URL` - na maszynie z `cockpit-runner`: ten sam publiczny adres
+  `https://...` (domyślnie `http://127.0.0.1:8765`). Runner czyta go tylko ze
+  środowiska; nie wpisuj go do `.env` kokpitu, bo kokpit nie wystartuje.
+
+Zależnie od położenia proxy:
+
+- `COCKPIT_HOST` - domyślnie `127.0.0.1`; zostaje, gdy proxy (np. Caddy) działa
+  na tej samej maszynie. Dla proxy na innej maszynie ustaw adres, pod którym
+  proxy widzi kokpit, i nie wystawiaj tego portu publicznie.
+- `COCKPIT_PORT` - domyślnie `8765`; zmień, gdy port jest zajęty, i wskaż go
+  w proxy.
+- `COCKPIT_FORWARDED_ALLOW_IPS` - domyślnie `127.0.0.1`. Ma zawierać tylko adres,
+  z którego łączy się proxy, nigdy `*`: kto może podać własny `X-Forwarded-For`,
+  ten zmienia adres IP widziany przez kokpit i obchodzi blokadę logowania pary
+  (e-mail, IP). Gdy proxy łączy się po IPv6 loopback (czyli
+  `COCKPIT_HOST=::1`), ustaw `::1` - domyślna wartość go nie obejmuje. Zmienna
+  uvicorna `FORWARDED_ALLOW_IPS` nie jest już czytana.
+
+Zostaje bez zmian:
+
+- `COCKPIT_PROXY_HEADERS` - włączone. Po wyłączeniu kokpit widzi wszystkich pod
+  adresem proxy, więc blokada pary (e-mail, IP) przestaje rozróżniać klientów.
+- `COCKPIT_CIASTECZKO_SECURE` - włączone. Nie ustawiaj `0`; to wartość tylko dla
+  lokalnej pracy po `http://localhost`.
+
 ## Zasady
 
 Przed pierwszą zmianą przeczytaj `CLAUDE.md` — niezmienniki i decyzje

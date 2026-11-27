@@ -1485,7 +1485,15 @@ def test_bez_podkomendy_startuje_serwer_na_adresie_z_ustawien_i_zwraca_0(monkeyp
     )
     assert kokpit_main.main([]) == 0
     assert wywolania == [
-        (("cockpit.api.app:app",), {"host": settings.host, "port": settings.port})
+        (
+            ("cockpit.api.app:app",),
+            {
+                "host": settings.host,
+                "port": settings.port,
+                "proxy_headers": settings.proxy_headers,
+                "forwarded_allow_ips": settings.forwarded_allow_ips,
+            },
+        )
     ]
 
 

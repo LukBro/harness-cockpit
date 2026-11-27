@@ -81,8 +81,8 @@ def _blad_os(kod: int):
 
 
 def _awaria_na_plikach_bufora(monkeypatch, nazwa: str, kod: int) -> None:
-    """Awaria `os.<nazwa>` wylacznie dla plikow bufora (*.ndjson, *.tmp): reszta srodowiska
-    testu (pytest, baza) nie moze jej zobaczyc."""
+    """Awaria `os.<nazwa>` wylacznie dla plikow bufora (*.ndjson, *.tmp): reszta
+    srodowiska testu (pytest, baza) nie moze jej zobaczyc."""
     prawdziwa = getattr(os, nazwa)
 
     def podstawka(*args, **kwargs):
