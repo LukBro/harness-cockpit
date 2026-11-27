@@ -700,6 +700,8 @@ def test_nieczytelny_katalog_z_testami_to_nie_ocenione_a_nie_testy_bez_asercji(t
         # za gleboko jest tresc szostego skryptu
         pytest.param("sh 1.sh", lancuch(6), "exit 0", id="limit zagniezdzenia"),
         pytest.param("pytest", {"tests/test_a.py": b"\xff"}, "tests/test_a.py", id="plik testow"),
+        pytest.param("pytest", {"tests/test_b.py": b"\xff", "tests/test_a.py": b"\xff"},
+                     "tests/test_a.py", id="pierwszy z dwoch plikow testow"),
         pytest.param("ruff check .", {"ruff.toml": "[zle"}, "ruff.toml", id="ruff.toml"),
         pytest.param("ruff check .", {"pyproject.toml": "[zle"}, "pyproject.toml",
                      id="pyproject.toml"),
