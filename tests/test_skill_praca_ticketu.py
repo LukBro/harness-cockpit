@@ -444,6 +444,52 @@ def test_ostatni_werdykt_needs_work_blokuje_zamkniecie(gotowy):
     assert w.linie[:-1] == ["BRAK: krytyk: ostatni werdykt NEEDS-WORK"]
 
 
+def _maly_ticket_po_poprawce(ep: Epizod, sp: object = 2, kod_werdyktu: int = 1, zmien_kod: bool = True) -> Wynik:
+    """Krytyk dał NEEDS WORK w 1. rundzie, autor poprawił kod, bramki zielone dla nowego diffu."""
+    st = ep.stan()
+    st["ticket"] = {"key": KEY, "story_points": sp}
+    st["werdykty"][-1].update(kod=kod_werdyktu, status="NEEDS-WORK" if kod_werdyktu == 1 else "BLOKADA")
+    ep.zapisz_stan(st)
+    if zmien_kod:
+        ep.zapisz("a.py", "z = 3\n", dopisz=True)
+    assert ep.skrypt("bramka_testow.py", KEY).kod == 0
+    return ep.skrypt("bramka_zamkniecia.py", KEY)
+
+
+def test_maly_ticket_po_poprawce_needs_work_z_pierwszej_rundy_zamyka_bez_drugiej_rundy_krytyka(gotowy):
+    w = _maly_ticket_po_poprawce(gotowy)
+    assert w.kod == 0, w.stdout
+    assert w.linie[:-1] == ["KRYTYK: jedna runda (SP<=2) - poprawki po NEEDS WORK bez ponownej oceny, ocenia strażnik w PR"]
+
+
+@pytest.mark.parametrize("sp", [3, None, True, "2"])
+def test_ticket_nie_maly_albo_bez_liczbowej_wielkosci_wymaga_ponownej_oceny_krytyka(gotowy, sp):
+    w = _maly_ticket_po_poprawce(gotowy, sp=sp)
+    assert w.kod == 1
+    assert w.linie[:-1] == ["BRAK: krytyk: ostatni werdykt NEEDS-WORK"]
+
+
+def test_maly_ticket_bez_poprawki_po_needs_work_nie_zamyka(gotowy):
+    w = _maly_ticket_po_poprawce(gotowy, zmien_kod=False)
+    assert w.kod == 1
+    assert w.linie[:-1] == ["BRAK: krytyk: ostatni werdykt NEEDS-WORK"]
+
+
+def test_maly_ticket_z_blokada_krytyka_nie_zamyka(gotowy):
+    w = _maly_ticket_po_poprawce(gotowy, kod_werdyktu=4)
+    assert w.kod == 1
+    assert w.linie[:-1] == ["BRAK: krytyk: ostatni werdykt BLOKADA"]
+
+
+def test_maly_ticket_z_needs_work_z_drugiej_rundy_nie_zamyka(gotowy):
+    st = gotowy.stan()
+    st["werdykty"].append(dict(st["werdykty"][-1], runda=2))
+    gotowy.zapisz_stan(st)
+    w = _maly_ticket_po_poprawce(gotowy)
+    assert w.kod == 1
+    assert w.linie[:-1] == ["BRAK: krytyk: ostatni werdykt NEEDS-WORK"]
+
+
 def test_zamkniecie_po_werdykcie_bez_ocenianych_agentow_nie_przechodzi(gotowy):
     gotowy.zmien_stan(przydzial={}, pliki_tm=["a.py", "b.py"])
     w = gotowy.skrypt("werdykt.py", KEY, "--plik", gotowy.plik("w0.md", "**Code Review**\n\nStatus: APPROVED\n"))

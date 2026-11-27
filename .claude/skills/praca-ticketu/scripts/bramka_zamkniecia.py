@@ -9,6 +9,8 @@ Warunki (wszystkie liczone względem BIEŻĄCEGO skrótu diffu - ten sam algoryt
      (bramka `reczne` przechodzi tylko z polem stanu reczne_potwierdzone = <bieżący skrót>)
   2. ostatni werdykt krytyka ma kod 0 i skrót diffu równy bieżącemu
      (zmiana kodu po werdykcie wymaga nowej oceny - nawet "kosmetyczna")
+     wyjątek: ticket SP <= 2 z jedynym werdyktem NEEDS WORK i kodem zmienionym po nim (poprawka) -
+     linia `KRYTYK: jedna runda ...`, poprawkę ocenia strażnik w PR
   3. każde kryterium akceptacji w stanie `kryteria` ([{id, zrobione, dowod}]) ma decyzję,
      a zrobione=true ma niepusty `dowod` (plik:linia, test, komentarz) - brak dowodu = niezrobione
 Wyjątek decyzji człowieka: pole `zamkniecie_wyjatek` (powód, wpisany po jawnej decyzji człowieka) -> kod 5.
@@ -86,7 +88,11 @@ def main(a):
         elif b.get("wynik") != "zielony":
             braki.append(f"bramka {n}: wynik {b.get('wynik')}")
     w = (st.get("werdykty") or [None])[-1]
-    if not w:
+    sp = (st.get("ticket") or {}).get("story_points")
+    if (type(sp) is int and sp <= 2 and len(st.get("werdykty") or []) == 1 and w.get("kod") == 1 and w.get("skrot_diffu") != teraz):
+        # punkt 8 planu 27.11: mały ticket - jedna runda krytyka; poprawkę (inny diff, bramki wyżej) ocenia strażnik
+        print("KRYTYK: jedna runda (SP<=2) - poprawki po NEEDS WORK bez ponownej oceny, ocenia strażnik w PR")
+    elif not w:
         braki.append("krytyk: brak werdyktu")
     elif w.get("kod") != 0:
         braki.append(f"krytyk: ostatni werdykt {w.get('status')}")

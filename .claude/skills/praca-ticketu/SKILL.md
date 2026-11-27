@@ -218,6 +218,12 @@ python3 <SKILL_DIR>/scripts/werdykt.py <KEY> --agent-id <agentId z wyniku narzę
 | 4 | poniżej progu wyłącznie przez `BLOKADA-ZEWNĘTRZNA` - kolejna iteracja nic nie zmieni: komentarz BLOKADA (`references/komentarze.md`), decyzja człowieka z opcjami (a)/(b)/(c); bez auto-commita |
 | 2 | brak werdyktu - jedno ponowne powołanie krytyka; drugi brak -> decyzja człowieka. Nigdy nie liczysz tego jako zaliczenie |
 
+**Mały ticket (SP <= 2): jedna runda krytyka.** Po NEEDS WORK w pierwszej rundzie robisz poprawkę
+i krok 5, ale nie wołasz krytyka ponownie - krok 7. Bramka zamknięcia przepuszcza to tylko przy
+jedynym werdykcie i kodzie zmienionym po nim (linia `KRYTYK: jedna runda`). W opisie PR wypisz
+odjęcia krytyka z dopiskiem "poprawione, bez ponownej oceny krytyka" - ocenia je strażnik.
+Powód: 16 małych ticketów, mediana 3 rundy krytyka i 74 min po pracy zespołu, strażnik bez reworku w 11 z 16.
+
 Reguła powtórzona (już jest w MEMORY.md) -> zaznacz w podsumowaniu "korekta wraca": to sygnał dla
 `/monolynx:retro`, że potrzebna jest bramka, nie kolejne przypomnienie.
 
