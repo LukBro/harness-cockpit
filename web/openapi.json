@@ -742,7 +742,8 @@
                   "integrated",
                   "committed",
                   "acceptance",
-                  "run_cancelled"
+                  "run_cancelled",
+                  "atrapa_pominieta"
                 ],
                 "type": "string"
               },
@@ -1351,6 +1352,24 @@
         "title": "OdpowiedzWalidacji",
         "type": "object"
       },
+      "OstrzezeniePominiete": {
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "step_id"
+        ],
+        "title": "OstrzezeniePominiete",
+        "type": "object"
+      },
       "PlikIn": {
         "properties": {
           "sciezka": {
@@ -1514,6 +1533,22 @@
           "tokens_out"
         ],
         "title": "PomiarKrokuOdbioru",
+        "type": "object"
+      },
+      "PominiecieIn": {
+        "description": "Czlowiek pomija ostrzezenie o atrapie bramki kroku (HAR-246).",
+        "properties": {
+          "step_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id"
+        ],
+        "title": "PominiecieIn",
         "type": "object"
       },
       "PotwierdzenieResetu": {
@@ -5618,6 +5653,105 @@
           }
         },
         "summary": "Integruj Run"
+      }
+    },
+    "/api/runs/{run_id}/pominiecie-ostrzezenia": {
+      "post": {
+        "operationId": "pomin_ostrzezenie_api_runs__run_id__pominiecie_ostrzezenia_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PominiecieIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OstrzezeniePominiete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Brak uwierzytelnienia: sesja albo token runnera nieprawidłowy"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Zabronione: brak uprawnienia, tokenu CSRF albo ścieżka poza zakresem runnera"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Nie znaleziono: zasób nie istnieje albo należy do innego zespołu"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Konflikt: stan nie pozwala na tę operację (runner offline, aktywny run, zajęty adres)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Niepoprawne dane wejściowe"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Blad"
+                }
+              }
+            },
+            "description": "Błąd wewnętrzny kokpitu"
+          }
+        },
+        "summary": "Pomin Ostrzezenie"
       }
     },
     "/api/skills": {

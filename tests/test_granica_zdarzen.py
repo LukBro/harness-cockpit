@@ -45,7 +45,8 @@ RODZAJE_SILNIKA = [
     "step_waiting", "run_finished", "resume_ignored", "context_manifest", "ticket_ostrzezenie",
     "warning",
 ]
-RODZAJE_Z_LISTY_CZLOWIEKA = ["decision", "integrated", "committed", "acceptance", "run_cancelled"]
+RODZAJE_Z_LISTY_CZLOWIEKA = [
+    "decision", "integrated", "committed", "acceptance", "run_cancelled", "atrapa_pominieta"]
 
 BAZA_ZDARZENIA = {"run_id": "run-1", "event_id": "e-1", "step_id": "krok-1", "kind": "output"}
 

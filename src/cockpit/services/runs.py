@@ -8,7 +8,7 @@ import hashlib
 from collections.abc import Collection, Sequence
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,11 @@ POWOD_ANULOWANIA = "anulowany przez człowieka"
 KIND_ZINTEGROWANO = "integrated"
 KIND_ZACOMMITOWANO = "committed"
 KIND_ODBIORU = "acceptance"   # decyzja odbioru dowodow (HAR-170); tez w `RODZAJE_CZLOWIEKA`
+# "uruchom mimo to": czlowiek pomija ostrzezenie o atrapie bramki (HAR-246); w `RODZAJE_CZLOWIEKA`
+KIND_POMINIECIA = "atrapa_pominieta"
+TEKST_POMINIECIA = "ostrzeżenie pominięte przez człowieka"
+# poczatek tekstu `warning` o atrapie z `runner.silnik`; odroznia go od ostrzezen walidatora
+PREFIKS_ATRAPY = "atrapa bramki — "
 LIMIT_LISTY_RUNOW = 100  # staly limit listy, bez paginacji (HAR-72)
 STATUSY_AKTYWNE = (RunStatus.pending, RunStatus.running, RunStatus.waiting)  # (HAR-58)
 _KONCZACE_KROK = frozenset({"step_finished", "step_failed"})
@@ -338,6 +343,7 @@ RODZAJE_CZLOWIEKA: frozenset[str] = frozenset({
     "committed",
     "acceptance",
     "run_cancelled",    # anulowanie runu przez czlowieka (HAR-126); zapisuje je kokpit
+    "atrapa_pominieta",     # pominiecie ostrzezenia o atrapie (HAR-246); zapisuje je kokpit
 })
 # `step_aborted` nie rusza runu `waiting` (HAR-47)
 _STATUSY_PRZERYWANE_KROKIEM = frozenset({RunStatus.running, RunStatus.to_accept})
@@ -708,6 +714,47 @@ async def anuluj_run(
                    seq=await _nastepny_seq(s, run_id, tenant_id))
         s.add(ev)
         return run, ev, {"type": "cancel_run", "run_id": run_id}
+
+    return await _z_ponowieniem_seq(s, podejscie)
+
+
+async def pomin_ostrzezenie(
+    s: AsyncSession, run_id: str, tenant_id: str, user_id: str, step_id: str,
+) -> Event:
+    """Czlowiek pomija ostrzezenie o atrapie kroku (HAR-246): zdarzenie z `user_id`, status
+    runu bez zmian.
+
+    Obcy lub nieznany run to NieZnaleziono; brak ostrzezenia atrapy nowszego niz ostatnie
+    pominiecie tego kroku to StanNiemozliwy. Warunek pod blokada wiersza runu, po wyliczeniu
+    numeru: zapis, ktory wejdzie pozniej, zajmie ten numer i wymusi ponowne sprawdzenie.
+    """
+    run = await run_dla_najemcy(s, run_id, tenant_id)
+    run_id = run.id    # po rollbacku obiekty sesji sa wygaszone - trzymamy same napisy
+
+    async def podejscie() -> Event:
+        await s.refresh(run, with_for_update=True)
+        seq = await _nastepny_seq(s, run_id, tenant_id)
+        ostatni = (
+            await s.execute(
+                select(Event.kind).where(
+                    Event.run_id == run_id, Event.tenant_id == tenant_id,
+                    Event.step_id == step_id,
+                    or_(
+                        Event.kind == KIND_POMINIECIA,
+                        and_(Event.kind == "warning",
+                             Event.text.startswith(PREFIKS_ATRAPY, autoescape=True)),
+                    ),
+                ).order_by(Event.seq.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if ostatni != "warning":
+            await s.rollback()      # zwalnia blokade wiersza
+            raise StanNiemozliwy("krok nie ma ostrzeżenia o atrapie bramki do pominięcia")
+        ev = Event(tenant_id=tenant_id, run_id=run_id, kind=KIND_POMINIECIA, step_id=step_id,
+                   text=TEKST_POMINIECIA, text_full_len=len(TEKST_POMINIECIA),
+                   dane={"user_id": user_id}, seq=seq)
+        s.add(ev)
+        return ev
 
     return await _z_ponowieniem_seq(s, podejscie)
 

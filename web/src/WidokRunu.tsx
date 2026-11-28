@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchZSesja } from "./Konto";
 import type { DecyzjaIn, DecyzjaPrzyjeta, KrokRunu, RunSzczegoly as Run, RunStatus, RunUtworzony, ZdarzenieRunu as Zdarzenie } from "./api";
-import type { PokrycieRunu } from "./api";
+import type { PokrycieRunu, PominiecieIn } from "./api";
 import { Odbior } from "./Odbior";
 import { OdbiorDowody } from "./OdbiorDowody";
 
@@ -45,6 +45,26 @@ function napisStanuKroku(status: string): string {
 
 // Zdarzenia, po ktorych stan kroku sie zmienil: wtedy dociagamy GET (steps wylicza backend).
 const KINDY_KROKU = new Set(["step_started", "step_skipped", "step_waiting", "step_aborted"]);
+
+// Prefiks z runnera (HAR-246): odroznia ostrzezenie o atrapie od ostrzezen walidatora startu.
+const PREFIKS_ATRAPY = "atrapa bramki — ";
+
+// Ostrzezenia atrapy kroku; `pominiete` tylko, gdy pominiecie jest nowsze niz ostatnie z nich.
+// Wejscie posortowane po seq (scal).
+function atrapyKroku(stepId: string, zdarzenia: Zdarzenie[]) {
+  const ostrzezenia: Zdarzenie[] = [];
+  let pominiete = false;
+  for (const z of zdarzenia) {
+    if (z.step_id !== stepId) continue;
+    if (z.kind === "warning" && z.text.startsWith(PREFIKS_ATRAPY)) {
+      ostrzezenia.push(z);
+      pominiete = false;
+    } else if (z.kind === "atrapa_pominieta") {
+      pominiete = true;
+    }
+  }
+  return { ostrzezenia, pominiete };
+}
 
 // Atrybuty wspolne dla przyciskow wymagajacych runnera.
 export function opisOffline(offline: boolean) {
@@ -102,6 +122,8 @@ export function WidokRunu({
   const [powod, setPowod] = useState("");
   const [bladDecyzji, setBladDecyzji] = useState<string | null>(null);
   const [wysylamDecyzje, setWysylamDecyzje] = useState(false);
+  const [bladPominiecia, setBladPominiecia] = useState<string | null>(null);
+  const [wysylamPominiecie, setWysylamPominiecie] = useState(false);
   // dociagnij() zyje w efekcie (zalezy od runId); decyzja odswieza widok przez ten uchwyt.
   const dociagnijRef = useRef<(() => Promise<void>) | null>(null);
   const runIdRef = useRef<string | null>(runId);
@@ -119,6 +141,8 @@ export function WidokRunu({
     setPowod("");
     setBladDecyzji(null);
     setWysylamDecyzje(false);
+    setBladPominiecia(null);
+    setWysylamPominiecie(false);
     if (!runId) return;
     let anulowano = false;
     // Najwyzszy posiadany seq (GET i strumien). Zmienna efektu: stan Reacta bylby tu nieswiezy.
@@ -241,16 +265,24 @@ export function WidokRunu({
     }
   }
 
-  async function wyslijDecyzje(tresc: DecyzjaIn) {
+  // Wspolna wysylka akcji czlowieka na biezacym runie.
+  // Podwojnego zadania broni disabled na przyciskach: React nie wola onClick przycisku
+  // wylaczonego w propsach, wiec handler w trakcie wysylki nie startuje.
+  async function wyslijAkcje<T>(
+    koncowka: string,
+    tresc: DecyzjaIn | PominiecieIn,
+    prefiksBledu: string,
+    ustawBlad: (blad: string | null) => void,
+    ustawWysylam: (trwa: boolean) => void,
+    przyjmij: (odpowiedz: T) => void,
+  ) {
     const id = runId;
-    // Podwojnego zadania broni disabled={wysylamDecyzje} na obu przyciskach: React nie wola
-    // onClick przycisku wylaczonego w propsach, wiec handler z wysylamDecyzje=true nie startuje.
     if (!id) return;
-    setWysylamDecyzje(true);
-    setBladDecyzji(null);
+    ustawWysylam(true);
+    ustawBlad(null);
     const nieaktualny = () => runIdRef.current !== id;
     try {
-      const r = await fetchZSesja(`/api/runs/${encodeURIComponent(id)}/decision`, {
+      const r = await fetchZSesja(`/api/runs/${encodeURIComponent(id)}/${koncowka}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(tresc),
@@ -264,27 +296,45 @@ export function WidokRunu({
           () => null,
         );
         if (nieaktualny()) return;
-        setBladDecyzji(`Decyzja nieprzyjęta: ${detail ?? `błąd ${r.status}`}`);
+        ustawBlad(`${prefiksBledu}: ${detail ?? `błąd ${r.status}`}`);
         // Stan na ekranie mogl sie rozjechac z kokpitem (np. 409): pokaz prawde.
         void dociagnijRef.current?.();
         return;
       }
-      const przyjeta: DecyzjaPrzyjeta = await r.json();
+      const odpowiedz: T = await r.json();
       if (nieaktualny()) return;
-      setStatus(przyjeta.status);
-      setPowod("");
+      przyjmij(odpowiedz);
       void dociagnijRef.current?.();
     } catch {
-      if (!nieaktualny()) setBladDecyzji(`Decyzja nieprzyjęta: ${KOMUNIKAT_SIEC}`);
+      if (!nieaktualny()) ustawBlad(`${prefiksBledu}: ${KOMUNIKAT_SIEC}`);
     } finally {
-      if (!nieaktualny()) setWysylamDecyzje(false);
+      if (!nieaktualny()) ustawWysylam(false);
     }
   }
+
+  const wyslijDecyzje = (tresc: DecyzjaIn) =>
+    wyslijAkcje<DecyzjaPrzyjeta>("decision", tresc, "Decyzja nieprzyjęta", setBladDecyzji, setWysylamDecyzje, (przyjeta) => {
+      setStatus(przyjeta.status);
+      setPowod("");
+    });
+
+  // Stan "pominiete" bierze sie wylacznie ze zdarzen (GET/SSE), nie z samej odpowiedzi POST.
+  const pominOstrzezenie = (stepId: string) =>
+    wyslijAkcje(
+      "pominiecie-ostrzezenia",
+      { step_id: stepId },
+      "Pominięcie nieprzyjęte",
+      setBladPominiecia,
+      setWysylamPominiecie,
+      () => {},
+    );
 
   const odswiezRun = () => {
     void dociagnijRef.current?.();
   };
   const krokBramki = kroki.find((k) => k.status === "waiting")?.step_id;
+  // Ostrzezenia atrapy pokazujemy raz na krok: w jego ostatnim wierszu.
+  const ostatniWiersz = new Map(kroki.map((k, i) => [k.step_id, i]));
 
   return (
     <main style={{ fontFamily: "system-ui", maxWidth: 720, margin: "40px auto" }}>
@@ -351,6 +401,11 @@ export function WidokRunu({
           {bladDecyzji}
         </p>
       )}
+      {runId && bladPominiecia && (
+        <p role="alert" style={{ color: "#A5201A" }}>
+          {bladPominiecia}
+        </p>
+      )}
       {runId && status === "rejected" && <p style={{ color: "#A5201A" }}>odrzucony{reason ? `: ${reason}` : ""}</p>}
       {runId && status !== "rejected" && reason && <p style={{ color: "#A5201A" }}>{reason}</p>}
       {runId && status === "to_accept" && (
@@ -389,22 +444,43 @@ export function WidokRunu({
             </tr>
           </thead>
           <tbody>
-            {kroki.map((k) => (
-              <tr key={`${k.step_id}:${k.agent_id}:${k.attempt}`}>
-                <td>{k.step_id}</td>
-                <td>{k.agent_id || "—"}</td>
-                <td>próba {k.attempt}</td>
-                <td>{napisStanuKroku(k.status)}</td>
-                <td>{powodKroku(k, zdarzenia) ?? "—"}</td>
-              </tr>
-            ))}
+            {kroki.map((k, i) => {
+              const atrapy = ostatniWiersz.get(k.step_id) === i ? atrapyKroku(k.step_id, zdarzenia) : null;
+              return (
+                <tr key={`${k.step_id}:${k.agent_id}:${k.attempt}`}>
+                  <td>{k.step_id}</td>
+                  <td>{k.agent_id || "—"}</td>
+                  <td>próba {k.attempt}</td>
+                  <td>{napisStanuKroku(k.status)}</td>
+                  <td>
+                    {powodKroku(k, zdarzenia) ?? "—"}
+                    {/* Brak sygnalu = nic: nigdy "bramka aktywna" (HAR-246). */}
+                    {atrapy && atrapy.ostrzezenia.length > 0 && (
+                      <div style={{ color: "#8A5A00" }}>
+                        {atrapy.ostrzezenia.map((z) => (
+                          <div key={z.seq}>{z.text}</div>
+                        ))}
+                        {atrapy.pominiete ? (
+                          <div>ostrzeżenie pominięte przez człowieka</div>
+                        ) : (
+                          <button onClick={() => void pominOstrzezenie(k.step_id)} disabled={wysylamPominiecie}>
+                            Uruchom mimo to — krok {k.step_id}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
       <ul>
         {zdarzenia.map((z) => (
           <li key={z.seq}>
-            <b>{z.kind}</b> {z.text}
+            {/* Napis o pominieciu stoi przy kroku w tabeli; w dzienniku nie dublujemy go po nowym ostrzezeniu. */}
+            <b>{z.kind}</b> {z.kind === "atrapa_pominieta" ? `krok ${z.step_id}` : z.text}
             {z.text_truncated && (
               // === null, nie truthiness: brak pomiaru to "nieznana", nigdy 0 (measured_or_null).
               <span style={{ color: "#58616D" }}>

@@ -191,6 +191,7 @@ def test_wyliczenie_tras_obejmuje_trasy_aplikacji_i_routera_kont():
         ("GET", "/api/konto/ja"), ("GET", "/api/runs/{run_id}/diff"),
         ("GET", "/api/runs/{run_id}/dowody"), ("POST", "/api/runs/{run_id}/decyzja-odbioru"),
         ("POST", "/api/runs/{run_id}/cancel"),
+        ("POST", "/api/runs/{run_id}/pominiecie-ostrzezenia"),         # HAR-246
         ("GET", "/api/ustawienia/poczta"), ("POST", "/api/ustawienia/poczta/test"),   # HAR-91
         ("POST", "/api/runnery"), ("GET", "/api/runnery"),                            # HAR-119
         ("DELETE", "/api/runnery/{runner_id}"),                                       # HAR-119
@@ -253,6 +254,7 @@ def test_modele_odpowiedzi_tras_maja_uzgodnione_nazwy(schemat):
         ("GET", "/api/runs/{run_id}/dowody"): ("DowodyRunu", False),
         ("POST", "/api/runs/{run_id}/decyzja-odbioru"): ("DecyzjaOdbioru", False),
         ("POST", "/api/runs/{run_id}/cancel"): ("RunAnulowany", False),
+        ("POST", "/api/runs/{run_id}/pominiecie-ostrzezenia"): ("OstrzezeniePominiete", False),
         ("GET", "/api/pliki"): ("PlikOdczytany", False),
         ("GET", "/api/pliki/lista"): ("ListaPlikow", False),
         ("PUT", "/api/pliki"): ("PlikZapisany", False),
@@ -355,6 +357,8 @@ def test_zbior_kodow_bledow_w_calym_schemacie_jest_zamkniety(schemat):
     (("GET", "/api/runs/{run_id}/dowody"), {"401", "404", "422", "500"}),
     (("POST", "/api/runs/{run_id}/decyzja-odbioru"), {"401", "403", "404", "409", "422", "500"}),
     (("POST", "/api/runs/{run_id}/cancel"), {"401", "403", "404", "409", "422", "500"}),
+    (("POST", "/api/runs/{run_id}/pominiecie-ostrzezenia"),
+     {"401", "403", "404", "409", "422", "500"}),                              # HAR-246
     (("POST", "/api/events"), {"401", "404", "422", "500"}),
     (("POST", "/api/runners/odpowiedzi"), {"401", "404", "422"}),
     (("POST", "/api/konto/logowanie"), {"401", "422", "429", "500"}),
@@ -456,6 +460,7 @@ POLA_MODELI = {
     "RunUtworzony": {"run_id": {S}},
     # HAR-126: po anulowaniu powod jest zawsze ustawiony, wiec nie null (brak powodu to blad)
     "RunAnulowany": {"run_id": {S}, "status": {S}, "reason": {S}},
+    "OstrzezeniePominiete": {"run_id": {S}, "step_id": {S}},   # HAR-246
     "ZdarzeniePrzyjete": {"seq": {INT}},
     "ZdarzenieRunu": {"seq": {INT}, "kind": {S}, "text": {S}, "step_id": {S}, "agent_type": {S},
                       "text_truncated": {B}, "text_full_len": {INT, N}, "at": {S}},
@@ -626,6 +631,22 @@ def test_zdarzenie_od_runnera_ma_opcjonalne_pola_dowodowe_z_limitami(schemat):
     artefakty = next(w for w in zdarzenie["properties"]["artefakty"]["anyOf"] if w.get("type") == "array")
     assert (artefakty["maxItems"], artefakty["items"]["minLength"], artefakty["items"]["maxLength"]) == (
         100, 1, 255)
+
+
+def test_cialo_pominiecia_ostrzezenia_wymaga_kroku_o_dlugosci_nie_wiekszej_niz_kolumna(schemat):
+    op = _operacja(schemat, ("POST", "/api/runs/{run_id}/pominiecie-ostrzezenia"))
+    wejscie = _rozwin(schemat, _tresc_json(op["requestBody"]))
+    assert set(wejscie["properties"]) == {"step_id"}
+    assert set(wejscie["required"]) == {"step_id"}
+    assert wejscie["properties"]["step_id"]["maxLength"] == Event.step_id.type.length == 100
+
+
+def test_rodzaje_zdarzen_na_wejsciu_znaja_pominiecie_ostrzezenia_zarezerwowane_dla_czlowieka(
+    schemat,
+):
+    rodzaj = schemat["components"]["schemas"]["EventIn"]["properties"]["kind"]
+    wartosci = {w for wariant in rodzaj["anyOf"] for w in wariant.get("enum", [])}
+    assert "atrapa_pominieta" in wartosci
 
 
 def test_stos_projektu_w_schemacie_to_lista_napisow(schemat):
